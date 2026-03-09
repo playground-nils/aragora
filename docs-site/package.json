@@ -19,21 +19,34 @@
     "sync-docs": "node scripts/sync-docs.js"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.7.0",
-    "@docusaurus/preset-classic": "^3.7.0",
+    "@docusaurus/core": "^3.9.2",
+    "@docusaurus/preset-classic": "^3.9.2",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
-    "docusaurus-plugin-openapi-docs": "^4.4.0",
-    "docusaurus-theme-openapi-docs": "^4.4.0",
+    "docusaurus-plugin-openapi-docs": "^4.7.1",
+    "docusaurus-theme-openapi-docs": "^4.7.1",
     "prism-react-renderer": "^2.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.7.0",
-    "@docusaurus/tsconfig": "^3.7.0",
-    "@docusaurus/types": "^3.7.0",
+    "@docusaurus/module-type-aliases": "^3.9.2",
+    "@docusaurus/tsconfig": "^3.9.2",
+    "@docusaurus/types": "^3.9.2",
     "typescript": "~5.2.2"
+  },
+  "overrides": {
+    "ajv": "8.18.0",
+    "minimatch": "10.2.4",
+    "qs": "6.15.0",
+    "serialize-javascript": "7.0.4",
+    "openapi-to-postmanv2": {
+      "js-yaml": "4.1.1",
+      "lodash": "4.17.23"
+    },
+    "postman-code-generators": {
+      "lodash": "4.17.23"
+    }
   },
   "browserslist": {
     "production": [
