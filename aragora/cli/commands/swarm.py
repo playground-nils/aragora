@@ -26,7 +26,7 @@ from uuid import uuid4
 def _resolve_swarm_action_goal(args: argparse.Namespace) -> tuple[str, str | None]:
     first = getattr(args, "swarm_action_or_goal", None)
     second = getattr(args, "swarm_goal", None)
-    if first in {"run", "boss", "status", "reconcile"}:
+    if first in {"run", "boss", "runner", "status", "reconcile"}:
         return str(first), second
     return "run", first
 
@@ -160,6 +160,41 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         "metrics": AutonomyLevel.METRICS_DRIVEN,
     }
     autonomy_level = autonomy_map.get(autonomy_str, AutonomyLevel.PROPOSE_APPROVE)
+
+    if action == "runner":
+        from aragora.swarm.reporter import render_runner_registration_text
+        from aragora.swarm.runner_registry import (
+            CodexRunnerInspector,
+            LocalRunnerRegistry,
+            authorization_context_from_env,
+        )
+
+        subaction = str(goal or "inspect").strip().lower()
+        if subaction not in {"inspect", "register"}:
+            print("Error: swarm runner action must be 'inspect' or 'register'")
+            return
+
+        inspection = CodexRunnerInspector().inspect()
+        if subaction == "register":
+            owner_context = authorization_context_from_env()
+            payload = (
+                LocalRunnerRegistry()
+                .register(
+                    inspection,
+                    owner_context=owner_context,
+                )
+                .to_dict()
+            )
+        else:
+            payload = inspection.to_dict()
+
+        payload["mode"] = "runner"
+        payload["action"] = subaction
+        if as_json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(render_runner_registration_text(payload))
+        return
 
     if action == "status":
         repo_root = resolve_repo_root(Path.cwd())

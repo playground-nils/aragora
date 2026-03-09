@@ -639,6 +639,44 @@ def build_integrator_view(
     }
 
 
+def render_runner_registration_text(payload: dict[str, Any]) -> str:
+    """Render a concise runner inspection or registration summary."""
+    lines = [
+        f"runner_id={_text(payload.get('runner_id'))}",
+        "availability="
+        f"{_text(payload.get('availability'))} auth_mode={_text(payload.get('auth_mode'))}",
+        f"runner_type={_text(payload.get('runner_type'))}",
+    ]
+
+    owner = payload.get("owner_binding", {})
+    if isinstance(owner, dict):
+        lines.append(
+            "owner="
+            f"{_text(owner.get('user_id')) or 'unbound'}"
+            f" workspace={_text(owner.get('workspace_id')) or 'none'}"
+        )
+
+    capabilities = payload.get("capabilities", {})
+    if isinstance(capabilities, dict):
+        lines.append(
+            "capabilities="
+            f"exec={capabilities.get('supports_exec', False)} "
+            f"review={capabilities.get('supports_review', False)} "
+            f"max_parallel={capabilities.get('max_parallel_lanes', 0)}"
+        )
+
+    if payload.get("registered"):
+        lines.append(f"registered_at={_text(payload.get('registered_at'))}")
+
+    status_summary = _text(payload.get("status_summary"))
+    if status_summary:
+        lines.append(f"status_summary={status_summary}")
+
+    next_action = _text(payload.get("next_action"))
+    if next_action:
+        lines.append(f"next: {next_action}")
+
+
 def _work_order_status_counts(work_orders: list[dict[str, Any]] | None) -> dict[str, int]:
     counts: dict[str, int] = {}
     for item in work_orders or []:
