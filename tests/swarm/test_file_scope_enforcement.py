@@ -103,6 +103,32 @@ class TestPathInScope:
     def test_empty_path_returns_false(self) -> None:
         assert not _path_in_scope("", "aragora/live")
 
+    def test_star_json_glob(self) -> None:
+        """Standard glob *.json should match files in the same directory."""
+        assert _path_in_scope("aragora/live/package.json", "aragora/live/*.json")
+
+    def test_star_json_glob_no_nested(self) -> None:
+        """*.json should NOT match nested subdirectories."""
+        assert not _path_in_scope("aragora/live/src/config.json", "aragora/live/*.json")
+
+    def test_double_star_ts_glob(self) -> None:
+        """**/*.ts should match nested TypeScript files."""
+        assert _path_in_scope("aragora/live/src/app.ts", "aragora/live/**/*.ts")
+
+    def test_double_star_py_glob(self) -> None:
+        """tests/**/*.py should match test files in subdirectories."""
+        assert _path_in_scope("tests/swarm/test_supervisor.py", "tests/**/*.py")
+
+    def test_question_mark_glob(self) -> None:
+        """? wildcard should match a single character."""
+        assert _path_in_scope("aragora/live/v1/app.ts", "aragora/live/v?/app.ts")
+
+    def test_star_glob_matches_from_right(self) -> None:
+        """PurePosixPath.match() matches relative patterns from the right."""
+        # *.json matches any .json file at any depth — this is the canonical
+        # PurePosixPath.match() behavior used by _path_matches_glob.
+        assert _path_in_scope("aragora/live/package.json", "*.json")
+
 
 # ---------------------------------------------------------------------------
 # Tests for _check_file_scope_violations
@@ -218,27 +244,34 @@ class TestCheckFileScopeViolations:
 class TestMarkScopeViolation:
     """Test SwarmSupervisor._mark_scope_violation."""
 
-    def test_marks_status_as_scope_violation(self) -> None:
+    def _make_supervisor(self, repo: Path, store: DevCoordinationStore) -> SwarmSupervisor:
+        launcher = WorkerLauncher(config=LaunchConfig())
+        return SwarmSupervisor(repo_root=repo, store=store, launcher=launcher)
+
+    def test_marks_status_as_scope_violation(self, repo: Path, store: DevCoordinationStore) -> None:
+        supervisor = self._make_supervisor(repo, store)
         item: dict = {"status": "dispatched", "changed_paths": ["README.md"]}
         violations = [
             {"type": "out_of_scope", "path": "README.md", "allowed_scope": ["aragora/live"]}
         ]
-        SwarmSupervisor._mark_scope_violation(item, violations)
+        supervisor._mark_scope_violation(item, violations)
         assert item["status"] == "scope_violation"
         assert item["review_status"] == "changes_requested"
         assert "scope_violation" in item
         assert "README.md" in item["dispatch_error"]
 
-    def test_extra_reason_prepended(self) -> None:
+    def test_extra_reason_prepended(self, repo: Path, store: DevCoordinationStore) -> None:
+        supervisor = self._make_supervisor(repo, store)
         item: dict = {"status": "dispatched", "changed_paths": []}
         violations = [{"type": "out_of_scope", "path": "foo.py", "allowed_scope": []}]
-        SwarmSupervisor._mark_scope_violation(item, violations, extra_reason="timed out")
+        supervisor._mark_scope_violation(item, violations, extra_reason="timed out")
         assert item["dispatch_error"].startswith("timed out;")
 
-    def test_pid_removed(self) -> None:
+    def test_pid_removed(self, repo: Path, store: DevCoordinationStore) -> None:
+        supervisor = self._make_supervisor(repo, store)
         item: dict = {"status": "dispatched", "pid": 12345}
         violations = [{"type": "out_of_scope", "path": "x.py", "allowed_scope": []}]
-        SwarmSupervisor._mark_scope_violation(item, violations)
+        supervisor._mark_scope_violation(item, violations)
         assert "pid" not in item
 
 

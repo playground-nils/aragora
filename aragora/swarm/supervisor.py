@@ -33,30 +33,18 @@ UTC = timezone.utc
 def _path_in_scope(path: str, scope_pattern: str) -> bool:
     """Check if a file path falls within a scope pattern.
 
-    Supports:
-    - Directory prefixes: "aragora/live" matches "aragora/live/package.json"
-    - Exact file paths: "aragora/live/package.json" matches itself
-    - Glob-style wildcards: "aragora/live/**" matches anything under aragora/live/
+    Delegates to the coordination layer's proven ``_path_matches_glob`` which
+    supports exact paths, directory prefixes, ``/**`` recursive globs, and
+    ``PurePosixPath.match()`` for standard glob patterns like ``*.json`` or
+    ``**/*.ts``.
     """
-    normalized_path = path.strip().removeprefix("./").rstrip("/")
-    normalized_scope = scope_pattern.strip().removeprefix("./").rstrip("/")
+    from aragora.nomic.dev_coordination import _path_matches_glob
 
-    if not normalized_path or not normalized_scope:
+    clean_path = path.strip().removeprefix("./").rstrip("/")
+    clean_scope = scope_pattern.strip().removeprefix("./").rstrip("/")
+    if not clean_path or not clean_scope:
         return False
-
-    # Strip trailing glob
-    if normalized_scope.endswith("/**"):
-        normalized_scope = normalized_scope[:-3]
-
-    # Exact match
-    if normalized_path == normalized_scope:
-        return True
-
-    # Directory prefix match: scope "aragora/live" matches "aragora/live/package.json"
-    if normalized_path.startswith(normalized_scope + "/"):
-        return True
-
-    return False
+    return _path_matches_glob(clean_path, clean_scope)
 
 
 class SupervisorRunStatus(str, Enum):
@@ -991,8 +979,8 @@ class SwarmSupervisor:
         item["blockers"] = blockers
         item.pop("pid", None)
 
-    @staticmethod
     def _mark_scope_violation(
+        self,
         item: dict[str, Any],
         violations: list[dict[str, Any]],
         *,
@@ -1003,6 +991,9 @@ class SwarmSupervisor:
         This is the fail-closed enforcement gate: workers that edit outside
         their permitted scope are stopped immediately rather than allowed to
         continue producing wrong work.
+
+        Persists the violation into the lease metadata so fleet/integrator
+        views can surface it without relying on in-memory work-order state.
         """
         out_of_scope_paths = [
             str(v.get("path", "")) for v in violations if v.get("type") == "out_of_scope"
@@ -1013,15 +1004,25 @@ class SwarmSupervisor:
         item["status"] = "scope_violation"
         item["dispatch_error"] = reason
         item["review_status"] = "changes_requested"
-        item["scope_violation"] = {
+        scope_violation_detail = {
             "violations": violations,
             "changed_paths": list(item.get("changed_paths", [])),
+            "detected_at": datetime.now(UTC).isoformat(),
         }
+        item["scope_violation"] = scope_violation_detail
         blockers = [str(v).strip() for v in item.get("blockers", []) if str(v).strip()]
         if reason not in blockers:
             blockers.append(reason)
         item["blockers"] = blockers
         item.pop("pid", None)
+
+        # Persist scope violation into the lease metadata so fleet views see it
+        lease_id = str(item.get("lease_id", "")).strip()
+        if lease_id:
+            try:
+                self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
+            except (KeyError, Exception):
+                pass
 
     @staticmethod
     def _check_file_scope_violations(
