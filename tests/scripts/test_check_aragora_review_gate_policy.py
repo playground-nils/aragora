@@ -27,10 +27,20 @@ if [[ ! -s /tmp/pr.diff ]]; then
   echo "skip=true" >> "$GITHUB_OUTPUT"
   exit 0
 fi
-cat /tmp/pr.diff | python -m aragora.cli.review --output /tmp/review.json
-if [[ ! -f /tmp/review.json ]]; then
+review_output_dir=/tmp/review-artifacts
+mkdir -p "$review_output_dir"
+cat /tmp/pr.diff | python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir"
+review_json="$review_output_dir/review.json"
+if [[ ! -f "$review_json" ]]; then
   exit 1
 fi
+python3 - <<'PY2'
+import json
+from pathlib import Path
+data = json.loads(Path('/tmp/review-artifacts/review.json').read_text())
+assert isinstance(data.get('critical_issues'), list)
+assert isinstance(data.get('high_issues'), list)
+PY2
 """,
                     }
                 ]
@@ -54,10 +64,20 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          cat /tmp/pr.diff | python -m aragora.cli.review --output /tmp/review.json
-          if [[ ! -f /tmp/review.json ]]; then
+          review_output_dir=/tmp/review-artifacts
+          mkdir -p "$review_output_dir"
+          cat /tmp/pr.diff | python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir"
+          review_json="$review_output_dir/review.json"
+          if [[ ! -f "$review_json" ]]; then
             exit 1
           fi
+          python3 - <<'PY2'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/review-artifacts/review.json').read_text())
+          assert isinstance(data.get('critical_issues'), list)
+          assert isinstance(data.get('high_issues'), list)
+          PY2
   aragora-review:
     if: always()
     needs: [changes, review]
@@ -95,19 +115,31 @@ def test_policy_rejects_pull_request_paths_filter() -> None:
 def test_policy_rejects_fail_open_review_execution() -> None:
     gate = _valid_gate_data()
     gate["jobs"]["review"]["steps"][0]["run"] = gate["jobs"]["review"]["steps"][0]["run"].replace(
-        "python -m aragora.cli.review --output /tmp/review.json",
-        "python -m aragora.cli.review --output /tmp/review.json || true",
+        'python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir"',
+        'python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir" || true',
     )
     text = _valid_gate_text().replace(
-        "python -m aragora.cli.review --output /tmp/review.json",
-        "python -m aragora.cli.review --output /tmp/review.json || true",
+        'python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir"',
+        'python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir" || true',
+    )
+    violations = find_review_gate_policy_violations(gate, text, _valid_manual_data())
+    assert "review execution must not use || true" in violations
+
+
+def test_policy_rejects_outdated_review_cli_contract() -> None:
+    gate = _valid_gate_data()
+    gate["jobs"]["review"]["steps"][0]["run"] = (
+        "python -m aragora.cli.review --output /tmp/review.json"
     )
     violations = find_review_gate_policy_violations(
         gate,
-        text,
+        _valid_gate_text(),
         _valid_manual_data(),
     )
-    assert "review execution must not use || true" in violations
+    assert "review execution must invoke the review subcommand" in violations
+    assert "review execution must request json output" in violations
+    assert "review execution must write review artifacts via --output-dir" in violations
+    assert "review gate must parse the current json artifact schema" in violations
 
 
 def test_policy_rejects_manual_workflow_pull_request_trigger() -> None:

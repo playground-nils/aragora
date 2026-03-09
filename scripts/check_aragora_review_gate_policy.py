@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
 import yaml
 
@@ -83,8 +82,16 @@ def find_review_gate_policy_violations(
     else:
         review_run = str(review_step.get("run", ""))
 
-    if "if [[ ! -f /tmp/review.json ]]; then" not in review_run or "exit 1" not in review_run:
+    if 'if [[ ! -f "$review_json" ]]; then' not in review_run or "exit 1" not in review_run:
         violations.append("review gate must fail if review.json is missing")
+    if "python -m aragora.cli.review review" not in review_run:
+        violations.append("review execution must invoke the review subcommand")
+    if "--output-format json" not in review_run:
+        violations.append("review execution must request json output")
+    if '--output-dir "$review_output_dir"' not in review_run:
+        violations.append("review execution must write review artifacts via --output-dir")
+    if "critical_issues" not in review_run or "high_issues" not in review_run:
+        violations.append("review gate must parse the current json artifact schema")
     if "python -m aragora.cli.review" in review_run and "|| true" in review_run:
         violations.append("review execution must not use || true")
     if 'if [[ "$REVIEW_RESULT" != "success" ]]' not in gate_text:
