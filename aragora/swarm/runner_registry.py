@@ -18,6 +18,7 @@ from aragora.swarm.worker_launcher import LaunchConfig
 
 UTC = timezone.utc
 VERIFIED_AUTH_MODES = {"chatgpt_login", "api_key"}
+DEFAULT_RUNNER_STALE_AFTER_SECONDS = 3600
 
 
 def _utcnow() -> str:
@@ -53,6 +54,9 @@ class CodexRunnerInspection:
     registered: bool = False
     registry_path: str | None = None
     registered_at: str | None = None
+    heartbeat_at: str | None = None
+    freshness_status: str = "unknown"
+    stale_after_seconds: int = DEFAULT_RUNNER_STALE_AFTER_SECONDS
     next_action: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,6 +74,9 @@ class CodexRunnerInspection:
             "registered": self.registered,
             "registry_path": self.registry_path,
             "registered_at": self.registered_at,
+            "heartbeat_at": self.heartbeat_at,
+            "freshness_status": self.freshness_status,
+            "stale_after_seconds": self.stale_after_seconds,
             "next_action": self.next_action,
         }
 
@@ -81,6 +88,7 @@ class BossRoutingDecision:
     selected_runners: list[dict[str, Any]] = field(default_factory=list)
     selection_basis: str = ""
     blocked_reason: str | None = None
+    rejected_runner_ids: list[str] = field(default_factory=list)
     next_action: str | None = None
 
     @property
@@ -94,6 +102,7 @@ class BossRoutingDecision:
             "selected_runners": [dict(item) for item in self.selected_runners],
             "selection_basis": self.selection_basis,
             "blocked_reason": self.blocked_reason,
+            "rejected_runner_ids": list(self.rejected_runner_ids),
             "next_action": self.next_action,
         }
 
@@ -114,6 +123,7 @@ class CodexRunnerInspector:
         codex_path = shutil.which(self.config.codex_path)
         runner_id = self._runner_id(codex_path)
         owner = owner_binding_from_env(self.env)
+        stale_after_seconds = self._stale_after_seconds()
 
         if not codex_path:
             return CodexRunnerInspection(
@@ -127,6 +137,8 @@ class CodexRunnerInspector:
                 status_summary=None,
                 capabilities=self._capabilities(False, None),
                 owner_binding=owner,
+                freshness_status="unavailable",
+                stale_after_seconds=stale_after_seconds,
                 next_action="Install the Codex CLI or add `codex` to PATH before registering this runner.",
             )
 
@@ -162,6 +174,8 @@ class CodexRunnerInspector:
                 status_summary=None,
                 capabilities=self._capabilities(False, None),
                 owner_binding=owner,
+                freshness_status="unavailable",
+                stale_after_seconds=stale_after_seconds,
                 next_action="The local `codex` binary exists but did not respond truthfully; fix the CLI installation before registering this runner.",
             )
 
@@ -180,6 +194,8 @@ class CodexRunnerInspector:
             status_summary=self._first_line(login_text) or None,
             capabilities=self._capabilities(True, help_text),
             owner_binding=owner,
+            freshness_status=self._inspection_freshness(available=True, auth_mode=auth_mode),
+            stale_after_seconds=stale_after_seconds,
             next_action=self._next_action(
                 available=True,
                 auth_mode=auth_mode,
@@ -205,6 +221,21 @@ class CodexRunnerInspector:
         if "api key" in lowered and "logged in" in lowered:
             return "api_key"
         return "unknown"
+
+    def _stale_after_seconds(self) -> int:
+        return _env_flag_int(
+            self.env,
+            "ARAGORA_RUNNER_STALE_AFTER_SECONDS",
+            DEFAULT_RUNNER_STALE_AFTER_SECONDS,
+        )
+
+    @staticmethod
+    def _inspection_freshness(*, available: bool, auth_mode: str) -> str:
+        if not available:
+            return "unavailable"
+        if auth_mode not in VERIFIED_AUTH_MODES:
+            return "unknown"
+        return "fresh"
 
     @staticmethod
     def _first_line(text: str) -> str:
@@ -297,11 +328,14 @@ class LocalRunnerRegistry:
 
         records = self._load()
         now = _utcnow()
+        freshness_status = self._freshness_for_inspection(inspection)
         entry = {
             **inspection.to_dict(),
             "owner_binding": owner_binding_from_context(owner_context),
             "registered": True,
             "registered_at": now,
+            "heartbeat_at": now,
+            "freshness_status": freshness_status,
             "updated_at": now,
         }
         records["registrations"] = [
@@ -316,9 +350,75 @@ class LocalRunnerRegistry:
         inspection.registered = True
         inspection.registry_path = registry_path
         inspection.registered_at = now
+        inspection.heartbeat_at = now
+        inspection.freshness_status = freshness_status
         inspection.next_action = (
             "Runner registered. Future Boss-mode routing can target this owner-bound Codex runner."
         )
+        return inspection
+
+    def heartbeat(
+        self,
+        inspection: CodexRunnerInspection,
+        *,
+        owner_context: AuthorizationContext | None,
+    ) -> CodexRunnerInspection:
+        registry_path = str(self.path)
+        inspection.registry_path = registry_path
+        if owner_context is None:
+            inspection.registered = False
+            inspection.next_action = (
+                "Set `ARAGORA_USER_ID` and `ARAGORA_WORKSPACE_ID` before refreshing a runner "
+                "heartbeat for Boss-mode routing."
+            )
+            return inspection
+
+        records = self._load()
+        registrations = [
+            dict(item) for item in records.get("registrations", []) if isinstance(item, dict)
+        ]
+        existing = next(
+            (
+                item
+                for item in registrations
+                if item.get("runner_id") == inspection.runner_id
+                and self._is_owner_compatible(item, owner_context=owner_context)
+            ),
+            None,
+        )
+        if existing is None:
+            inspection.registered = False
+            inspection.next_action = (
+                "Register this Codex runner for the current Aragora user/workspace context before "
+                "refreshing its heartbeat."
+            )
+            return inspection
+
+        now = _utcnow()
+        freshness_status = self._freshness_for_inspection(inspection)
+        owner_binding = owner_binding_from_context(owner_context)
+        updated_entry = {
+            **existing,
+            **inspection.to_dict(),
+            "registered": True,
+            "owner_binding": owner_binding,
+            "registered_at": existing.get("registered_at"),
+            "heartbeat_at": now,
+            "freshness_status": freshness_status,
+            "updated_at": now,
+        }
+        records["registrations"] = [
+            updated_entry if item.get("runner_id") == inspection.runner_id else item
+            for item in registrations
+        ]
+        self._save(records)
+
+        inspection.owner_binding = owner_binding
+        inspection.registered = True
+        inspection.registered_at = _text(existing.get("registered_at")) or None
+        inspection.heartbeat_at = now
+        inspection.freshness_status = freshness_status
+        inspection.next_action = self._heartbeat_next_action(freshness_status)
         return inspection
 
     def list_registrations(self) -> list[dict[str, Any]]:
@@ -333,8 +433,9 @@ class LocalRunnerRegistry:
     ) -> BossRoutingDecision:
         owner_binding = owner_binding_from_context(owner_context)
         selection_basis = (
-            "registered=true, availability=available, auth_mode in {chatgpt_login, api_key}, "
-            "owner_binding user/workspace compatible with current Aragora context"
+            "registered=true, freshness_status=fresh, availability=available, auth_mode in "
+            "{chatgpt_login, api_key}, owner_binding user/workspace compatible with current "
+            "Aragora context"
         )
         if owner_context is None or not _text(owner_context.user_id):
             return BossRoutingDecision(
@@ -348,13 +449,30 @@ class LocalRunnerRegistry:
             )
 
         eligible: list[dict[str, Any]] = []
+        rejected_runner_ids: list[str] = []
+        saw_compatible_nonfresh = False
         for runner in self.list_registrations():
+            if self._is_owner_compatible(runner, owner_context=owner_context):
+                if (
+                    _text(runner.get("runner_type")) == "codex"
+                    and bool(runner.get("registered"))
+                    and self._freshness_status(runner) != "fresh"
+                ):
+                    saw_compatible_nonfresh = True
             if not self._is_runner_eligible(runner, owner_context=owner_context):
+                runner_id = _text(runner.get("runner_id"))
+                if runner_id:
+                    rejected_runner_ids.append(runner_id)
                 continue
             eligible.append(
                 {
                     "runner_id": _text(runner.get("runner_id")),
                     "auth_mode": _text(runner.get("auth_mode")),
+                    "freshness_status": self._freshness_status(runner),
+                    "heartbeat_at": _text(runner.get("heartbeat_at")) or None,
+                    "stale_after_seconds": int(
+                        runner.get("stale_after_seconds") or DEFAULT_RUNNER_STALE_AFTER_SECONDS
+                    ),
                     "owner_binding": dict(runner.get("owner_binding") or {}),
                     "capabilities": dict(runner.get("capabilities") or {}),
                 }
@@ -364,9 +482,17 @@ class LocalRunnerRegistry:
             return BossRoutingDecision(
                 owner_binding=owner_binding,
                 selection_basis=selection_basis,
-                blocked_reason="no_eligible_registered_runners",
+                blocked_reason=(
+                    "no_fresh_registered_runners"
+                    if saw_compatible_nonfresh
+                    else "no_eligible_registered_runners"
+                ),
+                rejected_runner_ids=sorted(set(rejected_runner_ids)),
                 next_action=(
-                    "Register an available Codex runner for this exact Aragora user/workspace "
+                    "Refresh the heartbeat for an available registered Codex runner in this exact "
+                    "Aragora user/workspace context before running Boss mode."
+                    if saw_compatible_nonfresh
+                    else "Register an available Codex runner for this exact Aragora user/workspace "
                     "context before running Boss mode."
                 ),
             )
@@ -376,11 +502,12 @@ class LocalRunnerRegistry:
             selected_runner_ids=[item["runner_id"] for item in eligible],
             selected_runners=eligible,
             selection_basis=selection_basis,
+            rejected_runner_ids=sorted(set(rejected_runner_ids)),
             next_action="Boss mode will route only through the selected registered Codex runner set.",
         )
 
-    @staticmethod
     def _is_runner_eligible(
+        self,
         runner: dict[str, Any],
         *,
         owner_context: AuthorizationContext,
@@ -395,7 +522,18 @@ class LocalRunnerRegistry:
             return False
         if _text(runner.get("auth_mode")) not in VERIFIED_AUTH_MODES:
             return False
+        if self._freshness_status(runner) != "fresh":
+            return False
+        if not self._is_owner_compatible(runner, owner_context=owner_context):
+            return False
+        return True
 
+    @staticmethod
+    def _is_owner_compatible(
+        runner: dict[str, Any],
+        *,
+        owner_context: AuthorizationContext,
+    ) -> bool:
         owner_binding = dict(runner.get("owner_binding") or {})
         if _text(owner_binding.get("user_id")) != _text(owner_context.user_id):
             return False
@@ -411,6 +549,61 @@ class LocalRunnerRegistry:
             return False
 
         return True
+
+    @staticmethod
+    def _freshness_for_inspection(inspection: CodexRunnerInspection) -> str:
+        if not inspection.available:
+            return "unavailable"
+        if inspection.auth_mode not in VERIFIED_AUTH_MODES:
+            return "unknown"
+        return "fresh"
+
+    def _freshness_status(self, runner: dict[str, Any]) -> str:
+        if _text(runner.get("availability")) != "available" or not bool(
+            runner.get("available", True)
+        ):
+            return "unavailable"
+        if _text(runner.get("auth_mode")) not in VERIFIED_AUTH_MODES:
+            return "unknown"
+
+        heartbeat_at = _text(runner.get("heartbeat_at"))
+        if not heartbeat_at:
+            return "stale"
+        heartbeat_dt = self._parse_timestamp(heartbeat_at)
+        if heartbeat_dt is None:
+            return "unknown"
+
+        stale_after_seconds = int(
+            runner.get("stale_after_seconds") or DEFAULT_RUNNER_STALE_AFTER_SECONDS
+        )
+        age_seconds = max(0.0, (datetime.now(UTC) - heartbeat_dt).total_seconds())
+        if age_seconds > stale_after_seconds:
+            return "stale"
+        return "fresh"
+
+    @staticmethod
+    def _heartbeat_next_action(freshness_status: str) -> str:
+        if freshness_status == "fresh":
+            return (
+                "Runner heartbeat refreshed. Boss mode can route work to this runner while the "
+                "heartbeat remains fresh."
+            )
+        if freshness_status == "unavailable":
+            return (
+                "Runner heartbeat recorded an unavailable Codex runner. Restore the local CLI "
+                "before relying on Boss-mode routing."
+            )
+        return (
+            "Runner heartbeat recorded a non-fresh state. Confirm local Codex availability and auth "
+            "before relying on Boss-mode routing."
+        )
+
+    @staticmethod
+    def _parse_timestamp(value: str) -> datetime | None:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
 
     def _load(self) -> dict[str, Any]:
         if not self.path.exists():

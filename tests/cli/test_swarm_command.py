@@ -171,6 +171,9 @@ class TestSwarmCommand:
                 "auth_mode": "chatgpt_login",
                 "availability": "available",
                 "available": True,
+                "freshness_status": "fresh",
+                "heartbeat_at": "2026-03-09T12:00:00+00:00",
+                "stale_after_seconds": 3600,
                 "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
                 "capabilities": {"max_parallel_lanes": 1},
                 "next_action": "Runner is eligible for Boss-mode routing.",
@@ -186,6 +189,7 @@ class TestSwarmCommand:
         assert '"auth_mode": "chatgpt_login"' in out
         assert '"availability": "available"' in out
         assert '"action": "inspect"' in out
+        assert '"freshness_status": "fresh"' in out
 
     def test_cmd_swarm_runner_register_rejects_unknown_auth(self, capsys):
         args = _swarm_args(
@@ -198,6 +202,9 @@ class TestSwarmCommand:
                 "runner_type": "codex",
                 "auth_mode": "unknown",
                 "availability": "available",
+                "freshness_status": "unknown",
+                "heartbeat_at": None,
+                "stale_after_seconds": 3600,
                 "owner_binding": {"user_id": None, "workspace_id": None},
                 "capabilities": {
                     "supports_exec": True,
@@ -215,6 +222,9 @@ class TestSwarmCommand:
                 "availability": "available",
                 "registered": False,
                 "registry_path": "/tmp/swarm-runners.json",
+                "freshness_status": "unknown",
+                "heartbeat_at": None,
+                "stale_after_seconds": 3600,
                 "owner_binding": {"user_id": None, "workspace_id": None},
                 "capabilities": {
                     "supports_exec": True,
@@ -239,8 +249,62 @@ class TestSwarmCommand:
         assert "runner_id=codex-runner-123" in out
         assert "availability=available auth_mode=unknown" in out
         assert "owner=unbound workspace=none" in out
+        assert "freshness=unknown heartbeat_at=none stale_after=3600" in out
         assert "registered_at=" not in out
         assert "next: Registration blocked: Codex auth mode is unknown." in out
+
+    def test_cmd_swarm_runner_heartbeat_emits_freshness(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="runner",
+            swarm_goal="heartbeat",
+            json=True,
+        )
+        inspection = SimpleNamespace(
+            to_dict=lambda: {
+                "runner_id": "codex-runner-123",
+                "runner_type": "codex",
+                "auth_mode": "chatgpt_login",
+                "availability": "available",
+                "available": True,
+                "freshness_status": "fresh",
+                "heartbeat_at": "2026-03-09T12:05:00+00:00",
+                "stale_after_seconds": 3600,
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "capabilities": {"supports_exec": True, "max_parallel_lanes": 2},
+                "next_action": "Runner heartbeat refreshed.",
+            }
+        )
+        heartbeated = SimpleNamespace(
+            to_dict=lambda: {
+                "runner_id": "codex-runner-123",
+                "runner_type": "codex",
+                "auth_mode": "chatgpt_login",
+                "availability": "available",
+                "available": True,
+                "registered": True,
+                "freshness_status": "fresh",
+                "heartbeat_at": "2026-03-09T12:05:00+00:00",
+                "stale_after_seconds": 3600,
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "capabilities": {"supports_exec": True, "max_parallel_lanes": 2},
+                "next_action": "Runner heartbeat refreshed.",
+            }
+        )
+
+        with (
+            patch("aragora.swarm.runner_registry.CodexRunnerInspector") as inspector_cls,
+            patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
+            patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
+        ):
+            inspector_cls.return_value.inspect.return_value = inspection
+            auth_ctx.return_value = object()
+            registry_cls.return_value.heartbeat.return_value = heartbeated
+            cmd_swarm(args)
+
+        out = capsys.readouterr().out
+        assert '"action": "heartbeat"' in out
+        assert '"freshness_status": "fresh"' in out
+        assert '"heartbeat_at": "2026-03-09T12:05:00+00:00"' in out
 
     def test_cmd_swarm_requires_goal_or_spec(self, capsys):
         args = argparse.Namespace(
@@ -624,9 +688,10 @@ class TestSwarmCommand:
             resolve_routing.return_value = {
                 "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
                 "selected_runner_ids": ["codex-runner-1"],
-                "selected_runners": [{"runner_id": "codex-runner-1"}],
+                "selected_runners": [{"runner_id": "codex-runner-1", "freshness_status": "fresh"}],
                 "selection_basis": "registered=true",
                 "blocked_reason": None,
+                "rejected_runner_ids": [],
                 "next_action": "Boss mode will route only through the selected registered Codex runner set.",
             }
             build_payload.return_value = {
@@ -638,7 +703,11 @@ class TestSwarmCommand:
                 "work_order_counts": {"needs_human": 1},
                 "routing": {
                     "selected_runner_ids": ["codex-runner-1"],
+                    "selected_runners": [
+                        {"runner_id": "codex-runner-1", "freshness_status": "fresh"}
+                    ],
                     "blocked_reason": None,
+                    "rejected_runner_ids": [],
                     "next_action": "Boss mode will route only through the selected registered Codex runner set.",
                 },
                 "lanes": [
@@ -669,7 +738,7 @@ class TestSwarmCommand:
         out = capsys.readouterr().out
         assert "run_id=boss-run-1" in out
         assert "work_orders=[needs_human=1]" in out
-        assert "routing: selected_runners=codex-runner-1" in out
+        assert "routing: selected_runners=codex-runner-1(fresh)" in out
         assert "next: Review lane-a and decide whether to narrow scope." in out
         assert "needs_human: Lane A -> waiting for human choice" in out
 
@@ -719,9 +788,10 @@ class TestSwarmCommand:
             resolve_routing.return_value = {
                 "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
                 "selected_runner_ids": ["codex-runner-1"],
-                "selected_runners": [{"runner_id": "codex-runner-1"}],
+                "selected_runners": [{"runner_id": "codex-runner-1", "freshness_status": "fresh"}],
                 "selection_basis": "registered=true",
                 "blocked_reason": None,
+                "rejected_runner_ids": [],
                 "next_action": "Boss mode will route only through the selected registered Codex runner set.",
             }
             build_payload.return_value = {
@@ -733,7 +803,11 @@ class TestSwarmCommand:
                 "work_order_counts": {"leased": 1},
                 "routing": {
                     "selected_runner_ids": ["codex-runner-1"],
+                    "selected_runners": [
+                        {"runner_id": "codex-runner-1", "freshness_status": "fresh"}
+                    ],
                     "blocked_reason": None,
+                    "rejected_runner_ids": [],
                     "next_action": "Boss mode will route only through the selected registered Codex runner set.",
                 },
                 "lanes": [
@@ -783,6 +857,7 @@ class TestSwarmCommand:
                 "selected_runners": [],
                 "selection_basis": "registered=true",
                 "blocked_reason": "missing_owner_context",
+                "rejected_runner_ids": [],
                 "next_action": "Set `ARAGORA_USER_ID` and `ARAGORA_WORKSPACE_ID` before running Boss mode.",
             }
             cmd_swarm(args)
@@ -792,6 +867,34 @@ class TestSwarmCommand:
         assert '"status": "blocked"' in out
         assert '"blocked_reason": "missing_owner_context"' in out
         assert '"selected_runner_ids": []' in out
+
+    def test_cmd_swarm_boss_mode_blocks_when_only_stale_runners_exist(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="boss",
+            swarm_goal="Split vague operator request into supervised lanes",
+            json=True,
+        )
+        mock_commander = SimpleNamespace(run_supervised=AsyncMock())
+
+        with (
+            patch("aragora.swarm.SwarmCommander", return_value=mock_commander),
+            patch("aragora.cli.commands.swarm._resolve_boss_routing") as resolve_routing,
+        ):
+            resolve_routing.return_value = {
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "selected_runner_ids": [],
+                "selected_runners": [],
+                "selection_basis": "registered=true freshness_status=fresh",
+                "blocked_reason": "no_fresh_registered_runners",
+                "rejected_runner_ids": ["codex-runner-stale"],
+                "next_action": "Refresh the heartbeat for an available registered Codex runner.",
+            }
+            cmd_swarm(args)
+
+        mock_commander.run_supervised.assert_not_called()
+        out = capsys.readouterr().out
+        assert '"blocked_reason": "no_fresh_registered_runners"' in out
+        assert '"rejected_runner_ids": [' in out
 
     def test_cmd_swarm_reconcile_watch_uses_watch_run(self, capsys):
         args = _swarm_args(
