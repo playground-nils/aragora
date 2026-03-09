@@ -20,6 +20,17 @@ logger = logging.getLogger(__name__)
 
 UTC = timezone.utc
 
+# Session artifacts that autonomous workers should never treat as deliverable
+# output.  These are infrastructure metadata files created by the harness, not
+# user work product.  They must be stripped from changed_paths before any
+# result is qualified.
+SESSION_ARTIFACTS: frozenset[str] = frozenset(
+    {
+        ".codex_session_meta.json",
+        ".codex_session.log",
+    }
+)
+
 
 @dataclass(slots=True)
 class WorkerProcess:
@@ -443,7 +454,8 @@ class WorkerLauncher:
             "Stop condition:\n"
             "  - Finish the bounded lane or stop at a real blocker.\n"
             "  - Run the expected validation commands when possible, or state exactly why they could not run.\n"
-            "  - Stage all changed files with `git add -A`.\n"
+            "  - Stage only the files you intentionally changed with `git add <file> ...`.\n"
+            "  - Do NOT use `git add -A` or `git add .` — session metadata files must not be committed.\n"
             '  - Commit with a descriptive message using `git commit -m "..."` before exiting.\n'
             "  - Exit with a truthful final state; do not claim integration or approval work is done unless it happened in this lane."
         )
@@ -513,6 +525,8 @@ class WorkerLauncher:
                 path = path.split(" -> ")[-1].strip()
             if path:
                 changed.add(path)
+        # Strip session artifacts — these are harness metadata, not deliverables
+        changed -= SESSION_ARTIFACTS
         return sorted(changed)
 
     @classmethod

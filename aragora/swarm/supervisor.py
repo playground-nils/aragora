@@ -24,7 +24,7 @@ from aragora.nomic.dev_coordination import (
 from aragora.nomic.pipeline_bridge import BoundedWorkOrder, NomicPipelineBridge
 from aragora.nomic.task_decomposer import SubTask, TaskDecomposer
 from aragora.swarm.spec import SwarmSpec
-from aragora.swarm.worker_launcher import WorkerLauncher, WorkerProcess
+from aragora.swarm.worker_launcher import SESSION_ARTIFACTS, WorkerLauncher, WorkerProcess
 from aragora.worktree.lifecycle import WorktreeLifecycleService
 
 UTC = timezone.utc
@@ -463,14 +463,15 @@ class SwarmSupervisor:
                 item["last_progress_at"] = observed_at
                 if progress_fingerprint["head_sha"]:
                     item["head_sha"] = progress_fingerprint["head_sha"]
-                item["changed_paths"] = list(progress_fingerprint["changed_paths"])
+                progress_paths = self._strip_session_artifacts(
+                    list(progress_fingerprint["changed_paths"])
+                )
+                item["changed_paths"] = progress_paths
                 item["diff_lines"] = int(progress_fingerprint["diff_lines"])
                 changed = True
 
                 # Fail closed: check file-scope constraints on every progress snapshot
-                scope_violations = self._check_file_scope_violations(
-                    item, progress_fingerprint["changed_paths"]
-                )
+                scope_violations = self._check_file_scope_violations(item, progress_paths)
                 if scope_violations:
                     self._mark_scope_violation(item, scope_violations)
                     self._release_terminal_lease(item)
@@ -720,17 +721,29 @@ class SwarmSupervisor:
             }
         )
 
+    @staticmethod
+    def _strip_session_artifacts(paths: list[str]) -> list[str]:
+        """Remove harness session metadata from a list of changed paths.
+
+        Session artifacts like ``.codex_session_meta.json`` are infrastructure
+        metadata created by the harness, not user deliverables.  Stripping them
+        prevents workers from claiming credit for non-work output.
+        """
+        return [p for p in paths if Path(p).name not in SESSION_ARTIFACTS]
+
     def _apply_worker_result(self, item: dict[str, Any], result: WorkerProcess) -> None:
+        # Strip session artifacts before any qualification logic runs
+        clean_paths = self._strip_session_artifacts(list(result.changed_paths))
         item["completed_at"] = result.completed_at
         item["diff_lines"] = result.diff.count("\n")
-        item["changed_paths"] = list(result.changed_paths)
+        item["changed_paths"] = clean_paths
         item["tests_run"] = list(result.tests_run)
         item["commit_shas"] = list(result.commit_shas)
         item["head_sha"] = result.head_sha
         item.pop("pid", None)
 
         # Fail closed: check file-scope before accepting any result as successful
-        scope_violations = self._check_file_scope_violations(item, list(result.changed_paths))
+        scope_violations = self._check_file_scope_violations(item, clean_paths)
         if scope_violations:
             self._mark_scope_violation(item, scope_violations)
             lease_id = str(item.get("lease_id", "")).strip()
@@ -751,7 +764,7 @@ class SwarmSupervisor:
                         branch=str(item.get("branch", result.branch)),
                         worktree_path=str(item.get("worktree_path", result.worktree_path)),
                         commit_shas=list(result.commit_shas),
-                        changed_paths=list(result.changed_paths),
+                        changed_paths=clean_paths,
                         tests_run=list(result.tests_run),
                         assumptions=[],
                         blockers=[],
@@ -766,7 +779,7 @@ class SwarmSupervisor:
                     item["receipt_id"] = None
                     item["scope_violation"] = {
                         "violations": list(exc.violations),
-                        "changed_paths": list(result.changed_paths),
+                        "changed_paths": clean_paths,
                     }
                     self._release_terminal_lease(item)
                     item["exit_code"] = result.exit_code
