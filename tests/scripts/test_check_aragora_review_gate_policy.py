@@ -21,6 +21,14 @@ def _valid_gate_data() -> dict:
             "review": {
                 "steps": [
                     {
+                        "name": "Install Aragora",
+                        "run": """
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -e .
+""",
+                    },
+                    {
                         "name": "Run Aragora Review",
                         "run": """
 if [[ ! -s /tmp/pr.diff ]]; then
@@ -51,7 +59,7 @@ assert isinstance(data.get('critical_issues'), list)
 assert isinstance(data.get('high_issues'), list)
 PY2
 """,
-                    }
+                    },
                 ]
             },
             "aragora-review": {
@@ -114,6 +122,13 @@ def _valid_manual_data() -> dict:
     return {"on": {"workflow_dispatch": {}}}
 
 
+def _review_step(gate: dict) -> dict:
+    for step in gate["jobs"]["review"]["steps"]:
+        if step["name"] == "Run Aragora Review":
+            return step
+    raise AssertionError("Run Aragora Review step missing from fixture")
+
+
 def test_policy_accepts_valid_review_gate_configuration() -> None:
     violations = find_review_gate_policy_violations(
         _valid_gate_data(),
@@ -132,7 +147,7 @@ def test_policy_rejects_pull_request_paths_filter() -> None:
 
 def test_policy_rejects_fail_open_review_execution() -> None:
     gate = _valid_gate_data()
-    gate["jobs"]["review"]["steps"][0]["run"] = gate["jobs"]["review"]["steps"][0]["run"].replace(
+    _review_step(gate)["run"] = _review_step(gate)["run"].replace(
         'python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir"',
         'python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir" || true',
     )
@@ -144,9 +159,23 @@ def test_policy_rejects_fail_open_review_execution() -> None:
     assert "review execution must not use || true" in violations
 
 
+def test_policy_rejects_missing_requirements_install() -> None:
+    gate = _valid_gate_data()
+    gate["jobs"]["review"]["steps"][0]["run"] = """
+python -m pip install --upgrade pip
+python -m pip install -e .
+"""
+    violations = find_review_gate_policy_violations(
+        gate,
+        _valid_gate_text(),
+        _valid_manual_data(),
+    )
+    assert "review job install step must install requirements.txt for CLI runtime" in violations
+
+
 def test_policy_rejects_missing_review_exit_capture() -> None:
     gate = _valid_gate_data()
-    gate["jobs"]["review"]["steps"][0]["run"] = gate["jobs"]["review"]["steps"][0]["run"].replace(
+    _review_step(gate)["run"] = _review_step(gate)["run"].replace(
         'review_exit=$?\nset -e\nif [[ "$review_exit" -ne 0 ]]; then\n  if [[ -s /tmp/review.stderr ]]; then\n    cat /tmp/review.stderr\n  fi\n  exit "$review_exit"\nfi\n',
         "",
     )
@@ -168,9 +197,7 @@ def test_policy_rejects_missing_review_exit_capture() -> None:
 
 def test_policy_rejects_outdated_review_cli_contract() -> None:
     gate = _valid_gate_data()
-    gate["jobs"]["review"]["steps"][0]["run"] = (
-        "python -m aragora.cli.review --output /tmp/review.json"
-    )
+    _review_step(gate)["run"] = "python -m aragora.cli.review --output /tmp/review.json"
     violations = find_review_gate_policy_violations(
         gate,
         _valid_gate_text(),

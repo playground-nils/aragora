@@ -72,16 +72,29 @@ def find_review_gate_policy_violations(
 
     review_job = jobs.get("review", {})
     review_steps = review_job.get("steps", []) if isinstance(review_job, dict) else []
+    install_step = next(
+        (step for step in review_steps if step.get("name") == "Install Aragora"),
+        None,
+    )
     review_step = next(
         (step for step in review_steps if step.get("name") == "Run Aragora Review"),
         None,
     )
+    if not isinstance(install_step, dict):
+        violations.append("review job must define an Install Aragora step")
+        install_run = ""
+    else:
+        install_run = str(install_step.get("run", ""))
     if not isinstance(review_step, dict):
         violations.append("review job must define a Run Aragora Review step")
         review_run = ""
     else:
         review_run = str(review_step.get("run", ""))
 
+    if "python -m pip install -r requirements.txt" not in install_run:
+        violations.append("review job install step must install requirements.txt for CLI runtime")
+    if "python -m pip install -e ." not in install_run:
+        violations.append("review job install step must install the repo in editable mode")
     if 'if [[ ! -f "$review_json" ]]; then' not in review_run or "exit 1" not in review_run:
         violations.append("review gate must fail if review.json is missing")
     if "python -m aragora.cli.review review" not in review_run:
