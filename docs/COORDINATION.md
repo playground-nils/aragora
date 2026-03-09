@@ -128,6 +128,38 @@ If you encounter merge conflicts or overlapping work:
 
 ---
 
+## Two-Pass Builder/Verifier Workflow
+
+Every autonomous or high-churn coding lane uses a two-pass workflow:
+
+### 1. Builder pass
+
+- Produce the narrowest draft implementation that satisfies the issue contract.
+- Optimize for velocity — draft PR only.
+- Bounded scope with explicit tests and acceptance criteria.
+- No merge authority.
+
+### 2. Verifier pass
+
+- Independent read-only review by a different agent or model.
+- Check for semantic regressions, integration drift, scope violations, stale assumptions.
+- Merge blocked until this pass is clean.
+
+### 3. Merge gate
+
+- Only after both passes succeed.
+- Required CI checks green.
+- No unresolved review findings.
+
+**Key principles:**
+- Speed comes from iteration velocity, not from relaxed standards.
+- The verifier role is process-defined, not brand-defined — any agent can fill either role.
+- The builder should aim to ship on the first pass; the verifier is a safety net, not a license.
+
+**Proof case:** PR #880 (file-scope enforcement). Builder pass found the main fix quickly. Independent review caught two real semantic regressions (glob matcher too narrow, lease metadata not persisted). Second pass repaired both before merge.
+
+---
+
 ## Communication Shortcuts
 
 When starting a Claude session, paste this:
