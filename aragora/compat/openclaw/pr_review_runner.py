@@ -709,8 +709,10 @@ class PRReviewRunner:
         diff: str,
     ) -> tuple[dict[str, Any] | None, str | None]:
         """Run the Aragora review engine."""
-        # Demo mode only works via subprocess (CLI handles mock output)
-        if self.demo:
+        # Demo and gauntlet modes must run through the CLI path. The in-process
+        # review helper does not accept a gauntlet flag, so subprocess is the
+        # only truthful way to activate adversarial review behavior here.
+        if self.demo or self.gauntlet:
             return self._run_review_subprocess(diff)
 
         # Try direct import first (faster, in-process)

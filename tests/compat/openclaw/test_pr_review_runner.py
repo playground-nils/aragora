@@ -432,6 +432,19 @@ class TestPRReviewRunner:
         assert runner.policy.name == "custom"
         assert runner.dry_run is True
 
+    @pytest.mark.asyncio
+    async def test_run_review_uses_subprocess_when_gauntlet_enabled(self):
+        runner = PRReviewRunner(dry_run=True, gauntlet=True)
+        with patch.object(
+            runner,
+            "_run_review_subprocess",
+            return_value=({"high_issues": ["gauntlet finding"]}, None),
+        ) as mock_subprocess:
+            findings, error = await runner._run_review("diff --git a/x b/x")
+        assert error is None
+        assert findings == {"high_issues": ["gauntlet finding"]}
+        mock_subprocess.assert_called_once()
+
     def test_from_policy_file_missing(self):
         runner = PRReviewRunner.from_policy_file("/nonexistent/policy.yaml")
         # Falls back to default

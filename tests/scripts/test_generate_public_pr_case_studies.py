@@ -10,7 +10,11 @@ from aragora.compat.openclaw.pr_review_runner import (
     ReviewReceipt,
     ReviewResult,
 )
-from scripts.generate_public_pr_case_studies import generate_case_studies, load_manifest
+from scripts.generate_public_pr_case_studies import (
+    build_case_study_runners,
+    generate_case_studies,
+    load_manifest,
+)
 
 
 def _review_result(pr_url: str, repo: str, pr_number: int, *, title: str) -> ReviewResult:
@@ -53,6 +57,16 @@ def test_load_manifest_reads_entries(tmp_path: Path) -> None:
     entries = load_manifest(manifest)
     assert len(entries) == 1
     assert entries[0].case_id == "case-1"
+
+
+def test_build_case_study_runners_use_distinct_truthful_modes() -> None:
+    baseline_runner, adversarial_runner = build_case_study_runners()
+    assert baseline_runner.agents == "openai-api"
+    assert baseline_runner.rounds == 1
+    assert baseline_runner.gauntlet is False
+    assert adversarial_runner.agents == "anthropic-api,openai-api"
+    assert adversarial_runner.rounds == 2
+    assert adversarial_runner.gauntlet is True
 
 
 def test_generate_case_studies_fixture_only_writes_skipped_packet(tmp_path: Path) -> None:

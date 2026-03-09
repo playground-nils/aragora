@@ -26,6 +26,23 @@ class ManifestEntry:
     pr_url: str
 
 
+def build_case_study_runners() -> tuple[PRReviewRunner, PRReviewRunner]:
+    """Build the truthful baseline and adversarial review runners."""
+    baseline_runner = PRReviewRunner(
+        dry_run=True,
+        agents="openai-api",
+        rounds=1,
+        gauntlet=False,
+    )
+    adversarial_runner = PRReviewRunner(
+        dry_run=True,
+        agents="anthropic-api,openai-api",
+        rounds=2,
+        gauntlet=True,
+    )
+    return baseline_runner, adversarial_runner
+
+
 def load_manifest(path: Path) -> list[ManifestEntry]:
     data = json.loads(path.read_text(encoding="utf-8"))
     cases = data.get("cases")
@@ -123,8 +140,7 @@ async def generate_case_studies(
     cases_dir = out_dir / "cases"
     cases_dir.mkdir(parents=True, exist_ok=True)
 
-    baseline_runner = PRReviewRunner(dry_run=True, gauntlet=False)
-    adversarial_runner = PRReviewRunner(dry_run=True, gauntlet=True)
+    baseline_runner, adversarial_runner = build_case_study_runners()
 
     index_cases: list[dict[str, Any]] = []
     published = 0
