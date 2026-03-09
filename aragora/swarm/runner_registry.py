@@ -214,10 +214,7 @@ class CodexRunnerInspector:
         if not available:
             return "Install the Codex CLI or add `codex` to PATH before registering this runner."
         if auth_mode == "unknown":
-            return (
-                "Confirm the local Codex CLI login state with `codex login status` or set "
-                "`OPENAI_API_KEY` before relying on this runner for routed work."
-            )
+            return "Confirm the local Codex CLI login state before relying on this runner for routed work."
         if not owner_binding.get("user_id"):
             return (
                 "Set `ARAGORA_USER_ID` and optional `ARAGORA_WORKSPACE_ID` before registering this "
@@ -253,6 +250,14 @@ class LocalRunnerRegistry:
                 "Restore local Codex runner availability before registering this runner."
             )
             return inspection
+        if inspection.auth_mode == "unknown":
+            inspection.registered = False
+            inspection.registry_path = registry_path
+            inspection.next_action = (
+                "Registration blocked: Codex auth mode is unknown. Confirm the local Codex login state "
+                "before registering this runner for Boss-mode routing."
+            )
+            return inspection
         if owner_context is None:
             inspection.registered = False
             inspection.registry_path = registry_path
@@ -283,13 +288,9 @@ class LocalRunnerRegistry:
         inspection.registered = True
         inspection.registry_path = registry_path
         inspection.registered_at = now
-        if inspection.auth_mode == "unknown":
-            inspection.next_action = (
-                "Runner registered to the owner context, but auth mode is still unknown. "
-                "Confirm the local Codex login state before Boss-mode routing relies on this runner."
-            )
-        else:
-            inspection.next_action = "Runner registered. Future Boss-mode routing can target this owner-bound Codex runner."
+        inspection.next_action = (
+            "Runner registered. Future Boss-mode routing can target this owner-bound Codex runner."
+        )
         return inspection
 
     def _load(self) -> dict[str, Any]:

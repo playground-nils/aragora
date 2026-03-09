@@ -187,7 +187,7 @@ class TestSwarmCommand:
         assert '"availability": "available"' in out
         assert '"action": "inspect"' in out
 
-    def test_cmd_swarm_runner_register_binds_owner_context(self, capsys):
+    def test_cmd_swarm_runner_register_rejects_unknown_auth(self, capsys):
         args = _swarm_args(
             swarm_action_or_goal="runner",
             swarm_goal="register",
@@ -213,15 +213,15 @@ class TestSwarmCommand:
                 "runner_type": "codex",
                 "auth_mode": "unknown",
                 "availability": "available",
-                "registered": True,
-                "registered_at": "2026-03-09T12:00:00+00:00",
-                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "registered": False,
+                "registry_path": "/tmp/swarm-runners.json",
+                "owner_binding": {"user_id": None, "workspace_id": None},
                 "capabilities": {
                     "supports_exec": True,
                     "supports_review": True,
                     "max_parallel_lanes": 2,
                 },
-                "next_action": "Runner registered.",
+                "next_action": "Registration blocked: Codex auth mode is unknown.",
             }
         )
 
@@ -238,8 +238,9 @@ class TestSwarmCommand:
         out = capsys.readouterr().out
         assert "runner_id=codex-runner-123" in out
         assert "availability=available auth_mode=unknown" in out
-        assert "owner=user-123 workspace=ws-456" in out
-        assert "registered_at=2026-03-09T12:00:00+00:00" in out
+        assert "owner=unbound workspace=none" in out
+        assert "registered_at=" not in out
+        assert "next: Registration blocked: Codex auth mode is unknown." in out
 
     def test_cmd_swarm_requires_goal_or_spec(self, capsys):
         args = argparse.Namespace(

@@ -160,9 +160,9 @@ class TestLocalRunnerRegistry:
 
         assert registered.registered is False
         assert registered.registry_path is not None
-        assert "ARAGORA_USER_ID" in str(registered.next_action)
+        assert "Registration blocked: Codex auth mode is unknown" in str(registered.next_action)
 
-    def test_registration_of_unknown_auth_runner_warns_before_routing(self, tmp_path: Path) -> None:
+    def test_registration_of_unknown_auth_runner_fails_closed(self, tmp_path: Path) -> None:
         registry = LocalRunnerRegistry(path=tmp_path / "swarm-runners.json")
         owner_context = authorization_context_from_env(
             {
@@ -185,5 +185,8 @@ class TestLocalRunnerRegistry:
 
         registered = registry.register(inspection, owner_context=owner_context)
 
-        assert registered.registered is True
-        assert "auth mode is still unknown" in str(registered.next_action)
+        assert registered.registered is False
+        assert registered.registry_path is not None
+        assert registered.registered_at is None
+        assert "Registration blocked: Codex auth mode is unknown" in str(registered.next_action)
+        assert not (tmp_path / "swarm-runners.json").exists()
