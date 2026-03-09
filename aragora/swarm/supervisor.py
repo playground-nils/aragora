@@ -30,6 +30,23 @@ from aragora.worktree.lifecycle import WorktreeLifecycleService
 UTC = timezone.utc
 
 
+def _path_in_scope(path: str, scope_pattern: str) -> bool:
+    """Check if a file path falls within a scope pattern.
+
+    Delegates to the coordination layer's proven ``_path_matches_glob`` which
+    supports exact paths, directory prefixes, ``/**`` recursive globs, and
+    ``PurePosixPath.match()`` for standard glob patterns like ``*.json`` or
+    ``**/*.ts``.
+    """
+    from aragora.nomic.dev_coordination import _path_matches_glob
+
+    clean_path = path.strip().removeprefix("./").rstrip("/")
+    clean_scope = scope_pattern.strip().removeprefix("./").rstrip("/")
+    if not clean_path or not clean_scope:
+        return False
+    return _path_matches_glob(clean_path, clean_scope)
+
+
 class SupervisorRunStatus(str, Enum):
     """Lifecycle state for a supervised swarm run."""
 
@@ -449,24 +466,45 @@ class SwarmSupervisor:
                 item["changed_paths"] = list(progress_fingerprint["changed_paths"])
                 item["diff_lines"] = int(progress_fingerprint["diff_lines"])
                 changed = True
+
+                # Fail closed: check file-scope constraints on every progress snapshot
+                scope_violations = self._check_file_scope_violations(
+                    item, progress_fingerprint["changed_paths"]
+                )
+                if scope_violations:
+                    self._mark_scope_violation(item, scope_violations)
+                    await self._kill_worker(item)
+
                 continue
 
             if not bool(progress.get("pid_alive")):
-                self._mark_needs_human(
-                    item,
-                    "worker process exited without receipt or exit marker",
+                # Check scope on exit too — worker may have edited wrong files then died
+                exit_violations = self._check_file_scope_violations(
+                    item, list(item.get("changed_paths", []))
                 )
+                if exit_violations:
+                    self._mark_scope_violation(item, exit_violations)
+                else:
+                    self._mark_needs_human(
+                        item,
+                        "worker process exited without receipt or exit marker",
+                    )
                 changed = True
                 continue
 
             if self._exceeded_no_progress_timeout(item):
-                self._mark_needs_human(
-                    item,
-                    (
-                        "worker exceeded no-progress timeout "
-                        f"({int(self._no_progress_timeout_seconds())}s)"
-                    ),
+                # Check scope on timeout too — worker may have made wrong changes then stalled
+                timeout_violations = self._check_file_scope_violations(
+                    item, list(item.get("changed_paths", []))
                 )
+                reason = (
+                    "worker exceeded no-progress timeout "
+                    f"({int(self._no_progress_timeout_seconds())}s)"
+                )
+                if timeout_violations:
+                    self._mark_scope_violation(item, timeout_violations, extra_reason=reason)
+                else:
+                    self._mark_needs_human(item, reason)
                 changed = True
 
         if not finished and not changed:
@@ -686,6 +724,16 @@ class SwarmSupervisor:
         item["commit_shas"] = list(result.commit_shas)
         item["head_sha"] = result.head_sha
         item.pop("pid", None)
+
+        # Fail closed: check file-scope before accepting any result as successful
+        scope_violations = self._check_file_scope_violations(item, list(result.changed_paths))
+        if scope_violations:
+            self._mark_scope_violation(item, scope_violations)
+            lease_id = str(item.get("lease_id", "")).strip()
+            if lease_id:
+                self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
+            item["exit_code"] = result.exit_code
+            return
 
         lease_id = str(item.get("lease_id", "")).strip()
         if result.exit_code == 0:
@@ -931,12 +979,123 @@ class SwarmSupervisor:
         item["blockers"] = blockers
         item.pop("pid", None)
 
+    def _mark_scope_violation(
+        self,
+        item: dict[str, Any],
+        violations: list[dict[str, Any]],
+        *,
+        extra_reason: str = "",
+    ) -> None:
+        """Mark a work order as failed due to file-scope violation.
+
+        This is the fail-closed enforcement gate: workers that edit outside
+        their permitted scope are stopped immediately rather than allowed to
+        continue producing wrong work.
+
+        Persists the violation into the lease metadata so fleet/integrator
+        views can surface it without relying on in-memory work-order state.
+        """
+        out_of_scope_paths = [
+            str(v.get("path", "")) for v in violations if v.get("type") == "out_of_scope"
+        ]
+        reason = "worker edited files outside permitted scope: " + ", ".join(out_of_scope_paths[:5])
+        if extra_reason:
+            reason = f"{extra_reason}; {reason}"
+        item["status"] = "scope_violation"
+        item["dispatch_error"] = reason
+        item["review_status"] = "changes_requested"
+        scope_violation_detail = {
+            "violations": violations,
+            "changed_paths": list(item.get("changed_paths", [])),
+            "detected_at": datetime.now(UTC).isoformat(),
+        }
+        item["scope_violation"] = scope_violation_detail
+        blockers = [str(v).strip() for v in item.get("blockers", []) if str(v).strip()]
+        if reason not in blockers:
+            blockers.append(reason)
+        item["blockers"] = blockers
+        item.pop("pid", None)
+
+        # Write violation metadata into the lease so status_summary() surfaces
+        # it.  The lease stays *active* — matching what record_completion() does
+        # — so list_active_leases() picks it up for fleet/integrator views.
+        lease_id = str(item.get("lease_id", "")).strip()
+        if lease_id:
+            try:
+                self.store.persist_scope_violation(
+                    lease_id,
+                    changed_paths=list(item.get("changed_paths", [])),
+                    violations=violations,
+                )
+            except Exception:
+                pass  # Best-effort — local item is already marked
+
+    @staticmethod
+    def _check_file_scope_violations(
+        work_order: dict[str, Any],
+        changed_paths: list[str],
+    ) -> list[dict[str, Any]]:
+        """Check whether changed paths fall within the work order's file scope.
+
+        Returns a list of violation dicts (empty = no violations).
+        File-scope enforcement is strict: every changed path must match at
+        least one scope pattern. If the work order has no file_scope declared,
+        no enforcement is applied (open scope).
+        """
+        file_scope = [
+            str(item).strip() for item in work_order.get("file_scope", []) if str(item).strip()
+        ]
+        if not file_scope or not changed_paths:
+            return []
+
+        violations: list[dict[str, Any]] = []
+        for path in changed_paths:
+            normalized = str(path).strip().removeprefix("./")
+            if not normalized:
+                continue
+            if not any(_path_in_scope(normalized, scope) for scope in file_scope):
+                violations.append(
+                    {
+                        "type": "out_of_scope",
+                        "path": normalized,
+                        "allowed_scope": list(file_scope),
+                    }
+                )
+        return violations
+
+    async def _kill_worker(self, item: dict[str, Any]) -> None:
+        """Kill a running worker process by PID."""
+        import signal
+
+        raw_pid = item.get("pid")
+        if raw_pid is None:
+            return
+        try:
+            pid = int(raw_pid)
+        except (TypeError, ValueError):
+            return
+        try:
+            import os as _os
+
+            _os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        item.pop("pid", None)
+
     @staticmethod
     def _derive_status(work_orders: list[dict[str, Any]]) -> str:
         statuses = {str(item.get("status", "")).strip() for item in work_orders if item}
         if not statuses:
             return SupervisorRunStatus.PLANNED.value
-        terminal = {"merged", "discarded", "salvage", "completed", "failed", "timed_out"}
+        terminal = {
+            "merged",
+            "discarded",
+            "salvage",
+            "completed",
+            "failed",
+            "timed_out",
+            "scope_violation",
+        }
         if statuses <= terminal:
             return SupervisorRunStatus.COMPLETED.value
         if "needs_human" in statuses or "changes_requested" in statuses:
