@@ -7,6 +7,7 @@ SupervisorRun in the existing development coordination store.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ from aragora.swarm.worker_launcher import SESSION_ARTIFACTS, WorkerLauncher, Wor
 from aragora.worktree.lifecycle import WorktreeLifecycleService
 
 UTC = timezone.utc
+logger = logging.getLogger(__name__)
 
 
 def _path_in_scope(path: str, scope_pattern: str) -> bool:
@@ -551,7 +553,16 @@ class SwarmSupervisor:
                 )
             ]
         work_orders = self.bridge.build_work_orders(subtasks)
+        spec_hints = list(spec.file_scope_hints)
         for item in work_orders:
+            # Backfill file_scope from spec hints when decomposer left it empty.
+            if not item.file_scope and spec_hints:
+                item.file_scope = list(spec_hints)
+                logger.info(
+                    "Backfilled file_scope on work order %s from spec hints: %s",
+                    item.work_order_id,
+                    spec_hints,
+                )
             item.expected_tests = self._default_tests(item, spec)
             item.risk_level = self._risk_level_for_scope(item.file_scope)
             item.approval_required = item.approval_required or item.risk_level in {
