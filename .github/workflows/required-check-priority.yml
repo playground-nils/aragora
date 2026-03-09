@@ -39,6 +39,7 @@ jobs:
             // Required checks are currently produced by these workflows.
             // Keep this list in sync with branch protection required contexts.
             const alwaysKeepWorkflowPaths = new Set([
+              '.github/workflows/aragora-review-gate.yml',
               '.github/workflows/lint.yml',
               '.github/workflows/sdk-parity.yml',
               '.github/workflows/sdk-test.yml',
@@ -47,6 +48,7 @@ jobs:
               '.github/workflows/required-check-priority.yml',
             ]);
             const alwaysKeepWorkflowNames = new Set([
+              'Aragora Code Review',
               'Required Check Priority',
               'Lint',
               'SDK Parity Check',

@@ -18,6 +18,7 @@ class Violation:
 WORKFLOW_PATH = Path(".github/workflows/required-check-priority.yml")
 
 REQUIRED_KEEP_WORKFLOW_PATHS = {
+    ".github/workflows/aragora-review-gate.yml",
     ".github/workflows/lint.yml",
     ".github/workflows/sdk-parity.yml",
     ".github/workflows/sdk-test.yml",
@@ -26,6 +27,7 @@ REQUIRED_KEEP_WORKFLOW_PATHS = {
 }
 
 REQUIRED_KEEP_WORKFLOW_NAMES = {
+    "Aragora Code Review",
     "Required Check Priority",
     "Lint",
     "SDK Parity Check",
