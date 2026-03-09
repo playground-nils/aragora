@@ -90,6 +90,10 @@ def find_review_gate_policy_violations(
         violations.append("review execution must request json output")
     if '--output-dir "$review_output_dir"' not in review_run:
         violations.append("review execution must write review artifacts via --output-dir")
+    if "review_exit=$?" not in review_run:
+        violations.append("review execution must capture the review command exit code explicitly")
+    if 'if [[ "$review_exit" -ne 0 ]]; then' not in review_run:
+        violations.append("review execution must fail closed after surfacing review command stderr")
     if "critical_issues" not in review_run or "high_issues" not in review_run:
         violations.append("review gate must parse the current json artifact schema")
     if "python -m aragora.cli.review" in review_run and "|| true" in review_run:

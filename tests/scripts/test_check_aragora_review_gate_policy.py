@@ -29,7 +29,16 @@ if [[ ! -s /tmp/pr.diff ]]; then
 fi
 review_output_dir=/tmp/review-artifacts
 mkdir -p "$review_output_dir"
+set +e
 cat /tmp/pr.diff | python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir"
+review_exit=$?
+set -e
+if [[ "$review_exit" -ne 0 ]]; then
+  if [[ -s /tmp/review.stderr ]]; then
+    cat /tmp/review.stderr
+  fi
+  exit "$review_exit"
+fi
 review_json="$review_output_dir/review.json"
 if [[ ! -f "$review_json" ]]; then
   exit 1
@@ -66,7 +75,16 @@ jobs:
           fi
           review_output_dir=/tmp/review-artifacts
           mkdir -p "$review_output_dir"
+          set +e
           cat /tmp/pr.diff | python -m aragora.cli.review review --output-format json --output-dir "$review_output_dir"
+          review_exit=$?
+          set -e
+          if [[ "$review_exit" -ne 0 ]]; then
+            if [[ -s /tmp/review.stderr ]]; then
+              cat /tmp/review.stderr
+            fi
+            exit "$review_exit"
+          fi
           review_json="$review_output_dir/review.json"
           if [[ ! -f "$review_json" ]]; then
             exit 1
@@ -124,6 +142,28 @@ def test_policy_rejects_fail_open_review_execution() -> None:
     )
     violations = find_review_gate_policy_violations(gate, text, _valid_manual_data())
     assert "review execution must not use || true" in violations
+
+
+def test_policy_rejects_missing_review_exit_capture() -> None:
+    gate = _valid_gate_data()
+    gate["jobs"]["review"]["steps"][0]["run"] = gate["jobs"]["review"]["steps"][0]["run"].replace(
+        'review_exit=$?\nset -e\nif [[ "$review_exit" -ne 0 ]]; then\n  if [[ -s /tmp/review.stderr ]]; then\n    cat /tmp/review.stderr\n  fi\n  exit "$review_exit"\nfi\n',
+        "",
+    )
+    text = _valid_gate_text().replace(
+        "          review_exit=$?\n"
+        "          set -e\n"
+        '          if [[ "$review_exit" -ne 0 ]]; then\n'
+        "            if [[ -s /tmp/review.stderr ]]; then\n"
+        "              cat /tmp/review.stderr\n"
+        "            fi\n"
+        '            exit "$review_exit"\n'
+        "          fi\n",
+        "",
+    )
+    violations = find_review_gate_policy_violations(gate, text, _valid_manual_data())
+    assert "review execution must capture the review command exit code explicitly" in violations
+    assert "review execution must fail closed after surfacing review command stderr" in violations
 
 
 def test_policy_rejects_outdated_review_cli_contract() -> None:
