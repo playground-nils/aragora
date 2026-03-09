@@ -754,6 +754,17 @@ class SwarmSupervisor:
 
         lease_id = str(item.get("lease_id", "")).strip()
         if result.exit_code == 0:
+            # Fail closed: if stripping session artifacts leaves no real deliverables
+            # but the worker claimed to have produced commits, the result is rejected.
+            if not clean_paths and result.changed_paths:
+                self._mark_needs_human(
+                    item,
+                    "worker produced only session artifacts, no real deliverables",
+                )
+                self._release_terminal_lease(item)
+                item["exit_code"] = result.exit_code
+                return
+
             receipt_id = str(item.get("receipt_id", "")).strip()
             if lease_id and not receipt_id:
                 try:

@@ -633,8 +633,10 @@ class WorkerLauncher:
 
     @staticmethod
     async def _auto_commit(worker: WorkerProcess) -> None:
-        """Auto-commit changes in the worktree if any."""
+        """Auto-commit changes in the worktree, excluding session artifacts."""
         try:
+            # Stage everything, then unstage session artifacts so they are
+            # never committed by the harness.
             add_proc = await asyncio.create_subprocess_exec(
                 "git",
                 "add",
@@ -644,6 +646,20 @@ class WorkerLauncher:
                 stderr=asyncio.subprocess.PIPE,
             )
             await asyncio.wait_for(add_proc.communicate(), timeout=10)
+
+            # Unstage session artifacts — ignore errors if files are not staged
+            for artifact in SESSION_ARTIFACTS:
+                reset_proc = await asyncio.create_subprocess_exec(
+                    "git",
+                    "reset",
+                    "HEAD",
+                    "--",
+                    artifact,
+                    cwd=worker.worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(reset_proc.communicate(), timeout=5)
 
             msg = f"feat(swarm): {worker.agent} completed {worker.work_order_id}"
             commit_proc = await asyncio.create_subprocess_exec(

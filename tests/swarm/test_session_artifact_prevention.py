@@ -11,8 +11,10 @@ supervisor accepted it as a valid changed path.
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -186,10 +188,14 @@ class TestApplyWorkerResultSessionArtifacts:
         assert ".codex_session_meta.json" not in item["changed_paths"]
         assert "aragora/live/package.json" in item["changed_paths"]
 
-    def test_only_session_meta_means_no_real_deliverable(
+    def test_only_session_artifacts_rejected_not_completed(
         self, repo: Path, store: DevCoordinationStore
     ) -> None:
-        """If the only changed file is a session artifact, changed_paths is empty."""
+        """If session artifacts are the ONLY changes, the lane must NOT be completed.
+
+        The supervisor must fail closed: a worker that produced only harness
+        metadata has not delivered real work, even if exit_code == 0.
+        """
         supervisor = self._make_supervisor(repo, store)
         item = {
             "work_order_id": "empty-work",
@@ -211,6 +217,59 @@ class TestApplyWorkerResultSessionArtifacts:
         supervisor._apply_worker_result(item, result)
 
         assert item["changed_paths"] == []
+        assert item["status"] != "completed"
+        assert item["status"] == "needs_human"
+
+    def test_only_session_log_rejected_not_completed(
+        self, repo: Path, store: DevCoordinationStore
+    ) -> None:
+        """Same as above but for .codex_session.log."""
+        supervisor = self._make_supervisor(repo, store)
+        item = {
+            "work_order_id": "log-only",
+            "file_scope": [],
+            "status": "dispatched",
+            "lease_id": "",
+            "target_agent": "codex",
+        }
+        result = WorkerProcess(
+            work_order_id="log-only",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+            exit_code=0,
+            changed_paths=[".codex_session.log"],
+            commit_shas=["abc"],
+            head_sha="abc",
+        )
+        supervisor._apply_worker_result(item, result)
+
+        assert item["status"] == "needs_human"
+        assert "only session artifacts" in item.get("dispatch_error", "")
+
+    def test_both_session_artifacts_rejected(self, repo: Path, store: DevCoordinationStore) -> None:
+        """Both session artifacts together still yields no deliverables."""
+        supervisor = self._make_supervisor(repo, store)
+        item = {
+            "work_order_id": "both-artifacts",
+            "file_scope": [],
+            "status": "dispatched",
+            "lease_id": "",
+            "target_agent": "codex",
+        }
+        result = WorkerProcess(
+            work_order_id="both-artifacts",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+            exit_code=0,
+            changed_paths=[".codex_session_meta.json", ".codex_session.log"],
+            commit_shas=["xyz"],
+            head_sha="xyz",
+        )
+        supervisor._apply_worker_result(item, result)
+
+        assert item["status"] == "needs_human"
 
     def test_regression_issue_873_forensic_paths(
         self, repo: Path, store: DevCoordinationStore
@@ -250,3 +309,97 @@ class TestApplyWorkerResultSessionArtifacts:
         assert ".codex_session_meta.json" not in item["changed_paths"]
         # Scope violation triggered for remaining wrong-scope files
         assert item["status"] == "scope_violation"
+
+
+# ---------------------------------------------------------------------------
+# Detached auto-commit prevention
+# ---------------------------------------------------------------------------
+
+
+class TestAutoCommitSessionArtifactPrevention:
+    """Test that _auto_commit unstages session artifacts before committing."""
+
+    def test_auto_commit_excludes_session_meta(self, repo: Path) -> None:
+        """_auto_commit must not include .codex_session_meta.json in the commit."""
+        # Create a session artifact and a real file in the worktree
+        (repo / ".codex_session_meta.json").write_text('{"pid": 1}', encoding="utf-8")
+        (repo / "real_work.py").write_text("print('hello')\n", encoding="utf-8")
+
+        worker = WorkerProcess(
+            work_order_id="detach-test",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+        )
+
+        asyncio.get_event_loop().run_until_complete(WorkerLauncher._auto_commit(worker))
+
+        # Check what was committed
+        result = _run(repo, "git", "diff", "--name-only", "HEAD~1", "HEAD")
+        committed_files = set(result.stdout.strip().splitlines())
+        assert "real_work.py" in committed_files
+        assert ".codex_session_meta.json" not in committed_files
+
+    def test_auto_commit_excludes_session_log(self, repo: Path) -> None:
+        """_auto_commit must not include .codex_session.log in the commit."""
+        (repo / ".codex_session.log").write_text("log data", encoding="utf-8")
+        (repo / "work.txt").write_text("content\n", encoding="utf-8")
+
+        worker = WorkerProcess(
+            work_order_id="detach-log-test",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+        )
+
+        asyncio.get_event_loop().run_until_complete(WorkerLauncher._auto_commit(worker))
+
+        result = _run(repo, "git", "diff", "--name-only", "HEAD~1", "HEAD")
+        committed_files = set(result.stdout.strip().splitlines())
+        assert "work.txt" in committed_files
+        assert ".codex_session.log" not in committed_files
+
+    def test_auto_commit_only_artifacts_produces_empty_commit(self, repo: Path) -> None:
+        """If only session artifacts exist, auto-commit produces an allow-empty commit."""
+        (repo / ".codex_session_meta.json").write_text('{"pid": 2}', encoding="utf-8")
+
+        worker = WorkerProcess(
+            work_order_id="artifacts-only",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+        )
+
+        asyncio.get_event_loop().run_until_complete(WorkerLauncher._auto_commit(worker))
+
+        # The commit should have no file changes (empty commit via --allow-empty)
+        result = _run(repo, "git", "diff", "--name-only", "HEAD~1", "HEAD")
+        committed_files = [f for f in result.stdout.strip().splitlines() if f]
+        assert len(committed_files) == 0
+
+
+# ---------------------------------------------------------------------------
+# _collect_changed_paths filtering
+# ---------------------------------------------------------------------------
+
+
+class TestCollectChangedPathsFiltering:
+    """Test that _collect_changed_paths strips session artifacts."""
+
+    def test_collect_excludes_session_meta(self, repo: Path) -> None:
+        """Session artifacts in git diff/status must be stripped from results."""
+        # Get initial HEAD
+        initial = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+
+        # Create artifact + real file, commit both via raw git
+        (repo / ".codex_session_meta.json").write_text("{}", encoding="utf-8")
+        (repo / "real.py").write_text("x = 1\n", encoding="utf-8")
+        _run(repo, "git", "add", "-A")
+        _run(repo, "git", "commit", "-m", "test")
+        head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+
+        paths = asyncio.get_event_loop().run_until_complete(
+            WorkerLauncher._collect_changed_paths(str(repo), initial_head=initial, head_sha=head)
+        )
+        assert "real.py" in paths
+        assert ".codex_session_meta.json" not in paths
