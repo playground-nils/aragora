@@ -162,6 +162,40 @@ class ReviewResult:
         return self.critical_count > 0
 
 
+@dataclass
+class PRMetadata:
+    """Normalized public pull request metadata."""
+
+    pr_url: str
+    repo: str
+    pr_number: int
+    title: str | None = None
+    state: str | None = None
+    author: str | None = None
+    base_ref: str | None = None
+    base_sha: str | None = None
+    head_ref: str | None = None
+    head_sha: str | None = None
+    is_draft: bool | None = None
+    merged_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pr_url": self.pr_url,
+            "repo": self.repo,
+            "pr_number": self.pr_number,
+            "title": self.title,
+            "state": self.state,
+            "author": self.author,
+            "base_ref": self.base_ref,
+            "base_sha": self.base_sha,
+            "head_ref": self.head_ref,
+            "head_sha": self.head_sha,
+            "is_draft": self.is_draft,
+            "merged_at": self.merged_at,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Policy loader
 # ---------------------------------------------------------------------------
@@ -523,6 +557,17 @@ class PRReviewRunner:
 
         return result
 
+    def fetch_pr_metadata(self, pr_url: str) -> tuple[PRMetadata | None, str | None]:
+        """Fetch normalized metadata for a public GitHub pull request."""
+        repo, pr_number, error = _parse_pr_url(pr_url)
+        if error or repo is None or pr_number is None:
+            return None, error or "Invalid PR URL"
+
+        if not self.checker.check_gh_action("pr view"):
+            return None, "Policy denied: pr view"
+
+        return self._fetch_pr_metadata(repo, pr_number)
+
     async def review_diff(self, diff: str, label: str = "local") -> ReviewResult:
         """
         Review a raw diff string without requiring a GitHub PR URL.
@@ -814,6 +859,61 @@ class PRReviewRunner:
             return None, "Timed out listing PRs"
         except (json.JSONDecodeError, KeyError) as exc:
             return None, f"Failed to parse PR list: {exc}"
+
+    def _fetch_pr_metadata(
+        self,
+        repo: str,
+        pr_number: int,
+    ) -> tuple[PRMetadata | None, str | None]:
+        """Fetch public PR metadata via gh CLI."""
+        try:
+            result = subprocess.run(  # noqa: S603 -- subprocess with fixed args, no shell
+                [  # noqa: S607 -- fixed command
+                    "gh",
+                    "pr",
+                    "view",
+                    str(pr_number),
+                    "--repo",
+                    repo,
+                    "--json",
+                    "url,number,title,state,author,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,mergedAt",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                return None, result.stderr.strip() or "gh pr view failed"
+
+            data = json.loads(result.stdout)
+            author = data.get("author")
+            author_login = None
+            if isinstance(author, dict):
+                author_login = author.get("login")
+
+            return (
+                PRMetadata(
+                    pr_url=str(data.get("url") or f"https://github.com/{repo}/pull/{pr_number}"),
+                    repo=repo,
+                    pr_number=int(data.get("number", pr_number)),
+                    title=data.get("title"),
+                    state=data.get("state"),
+                    author=author_login,
+                    base_ref=data.get("baseRefName"),
+                    base_sha=data.get("baseRefOid"),
+                    head_ref=data.get("headRefName"),
+                    head_sha=data.get("headRefOid"),
+                    is_draft=data.get("isDraft"),
+                    merged_at=data.get("mergedAt"),
+                ),
+                None,
+            )
+        except FileNotFoundError:
+            return None, "gh CLI not found. Install: https://cli.github.com"
+        except subprocess.TimeoutExpired:
+            return None, "Timed out fetching PR metadata"
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            return None, f"Failed to parse PR metadata: {exc}"
 
     def _generate_receipt(
         self,
