@@ -1,4 +1,4 @@
-"""Local Codex runner inspection and registration for supervised swarm routing."""
+"""Local Codex runner registration and Boss routing eligibility helpers."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from aragora.rbac.models import AuthorizationContext
 from aragora.swarm.worker_launcher import LaunchConfig
 
 UTC = timezone.utc
+VERIFIED_AUTH_MODES = {"chatgpt_login", "api_key"}
 
 
 def _utcnow() -> str:
@@ -31,6 +32,10 @@ def _env_flag_int(env: dict[str, str], key: str, default: int) -> int:
         return max(1, int(raw))
     except ValueError:
         return default
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
 
 
 @dataclass(slots=True)
@@ -65,6 +70,30 @@ class CodexRunnerInspection:
             "registered": self.registered,
             "registry_path": self.registry_path,
             "registered_at": self.registered_at,
+            "next_action": self.next_action,
+        }
+
+
+@dataclass(slots=True)
+class BossRoutingDecision:
+    owner_binding: dict[str, Any]
+    selected_runner_ids: list[str] = field(default_factory=list)
+    selected_runners: list[dict[str, Any]] = field(default_factory=list)
+    selection_basis: str = ""
+    blocked_reason: str | None = None
+    next_action: str | None = None
+
+    @property
+    def is_blocked(self) -> bool:
+        return bool(self.blocked_reason)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "owner_binding": dict(self.owner_binding),
+            "selected_runner_ids": list(self.selected_runner_ids),
+            "selected_runners": [dict(item) for item in self.selected_runners],
+            "selection_basis": self.selection_basis,
+            "blocked_reason": self.blocked_reason,
             "next_action": self.next_action,
         }
 
@@ -140,23 +169,22 @@ class CodexRunnerInspector:
         version = self._first_line(
             version_result.get("stdout") or version_result.get("stderr") or ""
         )
-        availability = "available"
-        next_action = self._next_action(
-            available=available, auth_mode=auth_mode, owner_binding=owner
-        )
-
         return CodexRunnerInspection(
             runner_id=runner_id,
             runner_type="codex",
-            availability=availability,
-            available=available,
+            availability="available",
+            available=True,
             auth_mode=auth_mode,
             codex_path=codex_path,
             version=version or None,
             status_summary=self._first_line(login_text) or None,
             capabilities=self._capabilities(True, help_text),
             owner_binding=owner,
-            next_action=next_action,
+            next_action=self._next_action(
+                available=True,
+                auth_mode=auth_mode,
+                owner_binding=owner,
+            ),
         )
 
     def _capabilities(self, available: bool, help_text: str | None) -> dict[str, Any]:
@@ -293,6 +321,97 @@ class LocalRunnerRegistry:
         )
         return inspection
 
+    def list_registrations(self) -> list[dict[str, Any]]:
+        return [
+            dict(item) for item in self._load().get("registrations", []) if isinstance(item, dict)
+        ]
+
+    def resolve_boss_routing(
+        self,
+        *,
+        owner_context: AuthorizationContext | None,
+    ) -> BossRoutingDecision:
+        owner_binding = owner_binding_from_context(owner_context)
+        selection_basis = (
+            "registered=true, availability=available, auth_mode in {chatgpt_login, api_key}, "
+            "owner_binding user/workspace compatible with current Aragora context"
+        )
+        if owner_context is None or not _text(owner_context.user_id):
+            return BossRoutingDecision(
+                owner_binding=owner_binding,
+                selection_basis=selection_basis,
+                blocked_reason="missing_owner_context",
+                next_action=(
+                    "Set `ARAGORA_USER_ID` and `ARAGORA_WORKSPACE_ID` before running Boss mode so "
+                    "Aragora can route only onto authorized registered Codex runners."
+                ),
+            )
+
+        eligible: list[dict[str, Any]] = []
+        for runner in self.list_registrations():
+            if not self._is_runner_eligible(runner, owner_context=owner_context):
+                continue
+            eligible.append(
+                {
+                    "runner_id": _text(runner.get("runner_id")),
+                    "auth_mode": _text(runner.get("auth_mode")),
+                    "owner_binding": dict(runner.get("owner_binding") or {}),
+                    "capabilities": dict(runner.get("capabilities") or {}),
+                }
+            )
+
+        if not eligible:
+            return BossRoutingDecision(
+                owner_binding=owner_binding,
+                selection_basis=selection_basis,
+                blocked_reason="no_eligible_registered_runners",
+                next_action=(
+                    "Register an available Codex runner for this exact Aragora user/workspace "
+                    "context before running Boss mode."
+                ),
+            )
+
+        return BossRoutingDecision(
+            owner_binding=owner_binding,
+            selected_runner_ids=[item["runner_id"] for item in eligible],
+            selected_runners=eligible,
+            selection_basis=selection_basis,
+            next_action="Boss mode will route only through the selected registered Codex runner set.",
+        )
+
+    @staticmethod
+    def _is_runner_eligible(
+        runner: dict[str, Any],
+        *,
+        owner_context: AuthorizationContext,
+    ) -> bool:
+        if _text(runner.get("runner_type")) != "codex":
+            return False
+        if not bool(runner.get("registered")):
+            return False
+        if _text(runner.get("availability")) != "available" or not bool(
+            runner.get("available", True)
+        ):
+            return False
+        if _text(runner.get("auth_mode")) not in VERIFIED_AUTH_MODES:
+            return False
+
+        owner_binding = dict(runner.get("owner_binding") or {})
+        if _text(owner_binding.get("user_id")) != _text(owner_context.user_id):
+            return False
+
+        runner_workspace = _text(owner_binding.get("workspace_id"))
+        context_workspace = _text(owner_context.workspace_id)
+        if runner_workspace != context_workspace:
+            return False
+
+        runner_org = _text(owner_binding.get("org_id"))
+        context_org = _text(owner_context.org_id)
+        if runner_org and context_org and runner_org != context_org:
+            return False
+
+        return True
+
     def _load(self) -> dict[str, Any]:
         if not self.path.exists():
             return {"registrations": []}
@@ -315,17 +434,16 @@ class LocalRunnerRegistry:
 def authorization_context_from_env(
     env: dict[str, str] | None = None,
 ) -> AuthorizationContext | None:
-    values = dict(env or os.environ)
-    user_id = str(values.get("ARAGORA_USER_ID") or values.get("ARAGORA_ACTOR_ID") or "").strip()
+    values = dict(os.environ if env is None else env)
+    user_id = _text(values.get("ARAGORA_USER_ID") or values.get("ARAGORA_ACTOR_ID"))
     if not user_id:
         return None
     workspace_id = (
-        str(values.get("ARAGORA_WORKSPACE_ID") or values.get("ARAGORA_WORKSPACE") or "").strip()
-        or None
+        _text(values.get("ARAGORA_WORKSPACE_ID") or values.get("ARAGORA_WORKSPACE")) or None
     )
-    org_id = str(values.get("ARAGORA_ORG_ID", "")).strip() or None
-    email = str(values.get("ARAGORA_USER_EMAIL", "")).strip() or None
-    role = str(values.get("ARAGORA_ROLE", "")).strip()
+    org_id = _text(values.get("ARAGORA_ORG_ID")) or None
+    email = _text(values.get("ARAGORA_USER_EMAIL")) or None
+    role = _text(values.get("ARAGORA_ROLE"))
     roles = {role} if role else set()
     return AuthorizationContext(
         user_id=user_id,
