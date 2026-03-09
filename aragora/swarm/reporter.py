@@ -667,6 +667,13 @@ def render_runner_registration_text(payload: dict[str, Any]) -> str:
 
     if payload.get("registered"):
         lines.append(f"registered_at={_text(payload.get('registered_at'))}")
+    freshness_status = _text(payload.get("freshness_status"))
+    if freshness_status:
+        lines.append(
+            "freshness="
+            f"{freshness_status} heartbeat_at={_text(payload.get('heartbeat_at')) or 'none'} "
+            f"stale_after={_text(payload.get('stale_after_seconds')) or 'none'}"
+        )
 
     status_summary = _text(payload.get("status_summary"))
     if status_summary:
@@ -802,11 +809,29 @@ def render_boss_text(payload: dict[str, Any]) -> str:
         selected_runner_ids = [
             _text(item) for item in routing.get("selected_runner_ids", []) if _text(item)
         ]
-        if selected_runner_ids:
+        selected_runners = routing.get("selected_runners", [])
+        selected_runner_parts: list[str] = []
+        if isinstance(selected_runners, list):
+            for item in selected_runners:
+                if not isinstance(item, dict):
+                    continue
+                runner_id = _text(item.get("runner_id"))
+                if not runner_id:
+                    continue
+                freshness = _text(item.get("freshness_status")) or "unknown"
+                selected_runner_parts.append(f"{runner_id}({freshness})")
+        if selected_runner_parts:
+            lines.append("routing: selected_runners=" + ",".join(selected_runner_parts))
+        elif selected_runner_ids:
             lines.append("routing: selected_runners=" + ",".join(selected_runner_ids))
         blocked_reason = _text(routing.get("blocked_reason"))
         if blocked_reason:
             lines.append(f"routing_blocked: {blocked_reason}")
+        rejected_runner_ids = [
+            _text(item) for item in routing.get("rejected_runner_ids", []) if _text(item)
+        ]
+        if rejected_runner_ids:
+            lines.append("routing_rejected: " + ",".join(rejected_runner_ids))
         routing_next = _text(routing.get("next_action"))
         if routing_next:
             lines.append(f"routing_next: {routing_next}")
