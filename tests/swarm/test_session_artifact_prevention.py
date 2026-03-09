@@ -332,7 +332,7 @@ class TestAutoCommitSessionArtifactPrevention:
             branch="main",
         )
 
-        asyncio.get_event_loop().run_until_complete(WorkerLauncher._auto_commit(worker))
+        asyncio.run(WorkerLauncher._auto_commit(worker))
 
         # Check what was committed
         result = _run(repo, "git", "diff", "--name-only", "HEAD~1", "HEAD")
@@ -352,7 +352,7 @@ class TestAutoCommitSessionArtifactPrevention:
             branch="main",
         )
 
-        asyncio.get_event_loop().run_until_complete(WorkerLauncher._auto_commit(worker))
+        asyncio.run(WorkerLauncher._auto_commit(worker))
 
         result = _run(repo, "git", "diff", "--name-only", "HEAD~1", "HEAD")
         committed_files = set(result.stdout.strip().splitlines())
@@ -370,7 +370,7 @@ class TestAutoCommitSessionArtifactPrevention:
             branch="main",
         )
 
-        asyncio.get_event_loop().run_until_complete(WorkerLauncher._auto_commit(worker))
+        asyncio.run(WorkerLauncher._auto_commit(worker))
 
         # The commit should have no file changes (empty commit via --allow-empty)
         result = _run(repo, "git", "diff", "--name-only", "HEAD~1", "HEAD")
@@ -398,8 +398,117 @@ class TestCollectChangedPathsFiltering:
         _run(repo, "git", "commit", "-m", "test")
         head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
 
-        paths = asyncio.get_event_loop().run_until_complete(
+        paths = asyncio.run(
             WorkerLauncher._collect_changed_paths(str(repo), initial_head=initial, head_sha=head)
         )
         assert "real.py" in paths
         assert ".codex_session_meta.json" not in paths
+
+
+# ---------------------------------------------------------------------------
+# End-to-end detached worker fail-closed path
+# ---------------------------------------------------------------------------
+
+
+class TestDetachedWorkerEndToEndFailClosed:
+    """Prove the full detached path rejects artifact-only results.
+
+    The critical path is:
+        collect_detached_result() -> stripped changed_paths -> _apply_worker_result()
+
+    When _collect_changed_paths strips session artifacts, result.changed_paths
+    arrives empty at the supervisor.  But commit_shas may contain an
+    --allow-empty commit.  The supervisor must reject this as needs_human.
+    """
+
+    def _make_supervisor(self, repo: Path, store: DevCoordinationStore) -> SwarmSupervisor:
+        launcher = WorkerLauncher(config=LaunchConfig())
+        return SwarmSupervisor(repo_root=repo, store=store, launcher=launcher)
+
+    def test_detached_artifact_only_rejected(self, repo: Path, store: DevCoordinationStore) -> None:
+        """Detached worker with only session artifacts must be rejected.
+
+        Simulates the detached path: changed_paths is already empty (stripped
+        by _collect_changed_paths), but commit_shas is non-empty from the
+        --allow-empty auto-commit.  The supervisor must NOT mark this completed.
+        """
+        supervisor = self._make_supervisor(repo, store)
+        item = {
+            "work_order_id": "detached-artifact-only",
+            "file_scope": [],
+            "status": "dispatched",
+            "lease_id": "",
+            "target_agent": "codex",
+        }
+        # Simulates what collect_detached_result returns after
+        # _collect_changed_paths strips the session artifact
+        result = WorkerProcess(
+            work_order_id="detached-artifact-only",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+            exit_code=0,
+            changed_paths=[],  # already stripped by _collect_changed_paths
+            commit_shas=["abc123"],  # --allow-empty commit
+            head_sha="abc123",
+        )
+        supervisor._apply_worker_result(item, result)
+
+        assert item["status"] == "needs_human"
+        assert "no real deliverables" in item.get("dispatch_error", "")
+        assert item["status"] != "completed"
+
+    def test_detached_real_deliverables_plus_artifacts_accepted(
+        self, repo: Path, store: DevCoordinationStore
+    ) -> None:
+        """Detached worker with real deliverables (artifacts already stripped) succeeds."""
+        supervisor = self._make_supervisor(repo, store)
+        item = {
+            "work_order_id": "detached-real-work",
+            "file_scope": [],
+            "status": "dispatched",
+            "lease_id": "",
+            "target_agent": "codex",
+        }
+        # Simulates detached result where real files remain after strip
+        result = WorkerProcess(
+            work_order_id="detached-real-work",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+            exit_code=0,
+            changed_paths=["aragora/live/package.json"],  # real deliverable
+            commit_shas=["def456"],
+            head_sha="def456",
+        )
+        supervisor._apply_worker_result(item, result)
+
+        # Should proceed to completed, not rejected
+        assert item["status"] != "needs_human"
+
+    def test_genuine_no_op_worker_not_rejected(
+        self, repo: Path, store: DevCoordinationStore
+    ) -> None:
+        """A worker with no changes AND no commits should not be rejected by artifact guard."""
+        supervisor = self._make_supervisor(repo, store)
+        item = {
+            "work_order_id": "no-op",
+            "file_scope": [],
+            "status": "dispatched",
+            "lease_id": "",
+            "target_agent": "codex",
+        }
+        result = WorkerProcess(
+            work_order_id="no-op",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+            exit_code=0,
+            changed_paths=[],
+            commit_shas=[],
+            head_sha="abc",
+        )
+        supervisor._apply_worker_result(item, result)
+
+        # Genuine no-op should still complete (no deliverables but no ghost commits)
+        assert item["status"] == "completed"

@@ -754,9 +754,12 @@ class SwarmSupervisor:
 
         lease_id = str(item.get("lease_id", "")).strip()
         if result.exit_code == 0:
-            # Fail closed: if stripping session artifacts leaves no real deliverables
-            # but the worker claimed to have produced commits, the result is rejected.
-            if not clean_paths and result.changed_paths:
+            # Fail closed: if there are no real deliverables but the worker
+            # produced commits or had pre-strip changed paths, reject.  This
+            # covers both direct workers (result.changed_paths non-empty before
+            # strip) and detached workers (changed_paths already stripped by
+            # _collect_changed_paths, but commit_shas populated from auto-commit).
+            if not clean_paths and (result.changed_paths or result.commit_shas):
                 self._mark_needs_human(
                     item,
                     "worker produced only session artifacts, no real deliverables",
