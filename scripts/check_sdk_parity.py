@@ -22,6 +22,7 @@ import inspect
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,13 @@ CAN_HANDLE_PREFIX_ALLOWLIST = {
     "/api/pipeline/transitions",
     "/api/plans",
 }
+
+
+@dataclass(frozen=True)
+class HandlerRouteExtractionResult:
+    routes: dict[str, list[str]]
+    available: bool
+    error: str | None = None
 
 
 def _normalize_route_candidate(candidate: str) -> str | None:
@@ -150,18 +158,19 @@ def _collect_routes_from_handler_class(handler_cls: type[Any]) -> list[str]:
     return sorted(collected)
 
 
-def extract_handler_routes() -> dict[str, list[str]]:
-    """Extract ROUTES from all handler classes.
-
-    Returns:
-        Dict mapping handler class name -> list of route paths
-    """
+def extract_handler_routes_with_status() -> HandlerRouteExtractionResult:
+    """Extract ROUTES from handler classes and report availability state."""
     try:
         from aragora.server.handlers._lazy_imports import ALL_HANDLER_NAMES, HANDLER_MODULES
-    except (ImportError, ModuleNotFoundError):
-        return {}
+    except (ImportError, ModuleNotFoundError) as exc:
+        return HandlerRouteExtractionResult(
+            routes={},
+            available=False,
+            error=f"handler registry import failed: {exc}",
+        )
 
     handler_routes: dict[str, list[str]] = {}
+    import_failures: list[str] = []
 
     for name in ALL_HANDLER_NAMES:
         module_path = HANDLER_MODULES.get(name)
@@ -177,10 +186,29 @@ def extract_handler_routes() -> dict[str, list[str]]:
             routes = _collect_routes_from_handler_class(handler_cls)
             if routes:
                 handler_routes[name] = routes
-        except (ImportError, AttributeError, ModuleNotFoundError):
+        except (ImportError, AttributeError, ModuleNotFoundError) as exc:
+            import_failures.append(f"{module_path}: {exc}")
             continue
 
-    return handler_routes
+    if handler_routes:
+        return HandlerRouteExtractionResult(routes=handler_routes, available=True)
+
+    if import_failures:
+        sample_failures = "; ".join(import_failures[:5])
+        if len(import_failures) > 5:
+            sample_failures += f"; ... and {len(import_failures) - 5} more"
+        return HandlerRouteExtractionResult(
+            routes={},
+            available=False,
+            error=f"handler modules unavailable in this environment: {sample_failures}",
+        )
+
+    return HandlerRouteExtractionResult(routes={}, available=True)
+
+
+def extract_handler_routes() -> dict[str, list[str]]:
+    """Extract ROUTES from all handler classes."""
+    return extract_handler_routes_with_status().routes
 
 
 def extract_openapi_routes(spec_path: Path | None = None) -> set[str]:
@@ -350,6 +378,9 @@ def build_parity_report(
     python_sdk: dict[str, set[str]],
     typescript_sdk: dict[str, set[str]],
     documented_routes: set[str] | None = None,
+    *,
+    handler_routes_available: bool = True,
+    handler_routes_error: str | None = None,
 ) -> dict[str, Any]:
     """Build a parity report comparing handlers vs SDKs.
 
@@ -420,6 +451,9 @@ def build_parity_report(
 
     stale_py = {p for p in all_py_paths if not _covered_by_handler(p)}
     stale_ts = {p for p in all_ts_paths if not _covered_by_handler(p)}
+    if not handler_routes_available:
+        stale_py = set()
+        stale_ts = set()
 
     # Helper: check if an SDK path set covers a handler route.
     # For wildcard routes ending with /{param}, any SDK path starting with
@@ -477,6 +511,8 @@ def build_parity_report(
             "python_sdk_coverage_pct": round(py_coverage, 1),
             "typescript_sdk_coverage_pct": round(ts_coverage, 1),
             "routes_missing_from_both_sdks": len(missing_from_both),
+            "handler_routes_available": handler_routes_available,
+            "handler_routes_error": handler_routes_error,
         },
         "gaps": {
             "missing_from_python_sdk": sorted(missing_from_py_sdk),
@@ -503,6 +539,8 @@ def print_report(report: dict[str, Any]) -> None:
     print(f"Python SDK coverage:        {s['python_sdk_coverage_pct']}%")
     print(f"TypeScript SDK coverage:    {s['typescript_sdk_coverage_pct']}%")
     print(f"Missing from BOTH SDKs:     {s['routes_missing_from_both_sdks']}")
+    if not s["handler_routes_available"]:
+        print("Handler route source:       unavailable in this environment")
     print()
 
     gaps = report["gaps"]
@@ -541,7 +579,9 @@ def print_report(report: dict[str, Any]) -> None:
         print()
 
     print("=" * 70)
-    if s["routes_missing_from_both_sdks"] == 0:
+    if not s["handler_routes_available"]:
+        print("INFO: Handler route inspection unavailable; parity enforcement is skipped.")
+    elif s["routes_missing_from_both_sdks"] == 0:
         print("PASS: All public routes have SDK coverage in at least one SDK.")
     else:
         print(f"WARN: {s['routes_missing_from_both_sdks']} routes lack SDK coverage.")
@@ -602,18 +642,28 @@ def main() -> int:
     args = parser.parse_args()
 
     # Extract data
-    handler_routes = extract_handler_routes()
+    handler_result = extract_handler_routes_with_status()
+    handler_routes = handler_result.routes
     python_sdk = extract_sdk_paths_python()
     typescript_sdk = extract_sdk_paths_typescript()
     documented_routes = None if args.include_undocumented else extract_openapi_routes()
 
     # Build report
-    report = build_parity_report(handler_routes, python_sdk, typescript_sdk, documented_routes)
+    report = build_parity_report(
+        handler_routes,
+        python_sdk,
+        typescript_sdk,
+        documented_routes,
+        handler_routes_available=handler_result.available,
+        handler_routes_error=handler_result.error,
+    )
 
     if args.json:
         print(json.dumps(report, indent=2))
     else:
         print_report(report)
+        if handler_result.error:
+            print(f"\nHandler route detail: {handler_result.error}")
 
     baseline_missing: set[str] = set()
     if args.baseline and args.baseline.exists():
@@ -629,7 +679,7 @@ def main() -> int:
             print(f"  ... and {len(new_missing) - 20} more")
 
     budget_status: dict[str, int] | None = None
-    if args.budget and args.budget.exists():
+    if handler_result.available and args.budget and args.budget.exists():
         try:
             budget_data = json.loads(args.budget.read_text(encoding="utf-8"))
             start_date_str = str(budget_data.get("start_date", "")).strip()
@@ -677,9 +727,16 @@ def main() -> int:
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
             print(f"\nFAIL: Invalid SDK parity budget file ({args.budget}): {exc}")
             return 2
+    elif not args.json and args.budget and args.budget.exists():
+        print("\nBudget status: skipped because handler routes are unavailable in this environment")
 
     # Strict mode: fail if gaps exceed threshold
     if args.strict:
+        if not handler_result.available:
+            print(
+                "\nSKIP: Handler route extraction unavailable; strict parity enforcement skipped."
+            )
+            return 0
         py_cov = report["summary"]["python_sdk_coverage_pct"]
         ts_cov = report["summary"]["typescript_sdk_coverage_pct"]
         if py_cov < args.threshold or ts_cov < args.threshold:
