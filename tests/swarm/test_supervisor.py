@@ -544,8 +544,84 @@ async def test_collect_results_marks_scope_violation_needs_human(
     assert wo["scope_violation"]["violations"][0]["type"] == "out_of_scope"
 
     summary = store.status_summary()
-    assert summary["counts"]["scope_violations"] == 1
-    assert summary["counts"]["active_leases"] == 1
+    assert summary["counts"]["scope_violations"] == 0
+    assert summary["counts"]["active_leases"] == 0
+
+
+@pytest.mark.asyncio
+async def test_collect_finished_results_uses_terminal_session_meta_even_when_pid_looks_alive(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    initial_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+    (repo / "README.md").write_text("wrong work\n", encoding="utf-8")
+    _run(repo, "git", "add", "README.md")
+    _run(repo, "git", "commit", "-m", "wrong work")
+    (repo / ".codex_session_meta.json").write_text(
+        ('{\n  "ended_at": "2026-03-09T13:33:17Z",\n  "exit_code": 0\n}\n'),
+        encoding="utf-8",
+    )
+
+    lease = store.claim_lease(
+        task_id="citation-lane",
+        title="Citation lane",
+        owner_agent="codex",
+        owner_session_id="scope-session",
+        branch="main",
+        worktree_path=str(repo),
+        claimed_paths=["docs/citations.md"],
+    )
+    run_record = store.create_supervisor_run(
+        goal="detect terminal session meta",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "detect terminal session meta"},
+        work_orders=[
+            {
+                "work_order_id": "wo-session-meta",
+                "status": "dispatched",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "codex",
+                "owner_session_id": "scope-session",
+                "lease_id": lease.lease_id,
+                "pid": 96969,
+                "initial_head": initial_head,
+                "review_status": "pending",
+                "file_scope": ["docs/citations.md"],
+            }
+        ],
+        status="active",
+    )
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    mock_launcher.collect_finished = AsyncMock(return_value=[])
+    mock_launcher.snapshot_progress = AsyncMock()
+    mock_launcher.config = SimpleNamespace(auto_commit=False, no_progress_timeout_seconds=120.0)
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=mock_launcher)
+
+    with patch.object(WorkerLauncher, "_is_pid_running", return_value=True):
+        completed = await supervisor.collect_finished_results(run_record["run_id"])
+
+    assert len(completed) == 1
+    assert completed[0].exit_code == 0
+    mock_launcher.snapshot_progress.assert_not_awaited()
+
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    assert updated["status"] == "completed"
+    work_order = updated["work_orders"][0]
+    assert work_order["status"] == "scope_violation"
+    assert work_order["review_status"] == "changes_requested"
+    violation_paths = {
+        item["path"] for item in work_order["scope_violation"]["violations"] if "path" in item
+    }
+    assert "README.md" in violation_paths
+
+    summary = store.status_summary()
+    assert summary["counts"]["active_leases"] == 0
+    assert summary["counts"]["scope_violations"] == 0
 
 
 @pytest.mark.asyncio
