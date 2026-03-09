@@ -203,8 +203,8 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         )
 
         subaction = str(goal or "inspect").strip().lower()
-        if subaction not in {"inspect", "register"}:
-            print("Error: swarm runner action must be 'inspect' or 'register'")
+        if subaction not in {"inspect", "register", "heartbeat"}:
+            print("Error: swarm runner action must be 'inspect', 'register', or 'heartbeat'")
             return
 
         inspection = CodexRunnerInspector().inspect()
@@ -213,6 +213,16 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             payload = (
                 LocalRunnerRegistry()
                 .register(
+                    inspection,
+                    owner_context=owner_context,
+                )
+                .to_dict()
+            )
+        elif subaction == "heartbeat":
+            owner_context = authorization_context_from_env()
+            payload = (
+                LocalRunnerRegistry()
+                .heartbeat(
                     inspection,
                     owner_context=owner_context,
                 )
