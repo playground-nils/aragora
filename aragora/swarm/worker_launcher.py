@@ -7,6 +7,7 @@ reusing the managed-session wrapper so worktree locks/logs stay coherent.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -531,7 +532,10 @@ class WorkerLauncher:
         Returns None if the worker is still running (PID alive).
         Returns a WorkerProcess with collected results if finished.
         """
-        if pid is not None and cls._is_pid_running(pid):
+        session_meta = cls._read_session_meta(worktree_path)
+        session_exit_code, session_completed_at = cls._terminal_session_result(session_meta)
+
+        if session_exit_code is None and pid is not None and cls._is_pid_running(pid):
             return None
 
         worker = WorkerProcess(
@@ -545,8 +549,8 @@ class WorkerLauncher:
 
         worker.stdout = cls._read_log_file(worktree_path, "stdout")
         worker.stderr = cls._read_log_file(worktree_path, "stderr")
-        worker.exit_code = 0
-        worker.completed_at = datetime.now(UTC).isoformat()
+        worker.exit_code = 0 if session_exit_code is None else session_exit_code
+        worker.completed_at = session_completed_at or datetime.now(UTC).isoformat()
         worker.diff = await cls._collect_diff(worktree_path)
 
         if auto_commit and worker.diff:
@@ -571,6 +575,27 @@ class WorkerLauncher:
             len(worker.changed_paths),
         )
         return worker
+
+    @staticmethod
+    def _read_session_meta(worktree_path: str) -> dict[str, Any]:
+        meta_path = Path(worktree_path) / ".codex_session_meta.json"
+        try:
+            payload = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _terminal_session_result(session_meta: dict[str, Any]) -> tuple[int | None, str | None]:
+        ended_at = str(session_meta.get("ended_at", "")).strip()
+        if not ended_at:
+            return None, None
+        raw_exit_code = session_meta.get("exit_code")
+        try:
+            exit_code = int(raw_exit_code)
+        except (TypeError, ValueError):
+            return None, None
+        return exit_code, ended_at
 
     @staticmethod
     def _is_pid_running(pid: int) -> bool:

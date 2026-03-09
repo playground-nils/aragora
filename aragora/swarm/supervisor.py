@@ -473,7 +473,9 @@ class SwarmSupervisor:
                 )
                 if scope_violations:
                     self._mark_scope_violation(item, scope_violations)
+                    self._release_terminal_lease(item)
                     await self._kill_worker(item)
+                    changed = True
 
                 continue
 
@@ -489,6 +491,7 @@ class SwarmSupervisor:
                         item,
                         "worker process exited without receipt or exit marker",
                     )
+                self._release_terminal_lease(item)
                 changed = True
                 continue
 
@@ -505,6 +508,7 @@ class SwarmSupervisor:
                     self._mark_scope_violation(item, timeout_violations, extra_reason=reason)
                 else:
                     self._mark_needs_human(item, reason)
+                self._release_terminal_lease(item)
                 changed = True
 
         if not finished and not changed:
@@ -764,6 +768,7 @@ class SwarmSupervisor:
                         "violations": list(exc.violations),
                         "changed_paths": list(result.changed_paths),
                     }
+                    self._release_terminal_lease(item)
                     item["exit_code"] = result.exit_code
                     return
                 item["receipt_id"] = receipt.receipt_id
@@ -781,6 +786,15 @@ class SwarmSupervisor:
         item["exit_code"] = result.exit_code
         if result.stderr.strip():
             item["blockers"] = [result.stderr.strip()]
+
+    def _release_terminal_lease(self, item: dict[str, Any]) -> None:
+        lease_id = str(item.get("lease_id", "")).strip()
+        if not lease_id:
+            return
+        try:
+            self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
+        except KeyError:
+            return
 
     def _requeue_after_dispatch_error(self, item: dict[str, Any], exc: Exception) -> bool:
         message = str(exc).strip()
