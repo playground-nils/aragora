@@ -132,6 +132,16 @@ class TestSwarmParser:
         assert args.watch is True
         assert args.interval_seconds == 1.5
 
+    def test_swarm_runner_parser(self):
+        from aragora.cli.parser import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["swarm", "runner", "register", "--json"])
+        assert args.command == "swarm"
+        assert args.swarm_action_or_goal == "runner"
+        assert args.swarm_goal == "register"
+        assert args.json is True
+
     def test_swarm_parser_accepts_spec_dispatch_options(self):
         from aragora.cli.parser import build_parser
 
@@ -148,6 +158,90 @@ class TestSwarmParser:
 
 
 class TestSwarmCommand:
+    def test_cmd_swarm_runner_inspect_json(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="runner",
+            swarm_goal="inspect",
+            json=True,
+        )
+        inspection = SimpleNamespace(
+            to_dict=lambda: {
+                "runner_id": "codex-runner-123",
+                "runner_type": "codex",
+                "auth_mode": "chatgpt_login",
+                "availability": "available",
+                "available": True,
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "capabilities": {"max_parallel_lanes": 1},
+                "next_action": "Runner is eligible for Boss-mode routing.",
+            }
+        )
+
+        with patch("aragora.swarm.runner_registry.CodexRunnerInspector") as inspector_cls:
+            inspector_cls.return_value.inspect.return_value = inspection
+            cmd_swarm(args)
+
+        out = capsys.readouterr().out
+        assert '"runner_id": "codex-runner-123"' in out
+        assert '"auth_mode": "chatgpt_login"' in out
+        assert '"availability": "available"' in out
+        assert '"action": "inspect"' in out
+
+    def test_cmd_swarm_runner_register_rejects_unknown_auth(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="runner",
+            swarm_goal="register",
+        )
+        inspection = SimpleNamespace(
+            to_dict=lambda: {
+                "runner_id": "codex-runner-123",
+                "runner_type": "codex",
+                "auth_mode": "unknown",
+                "availability": "available",
+                "owner_binding": {"user_id": None, "workspace_id": None},
+                "capabilities": {
+                    "supports_exec": True,
+                    "supports_review": True,
+                    "max_parallel_lanes": 2,
+                },
+                "next_action": "Set ARAGORA_USER_ID before registering.",
+            }
+        )
+        registered = SimpleNamespace(
+            to_dict=lambda: {
+                "runner_id": "codex-runner-123",
+                "runner_type": "codex",
+                "auth_mode": "unknown",
+                "availability": "available",
+                "registered": False,
+                "registry_path": "/tmp/swarm-runners.json",
+                "owner_binding": {"user_id": None, "workspace_id": None},
+                "capabilities": {
+                    "supports_exec": True,
+                    "supports_review": True,
+                    "max_parallel_lanes": 2,
+                },
+                "next_action": "Registration blocked: Codex auth mode is unknown.",
+            }
+        )
+
+        with (
+            patch("aragora.swarm.runner_registry.CodexRunnerInspector") as inspector_cls,
+            patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
+            patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
+        ):
+            inspector_cls.return_value.inspect.return_value = inspection
+            auth_ctx.return_value = object()
+            registry_cls.return_value.register.return_value = registered
+            cmd_swarm(args)
+
+        out = capsys.readouterr().out
+        assert "runner_id=codex-runner-123" in out
+        assert "availability=available auth_mode=unknown" in out
+        assert "owner=unbound workspace=none" in out
+        assert "registered_at=" not in out
+        assert "next: Registration blocked: Codex auth mode is unknown." in out
+
     def test_cmd_swarm_requires_goal_or_spec(self, capsys):
         args = argparse.Namespace(
             swarm_action_or_goal="run",

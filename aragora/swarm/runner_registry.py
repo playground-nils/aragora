@@ -180,7 +180,11 @@ class CodexRunnerInspector:
             status_summary=self._first_line(login_text) or None,
             capabilities=self._capabilities(True, help_text),
             owner_binding=owner,
-            next_action=self._next_action(available=True, auth_mode=auth_mode, owner_binding=owner),
+            next_action=self._next_action(
+                available=True,
+                auth_mode=auth_mode,
+                owner_binding=owner,
+            ),
         )
 
     def _capabilities(self, available: bool, help_text: str | None) -> dict[str, Any]:
