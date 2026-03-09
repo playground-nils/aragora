@@ -24,7 +24,7 @@ def _valid_gate_data() -> dict:
                         "name": "Install Aragora",
                         "run": """
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install "pydantic>=2,<3" pydantic-settings aiohttp defusedxml numpy anthropic openai
 python -m pip install -e .
 """,
                     },
@@ -170,7 +170,18 @@ python -m pip install -e .
         _valid_gate_text(),
         _valid_manual_data(),
     )
-    assert "review job install step must install requirements.txt for CLI runtime" in violations
+    assert (
+        'review job install step must install "pydantic>=2,<3" for review CLI runtime' in violations
+    )
+    assert (
+        "review job install step must install pydantic-settings for review CLI runtime"
+        in violations
+    )
+    assert "review job install step must install aiohttp for review CLI runtime" in violations
+    assert "review job install step must install defusedxml for review CLI runtime" in violations
+    assert "review job install step must install numpy for review CLI runtime" in violations
+    assert "review job install step must install anthropic for review CLI runtime" in violations
+    assert "review job install step must install openai for review CLI runtime" in violations
 
 
 def test_policy_rejects_missing_review_exit_capture() -> None:

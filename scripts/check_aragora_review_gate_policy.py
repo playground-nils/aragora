@@ -91,8 +91,19 @@ def find_review_gate_policy_violations(
     else:
         review_run = str(review_step.get("run", ""))
 
-    if "python -m pip install -r requirements.txt" not in install_run:
-        violations.append("review job install step must install requirements.txt for CLI runtime")
+    for dependency in (
+        '"pydantic>=2,<3"',
+        "pydantic-settings",
+        "aiohttp",
+        "defusedxml",
+        "numpy",
+        "anthropic",
+        "openai",
+    ):
+        if dependency not in install_run:
+            violations.append(
+                f"review job install step must install {dependency} for review CLI runtime"
+            )
     if "python -m pip install -e ." not in install_run:
         violations.append("review job install step must install the repo in editable mode")
     if 'if [[ ! -f "$review_json" ]]; then' not in review_run or "exit 1" not in review_run:
