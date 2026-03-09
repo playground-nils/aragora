@@ -26,7 +26,7 @@ from uuid import uuid4
 def _resolve_swarm_action_goal(args: argparse.Namespace) -> tuple[str, str | None]:
     first = getattr(args, "swarm_action_or_goal", None)
     second = getattr(args, "swarm_goal", None)
-    if first in {"run", "boss", "runner", "status", "reconcile"}:
+    if first in {"run", "boss", "boss-loop", "runner", "status", "reconcile"}:
         return str(first), second
     return "run", first
 
@@ -237,6 +237,59 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             print(json.dumps(payload, indent=2))
         else:
             print(render_runner_registration_text(payload))
+        return
+
+    if action == "boss-loop":
+        from aragora.swarm.boss_loop import BossLoop, BossLoopConfig
+
+        boss_loop_config = BossLoopConfig(
+            max_iterations=int(getattr(args, "max_ticks", None) or 50),
+            iteration_interval_seconds=float(getattr(args, "interval_seconds", 30.0) or 30.0),
+            freshness_ttl_seconds=float(getattr(args, "freshness_ttl", 3600.0) or 3600.0),
+            repo=getattr(args, "boss_repo", None),
+            label_filter=getattr(args, "boss_label_filter", None),
+            target_branch=target_branch,
+            budget_limit_usd=budget_limit,
+            max_consecutive_failures=int(getattr(args, "max_consecutive_failures", 3) or 3),
+        )
+        loop = BossLoop(config=boss_loop_config)
+
+        def _on_status(status: object) -> None:
+            if as_json:
+                return  # JSON output is emitted at the end
+            status_dict = status.to_dict() if hasattr(status, "to_dict") else {}
+            iteration = status_dict.get("iteration", "?")
+            worker = status_dict.get("worker_status", "?")
+            issue = status_dict.get("selected_issue")
+            issue_text = (
+                f"#{issue.get('number', '?')} {issue.get('title', '')[:60]}"
+                if isinstance(issue, dict)
+                else "none"
+            )
+            stop = status_dict.get("stop_reason")
+            print(
+                f"[iter {iteration}] worker={worker} issue={issue_text}"
+                + (f" stop={stop}" if stop else "")
+            )
+            for action_text in status_dict.get("next_actions", [])[:2]:
+                print(f"  next: {action_text}")
+
+        result = asyncio.run(loop.run(on_status=_on_status))
+        if as_json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            print(f"\nBoss loop finished: {result.stop_reason}")
+            print(
+                f"iterations={result.iterations_completed} "
+                f"attempted={len(result.issues_attempted)} "
+                f"completed={len(result.issues_completed)} "
+                f"failed={len(result.issues_failed)} "
+                f"elapsed={result.total_elapsed_seconds:.1f}s"
+            )
+            for reason in result.needs_human_reasons[:3]:
+                print(f"  needs_human: {reason}")
+            for action_text in result.next_actions[:3]:
+                print(f"  next: {action_text}")
         return
 
     if boss_mode:
