@@ -1,49 +1,22 @@
 # .github/workflows/aragora-review.yml
-name: Aragora Code Review
+name: Aragora Code Review (Manual)
 
 on:
-  pull_request:
-    types: [opened, synchronize, ready_for_review]
+  workflow_dispatch:
 
 concurrency:
-  group: aragora-review-${{ github.event.pull_request.number }}
+  group: aragora-review-manual-${{ github.run_id }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   review:
-    if: "!github.event.pull_request.draft"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify checkout integrity
-        shell: bash
+      - name: Manual workflow retired for PR-triggered review
         run: |
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::pyproject.toml missing; attempting recovery"
-            git sparse-checkout disable || true
-            git fetch --no-tags origin "${GITHUB_SHA:-HEAD}"
-            git reset --hard FETCH_HEAD
-            git clean -ffd || true
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            git archive "${GITHUB_SHA:-HEAD}" | tar -x || git archive HEAD | tar -x
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::error::Checkout incomplete"
-            exit 1
-          fi
-
-      - name: Aragora Multi-Agent Code Review
-        uses: ./.github/actions/aragora-code-review
-        with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          rounds: 2
-          focus: security,performance,quality
-          output-format: github
-          post-comment: true
+          echo "The required Aragora PR review context is produced only by .github/workflows/aragora-review-gate.yml."
+          echo "This manual workflow remains non-PR-triggered to avoid duplicate review contexts."

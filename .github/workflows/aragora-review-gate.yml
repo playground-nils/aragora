@@ -1,11 +1,8 @@
 name: Aragora Code Review
 
 on:
-  # Manual-only until beta users are onboarded.
-  # Re-enable pull_request trigger when ready:
-  #   pull_request:
-  #     types: [opened, synchronize, reopened, ready_for_review]
-  #     paths: ['aragora/**', 'tests/**', 'scripts/**']
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -68,7 +65,7 @@ jobs:
 
   review:
     needs: changes
-    if: needs.changes.outputs.should_review == 'true' && !github.event.pull_request.draft
+    if: needs.changes.outputs.should_review == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -166,19 +163,35 @@ jobs:
             --agents anthropic-api,openai-api \
             --rounds 2 \
             --format json \
-            --output /tmp/review.json 2>/dev/null || true
+            --output /tmp/review.json 2>/tmp/review.stderr
 
-          if [[ -f /tmp/review.json ]]; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-
-            # Count findings by severity
-            critical=$(python3 -c "import json; d=json.load(open('/tmp/review.json')); print(sum(1 for f in d.get('findings',[]) if f.get('severity')=='critical'))" 2>/dev/null || echo 0)
-            high=$(python3 -c "import json; d=json.load(open('/tmp/review.json')); print(sum(1 for f in d.get('findings',[]) if f.get('severity')=='high'))" 2>/dev/null || echo 0)
-            echo "critical=$critical" >> "$GITHUB_OUTPUT"
-            echo "high=$high" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          if [[ ! -f /tmp/review.json ]]; then
+            echo "::error::Aragora review did not produce /tmp/review.json"
+            if [[ -s /tmp/review.stderr ]]; then
+              cat /tmp/review.stderr
+            fi
+            exit 1
           fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Count findings by severity and fail if the artifact is malformed.
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          output = Path("/tmp/review.json")
+          data = json.loads(output.read_text())
+          findings = data.get("findings")
+          if not isinstance(findings, list):
+              raise SystemExit("review artifact missing findings list")
+          critical = sum(1 for f in findings if f.get("severity") == "critical")
+          high = sum(1 for f in findings if f.get("severity") == "high")
+          with Path("/tmp/review_counts.env").open("w", encoding="utf-8") as fh:
+              fh.write(f"critical={critical}\n")
+              fh.write(f"high={high}\n")
+          PY
+          cat /tmp/review_counts.env >> "$GITHUB_OUTPUT"
 
       - name: Post Review Comment
         if: steps.review.outputs.skip != 'true'
@@ -250,15 +263,20 @@ jobs:
     steps:
       - name: Gate result
         env:
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft || 'false' }}
           SHOULD_REVIEW: ${{ needs.changes.outputs.should_review }}
           REVIEW_RESULT: ${{ needs.review.result }}
         run: |
+          if [[ "$IS_DRAFT" == "true" ]]; then
+            echo "Draft PR - review deferred"
+            exit 0
+          fi
           if [[ "$SHOULD_REVIEW" != "true" ]]; then
             echo "No code changes - skipping review"
             exit 0
           fi
-          if [[ "$REVIEW_RESULT" == "failure" ]]; then
-            echo "Review gate failed"
+          if [[ "$REVIEW_RESULT" != "success" ]]; then
+            echo "Review gate failed: review job concluded with $REVIEW_RESULT"
             exit 1
           fi
           echo "Review gate passed"

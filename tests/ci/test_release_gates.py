@@ -150,6 +150,41 @@ class TestIntegrationGateWorkflow:
         assert "needs" in summary_job
 
 
+class TestAragoraReviewGateWorkflow:
+    """Validate Aragora PR review gate structure."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.gate_path = WORKFLOWS_DIR / "aragora-review-gate.yml"
+        self.manual_path = WORKFLOWS_DIR / "aragora-review.yml"
+
+    def test_gate_workflow_file_exists(self):
+        assert self.gate_path.exists(), "aragora-review-gate.yml does not exist"
+
+    def test_gate_triggers_on_pull_request_without_paths_filter(self):
+        data = _load_yaml(self.gate_path)
+        triggers = _get_triggers(data)
+        assert "pull_request" in triggers, "review gate should trigger on pull_request"
+        pr_trigger = triggers["pull_request"]
+        assert isinstance(pr_trigger, dict)
+        assert "paths" not in pr_trigger, "required review gate must not use trigger-level paths"
+
+    def test_gate_has_stable_terminal_job(self):
+        data = _load_yaml(self.gate_path)
+        jobs = data["jobs"]
+        assert "aragora-review" in jobs, "gate should expose terminal aragora-review job"
+        gate_job = jobs["aragora-review"]
+        assert gate_job.get("if") == "always()"
+        assert gate_job.get("needs") == ["changes", "review"]
+
+    def test_manual_review_workflow_is_not_pr_triggered(self):
+        data = _load_yaml(self.manual_path)
+        triggers = _get_triggers(data)
+        assert "pull_request" not in triggers, (
+            "manual review workflow must not create a second PR context"
+        )
+
+
 class TestReleaseWorkflow:
     """Validate release.yml integrates all gates."""
 
