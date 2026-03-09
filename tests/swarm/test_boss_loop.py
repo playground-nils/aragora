@@ -258,6 +258,8 @@ class TestRunnerFreshness:
                             "owner_binding": {"user_id": "user-1", "workspace_id": "ws-1"},
                             "capabilities": {"max_parallel_lanes": 1},
                             "updated_at": now,
+                            "heartbeat_at": now,
+                            "freshness_status": "fresh",
                         }
                     ]
                 }
@@ -300,7 +302,7 @@ class TestRunnerFreshness:
 
     def test_stale_runner_blocks(self, tmp_path, monkeypatch):
         registry_path = tmp_path / "runners.json"
-        # Registration from 2 hours ago
+        # Heartbeat from long ago → routing layer rejects as stale
         old_time = "2020-01-01T00:00:00+00:00"
         registry_path.write_text(
             json.dumps(
@@ -316,6 +318,8 @@ class TestRunnerFreshness:
                             "owner_binding": {"user_id": "user-1", "workspace_id": "ws-1"},
                             "capabilities": {"max_parallel_lanes": 1},
                             "updated_at": old_time,
+                            "heartbeat_at": old_time,
+                            "freshness_status": "stale",
                         }
                     ]
                 }
@@ -337,7 +341,8 @@ class TestRunnerFreshness:
             )
 
         assert result.fresh is False
-        assert result.blocked_reason == "all_runners_stale"
+        # Routing layer catches staleness via heartbeat before TTL check runs
+        assert result.blocked_reason == "no_fresh_registered_runners"
 
     def test_runner_not_responding_blocks(self, tmp_path, monkeypatch):
         registry_path = tmp_path / "runners.json"
@@ -356,6 +361,8 @@ class TestRunnerFreshness:
                             "owner_binding": {"user_id": "user-1", "workspace_id": "ws-1"},
                             "capabilities": {"max_parallel_lanes": 1},
                             "updated_at": now,
+                            "heartbeat_at": now,
+                            "freshness_status": "fresh",
                         }
                     ]
                 }
