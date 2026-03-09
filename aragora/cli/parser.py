@@ -2273,6 +2273,32 @@ def _add_swarm_parser(subparsers) -> None:
         action="store_true",
         help="Spawn workers but don't wait for completion (fire-and-forget)",
     )
+    # Boss-loop specific options
+    swarm_parser.add_argument(
+        "--freshness-ttl",
+        type=float,
+        default=3600.0,
+        dest="freshness_ttl",
+        help="Runner freshness TTL in seconds for boss-loop (default: 3600)",
+    )
+    swarm_parser.add_argument(
+        "--boss-repo",
+        type=str,
+        default=None,
+        help="GitHub repo (owner/repo) for boss-loop issue feed (default: current repo)",
+    )
+    swarm_parser.add_argument(
+        "--boss-label-filter",
+        type=str,
+        default=None,
+        help="Only consider issues with this label in boss-loop",
+    )
+    swarm_parser.add_argument(
+        "--max-consecutive-failures",
+        type=int,
+        default=3,
+        help="Stop boss-loop after N consecutive worker failures (default: 3)",
+    )
     swarm_parser.set_defaults(
         func=lambda args: __import__(
             "aragora.cli.commands.swarm", fromlist=["cmd_swarm"]
