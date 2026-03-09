@@ -398,8 +398,14 @@ class WorkerLauncher:
 
         file_scope = work_order.get("file_scope", [])
         if file_scope:
-            scope_list = ", ".join(str(f) for f in file_scope)
-            parts.append(f"Bounded scope:\n  - Only touch: {scope_list}")
+            scope_list = "\n".join(f"  - {f}" for f in file_scope)
+            parts.append(
+                "MANDATORY FILE SCOPE CONSTRAINT:\n"
+                "You MUST only create, modify, or delete files within these paths:\n"
+                f"{scope_list}\n"
+                "DO NOT edit any files outside this scope. Edits outside scope will be "
+                "rejected and your work will be discarded. This is enforced automatically."
+            )
 
         expected_tests = work_order.get("expected_tests", [])
         if expected_tests:
