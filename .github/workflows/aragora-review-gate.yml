@@ -1,11 +1,8 @@
 name: Aragora Code Review
 
 on:
-  # Manual-only until beta users are onboarded.
-  # Re-enable pull_request trigger when ready:
-  #   pull_request:
-  #     types: [opened, synchronize, reopened, ready_for_review]
-  #     paths: ['aragora/**', 'tests/**', 'scripts/**']
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -68,7 +65,7 @@ jobs:
 
   review:
     needs: changes
-    if: needs.changes.outputs.should_review == 'true' && !github.event.pull_request.draft
+    if: needs.changes.outputs.should_review == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -132,7 +129,15 @@ jobs:
       - name: Install Aragora
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . 2>/dev/null || python -m pip install -r requirements.txt
+          python -m pip install \
+            "pydantic>=2,<3" \
+            pydantic-settings \
+            aiohttp \
+            defusedxml \
+            numpy \
+            anthropic \
+            openai
+          python -m pip install -e .
 
       - name: Run Aragora Review
         id: review
@@ -162,23 +167,57 @@ jobs:
           fi
 
           # Run review
-          cat /tmp/pr.diff | python -m aragora.cli.review \
+          review_output_dir=/tmp/review-artifacts
+          mkdir -p "$review_output_dir"
+
+          set +e
+          cat /tmp/pr.diff | python -m aragora.cli.review review \
             --agents anthropic-api,openai-api \
             --rounds 2 \
-            --format json \
-            --output /tmp/review.json 2>/dev/null || true
+            --output-format json \
+            --output-dir "$review_output_dir" 2>/tmp/review.stderr
+          review_exit=$?
+          set -e
 
-          if [[ -f /tmp/review.json ]]; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-
-            # Count findings by severity
-            critical=$(python3 -c "import json; d=json.load(open('/tmp/review.json')); print(sum(1 for f in d.get('findings',[]) if f.get('severity')=='critical'))" 2>/dev/null || echo 0)
-            high=$(python3 -c "import json; d=json.load(open('/tmp/review.json')); print(sum(1 for f in d.get('findings',[]) if f.get('severity')=='high'))" 2>/dev/null || echo 0)
-            echo "critical=$critical" >> "$GITHUB_OUTPUT"
-            echo "high=$high" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          if [[ "$review_exit" -ne 0 ]]; then
+            echo "::error::Aragora review command failed with exit code $review_exit"
+            if [[ -s /tmp/review.stderr ]]; then
+              cat /tmp/review.stderr
+            fi
+            exit "$review_exit"
           fi
+
+          review_json="$review_output_dir/review.json"
+          if [[ ! -f "$review_json" ]]; then
+            echo "::error::Aragora review did not produce $review_json"
+            if [[ -s /tmp/review.stderr ]]; then
+              cat /tmp/review.stderr
+            fi
+            exit 1
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Count findings by severity and fail if the artifact is malformed.
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          output = Path("/tmp/review-artifacts/review.json")
+          data = json.loads(output.read_text())
+          critical_findings = data.get("critical_issues")
+          high_findings = data.get("high_issues")
+          if not isinstance(critical_findings, list):
+              raise SystemExit("review artifact missing critical_issues list")
+          if not isinstance(high_findings, list):
+              raise SystemExit("review artifact missing high_issues list")
+          critical = len(critical_findings)
+          high = len(high_findings)
+          with Path("/tmp/review_counts.env").open("w", encoding="utf-8") as fh:
+              fh.write(f"critical={critical}\n")
+              fh.write(f"high={high}\n")
+          PY
+          cat /tmp/review_counts.env >> "$GITHUB_OUTPUT"
 
       - name: Post Review Comment
         if: steps.review.outputs.skip != 'true'
@@ -188,39 +227,55 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          if [[ ! -f /tmp/review.json ]]; then exit 0; fi
+          review_json=/tmp/review-artifacts/review.json
+          if [[ ! -f "$review_json" ]]; then exit 0; fi
 
           # Build markdown comment
-          python3 -c "
-          import json, sys
+          python3 - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
           try:
-              data = json.load(open('/tmp/review.json'))
+              data = json.loads(Path('/tmp/review-artifacts/review.json').read_text())
           except Exception:
               sys.exit(0)
-          findings = data.get('findings', [])
+
+          critical = data.get('critical_issues', [])
+          high = data.get('high_issues', [])
+          medium = data.get('medium_issues', [])
+          low = data.get('low_issues', [])
+          summary = data.get('summary', '')
+          findings = [('critical', item) for item in critical]
+          findings += [('high', item) for item in high]
+          findings += [('medium', item) for item in medium]
+          findings += [('low', item) for item in low]
           if not findings:
-              print('## Aragora Code Review\n\nNo issues found.')
-              sys.exit(0)
-          severity_emoji = {'critical': '[CRITICAL]', 'high': '[HIGH]', 'medium': '[MEDIUM]', 'low': '[LOW]', 'info': '[INFO]'}
-          lines = ['## Aragora Code Review\n']
-          lines.append(f'**{len(findings)} finding(s)** across the diff\n')
-          for f in findings:
-              sev = f.get('severity', 'info')
+              Path('/tmp/review_comment.md').write_text('## Aragora Code Review\n\nNo issues found.\n')
+              raise SystemExit(0)
+
+          severity_emoji = {
+              'critical': '[CRITICAL]',
+              'high': '[HIGH]',
+              'medium': '[MEDIUM]',
+              'low': '[LOW]',
+              'info': '[INFO]',
+          }
+          lines = ['## Aragora Code Review', '']
+          if summary:
+              lines.append(summary)
+              lines.append('')
+          lines.append(f'**{len(findings)} finding(s)** across the diff')
+          lines.append('')
+          for sev, item in findings:
               label = severity_emoji.get(sev, '[?]')
-              lines.append(f'### {label} {f.get(\"title\", \"Finding\")}')
-              if f.get('file'):
-                  loc = f['file']
-                  if f.get('line'):
-                      loc += f':{f[\"line\"]}'
-                  lines.append(f'**Location:** \`{loc}\`')
-              lines.append(f.get('description', ''))
-              if f.get('suggestion'):
-                  lines.append(f'\n**Suggestion:** {f[\"suggestion\"]}')
+              lines.append(f'### {label} Finding')
+              lines.append(str(item))
               lines.append('')
           lines.append('---')
           lines.append('*Generated by [Aragora](https://aragora.ai) multi-agent code review*')
-          print('\n'.join(lines))
-          " > /tmp/review_comment.md
+          Path('/tmp/review_comment.md').write_text('\n'.join(lines) + '\n')
+          PY
 
           # Post or update comment
           existing_id=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
@@ -250,15 +305,20 @@ jobs:
     steps:
       - name: Gate result
         env:
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft || 'false' }}
           SHOULD_REVIEW: ${{ needs.changes.outputs.should_review }}
           REVIEW_RESULT: ${{ needs.review.result }}
         run: |
+          if [[ "$IS_DRAFT" == "true" ]]; then
+            echo "Draft PR - review deferred"
+            exit 0
+          fi
           if [[ "$SHOULD_REVIEW" != "true" ]]; then
             echo "No code changes - skipping review"
             exit 0
           fi
-          if [[ "$REVIEW_RESULT" == "failure" ]]; then
-            echo "Review gate failed"
+          if [[ "$REVIEW_RESULT" != "success" ]]; then
+            echo "Review gate failed: review job concluded with $REVIEW_RESULT"
             exit 1
           fi
           echo "Review gate passed"

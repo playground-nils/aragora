@@ -18,6 +18,7 @@ jobs:
         with:
           script: |
             const alwaysKeepWorkflowPaths = new Set([
+              '.github/workflows/aragora-review-gate.yml',
               '.github/workflows/lint.yml',
               '.github/workflows/sdk-parity.yml',
               '.github/workflows/sdk-test.yml',
@@ -26,6 +27,7 @@ jobs:
               '.github/workflows/autopilot-worktree-e2e.yml',
             ]);
             const alwaysKeepWorkflowNames = new Set([
+              'Aragora Code Review',
               'Required Check Priority',
               'Lint',
               'SDK Parity Check',
@@ -92,6 +94,10 @@ def test_policy_detects_missing_context_marker_in_mapped_workflow(tmp_path: Path
     (wf_dir / "lint.yml").write_text(
         "name: Lint\njobs:\n  lint:\n    runs-on: ubuntu-latest\n", encoding="utf-8"
     )
+    (wf_dir / "aragora-review-gate.yml").write_text(
+        "name: Aragora Code Review\njobs:\n  aragora-review:\n    runs-on: ubuntu-latest\n",
+        encoding="utf-8",
+    )
     (wf_dir / "sdk-parity.yml").write_text(
         "name: SDK Parity Check\njobs:\n  sdk-parity:\n    runs-on: ubuntu-latest\n",
         encoding="utf-8",
@@ -117,6 +123,7 @@ jobs:
         with:
           script: |
             const alwaysKeepWorkflowPaths = new Set([
+              '.github/workflows/aragora-review-gate.yml',
               '.github/workflows/lint.yml',
               '.github/workflows/sdk-parity.yml',
               '.github/workflows/sdk-test.yml',
@@ -124,6 +131,7 @@ jobs:
               '.github/workflows/required-check-priority.yml',
             ]);
             const alwaysKeepWorkflowNames = new Set([
+              'Aragora Code Review',
               'Required Check Priority',
               'Lint',
               'SDK Parity Check',
