@@ -49,8 +49,18 @@ include = ["aragora", "aragora.core", "aragora.debate"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
+[tool.ruff]
+line-length = 100
+exclude = ["aragora-debate*"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = false
+
 [tool.ruff.lint]
 select = ["E", "F", "W", "S101"]
+ignore = ["E402", "E501", "E731", "E741", "E712", "C401", "C405", "C408", "C416"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]

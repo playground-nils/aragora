@@ -45,21 +45,13 @@ class RoundPhase:
 
 
 STRUCTURED_ROUND_PHASES: list[RoundPhase] = [
-    RoundPhase(
-        1, "Initial Analysis", "Establish first-pass positions", "core facts", "analyst"
-    ),
-    RoundPhase(
-        2, "Critique", "Challenge and refine positions", "counterarguments", "skeptic"
-    ),
-    RoundPhase(
-        3, "Synthesis", "Converge on the best answer", "final answer", "synthesizer"
-    ),
+    RoundPhase(1, "Initial Analysis", "Establish first-pass positions", "core facts", "analyst"),
+    RoundPhase(2, "Critique", "Challenge and refine positions", "counterarguments", "skeptic"),
+    RoundPhase(3, "Synthesis", "Converge on the best answer", "final answer", "synthesizer"),
 ]
 
 STRUCTURED_LIGHT_ROUND_PHASES: list[RoundPhase] = [
-    RoundPhase(
-        1, "Quick Analysis", "Fast first-pass position", "core facts", "analyst"
-    ),
+    RoundPhase(1, "Quick Analysis", "Fast first-pass position", "core facts", "analyst"),
 ]
 
 

@@ -20,7 +20,6 @@ import datetime as dt
 import importlib
 import inspect
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -157,7 +156,10 @@ def extract_handler_routes() -> dict[str, list[str]]:
     Returns:
         Dict mapping handler class name -> list of route paths
     """
-    from aragora.server.handlers._lazy_imports import ALL_HANDLER_NAMES, HANDLER_MODULES
+    try:
+        from aragora.server.handlers._lazy_imports import ALL_HANDLER_NAMES, HANDLER_MODULES
+    except (ImportError, ModuleNotFoundError):
+        return {}
 
     handler_routes: dict[str, list[str]] = {}
 

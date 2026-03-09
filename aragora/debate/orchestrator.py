@@ -102,9 +102,7 @@ class Arena:
             for index, agent in enumerate(self.agents):
                 if not hasattr(agent, "critique"):
                     continue
-                target_name, target_content = proposal_items[
-                    (index + 1) % len(proposal_items)
-                ]
+                target_name, target_content = proposal_items[(index + 1) % len(proposal_items)]
                 critique_value = await _maybe_await(
                     agent.critique(target_content, self.env.task, context=messages)
                 )
@@ -131,9 +129,7 @@ class Arena:
             for agent in self.agents:
                 name = getattr(agent, "name", "agent")
                 if hasattr(agent, "vote"):
-                    vote_value = await _maybe_await(
-                        agent.vote(proposals, self.env.task)
-                    )
+                    vote_value = await _maybe_await(agent.vote(proposals, self.env.task))
                     if isinstance(vote_value, Vote):
                         votes.append(vote_value)
                         continue
@@ -142,9 +138,7 @@ class Arena:
                 else:
                     choice = final_answer
                     reasoning = "Selected the current leading proposal."
-                votes.append(
-                    Vote(agent=name, choice=str(choice), reasoning=str(reasoning))
-                )
+                votes.append(Vote(agent=name, choice=str(choice), reasoning=str(reasoning)))
 
             if votes:
                 winner_counts: dict[str, int] = {}
