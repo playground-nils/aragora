@@ -1,18 +1,11 @@
 /**
- * Aragora SDK Client for SvelteKit
+ * Aragora SDK Client for SvelteKit — browser-safe exports only.
+ *
+ * Server-side client lives in aragora.server.ts (uses $env/dynamic/private).
  */
 
 import { createClient, type AragoraClient } from '@aragora/sdk';
-import { env } from '$env/dynamic/private';
 import { PUBLIC_ARAGORA_API_URL } from '$env/static/public';
-
-// Server-side client (for load functions)
-export function getServerClient(): AragoraClient {
-  return createClient({
-    baseUrl: env.ARAGORA_API_URL || 'http://localhost:8080',
-    apiKey: env.ARAGORA_API_KEY,
-  });
-}
 
 // Browser client (singleton)
 let browserClient: AragoraClient | null = null;

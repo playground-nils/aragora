@@ -64,7 +64,7 @@
       bind:value={task}
       placeholder="What question should the agents debate?"
       rows="4"
-    />
+    ></textarea>
   </div>
 
   <div class="form-group">
