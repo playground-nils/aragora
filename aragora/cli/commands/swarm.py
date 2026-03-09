@@ -61,6 +61,7 @@ def _build_boss_payload(
     *,
     repo_root: Path,
     target_branch: str,
+    routing: dict[str, object] | None = None,
 ) -> dict[str, object]:
     from aragora.swarm.reporter import build_boss_payload, build_integrator_view
     from aragora.worktree.fleet import FleetCoordinationStore, build_fleet_rows
@@ -81,7 +82,38 @@ def _build_boss_payload(
         run=run,
         integrator_view=integrator_view,
         coordination=coordination,
+        routing=routing,
     )
+
+
+def _resolve_boss_routing() -> dict[str, object]:
+    from aragora.swarm.runner_registry import LocalRunnerRegistry, authorization_context_from_env
+
+    owner_context = authorization_context_from_env()
+    return LocalRunnerRegistry().resolve_boss_routing(owner_context=owner_context).to_dict()
+
+
+def _blocked_boss_payload(
+    *,
+    goal: str | None,
+    target_branch: str,
+    routing: dict[str, object],
+) -> dict[str, object]:
+    next_action = str(routing.get("next_action", "")).strip()
+    return {
+        "mode": "boss",
+        "run_id": None,
+        "status": "blocked",
+        "goal": goal or "",
+        "target_branch": target_branch,
+        "work_order_counts": {},
+        "lanes": [],
+        "integrator_next_actions": [next_action] if next_action else [],
+        "needs_human": [],
+        "coordination_counts": {},
+        "integrator_summary": {},
+        "routing": routing,
+    }
 
 
 def cmd_swarm(args: argparse.Namespace) -> None:
@@ -129,6 +161,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
     no_wait = bool(getattr(args, "no_wait", False))
     dispatch_workers = not no_dispatch
     boss_mode = action == "boss"
+    boss_routing: dict[str, object] | None = None
     if dispatch_only:
         no_wait = True
     if boss_mode:
@@ -160,6 +193,23 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         "metrics": AutonomyLevel.METRICS_DRIVEN,
     }
     autonomy_level = autonomy_map.get(autonomy_str, AutonomyLevel.PROPOSE_APPROVE)
+
+    if boss_mode:
+        boss_routing = _resolve_boss_routing()
+        blocked_reason = boss_routing.get("blocked_reason")
+        if isinstance(blocked_reason, str) and blocked_reason.strip():
+            from aragora.swarm.reporter import render_boss_text
+
+            payload = _blocked_boss_payload(
+                goal=goal,
+                target_branch=target_branch,
+                routing=boss_routing,
+            )
+            if as_json:
+                print(json.dumps(payload, indent=2))
+            else:
+                print(render_boss_text(payload))
+            return
 
     if action == "status":
         repo_root = resolve_repo_root(Path.cwd())
@@ -308,6 +358,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                 run_payload,
                 repo_root=Path.cwd(),
                 target_branch=target_branch,
+                routing=boss_routing,
             )
             if as_json:
                 print(json.dumps(boss_payload, indent=2))
@@ -374,6 +425,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                 run_payload,
                 repo_root=Path.cwd(),
                 target_branch=target_branch,
+                routing=boss_routing,
             )
             if as_json:
                 print(json.dumps(boss_payload, indent=2))
@@ -409,6 +461,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                 run_payload,
                 repo_root=Path.cwd(),
                 target_branch=target_branch,
+                routing=boss_routing,
             )
             if as_json:
                 print(json.dumps(boss_payload, indent=2))

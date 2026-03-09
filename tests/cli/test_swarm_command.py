@@ -524,8 +524,17 @@ class TestSwarmCommand:
 
         with (
             patch("aragora.swarm.SwarmCommander", return_value=mock_commander),
+            patch("aragora.cli.commands.swarm._resolve_boss_routing") as resolve_routing,
             patch("aragora.cli.commands.swarm._build_boss_payload") as build_payload,
         ):
+            resolve_routing.return_value = {
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "selected_runner_ids": ["codex-runner-1"],
+                "selected_runners": [{"runner_id": "codex-runner-1"}],
+                "selection_basis": "registered=true",
+                "blocked_reason": None,
+                "next_action": "Boss mode will route only through the selected registered Codex runner set.",
+            }
             build_payload.return_value = {
                 "mode": "boss",
                 "run_id": "boss-run-1",
@@ -533,6 +542,11 @@ class TestSwarmCommand:
                 "goal": "Split vague operator request into supervised lanes",
                 "target_branch": "main",
                 "work_order_counts": {"needs_human": 1},
+                "routing": {
+                    "selected_runner_ids": ["codex-runner-1"],
+                    "blocked_reason": None,
+                    "next_action": "Boss mode will route only through the selected registered Codex runner set.",
+                },
                 "lanes": [
                     {
                         "work_order_id": "lane-a",
@@ -561,6 +575,7 @@ class TestSwarmCommand:
         out = capsys.readouterr().out
         assert "run_id=boss-run-1" in out
         assert "work_orders=[needs_human=1]" in out
+        assert "routing: selected_runners=codex-runner-1" in out
         assert "next: Review lane-a and decide whether to narrow scope." in out
         assert "needs_human: Lane A -> waiting for human choice" in out
 
@@ -604,8 +619,17 @@ class TestSwarmCommand:
 
         with (
             patch("aragora.swarm.SwarmCommander", return_value=mock_commander),
+            patch("aragora.cli.commands.swarm._resolve_boss_routing") as resolve_routing,
             patch("aragora.cli.commands.swarm._build_boss_payload") as build_payload,
         ):
+            resolve_routing.return_value = {
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "selected_runner_ids": ["codex-runner-1"],
+                "selected_runners": [{"runner_id": "codex-runner-1"}],
+                "selection_basis": "registered=true",
+                "blocked_reason": None,
+                "next_action": "Boss mode will route only through the selected registered Codex runner set.",
+            }
             build_payload.return_value = {
                 "mode": "boss",
                 "run_id": "boss-run-2",
@@ -613,6 +637,11 @@ class TestSwarmCommand:
                 "goal": "Run boss mode from spec",
                 "target_branch": "main",
                 "work_order_counts": {"leased": 1},
+                "routing": {
+                    "selected_runner_ids": ["codex-runner-1"],
+                    "blocked_reason": None,
+                    "next_action": "Boss mode will route only through the selected registered Codex runner set.",
+                },
                 "lanes": [
                     {
                         "work_order_id": "lane-b",
@@ -640,6 +669,35 @@ class TestSwarmCommand:
         assert '"run_id": "boss-run-2"' in out
         assert '"integrator_next_actions": [' in out
         assert '"coordination_counts": {' in out
+        assert '"selected_runner_ids": [' in out
+
+    def test_cmd_swarm_boss_mode_blocks_when_no_eligible_runner(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="boss",
+            swarm_goal="Split vague operator request into supervised lanes",
+            json=True,
+        )
+        mock_commander = SimpleNamespace(run_supervised=AsyncMock())
+
+        with (
+            patch("aragora.swarm.SwarmCommander", return_value=mock_commander),
+            patch("aragora.cli.commands.swarm._resolve_boss_routing") as resolve_routing,
+        ):
+            resolve_routing.return_value = {
+                "owner_binding": {"user_id": None, "workspace_id": None},
+                "selected_runner_ids": [],
+                "selected_runners": [],
+                "selection_basis": "registered=true",
+                "blocked_reason": "missing_owner_context",
+                "next_action": "Set `ARAGORA_USER_ID` and `ARAGORA_WORKSPACE_ID` before running Boss mode.",
+            }
+            cmd_swarm(args)
+
+        mock_commander.run_supervised.assert_not_called()
+        out = capsys.readouterr().out
+        assert '"status": "blocked"' in out
+        assert '"blocked_reason": "missing_owner_context"' in out
+        assert '"selected_runner_ids": []' in out
 
     def test_cmd_swarm_reconcile_watch_uses_watch_run(self, capsys):
         args = _swarm_args(

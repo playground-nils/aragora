@@ -654,10 +654,12 @@ def build_boss_payload(
     run: dict[str, Any],
     integrator_view: dict[str, Any] | None = None,
     coordination: dict[str, Any] | None = None,
+    routing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a stable boss-facing payload for supervised swarm runs."""
     integrator_view = integrator_view if isinstance(integrator_view, dict) else {}
     coordination = coordination if isinstance(coordination, dict) else {}
+    routing = routing if isinstance(routing, dict) else {}
     work_orders = [dict(item) for item in run.get("work_orders", []) if isinstance(item, dict)]
     lanes_from_integrator = [
         dict(item) for item in integrator_view.get("lanes", []) if isinstance(item, dict)
@@ -716,6 +718,7 @@ def build_boss_payload(
         "needs_human": needs_human,
         "coordination_counts": coordination.get("counts", {}),
         "integrator_summary": integrator_view.get("summary", {}),
+        "routing": routing,
     }
 
 
@@ -753,6 +756,20 @@ def render_boss_text(payload: dict[str, Any]) -> str:
             if receipt_id:
                 parts.append(f"receipt={receipt_id}")
             lines.append("lane: " + " ".join(parts))
+
+    routing = payload.get("routing", {})
+    if isinstance(routing, dict):
+        selected_runner_ids = [
+            _text(item) for item in routing.get("selected_runner_ids", []) if _text(item)
+        ]
+        if selected_runner_ids:
+            lines.append("routing: selected_runners=" + ",".join(selected_runner_ids))
+        blocked_reason = _text(routing.get("blocked_reason"))
+        if blocked_reason:
+            lines.append(f"routing_blocked: {blocked_reason}")
+        routing_next = _text(routing.get("next_action"))
+        if routing_next:
+            lines.append(f"routing_next: {routing_next}")
 
     next_actions = payload.get("integrator_next_actions", [])
     if isinstance(next_actions, list):
