@@ -1154,6 +1154,13 @@ class SwarmSupervisor:
             return SupervisorRunStatus.NEEDS_HUMAN.value
         if "dispatch_failed" in statuses:
             return SupervisorRunStatus.NEEDS_HUMAN.value
+        # Deadlocked: only waiting_conflict/waiting_resource remain with no
+        # forward-progress statuses (queued/leased/dispatched).  Escalate
+        # instead of polling indefinitely.
+        forward_progress = {"queued", "leased", "dispatched"}
+        non_terminal = statuses - terminal
+        if non_terminal and not (non_terminal & forward_progress):
+            return SupervisorRunStatus.NEEDS_HUMAN.value
         return SupervisorRunStatus.ACTIVE.value
 
     @staticmethod

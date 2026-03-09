@@ -128,8 +128,10 @@ async def test_watch_run_stops_when_completed() -> None:
     assert reconciler.tick_run.await_count == 2
 
 
-def test_should_not_stop_for_waiting_resource() -> None:
-    run = _run("active", ["waiting_resource"])
+def test_should_not_stop_for_waiting_resource_with_forward_progress() -> None:
+    """waiting_resource alone is a dead-end, but combined with a leased
+    work order the run still has forward progress."""
+    run = _run("active", ["waiting_resource", "leased"])
 
     assert SwarmReconciler._should_stop(run) is False
 
@@ -138,3 +140,32 @@ def test_should_stop_when_only_terminal_work_orders_remain() -> None:
     run = _run("active", ["completed", "merged", "blocked"])
 
     assert SwarmReconciler._should_stop(run) is True
+
+
+def test_should_stop_when_only_waiting_conflict_remains() -> None:
+    """Regression for #883: waiting_conflict with no forward-progress path
+    must cause the reconciler to stop, not poll indefinitely."""
+    run = _run("needs_human", ["completed", "waiting_conflict", "waiting_conflict", "failed"])
+
+    assert SwarmReconciler._should_stop(run) is True
+
+
+def test_should_stop_when_only_waiting_resource_remains() -> None:
+    """waiting_resource alone (no leased/dispatched/queued) is a dead-end."""
+    run = _run("needs_human", ["waiting_resource"])
+
+    assert SwarmReconciler._should_stop(run) is True
+
+
+def test_should_not_stop_when_queued_work_remains() -> None:
+    """queued work orders represent forward progress even if some are
+    waiting_conflict."""
+    run = _run("active", ["waiting_conflict", "queued"])
+
+    assert SwarmReconciler._should_stop(run) is False
+
+
+def test_should_not_stop_when_dispatched_work_remains() -> None:
+    run = _run("active", ["waiting_conflict", "dispatched"])
+
+    assert SwarmReconciler._should_stop(run) is False
