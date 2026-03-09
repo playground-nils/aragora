@@ -1041,6 +1041,54 @@ class DevCoordinationStore:
             )
         return lease
 
+    def persist_scope_violation(
+        self,
+        lease_id: str,
+        *,
+        changed_paths: list[str],
+        violations: list[dict[str, Any]],
+    ) -> None:
+        """Write scope-violation metadata into a lease without releasing it.
+
+        The lease remains active so that ``status_summary()`` — which scans
+        ``list_active_leases()`` for ``last_scope_violation`` — can surface the
+        violation to fleet/integrator views.  This mirrors the metadata write in
+        ``record_completion()`` but is callable from the supervisor's early-kill
+        path where a full completion receipt is not available.
+        """
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT metadata_json FROM leases WHERE lease_id = ?", (lease_id,)
+            ).fetchone()
+            if row is None:
+                return  # Unknown lease — nothing to update
+            metadata = {
+                **_json_loads(row["metadata_json"], {}),
+                "last_scope_violation": {
+                    "detected_at": now,
+                    "changed_paths": changed_paths,
+                    "violations": violations,
+                },
+            }
+            conn.execute(
+                "UPDATE leases SET updated_at = ?, metadata_json = ? WHERE lease_id = ?",
+                (now, _json_dump(metadata), lease_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        self._publish(
+            "scope_violation_detected",
+            track="",
+            data={
+                "lease_id": lease_id,
+                "changed_paths": changed_paths,
+                "violations": violations,
+            },
+        )
+
     def release_lease(self, lease_id: str, status: LeaseStatus = LeaseStatus.RELEASED) -> WorkLease:
         now = _utcnow().isoformat()
         conn = self._connect()

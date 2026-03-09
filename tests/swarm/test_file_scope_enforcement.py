@@ -274,6 +274,53 @@ class TestMarkScopeViolation:
         supervisor._mark_scope_violation(item, violations)
         assert "pid" not in item
 
+    def test_violation_persisted_to_lease_metadata(
+        self, repo: Path, store: DevCoordinationStore
+    ) -> None:
+        """Regression: scope violations must appear in store-backed status surfaces.
+
+        After _mark_scope_violation, the lease must remain active with
+        last_scope_violation metadata so that status_summary() can surface it
+        to fleet/integrator views.
+        """
+        # Create a real lease in the coordination store
+        lease = store.claim_lease(
+            task_id="scope-test",
+            title="Scope violation test",
+            owner_agent="codex",
+            owner_session_id="sess-1",
+            branch="test-branch",
+            worktree_path=str(repo),
+            allowed_globs=["aragora/live/**"],
+        )
+
+        supervisor = self._make_supervisor(repo, store)
+        item: dict = {
+            "status": "dispatched",
+            "lease_id": lease.lease_id,
+            "changed_paths": ["README.md"],
+        }
+        violations = [
+            {"type": "out_of_scope", "path": "README.md", "allowed_scope": ["aragora/live"]}
+        ]
+        supervisor._mark_scope_violation(item, violations)
+
+        # Lease should still be active (not released)
+        active = store.list_active_leases()
+        active_ids = {l.lease_id for l in active}
+        assert lease.lease_id in active_ids
+
+        # Violation metadata should be in the lease
+        matching = [l for l in active if l.lease_id == lease.lease_id]
+        assert len(matching) == 1
+        assert "last_scope_violation" in matching[0].metadata
+        assert matching[0].metadata["last_scope_violation"]["violations"] == violations
+
+        # status_summary should surface the violation
+        summary = store.status_summary()
+        violation_lease_ids = {v["lease_id"] for v in summary.get("scope_violations", [])}
+        assert lease.lease_id in violation_lease_ids
+
 
 # ---------------------------------------------------------------------------
 # Tests for _apply_worker_result with scope enforcement

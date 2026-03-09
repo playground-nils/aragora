@@ -1016,13 +1016,19 @@ class SwarmSupervisor:
         item["blockers"] = blockers
         item.pop("pid", None)
 
-        # Persist scope violation into the lease metadata so fleet views see it
+        # Write violation metadata into the lease so status_summary() surfaces
+        # it.  The lease stays *active* — matching what record_completion() does
+        # — so list_active_leases() picks it up for fleet/integrator views.
         lease_id = str(item.get("lease_id", "")).strip()
         if lease_id:
             try:
-                self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
-            except (KeyError, Exception):
-                pass
+                self.store.persist_scope_violation(
+                    lease_id,
+                    changed_paths=list(item.get("changed_paths", [])),
+                    violations=violations,
+                )
+            except Exception:
+                pass  # Best-effort — local item is already marked
 
     @staticmethod
     def _check_file_scope_violations(
