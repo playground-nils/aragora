@@ -69,7 +69,7 @@
         <div
           class="progress-fill"
           style="width: {((debate.current_round || 0) / (debate.total_rounds || 9)) * 100}%"
-        />
+        ></div>
       </div>
     </div>
   </div>
@@ -78,7 +78,7 @@
     <div class="card" style="margin-top: 1rem">
       <h3>Live Stream</h3>
       <div class="connection-status">
-        <div class="dot" class:connected />
+        <div class="dot" class:connected></div>
         <span class="muted">{connected ? 'Connected' : 'Disconnected'}</span>
       </div>
 

@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { getServerClient } from '$lib/aragora';
+import { getServerClient } from '$lib/aragora.server';
 
 export const load: PageServerLoad = async () => {
   const client = getServerClient();
