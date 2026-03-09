@@ -751,7 +751,7 @@ class BossLoop:
                 dispatch=True,
                 wait=True,
                 interval_seconds=5.0,
-                max_ticks=60,
+                max_ticks=360,
             )
 
             run_dict = run.to_dict()
