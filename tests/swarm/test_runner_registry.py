@@ -87,6 +87,23 @@ class TestCodexRunnerInspector:
         assert inspection.auth_mode == "unknown"
         assert "Confirm the local Codex CLI login state" in str(inspection.next_action)
 
+    def test_openai_api_key_env_alone_does_not_prove_api_key_auth(self, monkeypatch):
+        monkeypatch.setattr(
+            "aragora.swarm.runner_registry.shutil.which",
+            lambda _name: "/usr/local/bin/codex",
+        )
+
+        def _run(command: list[str]) -> dict[str, object]:
+            joined = " ".join(command)
+            if joined.endswith("--help"):
+                return {"returncode": 0, "stdout": "Commands:\n  exec\n  review\n", "stderr": ""}
+            return {"returncode": 0, "stdout": "Authentication status unavailable\n", "stderr": ""}
+
+        monkeypatch.setattr(CodexRunnerInspector, "_run_command", staticmethod(_run))
+        inspection = CodexRunnerInspector(env={"OPENAI_API_KEY": "sk-test"}).inspect()
+
+        assert inspection.auth_mode == "unknown"
+
 
 class TestLocalRunnerRegistry:
     def test_registration_persists_owner_binding_and_payload_shape(self, tmp_path: Path) -> None:
@@ -144,3 +161,29 @@ class TestLocalRunnerRegistry:
         assert registered.registered is False
         assert registered.registry_path is not None
         assert "ARAGORA_USER_ID" in str(registered.next_action)
+
+    def test_registration_of_unknown_auth_runner_warns_before_routing(self, tmp_path: Path) -> None:
+        registry = LocalRunnerRegistry(path=tmp_path / "swarm-runners.json")
+        owner_context = authorization_context_from_env(
+            {
+                "ARAGORA_USER_ID": "user-123",
+                "ARAGORA_WORKSPACE_ID": "ws-456",
+            }
+        )
+        inspection = CodexRunnerInspection(
+            runner_id="codex-runner-unknown",
+            runner_type="codex",
+            availability="available",
+            available=True,
+            auth_mode="unknown",
+            codex_path="/usr/local/bin/codex",
+            version="codex 1.2.3",
+            status_summary="Authentication status unavailable",
+            capabilities={"supports_exec": True},
+            owner_binding={},
+        )
+
+        registered = registry.register(inspection, owner_context=owner_context)
+
+        assert registered.registered is True
+        assert "auth mode is still unknown" in str(registered.next_action)

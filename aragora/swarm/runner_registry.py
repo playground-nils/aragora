@@ -176,8 +176,6 @@ class CodexRunnerInspector:
             return "chatgpt_login"
         if "api key" in lowered and "logged in" in lowered:
             return "api_key"
-        if str(self.env.get("OPENAI_API_KEY", "")).strip():
-            return "api_key"
         return "unknown"
 
     @staticmethod
@@ -285,9 +283,13 @@ class LocalRunnerRegistry:
         inspection.registered = True
         inspection.registry_path = registry_path
         inspection.registered_at = now
-        inspection.next_action = (
-            "Runner registered. Future Boss-mode routing can target this owner-bound Codex runner."
-        )
+        if inspection.auth_mode == "unknown":
+            inspection.next_action = (
+                "Runner registered to the owner context, but auth mode is still unknown. "
+                "Confirm the local Codex login state before Boss-mode routing relies on this runner."
+            )
+        else:
+            inspection.next_action = "Runner registered. Future Boss-mode routing can target this owner-bound Codex runner."
         return inspection
 
     def _load(self) -> dict[str, Any]:
