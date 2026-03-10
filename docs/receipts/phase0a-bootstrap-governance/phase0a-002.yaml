@@ -1,0 +1,27 @@
+# AUDIT NOTE — backfilled by operator, not emitted by campaign executor.
+# This does NOT count as an authoritative execution receipt for exit gate purposes.
+task_id: phase0a-002
+campaign_id: phase0a-bootstrap-governance
+phase: 0a
+manifest_input: docs/plans/phase0a_campaign_manifest.yaml
+worker_branch: codex/swarm-ad8c8907-subtask_
+worker_commit: f0eaf320d
+changed_files:
+  - docs/ADR/017-self-hosted-worker-canonicalization.md
+review_verdict: passed
+verification_results:
+  pytest_exit_code: null
+  syntax_check: null
+  truth_suite: null
+final_status: completed
+failure_classification: null
+rescue_required: true
+rescue_description: >
+  Worker generated worker-model ADR but SIGPIPE (exit 141) killed process
+  before auto-commit. Human operator manually committed f0eaf320d, pushed
+  branch, and created PR #922. Campaign manifest state manually updated.
+  ADR number collision with phase0a-001 (both claimed 017) — requires
+  renumbering.
+cost_usd: 1.0
+duration_seconds: 150
+created_at: '2026-03-10T21:18:00+00:00'
