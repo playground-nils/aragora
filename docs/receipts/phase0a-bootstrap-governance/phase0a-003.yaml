@@ -1,0 +1,27 @@
+# AUDIT NOTE — backfilled by operator, not emitted by campaign executor.
+# Task 003 was generated manually after codex worker produced zero output.
+# This does NOT count as an authoritative execution receipt for exit gate purposes.
+task_id: phase0a-003
+campaign_id: phase0a-bootstrap-governance
+phase: 0a
+manifest_input: docs/plans/phase0a_campaign_manifest.yaml
+worker_branch: codex/claude-20260310-193659-bcfe47e1
+worker_commit: pending
+changed_files:
+  - docs/governance/subsystem-ledger.md
+review_verdict: passed
+verification_results:
+  pytest_exit_code: null
+  syntax_check: null
+  truth_suite: null
+final_status: completed
+failure_classification: null
+rescue_required: true
+rescue_description: >
+  Original codex worker produced zero output (empty session log). Claude
+  operator generated the subsystem ledger directly using parallel research
+  agents to classify all 121 top-level aragora packages. This is a rescue
+  because the automated campaign pipeline did not produce the deliverable.
+cost_usd: 1.5
+duration_seconds: 300
+created_at: '2026-03-10T22:30:00+00:00'
