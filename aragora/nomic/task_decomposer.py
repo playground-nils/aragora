@@ -308,6 +308,8 @@ class TaskDecomposer:
         task_description: str,
         debate_result: DebateResult | None = None,
         depth: int = 0,
+        *,
+        file_scope_hints: list[str] | None = None,
     ) -> TaskDecomposition:
         """Analyze a task and determine if decomposition is needed.
 
@@ -315,6 +317,10 @@ class TaskDecomposer:
             task_description: The task or improvement proposal
             debate_result: Optional debate result for additional context
             depth: Current recursion depth (0 = top-level)
+            file_scope_hints: Optional path hints constraining where work
+                should happen. Passed to LLM extraction for scope-aware
+                decomposition, and used to validate subtask scopes after
+                generation (empty scopes backfilled, non-overlapping overridden).
 
         Returns:
             TaskDecomposition with analysis and optional subtasks
@@ -357,6 +363,10 @@ class TaskDecomposer:
         ):
             expanded = self._expand_vague_goal(task_description)
             if expanded is not None:
+                if file_scope_hints:
+                    expanded.subtasks = self._constrain_scopes_to_hints(
+                        expanded.subtasks, file_scope_hints
+                    )
                 logger.info(
                     "vague_goal_expanded original_score=%s subtasks=%s depth=%s",
                     complexity_score,
@@ -391,7 +401,11 @@ class TaskDecomposer:
 
         # Extract subtasks if decomposition is needed
         if should_decompose:
-            result.subtasks = self._generate_subtasks(task_description, debate_result)
+            result.subtasks = self._generate_subtasks(
+                task_description, debate_result, file_scope_hints=file_scope_hints
+            )
+            if file_scope_hints:
+                result.subtasks = self._constrain_scopes_to_hints(result.subtasks, file_scope_hints)
             logger.info(
                 "task_decomposed complexity=%s subtasks=%s depth=%s",
                 complexity_score,
@@ -659,6 +673,13 @@ class TaskDecomposer:
         "increase",
         "reduce",
         "test",
+        "bump",
+        "resolve",
+        "upgrade",
+        "downgrade",
+        "install",
+        "uninstall",
+        "pin",
     }
 
     _SPECIFIC_TECHNICAL_TERMS = {
@@ -703,15 +724,41 @@ class TaskDecomposer:
         "stub",
         "factory",
         "singleton",
+        "dependency",
+        "package",
+        "version",
+        "config",
+        "webpack",
+        "eslint",
+        "eslintrc",
+        "prettier",
+        "babel",
+        "typescript",
+        "react",
+        "vue",
+        "angular",
+        "node",
+        "npm",
+        "yarn",
+        "pnpm",
+        "pip",
+        "poetry",
+        "cargo",
     }
 
     def _is_specific_goal(self, goal: str) -> bool:
         """Check if a goal is specific enough to skip vague expansion.
 
-        A goal is specific if it contains concrete action verbs AND technical
-        terms that indicate the user knows exactly what they want, even if it
-        doesn't mention file paths (which would raise the complexity score).
+        A goal is specific if it:
+        - References specific files or directories (``aragora/live``, ``foo.py``), OR
+        - Contains concrete action verbs AND technical terms/module references
+
+        Goals with file path references are inherently scoped and should never
+        be expanded into generic track/template subtasks.
         """
+        # File/directory references make a goal inherently specific
+        if self._has_file_hints(goal):
+            return True
         words = set(goal.lower().split())
         has_action = bool(words & self._SPECIFIC_ACTION_VERBS)
         has_technical = bool(words & self._SPECIFIC_TECHNICAL_TERMS)
@@ -779,15 +826,20 @@ class TaskDecomposer:
         self,
         task: str,
         debate_result: DebateResult | None = None,
+        *,
+        file_scope_hints: list[str] | None = None,
     ) -> list[SubTask]:
         """Generate subtasks for a complex task.
 
-        Uses heuristics to identify natural decomposition points.
+        Precedence:
+          1. Caller-supplied ``extract_subtasks_fn`` (explicit override).
+          2. LLM-based extraction via frontier model (Anthropic → OpenRouter).
+             Returns [] when no API key is configured, falling through silently.
+          3. Heuristic decomposition (keyword/concept-based).
         """
-        subtasks: list[SubTask] = []
-
-        # If AI extraction is available, use it
+        # 1. Try caller-provided extraction function (explicit override)
         if self._extract_subtasks_fn:
+            subtasks: list[SubTask] = []
             try:
                 extracted = self._extract_subtasks_fn(task)
                 for i, st in enumerate(extracted[: self.config.max_subtasks]):
@@ -806,8 +858,279 @@ class TaskDecomposer:
             except (RuntimeError, ValueError, KeyError) as e:
                 logger.debug("AI subtask extraction failed: %s", e)
 
-        # Fall back to heuristic decomposition
+        # 2. Try LLM-based subtask extraction (frontier model).
+        #    Returns [] when no API key is configured — falls through silently.
+        llm_subtasks = self._llm_extract_subtasks(task, file_scope_hints=file_scope_hints)
+        if llm_subtasks:
+            return llm_subtasks[: self.config.max_subtasks]
+
+        # 3. Fall back to heuristic decomposition
         return self._heuristic_decomposition(task, debate_result)
+
+    def _llm_extract_subtasks(
+        self, task: str, *, file_scope_hints: list[str] | None = None
+    ) -> list[SubTask]:
+        """Extract subtasks using a frontier LLM.
+
+        Tries providers in order:
+        1. Anthropic API (ANTHROPIC_API_KEY) — direct Claude access
+        2. OpenRouter (OPENROUTER_API_KEY) — OpenAI-compatible fallback
+
+        Returns an empty list if no provider is available or both fail,
+        allowing the caller to fall back to heuristic decomposition.
+        """
+        prompt = self._build_decomposition_prompt(task, file_scope_hints)
+
+        # Try Anthropic first
+        text = self._call_anthropic(prompt)
+        if text is None:
+            # Fall back to OpenRouter
+            text = self._call_openrouter(prompt)
+        if text is None:
+            return []
+
+        return self._parse_llm_subtasks(text)
+
+    def _build_decomposition_prompt(
+        self, task: str, file_scope_hints: list[str] | None = None
+    ) -> str:
+        """Build a structured prompt for LLM-based task decomposition."""
+        scope_section = ""
+        if file_scope_hints:
+            scope_list = ", ".join(f"`{h}`" for h in file_scope_hints)
+            scope_section = (
+                f"\n## Scope Constraints\n"
+                f"This task is scoped to: {scope_list}\n"
+                f"- ALL subtask file_scope values MUST reference paths within these directories.\n"
+                f"- Do NOT generate subtasks targeting other parts of the codebase.\n"
+            )
+
+        return (
+            "You are a precise task decomposition engine for a software project.\n\n"
+            "## Task\n"
+            f"{task}\n"
+            f"{scope_section}\n"
+            "## Instructions\n"
+            "Analyze the task above and decompose it into 1-5 concrete, actionable subtasks.\n\n"
+            "### Classification Rules\n"
+            "1. **Bounded operations** (dependency bump, version upgrade, single config change, "
+            "single-file fix): Return exactly 1 subtask that mirrors the original task.\n"
+            "2. **Multi-file changes** (refactor across modules, feature spanning multiple dirs): "
+            "Return 2-4 subtasks grouped by directory or logical unit.\n"
+            "3. **Complex features** (new subsystem, cross-cutting concern): "
+            "Return 3-5 subtasks with explicit dependencies.\n\n"
+            "### Critical Constraints\n"
+            "- Each subtask title and description MUST directly relate to the task content.\n"
+            "- Do NOT invent generic improvement subtasks unrelated to the task.\n"
+            "- Do NOT add audit, review, compliance, or performance subtasks unless the "
+            "original task explicitly requests them.\n"
+            "- `file_scope` must contain only paths/directories mentioned in or inferable "
+            "from the task. If no paths are mentioned, use an empty list.\n\n"
+            "### Anti-patterns (NEVER do these)\n"
+            '- Generating "Performance Review", "SOC2 Audit", "Citation Verification", '
+            '"Improve Developer Track" for a dependency bump task.\n'
+            "- Adding subtasks from unrelated domain tracks (security audits for a CSS fix).\n"
+            "- Expanding a simple 1-step operation into multiple artificial phases.\n\n"
+            "## Output Format\n"
+            "Respond with ONLY a JSON array. No markdown fences, no explanation.\n"
+            "Each element:\n"
+            "```\n"
+            '{"title": "...", "description": "...", "file_scope": [...], '
+            '"estimated_complexity": "low"|"medium"|"high"}\n'
+            "```\n"
+        )
+
+    def _call_anthropic(self, prompt: str) -> str | None:
+        """Try calling the Anthropic API directly. Returns response text or None."""
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            logger.debug("ANTHROPIC_API_KEY not set; skipping Anthropic provider")
+            return None
+
+        try:
+            import anthropic
+        except ImportError:
+            logger.debug("anthropic package not installed; skipping Anthropic provider")
+            return None
+
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = response.content[0].text if response.content else ""
+            if text:
+                logger.info("LLM subtask extraction succeeded via Anthropic")
+                return text
+            return None
+        except Exception:  # noqa: BLE001 -- best-effort provider
+            logger.debug("Anthropic API call failed, will try fallback", exc_info=True)
+            return None
+
+    def _call_openrouter(self, prompt: str) -> str | None:
+        """Try calling OpenRouter as fallback. Returns response text or None."""
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not api_key:
+            logger.debug("OPENROUTER_API_KEY not set; skipping OpenRouter fallback")
+            return None
+
+        try:
+            import httpx
+        except ImportError:
+            logger.debug("httpx not installed; skipping OpenRouter fallback")
+            return None
+
+        try:
+            response = httpx.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "anthropic/claude-sonnet-4",
+                    "max_tokens": 1024,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=60.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if text:
+                logger.info("LLM subtask extraction succeeded via OpenRouter")
+                return text
+            return None
+        except Exception:  # noqa: BLE001 -- best-effort fallback
+            logger.debug("OpenRouter API call failed", exc_info=True)
+            return None
+
+    def _parse_llm_subtasks(self, text: str) -> list[SubTask]:
+        """Parse LLM response text into SubTask objects."""
+        parsed = self._parse_json_array(text)
+        if not parsed:
+            logger.debug("LLM returned no parseable subtasks")
+            return []
+
+        subtasks: list[SubTask] = []
+        for i, item in enumerate(parsed[: self.config.max_subtasks]):
+            subtasks.append(
+                SubTask(
+                    id=f"subtask_{i + 1}",
+                    title=item.get("title", f"Subtask {i + 1}"),
+                    description=item.get("description", ""),
+                    file_scope=item.get("file_scope", []),
+                    estimated_complexity=item.get("estimated_complexity", "medium"),
+                )
+            )
+        logger.info(
+            "LLM subtask extraction produced %d subtasks",
+            len(subtasks),
+        )
+        return subtasks
+
+    @staticmethod
+    def _parse_json_array(text: str) -> list[dict]:
+        """Extract a JSON array from LLM response text."""
+        # Find the outermost [...] in the response
+        start = text.find("[")
+        if start == -1:
+            return []
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == "[":
+                depth += 1
+            elif text[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except (json.JSONDecodeError, ValueError):
+                        return []
+        return []
+
+    # =========================================================================
+    # File-scope constraint enforcement
+    # =========================================================================
+
+    @staticmethod
+    def _scope_overlaps_hints(file_scope: list[str], hints: list[str]) -> bool:
+        """Check if any scope path has a path-prefix overlap with any hint.
+
+        Delegates to the coordination layer's ``_glob_overlap`` which supports
+        exact paths, directory prefixes with ``/`` boundary checks, ``/**``
+        recursive globs, and ``PurePosixPath.match()`` for standard glob
+        patterns — the same semantics used by file-scope enforcement.
+
+        Pre-strips ``./`` prefixes that ``_glob_overlap`` does not normalize.
+        """
+        try:
+            from aragora.nomic.dev_coordination import _glob_overlap
+        except ImportError:
+            # Fallback to simple prefix matching if coordination layer unavailable
+            for scope_path in file_scope:
+                clean_scope = scope_path.strip().removeprefix("./").rstrip("/")
+                if not clean_scope:
+                    continue
+                for hint in hints:
+                    clean_hint = hint.strip().removeprefix("./").rstrip("/")
+                    if not clean_hint:
+                        continue
+                    if clean_scope.startswith(clean_hint + "/") or clean_hint.startswith(
+                        clean_scope + "/"
+                    ):
+                        return True
+                    if clean_scope == clean_hint:
+                        return True
+            return False
+
+        for scope_path in file_scope:
+            clean_scope = scope_path.strip().removeprefix("./")
+            if not clean_scope:
+                continue
+            for hint in hints:
+                clean_hint = hint.strip().removeprefix("./")
+                if not clean_hint:
+                    continue
+                if _glob_overlap(clean_scope, clean_hint):
+                    return True
+        return False
+
+    def _constrain_scopes_to_hints(
+        self,
+        subtasks: list[SubTask],
+        hints: list[str],
+    ) -> list[SubTask]:
+        """Validate and constrain subtask file_scope against caller hints.
+
+        - Empty file_scope → backfilled from hints
+        - Non-overlapping file_scope → overridden with hints
+        - Overlapping file_scope → preserved (decomposer correctly narrowed)
+        - Empty hints → no changes (nothing to constrain against)
+        """
+        if not hints:
+            return subtasks
+        for subtask in subtasks:
+            if not subtask.file_scope:
+                subtask.file_scope = list(hints)
+                logger.info(
+                    "Backfilled empty file_scope on subtask %s from hints: %s",
+                    subtask.id,
+                    hints,
+                )
+            elif not self._scope_overlaps_hints(subtask.file_scope, hints):
+                logger.warning(
+                    "Subtask %s file_scope %s has no overlap with hints %s — overriding",
+                    subtask.id,
+                    subtask.file_scope,
+                    hints,
+                )
+                subtask.file_scope = list(hints)
+        return subtasks
+
+    # =========================================================================
 
     def _heuristic_decomposition(
         self,
