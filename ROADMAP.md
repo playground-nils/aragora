@@ -89,6 +89,7 @@ Aragora is the control plane for multi-agent vetted decisionmaking across organi
 - [x] OpenAPI 3.1 specification (3,100+ operations)
 - [x] TypeScript SDK feature parity with Python
 - [x] SDK code generation pipeline
+- [x] Backend runtime entrypoint and compatibility policy documented (ADR-017)
 - [ ] Interactive API explorer at docs.aragora.ai/api
 - [ ] Example apps (Slack code review, document analysis)
 
