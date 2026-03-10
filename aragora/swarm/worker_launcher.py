@@ -28,6 +28,7 @@ SESSION_ARTIFACTS: frozenset[str] = frozenset(
     {
         ".codex_session_meta.json",
         ".codex_session.log",
+        ".codex_session_active",
     }
 )
 
