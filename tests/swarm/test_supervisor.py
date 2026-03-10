@@ -275,7 +275,9 @@ def test_refresh_run_marks_resource_wait_on_disk_full(
     )
     run = supervisor.start_run(spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"))
 
-    assert run.status == "active"
+    # waiting_resource with no forward-progress path escalates to needs_human
+    # (fixes #883 deadlock where dead-end statuses kept the run active).
+    assert run.status == "needs_human"
     work_order = run.work_orders[0]
     assert work_order["status"] == "waiting_resource"
     assert "No space left on device" in work_order["resource_error"]

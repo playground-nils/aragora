@@ -96,5 +96,9 @@ class SwarmReconciler:
             return True
         if run.status == "needs_human":
             return True
-        active_statuses = {"queued", "waiting_conflict", "waiting_resource", "leased", "dispatched"}
-        return not (statuses & active_statuses)
+        # Only statuses that represent real forward progress keep the
+        # reconciler alive.  waiting_conflict and waiting_resource are
+        # dead-end blockers — _derive_status escalates them to needs_human
+        # when no forward-progress path remains.
+        forward_progress_statuses = {"queued", "leased", "dispatched"}
+        return not (statuses & forward_progress_statuses)
