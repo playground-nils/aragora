@@ -555,14 +555,25 @@ class SwarmSupervisor:
         work_orders = self.bridge.build_work_orders(subtasks)
         spec_hints = list(spec.file_scope_hints)
         for item in work_orders:
-            # Backfill file_scope from spec hints when decomposer left it empty.
-            if not item.file_scope and spec_hints:
-                item.file_scope = list(spec_hints)
-                logger.info(
-                    "Backfilled file_scope on work order %s from spec hints: %s",
-                    item.work_order_id,
-                    spec_hints,
-                )
+            # Override file_scope from spec hints when the decomposer left it
+            # empty OR produced scopes with zero overlap with the hints.
+            if spec_hints:
+                if not item.file_scope:
+                    item.file_scope = list(spec_hints)
+                    logger.info(
+                        "Backfilled empty file_scope on work order %s from spec hints: %s",
+                        item.work_order_id,
+                        spec_hints,
+                    )
+                elif not self._scope_overlaps_hints(item.file_scope, spec_hints):
+                    logger.warning(
+                        "Decomposer file_scope %s on work order %s has no overlap "
+                        "with spec hints %s — overriding with spec hints",
+                        item.file_scope,
+                        item.work_order_id,
+                        spec_hints,
+                    )
+                    item.file_scope = list(spec_hints)
             item.expected_tests = self._default_tests(item, spec)
             item.risk_level = self._risk_level_for_scope(item.file_scope)
             item.approval_required = item.approval_required or item.risk_level in {
@@ -1207,6 +1218,26 @@ class SwarmSupervisor:
             if next_level == ApprovalLevel.REVIEW:
                 level = ApprovalLevel.REVIEW
         return "review" if level == ApprovalLevel.REVIEW else "info"
+
+    @staticmethod
+    def _scope_overlaps_hints(file_scope: list[str], hints: list[str]) -> bool:
+        """Check whether any decomposer-assigned scope overlaps with spec hints.
+
+        Overlap means one path is a prefix of the other: the decomposer
+        either narrowed (``aragora/live/package.json`` under ``aragora/live``)
+        or widened (``aragora`` over ``aragora/live``).
+        """
+        for scope_path in file_scope:
+            clean_scope = scope_path.strip().removeprefix("./").rstrip("/")
+            if not clean_scope:
+                continue
+            for hint in hints:
+                clean_hint = hint.strip().removeprefix("./").rstrip("/")
+                if not clean_hint:
+                    continue
+                if clean_scope.startswith(clean_hint) or clean_hint.startswith(clean_scope):
+                    return True
+        return False
 
     @staticmethod
     def _task_prompt(spec: SwarmSpec) -> str:
