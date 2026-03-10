@@ -29,6 +29,17 @@ logger = logging.getLogger(__name__)
 UTC = timezone.utc
 DEFAULT_CAMPAIGN_MANIFEST = ".aragora/campaign_manifest.yaml"
 
+# Statuses that represent terminal project transitions (no further retries).
+# Receipt emission fires only for these statuses.
+_TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {
+        "completed",
+        "failed",
+        "blocked",
+        "skipped",
+    }
+)
+
 
 class CampaignProjectStatus(str, Enum):
     PENDING = "pending"
@@ -908,7 +919,7 @@ class CampaignExecutor:
             manifest = load_campaign_manifest(self.manifest_path)
             project = manifest.project_map()[project_id]
             project.review = gate
-            self._apply_review_result(project, gate)
+            self._apply_review_result(manifest, project, gate, run_dict=run_dict)
             _refresh_execution_state(manifest)
             save_campaign_manifest(self.manifest_path, manifest)
             return {"project_id": project_id, "review": gate.to_dict(), "status": project.status}
@@ -987,7 +998,9 @@ class CampaignExecutor:
                 manifest = load_campaign_manifest(self.manifest_path)
                 project = manifest.project_map()[project_id]
                 project.review = gate
-                self._apply_review_result(project, gate)
+                self._apply_review_result(
+                    manifest, project, gate, run_dict=dict(result.get("run") or {})
+                )
                 _refresh_execution_state(manifest)
                 save_campaign_manifest(self.manifest_path, manifest)
 
@@ -1046,13 +1059,27 @@ class CampaignExecutor:
         }:
             project.status = CampaignProjectStatus.SKIPPED.value
 
-    def _apply_review_result(self, project: CampaignProject, gate: CampaignReviewGate) -> None:
+        if project.status in _TERMINAL_STATUSES:
+            self._emit_receipt(manifest, project, run_dict)
+
+    def _apply_review_result(
+        self,
+        manifest: CampaignManifest,
+        project: CampaignProject,
+        gate: CampaignReviewGate,
+        run_dict: dict[str, Any] | None = None,
+    ) -> None:
+        project.review = gate
+
         if gate.status == CampaignReviewStatus.PASSED.value:
             project.status = CampaignProjectStatus.COMPLETED.value
         elif gate.status == CampaignReviewStatus.CHANGES_REQUESTED.value:
             project.status = CampaignProjectStatus.NEEDS_REVISION.value
         else:
             project.status = CampaignProjectStatus.BLOCKED.value
+
+        if project.status in _TERMINAL_STATUSES:
+            self._emit_receipt(manifest, project, run_dict)
 
     def _spec_for_retry(self, project: CampaignProject) -> SwarmSpec:
         spec = SwarmSpec.from_dict(project.spec.to_dict())
@@ -1114,6 +1141,7 @@ class CampaignExecutor:
                 continue
             if project.retry_count > manifest.max_retries_per_project:
                 project.status = CampaignProjectStatus.SKIPPED.value
+                self._emit_receipt(manifest, project, None)
                 continue
             deps = {dep.project_id for dep in project.dependencies}
             if deps.issubset(completed):
@@ -1129,6 +1157,81 @@ class CampaignExecutor:
         except Exception:
             record = supervisor.store.get_supervisor_run(run_id)
             return dict(record) if isinstance(record, dict) else None
+
+    def _emit_receipt(
+        self,
+        manifest: CampaignManifest,
+        project: CampaignProject,
+        run_dict: dict[str, Any] | None,
+    ) -> Path:
+        """Write an authoritative receipt file at terminal project transition.
+
+        Receipts are written to docs/receipts/<campaign_id>/<project_id>.yaml
+        atomically (temp file + replace). Raises RuntimeError on failure so
+        the caller knows the receipt was not persisted.
+        """
+        receipt_dir = self.repo_root / "docs" / "receipts" / manifest.campaign_id
+        receipt_path = receipt_dir / f"{project.project_id}.yaml"
+        try:
+            try:
+                manifest_input = str(self.manifest_path.relative_to(self.repo_root))
+            except ValueError:
+                manifest_input = str(self.manifest_path)
+
+            payload: dict[str, Any] = {
+                "task_id": project.project_id,
+                "campaign_id": manifest.campaign_id,
+                "phase": _derive_phase(manifest.campaign_id),
+                "manifest_input": manifest_input,
+                "worker_branch": _worker_branch_from_run(project, run_dict),
+                "worker_commit": _worker_commit_from_run(project, run_dict),
+                "changed_files": _changed_files_from_run(run_dict),
+                "review_verdict": _receipt_review_verdict(project.review.status),
+                "verification_results": {
+                    "pytest_exit_code": None,
+                    "syntax_check": None,
+                    "truth_suite": None,
+                },
+                "final_status": _receipt_final_status(project.status),
+                "failure_classification": _failure_classification_from_outcome(
+                    project.last_run_outcome
+                ),
+                "rescue_required": False,
+                "rescue_description": None,
+                "cost_usd": project.estimated_cost_usd,
+                "duration_seconds": _duration_seconds_from_run(run_dict),
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+
+            try:
+                import yaml
+
+                content = yaml.safe_dump(payload, sort_keys=True, allow_unicode=False)
+            except ImportError:
+                content = json.dumps(payload, indent=2, sort_keys=True)
+
+            receipt_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = receipt_path.with_suffix(".yaml.tmp")
+            tmp_path.write_text(content, encoding="utf-8")
+            tmp_path.replace(receipt_path)
+
+            project.receipt_id = str(receipt_path.relative_to(self.repo_root))
+            logger.info(
+                "receipt_emitted: project=%s status=%s path=%s",
+                project.project_id,
+                project.status,
+                project.receipt_id,
+            )
+            return receipt_path
+
+        except Exception as exc:
+            logger.error(
+                "receipt_emit_failed: project=%s status=%s error=%s",
+                project.project_id,
+                project.status,
+                exc,
+            )
+            raise RuntimeError(f"Failed to emit receipt for {project.project_id}: {exc}") from exc
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -1303,3 +1406,118 @@ def _extract_json_list(text: str) -> list[str]:
     if isinstance(findings, list):
         return [str(item) for item in findings if str(item).strip()]
     return []
+
+
+# ---------------------------------------------------------------------------
+# Receipt emission helpers
+# ---------------------------------------------------------------------------
+
+
+def _derive_phase(campaign_id: str) -> str | None:
+    cid = str(campaign_id or "").lower()
+    for prefix, label in (
+        ("phase0a", "0a"),
+        ("phase0b", "0b"),
+        ("phase1", "1"),
+        ("phase2", "2"),
+    ):
+        if cid.startswith(prefix):
+            return label
+    return None
+
+
+def _failure_classification_from_outcome(outcome: str | None) -> str | None:
+    mapping = {
+        CampaignRunOutcome.CRASH.value: "worker_crash",
+        CampaignRunOutcome.TIMEOUT.value: "timeout",
+        CampaignRunOutcome.BLOCKED.value: "stall",
+        CampaignRunOutcome.NEEDS_HUMAN.value: "stall",
+        CampaignRunOutcome.CLEAN_EXIT_NO_DELIVERABLE.value: "stall",
+    }
+    return mapping.get(str(outcome or ""))
+
+
+def _receipt_final_status(project_status: str) -> str:
+    return {
+        "completed": "completed",
+        "failed": "failed",
+        "skipped": "failed",
+        "blocked": "rejected",
+    }.get(project_status, "failed")
+
+
+def _receipt_review_verdict(review_status: str) -> str:
+    return {
+        CampaignReviewStatus.PASSED.value: "passed",
+        CampaignReviewStatus.CHANGES_REQUESTED.value: "failed",
+        CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value: "failed",
+        CampaignReviewStatus.PENDING.value: "skipped",
+    }.get(review_status, "skipped")
+
+
+def _duration_seconds_from_run(run_dict: dict[str, Any] | None) -> int | None:
+    if not run_dict:
+        return None
+    for wo in run_dict.get("work_orders", []):
+        if not isinstance(wo, dict):
+            continue
+        started = str(wo.get("started_at", "")).strip()
+        ended = str(wo.get("completed_at", "")).strip()
+        if started and ended:
+            try:
+                t_start = datetime.fromisoformat(started)
+                t_end = datetime.fromisoformat(ended)
+                return max(0, int((t_end - t_start).total_seconds()))
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+def _changed_files_from_run(run_dict: dict[str, Any] | None) -> list[str]:
+    if not run_dict:
+        return []
+    paths: list[str] = []
+    seen: set[str] = set()
+    for wo in run_dict.get("work_orders", []):
+        if not isinstance(wo, dict):
+            continue
+        for p in wo.get("changed_paths", []):
+            text = str(p).strip()
+            if text and text not in seen:
+                seen.add(text)
+                paths.append(text)
+    return paths
+
+
+def _worker_branch_from_run(
+    project: CampaignProject, run_dict: dict[str, Any] | None
+) -> str | None:
+    if project.branch:
+        return project.branch
+    if not run_dict:
+        return None
+    for wo in run_dict.get("work_orders", []):
+        if isinstance(wo, dict):
+            branch = str(wo.get("branch", "")).strip()
+            if branch:
+                return branch
+    return None
+
+
+def _worker_commit_from_run(
+    project: CampaignProject, run_dict: dict[str, Any] | None
+) -> str | None:
+    if project.commit_shas:
+        return project.commit_shas[-1]
+    if not run_dict:
+        return None
+    for wo in run_dict.get("work_orders", []):
+        if not isinstance(wo, dict):
+            continue
+        sha = str(wo.get("head_sha", "")).strip()
+        if sha:
+            return sha
+        shas = [str(s).strip() for s in wo.get("commit_shas", []) if str(s).strip()]
+        if shas:
+            return shas[-1]
+    return None
