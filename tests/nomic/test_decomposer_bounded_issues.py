@@ -301,45 +301,23 @@ class TestLLMProviderFallback:
         assert result == []
 
 
-class TestLLMFirstPrecedence:
-    """Verify intentional LLM-first precedence in _generate_subtasks.
+class TestExtractorOverridePrecedence:
+    """Verify extract_subtasks_fn remains authoritative over LLM and heuristic.
 
-    When the LLM path returns results, it takes priority over
-    extract_subtasks_fn.  This is the designed architecture — the
-    frontier model produces higher-quality decompositions than the
-    legacy caller-supplied function.
-
-    In CI/test environments without API keys, the LLM path returns []
-    so extract_subtasks_fn remains the effective primary path there.
+    The caller-supplied extract_subtasks_fn is an explicit override that must
+    take priority.  The LLM path is a fallback for when no extractor is
+    supplied.
     """
 
     @patch("aragora.nomic.task_decomposer.TaskDecomposer._call_anthropic")
-    def test_llm_results_take_priority_over_extract_fn(self, mock_anthropic: MagicMock) -> None:
-        """When LLM returns valid subtasks, extract_subtasks_fn is NOT called."""
+    def test_extract_fn_takes_priority_over_llm(self, mock_anthropic: MagicMock) -> None:
+        """When extract_subtasks_fn is provided, LLM is NOT called."""
         mock_anthropic.return_value = (
             '[{"title":"LLM Step","description":"from llm",'
             '"file_scope":[],"estimated_complexity":"low"}]'
         )
-        fn_called = []
-        decomposer = TaskDecomposer(
-            config=DecomposerConfig(complexity_threshold=1),
-            extract_subtasks_fn=lambda task: fn_called.append(1) or [],
-        )
-        result = decomposer.analyze("Refactor the database and security and api layers system-wide")
-        if result.should_decompose:
-            assert any("LLM Step" in st.title for st in result.subtasks)
-            assert fn_called == [], "extract_subtasks_fn should not be called when LLM succeeds"
-
-    @patch("aragora.nomic.task_decomposer.TaskDecomposer._call_anthropic")
-    @patch("aragora.nomic.task_decomposer.TaskDecomposer._call_openrouter")
-    def test_extract_fn_used_when_llm_unavailable(
-        self, mock_openrouter: MagicMock, mock_anthropic: MagicMock
-    ) -> None:
-        """When all LLM providers fail, extract_subtasks_fn is the fallback."""
-        mock_anthropic.return_value = None
-        mock_openrouter.return_value = None
         extracted = [
-            {"title": "Fn Step 1", "description": "from fn", "complexity": "low"},
+            {"title": "Fn Step", "description": "from fn", "complexity": "low"},
         ]
         decomposer = TaskDecomposer(
             config=DecomposerConfig(complexity_threshold=1),
@@ -347,7 +325,24 @@ class TestLLMFirstPrecedence:
         )
         result = decomposer.analyze("Refactor the database and security and api layers system-wide")
         if result.should_decompose:
-            assert any("Fn Step 1" in st.title for st in result.subtasks)
+            assert any("Fn Step" in st.title for st in result.subtasks)
+            assert not any("LLM Step" in st.title for st in result.subtasks)
+            mock_anthropic.assert_not_called()
+
+    @patch("aragora.nomic.task_decomposer.TaskDecomposer._call_anthropic")
+    def test_llm_used_when_no_extract_fn(self, mock_anthropic: MagicMock) -> None:
+        """Without extract_subtasks_fn, LLM is the primary decomposition path."""
+        mock_anthropic.return_value = (
+            '[{"title":"LLM Step","description":"from llm",'
+            '"file_scope":[],"estimated_complexity":"low"}]'
+        )
+        decomposer = TaskDecomposer(
+            config=DecomposerConfig(complexity_threshold=1),
+        )
+        result = decomposer.analyze("Refactor the database and security and api layers system-wide")
+        if result.should_decompose:
+            assert any("LLM Step" in st.title for st in result.subtasks)
+            mock_anthropic.assert_called_once()
 
 
 class TestParseJsonArray:
