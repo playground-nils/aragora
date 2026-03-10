@@ -831,15 +831,22 @@ class TaskDecomposer:
     ) -> list[SubTask]:
         """Generate subtasks for a complex task.
 
-        Tries LLM-based extraction first (frontier model), then caller-provided
-        extraction function, then falls back to heuristic decomposition.
+        Precedence (intentional — LLM-first is the desired architecture):
+          1. LLM-based extraction via frontier model (Anthropic → OpenRouter).
+             Returns [] when no API key is configured, falling through silently.
+          2. Caller-supplied ``extract_subtasks_fn`` (legacy hook).
+          3. Heuristic decomposition (keyword/concept-based).
+
+        In CI/test environments without API keys the LLM step is a no-op,
+        so ``extract_subtasks_fn`` remains the effective primary path there.
         """
-        # 1. Try LLM-based subtask extraction (frontier model)
+        # 1. Try LLM-based subtask extraction (frontier model).
+        #    Returns [] when no API key is configured — falls through silently.
         llm_subtasks = self._llm_extract_subtasks(task, file_scope_hints=file_scope_hints)
         if llm_subtasks:
             return llm_subtasks[: self.config.max_subtasks]
 
-        # 2. Try caller-provided extraction function
+        # 2. Try caller-provided extraction function (legacy hook)
         if self._extract_subtasks_fn:
             subtasks: list[SubTask] = []
             try:
