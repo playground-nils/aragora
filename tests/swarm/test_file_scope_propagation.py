@@ -393,6 +393,25 @@ class TestScopeOverlapsHints:
     def test_trailing_slash_stripped(self) -> None:
         assert SwarmSupervisor._scope_overlaps_hints(["aragora/live/"], ["aragora/live"]) is True
 
+    def test_sibling_directory_no_false_positive(self) -> None:
+        """aragora/livekit must NOT match aragora/live (boundary check)."""
+        assert SwarmSupervisor._scope_overlaps_hints(["aragora/livekit"], ["aragora/live"]) is False
+
+    def test_glob_hint_overlaps_concrete_scope(self) -> None:
+        """Glob hint tests/sdk/** must overlap concrete scope tests/sdk/foo.py."""
+        assert SwarmSupervisor._scope_overlaps_hints(["tests/sdk/foo.py"], ["tests/sdk/**"]) is True
+
+    def test_concrete_hint_overlaps_glob_scope(self) -> None:
+        """Concrete hint tests/sdk overlaps glob scope tests/sdk/**."""
+        assert SwarmSupervisor._scope_overlaps_hints(["tests/sdk/**"], ["tests/sdk"]) is True
+
+    def test_glob_no_overlap(self) -> None:
+        """Glob patterns in different trees must not overlap."""
+        assert (
+            SwarmSupervisor._scope_overlaps_hints(["aragora/audit/**"], ["aragora/live/**"])
+            is False
+        )
+
 
 class TestForensicIssue873Regression:
     """Reproduces the exact failure shape from the second Boss-loop test

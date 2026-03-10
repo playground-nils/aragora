@@ -1223,19 +1223,24 @@ class SwarmSupervisor:
     def _scope_overlaps_hints(file_scope: list[str], hints: list[str]) -> bool:
         """Check whether any decomposer-assigned scope overlaps with spec hints.
 
-        Overlap means one path is a prefix of the other: the decomposer
-        either narrowed (``aragora/live/package.json`` under ``aragora/live``)
-        or widened (``aragora`` over ``aragora/live``).
+        Delegates to the coordination layer's ``_glob_overlap`` which supports
+        exact paths, directory prefixes with ``/`` boundary checks, ``/**``
+        recursive globs, and ``PurePosixPath.match()`` for standard glob
+        patterns — the same semantics used by file-scope enforcement.
+
+        Pre-strips ``./`` prefixes that ``_glob_overlap`` does not normalize.
         """
+        from aragora.nomic.dev_coordination import _glob_overlap
+
         for scope_path in file_scope:
-            clean_scope = scope_path.strip().removeprefix("./").rstrip("/")
+            clean_scope = scope_path.strip().removeprefix("./")
             if not clean_scope:
                 continue
             for hint in hints:
-                clean_hint = hint.strip().removeprefix("./").rstrip("/")
+                clean_hint = hint.strip().removeprefix("./")
                 if not clean_hint:
                     continue
-                if clean_scope.startswith(clean_hint) or clean_hint.startswith(clean_scope):
+                if _glob_overlap(clean_scope, clean_hint):
                     return True
         return False
 
