@@ -134,6 +134,41 @@ class TestAutoCommitSalvage:
         assert "completed" in log
         assert "salvage" not in log
 
+    def test_exit_0_untracked_file_produces_commit(self, repo: Path) -> None:
+        """Clean exit with NEW (untracked) file should auto-commit.
+
+        This covers the Phase 0A governance task pattern: worker creates a new
+        markdown file that ``git diff HEAD`` does not detect because the file
+        is untracked, not modified. The porcelain fallback must detect it.
+        """
+        head = _head(repo)
+        # Create a new untracked file (not a modification of existing tracked file)
+        (repo / "docs").mkdir(exist_ok=True)
+        (repo / "docs" / "new-governance-doc.md").write_text(
+            "# New Document\n\nCreated by worker.\n", encoding="utf-8"
+        )
+        # git diff HEAD is empty for untracked files
+        diff = _run(repo, "git", "diff", "HEAD").stdout
+        assert diff == ""
+
+        worker = WorkerProcess(
+            work_order_id="wo-untracked",
+            agent="codex",
+            worktree_path=str(repo),
+            branch="main",
+            pid=None,
+            initial_head=head,
+        )
+        worker.exit_code = 0
+        worker.diff = diff  # empty — simulates the real failure
+
+        asyncio.run(WorkerLauncher._auto_commit(worker))
+
+        new_head = _head(repo)
+        assert new_head != head, "auto-commit should have created a commit for untracked file"
+        diff_files = _run(repo, "git", "diff", "--name-only", f"{head}..{new_head}").stdout
+        assert "docs/new-governance-doc.md" in diff_files
+
 
 class TestWaitGateNarrowed:
     """Verify wait() only salvages _SALVAGEABLE_EXIT_CODES, not all non-zero."""
