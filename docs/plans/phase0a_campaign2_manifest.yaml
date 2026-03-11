@@ -5,9 +5,12 @@
 # Campaign 2 must deliver all 10.
 #
 # Preconditions:
-# 1. B-0 (worker SIGPIPE fix) verified via proof task
-# 2. Receipt emission implemented and tested
-# 3. Proof task (phase0a-proof/proof-001) completed successfully
+# 1. B-0 (worker untracked-file fix) merged (#926)
+# 2. Receipt emission merged (#927)
+# 3. Pipeline validated via dogfood-6 (campaign_complete, 2/2 projects passed)
+# Note: Campaign 2 runs directly from this manifest. The old proof manifest
+# (phase0a_proof_manifest.yaml) is a separate validation artifact and is not
+# required for Campaign 2 execution.
 #
 # All tasks are documentation/governance ONLY — no source code changes.
 
@@ -64,7 +67,7 @@ projects:
       - docs/governance/deploy-truth-table.md
     spec:
       raw_goal: >
-        Create docs/ADR/018-standardized-health-check-endpoints.md as an
+        Create docs/ADR/019-standardized-health-check-endpoints.md as an
         Architecture Decision Record. The deploy truth table (DRIFT-003)
         identifies that health check endpoints vary across deploy surfaces.
         Document: current state (which surfaces have /health, /healthz, or
@@ -75,14 +78,14 @@ projects:
         Write an ADR for standardizing health check endpoints across all
         deploy surfaces, addressing DRIFT-003 from the deploy truth table.
       acceptance_criteria:
-        - "File docs/ADR/018-standardized-health-check-endpoints.md exists"
+        - "File docs/ADR/019-standardized-health-check-endpoints.md exists"
         - "Follows existing ADR format from docs/ADR/"
         - "References DRIFT-003 from deploy-truth-table.md"
       constraints:
         - "Only create or modify files under docs/"
         - "Do not modify any Python source files"
     file_scope_hints:
-      - docs/ADR/018-standardized-health-check-endpoints.md
+      - docs/ADR/019-standardized-health-check-endpoints.md
     acceptance_criteria:
       - "File exists and follows ADR format"
       - "No source code files modified"
@@ -240,7 +243,7 @@ projects:
       - docs/governance/subsystem-ledger.md
     spec:
       raw_goal: >
-        Create docs/ADR/019-event-dispatch-consolidation.md as an Architecture
+        Create docs/ADR/020-event-dispatch-consolidation.md as an Architecture
         Decision Record for consolidating the duplicate event dispatch systems.
         The subsystem ledger identifies aragora/events/ and
         aragora/connectors/enterprise/streaming/ as overlapping. Document:
@@ -252,7 +255,7 @@ projects:
         Write an ADR for consolidating duplicate event dispatch subsystems
         into a single event bus.
       acceptance_criteria:
-        - "File docs/ADR/019-event-dispatch-consolidation.md exists"
+        - "File docs/ADR/020-event-dispatch-consolidation.md exists"
         - "Follows existing ADR format"
         - "Identifies both overlapping subsystems"
         - "Proposes consolidation approach"
@@ -260,7 +263,7 @@ projects:
         - "Only create or modify files under docs/"
         - "Do not modify any Python source files"
     file_scope_hints:
-      - docs/ADR/019-event-dispatch-consolidation.md
+      - docs/ADR/020-event-dispatch-consolidation.md
     acceptance_criteria:
       - "File exists and follows ADR format"
       - "No source code files modified"
@@ -275,7 +278,7 @@ projects:
       - docs/governance/subsystem-ledger.md
     spec:
       raw_goal: >
-        Create docs/ADR/020-storage-layer-consolidation.md as an Architecture
+        Create docs/ADR/021-storage-layer-consolidation.md as an Architecture
         Decision Record for consolidating duplicate storage subsystems. The
         subsystem ledger identifies aragora/storage/, aragora/db/,
         aragora/persistence/, and parts of aragora/nomic/stores/ as
@@ -288,7 +291,7 @@ projects:
         Write an ADR for consolidating or delineating the 4 overlapping
         storage subsystems.
       acceptance_criteria:
-        - "File docs/ADR/020-storage-layer-consolidation.md exists"
+        - "File docs/ADR/021-storage-layer-consolidation.md exists"
         - "Follows existing ADR format"
         - "Identifies all 4 overlapping storage subsystems"
         - "Proposes clear consolidation or delineation strategy"
@@ -296,7 +299,7 @@ projects:
         - "Only create or modify files under docs/"
         - "Do not modify any Python source files"
     file_scope_hints:
-      - docs/ADR/020-storage-layer-consolidation.md
+      - docs/ADR/021-storage-layer-consolidation.md
     acceptance_criteria:
       - "File exists and follows ADR format"
       - "No source code files modified"
