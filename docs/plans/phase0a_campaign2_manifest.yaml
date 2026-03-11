@@ -1,0 +1,376 @@
+# Phase 0A Campaign 2: 10 governance tasks through the swarm
+#
+# Exit gate requirement: 10 consecutive tasks completed without manual rescue.
+# Campaign 1 produced 0 credited executions (all required rescue).
+# Campaign 2 must deliver all 10.
+#
+# Preconditions:
+# 1. B-0 (worker SIGPIPE fix) verified via proof task
+# 2. Receipt emission implemented and tested
+# 3. Proof task (phase0a-proof/proof-001) completed successfully
+#
+# All tasks are documentation/governance ONLY — no source code changes.
+
+campaign_id: phase0a-campaign2
+created_at: "2026-03-10T23:30:00+00:00"
+source_kind: manual
+source_ref: docs/plans/2026-03-10-bootstrap-plan.md
+planner_model: claude
+worker_model: codex
+review_model: claude
+max_parallel_ready_projects: 1
+max_retries_per_project: 2
+budget_limit_usd: 20.0
+time_limit_hours: 4.0
+
+projects:
+  - project_id: phase0a-006
+    title: "Document duplicate subsystem resolution plan"
+    source_refs:
+      - docs/governance/subsystem-ledger.md
+    spec:
+      raw_goal: >
+        Create docs/governance/duplicate-subsystem-resolution.md documenting
+        a resolution plan for the 6 duplicate subsystem clusters identified in
+        the subsystem ledger. For each cluster (event dispatch, storage,
+        resilience, scheduling, knowledge/memory, security), describe: which
+        modules are duplicates, which should be the canonical survivor, what
+        the migration path looks like, and which phase (0B, 1, or 2) should
+        handle the consolidation. Reference the subsystem ledger clusters.
+        Keep it under 150 lines.
+      refined_goal: >
+        Write docs/governance/duplicate-subsystem-resolution.md with a
+        resolution plan for all 6 duplicate subsystem clusters.
+      acceptance_criteria:
+        - "File docs/governance/duplicate-subsystem-resolution.md exists"
+        - "All 6 duplicate clusters from subsystem-ledger.md are addressed"
+        - "Each cluster has: canonical survivor, migration path, target phase"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/governance/duplicate-subsystem-resolution.md
+    acceptance_criteria:
+      - "File exists and is valid markdown"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 1.50
+    status: pending
+
+  - project_id: phase0a-007
+    title: "Standardize health check endpoint ADR"
+    source_refs:
+      - docs/governance/deploy-truth-table.md
+    spec:
+      raw_goal: >
+        Create docs/ADR/018-standardized-health-check-endpoints.md as an
+        Architecture Decision Record. The deploy truth table (DRIFT-003)
+        identifies that health check endpoints vary across deploy surfaces.
+        Document: current state (which surfaces have /health, /healthz, or
+        none), the proposed standard (unified /health endpoint), migration
+        steps, and decision rationale. Follow the existing ADR format in
+        docs/ADR/. Keep it under 100 lines.
+      refined_goal: >
+        Write an ADR for standardizing health check endpoints across all
+        deploy surfaces, addressing DRIFT-003 from the deploy truth table.
+      acceptance_criteria:
+        - "File docs/ADR/018-standardized-health-check-endpoints.md exists"
+        - "Follows existing ADR format from docs/ADR/"
+        - "References DRIFT-003 from deploy-truth-table.md"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/ADR/018-standardized-health-check-endpoints.md
+    acceptance_criteria:
+      - "File exists and follows ADR format"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 1.50
+    status: pending
+
+  - project_id: phase0a-008
+    title: "Document WORKER_MODE and single-instance env vars"
+    source_refs:
+      - docs/governance/deploy-truth-table.md
+    spec:
+      raw_goal: >
+        Create docs/governance/worker-mode-env-vars.md documenting the
+        WORKER_MODE and ARAGORA_SINGLE_INSTANCE environment variables
+        identified in the deploy truth table (DRIFT-002, DRIFT-007). Cover:
+        what each variable does, which deploy surfaces use them, what the
+        default behavior is when unset, interaction between the two variables,
+        and recommended settings per deploy surface. Keep under 80 lines.
+      refined_goal: >
+        Write docs/governance/worker-mode-env-vars.md documenting WORKER_MODE
+        and ARAGORA_SINGLE_INSTANCE environment variable semantics.
+      acceptance_criteria:
+        - "File docs/governance/worker-mode-env-vars.md exists"
+        - "Documents both WORKER_MODE and ARAGORA_SINGLE_INSTANCE"
+        - "References DRIFT-002 and DRIFT-007"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/governance/worker-mode-env-vars.md
+    acceptance_criteria:
+      - "File exists and is valid markdown"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 1.50
+    status: pending
+
+  - project_id: phase0a-009
+    title: "Create Phase 0B engine hardening campaign manifest"
+    source_refs:
+      - docs/plans/2026-03-10-bootstrap-plan.md
+    spec:
+      raw_goal: >
+        Create docs/plans/phase0b_campaign_manifest.yaml as a campaign
+        manifest for Phase 0B engine hardening. Include all 7 tickets from
+        the bootstrap plan (B-1 through B-7): circuit breaker, failure
+        escalation, budget controls, deadlock detection, merge gate, quality
+        gates, and e2e integration test. Each project should have: project_id,
+        title, spec with raw_goal and acceptance_criteria, file_scope_hints
+        pointing to the files mentioned in the bootstrap plan, and dependency
+        ordering (B-7 depends on B-1 through B-6). Follow the same YAML
+        format as phase0a_proof_manifest.yaml.
+      refined_goal: >
+        Write docs/plans/phase0b_campaign_manifest.yaml with 7 engine
+        hardening projects (B-1 through B-7) from the bootstrap plan.
+      acceptance_criteria:
+        - "File docs/plans/phase0b_campaign_manifest.yaml exists"
+        - "Contains all 7 tickets B-1 through B-7"
+        - "Each project has spec, acceptance_criteria, file_scope_hints"
+        - "B-7 depends on B-1 through B-6"
+        - "Valid YAML that loads with yaml.safe_load"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/plans/phase0b_campaign_manifest.yaml
+    acceptance_criteria:
+      - "File exists and is valid YAML"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 2.00
+    status: pending
+
+  - project_id: phase0a-010
+    title: "Document campaign receipt enforcement mechanism"
+    source_refs:
+      - docs/plans/2026-03-10-bootstrap-plan.md
+      - aragora/swarm/campaign.py
+    spec:
+      raw_goal: >
+        Create docs/governance/receipt-enforcement.md describing how the
+        campaign executor enforces receipt emission on terminal project
+        transitions. Cover: (1) what triggers receipt emission (terminal
+        statuses: completed, failed, blocked, skipped), (2) where receipts
+        are stored (docs/receipts/{campaign_id}/{project_id}.yaml), (3) the
+        three code paths that emit receipts (_apply_dispatch_result,
+        _apply_review_result, _ready_projects), (4) the difference between
+        authoritative receipts (executor-emitted) and audit notes
+        (operator-backfilled), and (5) what happens if receipt emission fails
+        (RuntimeError). Reference the receipt schema from the bootstrap plan.
+        Keep it under 100 lines.
+      refined_goal: >
+        Write docs/governance/receipt-enforcement.md describing the receipt
+        enforcement mechanism in aragora/swarm/campaign.py.
+      acceptance_criteria:
+        - "File docs/governance/receipt-enforcement.md exists"
+        - "Describes terminal statuses that trigger receipts"
+        - "Describes storage path pattern"
+        - "Distinguishes authoritative receipts from audit notes"
+        - "Describes failure behavior (RuntimeError)"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/governance/receipt-enforcement.md
+    acceptance_criteria:
+      - "File exists and is valid markdown"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 1.50
+    status: pending
+
+  - project_id: phase0a-011
+    title: "Document canonical test taxonomy"
+    source_refs:
+      - docs/governance/subsystem-ledger.md
+    spec:
+      raw_goal: >
+        Create docs/governance/test-taxonomy.md documenting the test
+        organization in the Aragora codebase. Categorize tests by: unit tests
+        (isolated, mocked dependencies), integration tests (cross-module,
+        real database/filesystem), end-to-end tests (full pipeline), and
+        benchmark tests. For each category, describe: naming conventions,
+        directory structure, fixture patterns, and approximate count from the
+        208k+ test suite. Identify which subsystems from the subsystem ledger
+        have the strongest and weakest test coverage. Keep under 120 lines.
+      refined_goal: >
+        Write docs/governance/test-taxonomy.md categorizing the test suite
+        by type and mapping coverage to subsystem governance buckets.
+      acceptance_criteria:
+        - "File docs/governance/test-taxonomy.md exists"
+        - "Categorizes tests into unit, integration, e2e, benchmark"
+        - "Maps test coverage to subsystem ledger buckets"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/governance/test-taxonomy.md
+    acceptance_criteria:
+      - "File exists and is valid markdown"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 2.00
+    status: pending
+
+  - project_id: phase0a-012
+    title: "ADR for duplicate event dispatch consolidation"
+    source_refs:
+      - docs/governance/subsystem-ledger.md
+    spec:
+      raw_goal: >
+        Create docs/ADR/019-event-dispatch-consolidation.md as an Architecture
+        Decision Record for consolidating the duplicate event dispatch systems.
+        The subsystem ledger identifies aragora/events/ and
+        aragora/connectors/enterprise/streaming/ as overlapping. Document:
+        current state (both systems, their APIs, their consumers), the
+        proposed consolidation (single event bus with streaming adapters),
+        migration steps, risks, and decision rationale. Follow existing ADR
+        format. Keep under 100 lines.
+      refined_goal: >
+        Write an ADR for consolidating duplicate event dispatch subsystems
+        into a single event bus.
+      acceptance_criteria:
+        - "File docs/ADR/019-event-dispatch-consolidation.md exists"
+        - "Follows existing ADR format"
+        - "Identifies both overlapping subsystems"
+        - "Proposes consolidation approach"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/ADR/019-event-dispatch-consolidation.md
+    acceptance_criteria:
+      - "File exists and follows ADR format"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 1.50
+    status: pending
+
+  - project_id: phase0a-013
+    title: "ADR for storage layer consolidation"
+    source_refs:
+      - docs/governance/subsystem-ledger.md
+    spec:
+      raw_goal: >
+        Create docs/ADR/020-storage-layer-consolidation.md as an Architecture
+        Decision Record for consolidating duplicate storage subsystems. The
+        subsystem ledger identifies aragora/storage/, aragora/db/,
+        aragora/persistence/, and parts of aragora/nomic/stores/ as
+        overlapping. Document: current state (each storage layer, what it
+        stores, its backend), the proposed consolidation strategy (unified
+        repository pattern or keep separate with clear boundaries),
+        migration steps, and decision rationale. Follow existing ADR format.
+        Keep under 120 lines.
+      refined_goal: >
+        Write an ADR for consolidating or delineating the 4 overlapping
+        storage subsystems.
+      acceptance_criteria:
+        - "File docs/ADR/020-storage-layer-consolidation.md exists"
+        - "Follows existing ADR format"
+        - "Identifies all 4 overlapping storage subsystems"
+        - "Proposes clear consolidation or delineation strategy"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/ADR/020-storage-layer-consolidation.md
+    acceptance_criteria:
+      - "File exists and follows ADR format"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 1.50
+    status: pending
+
+  - project_id: phase0a-014
+    title: "Document isolated module deprecation candidates"
+    source_refs:
+      - docs/governance/subsystem-ledger.md
+    spec:
+      raw_goal: >
+        Create docs/governance/deprecation-candidates.md listing modules
+        from the subsystem ledger's "defer" governance bucket that are
+        candidates for deprecation or removal. The defer bucket contains
+        64 modules (10% of LOC) that are isolated, low-priority, or
+        scaffolded. For each candidate, document: module path, what it does,
+        whether it has tests, whether anything imports it, and recommended
+        action (keep, deprecate, remove, or consolidate). Focus on the
+        highest-confidence removal candidates. Keep under 150 lines.
+      refined_goal: >
+        Write docs/governance/deprecation-candidates.md analyzing the 64
+        defer-bucket modules for deprecation readiness.
+      acceptance_criteria:
+        - "File docs/governance/deprecation-candidates.md exists"
+        - "Lists modules from the defer governance bucket"
+        - "Each entry has: path, purpose, test status, import status, recommendation"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/governance/deprecation-candidates.md
+    acceptance_criteria:
+      - "File exists and is valid markdown"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 2.00
+    status: pending
+
+  - project_id: phase0a-015
+    title: "Document Phase 1 scope boundaries from subsystem ledger"
+    source_refs:
+      - docs/governance/subsystem-ledger.md
+      - docs/plans/2026-03-10-bootstrap-plan.md
+    spec:
+      raw_goal: >
+        Create docs/governance/phase1-scope-boundaries.md documenting which
+        subsystems from the subsystem ledger are in-scope for Phase 1
+        (Controlled Self-Repair) and which are explicitly out-of-scope.
+        Cross-reference the bootstrap plan's Phase 1 scope (backend
+        consolidation, API surface, domain boundaries, memory/knowledge,
+        nomic hardening, worker normalization, test taxonomy) with the
+        subsystem ledger's governance buckets. For each Phase 1 ticket
+        (P1-8 through P1-14), identify which subsystem ledger modules are
+        affected. Keep under 120 lines.
+      refined_goal: >
+        Write docs/governance/phase1-scope-boundaries.md mapping Phase 1
+        tickets to affected subsystem ledger modules.
+      acceptance_criteria:
+        - "File docs/governance/phase1-scope-boundaries.md exists"
+        - "Maps each Phase 1 ticket (P1-8 through P1-14) to subsystem modules"
+        - "Clearly separates in-scope from out-of-scope subsystems"
+      constraints:
+        - "Only create or modify files under docs/"
+        - "Do not modify any Python source files"
+    file_scope_hints:
+      - docs/governance/phase1-scope-boundaries.md
+    acceptance_criteria:
+      - "File exists and is valid markdown"
+      - "No source code files modified"
+    constraints:
+      - "Documentation only — no code changes"
+    estimated_cost_usd: 2.00
+    status: pending
