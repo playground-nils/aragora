@@ -229,13 +229,12 @@ class WorkerLauncher:
             worker.diff = await self._collect_diff(worker.worktree_path)
 
             _exit_ok = worker.exit_code == 0 or worker.exit_code in _SALVAGEABLE_EXIT_CODES
-            # For salvageable non-zero exits (e.g. SIGPIPE 141), the worker
-            # may have valid unstaged changes that ``git diff HEAD`` missed
-            # (timeout, binary-only files, etc.).  Fall back to
-            # ``git status --porcelain`` so the salvage commit is not skipped.
+            # ``git diff HEAD`` only detects modifications to tracked files.
+            # Workers that create NEW (untracked) files show no diff.
+            # Always fall back to ``git status --porcelain`` which detects
+            # both untracked and modified files.
             _has_changes = bool(worker.diff) or (
-                worker.exit_code in _SALVAGEABLE_EXIT_CODES
-                and await self._has_working_tree_changes(worker.worktree_path)
+                _exit_ok and await self._has_working_tree_changes(worker.worktree_path)
             )
             if self.config.auto_commit and _has_changes and _exit_ok:
                 await self._auto_commit(worker)
@@ -634,13 +633,12 @@ class WorkerLauncher:
             worker.diff = await cls._collect_diff(worktree_path)
 
             _exit_ok = worker.exit_code == 0 or worker.exit_code in _SALVAGEABLE_EXIT_CODES
-            # For salvageable non-zero exits (e.g. SIGPIPE 141), the worker
-            # may have valid unstaged changes that ``git diff HEAD`` missed
-            # (timeout, binary-only files, etc.).  Fall back to
-            # ``git status --porcelain`` so the salvage commit is not skipped.
+            # ``git diff HEAD`` only detects modifications to tracked files.
+            # Workers that create NEW (untracked) files show no diff.
+            # Always fall back to ``git status --porcelain`` which detects
+            # both untracked and modified files.
             _has_changes = bool(worker.diff) or (
-                worker.exit_code in _SALVAGEABLE_EXIT_CODES
-                and await cls._has_working_tree_changes(worktree_path)
+                _exit_ok and await cls._has_working_tree_changes(worktree_path)
             )
             if auto_commit and _has_changes and _exit_ok:
                 await cls._auto_commit(worker)
