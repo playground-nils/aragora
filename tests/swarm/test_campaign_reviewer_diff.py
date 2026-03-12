@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from aragora.agents.errors import CLISubprocessError
 from aragora.swarm.campaign import (
     CampaignProject,
     CampaignReviewGate,
@@ -182,3 +184,88 @@ class TestBuildPromptWithDiff:
         assert '"status":"passed|changes_requested|blocked_nonreviewable"' in prompt
         parsed_json = json.loads(prompt.split("\n")[-1])
         assert parsed_json["project_id"] == "phase0a-007"
+
+
+class TestReviewerBillingErrorDetection:
+    """Tests that billing/credit errors from the Claude CLI are surfaced clearly."""
+
+    @pytest.mark.asyncio
+    async def test_credit_balance_error_surfaces_billing_message(self) -> None:
+        """CLISubprocessError with 'credit balance' triggers actionable finding."""
+        reviewer = CampaignReviewer()
+        project = _make_project()
+        run_dict = _make_run_dict()
+
+        billing_error = CLISubprocessError(
+            message="CLI command failed with return code 1 (stdout): Credit balance is too low",
+            agent_name="campaign-review",
+            returncode=1,
+            stderr="Credit balance is too low",
+        )
+
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(side_effect=billing_error)
+
+        with patch("aragora.swarm.campaign.create_agent", return_value=mock_agent):
+            gate = await reviewer.review(
+                project=project,
+                worker_model="codex",
+                review_model="claude",
+                run_dict=run_dict,
+            )
+
+        assert gate.status == CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value
+        assert any("billing" in f.lower() for f in gate.findings)
+        assert any("claude auth" in f.lower() for f in gate.findings)
+
+    @pytest.mark.asyncio
+    async def test_non_billing_cli_error_does_not_trigger_billing_message(self) -> None:
+        """Regular CLISubprocessError does not produce billing guidance."""
+        reviewer = CampaignReviewer()
+        project = _make_project()
+        run_dict = _make_run_dict()
+
+        cli_error = CLISubprocessError(
+            message="CLI command failed with return code 1: connection refused",
+            agent_name="campaign-review",
+            returncode=1,
+            stderr="connection refused",
+        )
+
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(side_effect=cli_error)
+
+        with patch("aragora.swarm.campaign.create_agent", return_value=mock_agent):
+            gate = await reviewer.review(
+                project=project,
+                worker_model="codex",
+                review_model="claude",
+                run_dict=run_dict,
+            )
+
+        assert gate.status == CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value
+        assert not any("billing" in f.lower() for f in gate.findings)
+        assert any("CLISubprocessError" in f for f in gate.findings)
+
+    @pytest.mark.asyncio
+    async def test_generic_exception_does_not_leak_details(self) -> None:
+        """Non-CLI exceptions report type name only, not raw str(exc)."""
+        reviewer = CampaignReviewer()
+        project = _make_project()
+        run_dict = _make_run_dict()
+
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(side_effect=ValueError("secret internal detail"))
+
+        with patch("aragora.swarm.campaign.create_agent", return_value=mock_agent):
+            gate = await reviewer.review(
+                project=project,
+                worker_model="codex",
+                review_model="claude",
+                run_dict=run_dict,
+            )
+
+        assert gate.status == CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value
+        assert any("ValueError" in f for f in gate.findings)
+        # Raw exception detail should not be in findings
+        assert not any("secret internal detail" in f for f in gate.findings)
