@@ -518,7 +518,14 @@ class WorkerLauncher:
         or when only binary files changed.  ``git status --porcelain`` is
         cheaper and more reliable for a yes/no dirty-tree check.
         """
-        status = await cls._git_output(worktree_path, "status", "--porcelain")
+        # Expand untracked directories into file paths so docs-only tasks that
+        # create new trees still qualify as concrete deliverables.
+        status = await cls._git_output(
+            worktree_path,
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+        )
         for line in status.splitlines():
             if len(line) < 4:
                 continue
@@ -568,7 +575,12 @@ class WorkerLauncher:
         # space from porcelain status lines like " M docs/file.py".  Parse
         # robustly: skip the first two status characters if the line matches
         # the XY+space pattern, otherwise fall back to lstrip-after-status.
-        status_output = await cls._git_output(worktree_path, "status", "--porcelain")
+        status_output = await cls._git_output(
+            worktree_path,
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+        )
         for line in status_output.splitlines():
             if not line or len(line) < 2:
                 continue
