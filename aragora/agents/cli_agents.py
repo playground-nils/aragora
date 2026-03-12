@@ -416,6 +416,7 @@ class CLIAgent(CritiqueMixin, Agent):
                         self._circuit_breaker.record_failure()
                     # Build informative error message with return code
                     stderr_text = stderr.decode("utf-8", errors="replace").strip()
+                    stdout_text_err = stdout.decode("utf-8", errors="replace").strip()
                     error_msg = f"CLI command failed with return code {proc.returncode}"
                     if stderr_text:
                         # For verbose CLIs (like Codex), extract last meaningful line
@@ -423,13 +424,23 @@ class CLIAgent(CritiqueMixin, Agent):
                         if lines:
                             last_line = lines[-1][:200]
                             error_msg += f": {last_line}"
+                    elif stdout_text_err:
+                        # Some CLIs (e.g. Claude) write errors to stdout.
+                        # Surface stdout when stderr is empty so billing/auth
+                        # errors like "Credit balance is too low" are visible.
+                        lines = [
+                            line.strip() for line in stdout_text_err.split("\n") if line.strip()
+                        ]
+                        if lines:
+                            last_line = lines[-1][:200]
+                            error_msg += f" (stdout): {last_line}"
                     else:
-                        error_msg += " (stderr empty)"
+                        error_msg += " (no output)"
                     raise CLISubprocessError(
                         message=error_msg,
                         agent_name=self.name,
                         returncode=proc.returncode,
-                        stderr=stderr_text or None,
+                        stderr=stderr_text or stdout_text_err or None,
                     )
 
                 stdout_text = stdout.decode("utf-8", errors="replace").strip()

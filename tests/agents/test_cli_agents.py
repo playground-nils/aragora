@@ -685,6 +685,42 @@ class TestCLIAgentAsyncOps:
         # Circuit should still be open after success
         assert agent._circuit_breaker.can_proceed() is True
 
+    @pytest.mark.asyncio
+    async def test_run_cli_surfaces_stdout_when_stderr_empty(self):
+        """When CLI writes error to stdout (not stderr), the error message includes it."""
+        from aragora.agents.errors import CLISubprocessError
+
+        agent = DummyCLIAgent(name="test-agent", model="test-model")
+
+        # Simulate a process that writes error to stdout only (like Claude CLI
+        # "Credit balance is too low")
+        with pytest.raises(CLISubprocessError, match="Credit balance is too low"):
+            await agent._run_cli(["bash", "-c", "echo 'Credit balance is too low' && exit 1"])
+
+    @pytest.mark.asyncio
+    async def test_run_cli_prefers_stderr_over_stdout(self):
+        """When both stderr and stdout have content, error message uses stderr."""
+        from aragora.agents.errors import CLISubprocessError
+
+        agent = DummyCLIAgent(name="test-agent", model="test-model")
+
+        with pytest.raises(CLISubprocessError, match="real error") as exc_info:
+            await agent._run_cli(
+                ["bash", "-c", "echo 'stdout noise'; echo 'real error' >&2; exit 1"]
+            )
+        # Should NOT contain stdout noise
+        assert "stdout noise" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_run_cli_no_output_message(self):
+        """When both stderr and stdout are empty, error says 'no output'."""
+        from aragora.agents.errors import CLISubprocessError
+
+        agent = DummyCLIAgent(name="test-agent", model="test-model")
+
+        with pytest.raises(CLISubprocessError, match="no output"):
+            await agent._run_cli(["bash", "-c", "exit 1"])
+
 
 # =============================================================================
 # Critique Functionality Tests

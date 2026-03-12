@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from aragora.agents.base import create_agent
+from aragora.agents.errors import CLISubprocessError
 from aragora.nomic.task_decomposer import SubTask, TaskDecomposer
 from aragora.swarm.boss_loop import (
     _extract_deliverable,
@@ -845,14 +846,38 @@ class CampaignReviewer:
                 reviewed_at=_now_iso(),
                 raw_review={"response": raw},
             )
+        except CLISubprocessError as exc:
+            error_str = str(exc).lower()
+            is_billing = any(
+                p in error_str
+                for p in ("credit balance", "billing", "payment required", "purchase credits")
+            )
+            if is_billing:
+                detail = (
+                    "CLI subscription usage exhausted. "
+                    "Run 'claude auth status' to check the active account, "
+                    "then 'claude auth logout && claude auth login' to switch "
+                    "to an account with available capacity."
+                )
+                findings = [f"Review blocked (billing): {detail}"]
+            else:
+                findings = [f"Review failed: {type(exc).__name__}"]
+            return CampaignReviewGate(
+                required=True,
+                review_model=chosen_review_model,
+                status=CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value,
+                findings=findings,
+                reviewed_at=_now_iso(),
+                raw_review={"error": type(exc).__name__, "detail": str(exc)[:500]},
+            )
         except Exception as exc:
             return CampaignReviewGate(
                 required=True,
                 review_model=chosen_review_model,
                 status=CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value,
-                findings=[f"Review failed: {type(exc).__name__}: {exc}"],
+                findings=[f"Review failed: {type(exc).__name__}"],
                 reviewed_at=_now_iso(),
-                raw_review={"error": str(exc)},
+                raw_review={"error": type(exc).__name__},
             )
 
     @staticmethod
