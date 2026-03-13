@@ -1,0 +1,20 @@
+campaign_id: phase0a-campaign2
+changed_files:
+- docs/governance/receipt-enforcement.md
+cost_usd: 1.5
+created_at: '2026-03-13T12:59:17.209308+00:00'
+duration_seconds: null
+failure_classification: null
+final_status: completed
+manifest_input: .aragora/campaign2_runtime_manifest.yaml
+phase: 0a
+rescue_description: null
+rescue_required: false
+review_verdict: passed
+task_id: phase0a-010
+verification_results:
+  pytest_exit_code: null
+  syntax_check: null
+  truth_suite: null
+worker_branch: codex/swarm-4f5cdd43-subtask_
+worker_commit: f804ac41c847d87a16f29e3ee3e97613c558e810

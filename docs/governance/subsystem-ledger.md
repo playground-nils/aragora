@@ -245,6 +245,9 @@ deprecation or extraction:
 
 ## Duplicate Subsystem Clusters Requiring Phase 1 Resolution
 
+Canonical resolution record:
+[`docs/governance/duplicate-subsystem-resolution.md`](./duplicate-subsystem-resolution.md)
+
 | Cluster | Modules | Resolution Strategy |
 |---------|---------|-------------------|
 | Event dispatch | `events`, `hooks`, `webhooks` | Consolidate into `events` with hook/webhook as thin adapters |

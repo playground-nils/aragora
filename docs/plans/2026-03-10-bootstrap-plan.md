@@ -157,7 +157,7 @@ does after a worker fails. B-0 is about why the worker fails in the first
 place. B-0 must be fixed before Campaign 2; B-2 is a Phase 0B hardening
 concern.
 
-### Campaign 2: 10 governance tasks through the swarm (PLANNED)
+### Campaign 2: 10 governance tasks through the swarm (COMPLETE — 2026-03-13)
 
 The Phase 0A exit gate requires 10 consecutive tasks completed by the swarm
 without rescue. Since Campaign 1 produced 0 credited executions, Campaign 2
@@ -193,17 +193,16 @@ Phase 0A is complete ONLY when:
 - No duplicate or conflicting task execution
 - Every rejected task has a recorded rejection reason
 
-**Current progress: 0/10 credited streak.**
-Campaign 1 produced 5 useful governance artifacts manually after failed
-automation. None count toward the exit gate because the swarm pipeline did
-not complete them end-to-end. Dogfood #6 (historical) used different
-receipt/verification rules and is not merged into this streak.
+**Current progress: 10/10 credited streak. Phase 0A exit gate satisfied.**
+Campaign 2 completed 2026-03-13 (supervisor ralph-d7f061742995, $18.50 budget).
+All 10 governance tasks completed end-to-end by the swarm without manual rescue.
+Receipts persisted to `docs/receipts/phase0a-campaign2/`. One blocker
+(`reviewer_missing_diff_context`, false positive from billing exhaustion) was
+auto-repaired via PR #953; classifier hardened in PR #954.
 
-**Blockers for Phase 0A exit:**
-1. B-0: Worker SIGPIPE / auto-commit failure must be fixed
-2. Campaign 2 (10 tasks) must be dispatched and completed by the swarm
-   without rescue, with receipts emitted by the executor at terminal
-   transition time
+**Phase 0A blockers — resolved:**
+1. ~~B-0: Worker SIGPIPE / auto-commit failure~~ — fixed (PR #940)
+2. ~~Campaign 2 (10 tasks)~~ — completed 2026-03-13, all receipts emitted
 
 ---
 
@@ -429,14 +428,12 @@ let it handle everything else.
 
 ## Execution Sequence
 
-### Now: Fix B-0 (worker SIGPIPE), then run Phase 0A Campaign 2
+### ~~Now: Fix B-0 (worker SIGPIPE), then run Phase 0A Campaign 2~~ DONE
 
-1. Fix worker SIGPIPE / auto-commit failure (B-0)
-2. Verify fix with a single governance task dispatched through the swarm
-3. Run Campaign 2 (10 governance tasks) through the swarm
-4. Human reviews every PR. Target: 10 consecutive unrescued completions
-
-Campaign 1 produced useful reference documents but 0 credited executions.
+1. ~~Fix worker SIGPIPE / auto-commit failure (B-0)~~ — PR #940
+2. ~~Verify fix with a single governance task dispatched through the swarm~~ — Campaign 1 proof task
+3. ~~Run Campaign 2 (10 governance tasks) through the swarm~~ — completed 2026-03-13
+4. ~~Human reviews every PR. Target: 10 consecutive unrescued completions~~ — 10/10 achieved
 
 ### After 10 consecutive governance successes: Begin Phase 0B
 

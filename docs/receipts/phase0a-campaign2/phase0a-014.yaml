@@ -1,0 +1,20 @@
+campaign_id: phase0a-campaign2
+changed_files:
+- docs/governance/deprecation-candidates.md
+cost_usd: 2.0
+created_at: '2026-03-13T13:12:39.190449+00:00'
+duration_seconds: null
+failure_classification: null
+final_status: completed
+manifest_input: .aragora/campaign2_runtime_manifest.yaml
+phase: 0a
+rescue_description: null
+rescue_required: false
+review_verdict: passed
+task_id: phase0a-014
+verification_results:
+  pytest_exit_code: null
+  syntax_check: null
+  truth_suite: null
+worker_branch: codex/swarm-a74d32dd-subtask_
+worker_commit: 95c6efd7d73ee9233cd3243b8a9acc68119b049a

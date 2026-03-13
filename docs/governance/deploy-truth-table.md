@@ -51,7 +51,7 @@ what is implemented, and the severity of the gap.
 | **Expected** | Explicit `command:` in Helm template starting a worker process |
 | **Actual** | Template sets `WORKER_MODE=true` env var but no `command:` override; falls through to image CMD which starts the server |
 | **Impact** | Worker pods may be running the full server instead of a dedicated worker process. If `WORKER_MODE=true` is not checked in the server startup code, workers are servers. |
-| **Resolution** | Add explicit `command: ["python", "-m", "scripts.queue_worker"]` to debate-worker Helm template |
+| **Resolution** | Add explicit `command: ["python", "-m", "scripts.queue_worker"]` to debate-worker Helm template; see `docs/governance/worker-mode-env-vars.md` |
 
 ### DRIFT-003: Health check endpoint inconsistency
 
@@ -105,7 +105,7 @@ what is implemented, and the severity of the gap.
 | **Surfaces affected** | EC2 production |
 | **Context** | EC2 deploy uses `ARAGORA_SINGLE_INSTANCE=true` to run without Redis/workers |
 | **Impact** | Not documented in environment variable reference. Developers may not know this mode exists. |
-| **Resolution** | Document in `docs/reference/ENVIRONMENT.md` |
+| **Resolution** | Document in `docs/governance/worker-mode-env-vars.md` |
 
 ### DRIFT-008: Dead or unclear Docker Compose files
 
