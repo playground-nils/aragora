@@ -29,6 +29,7 @@ class BlockerKind(str, Enum):
     RECEIPT_EMISSION_GAP = "receipt_emission_gap"
 
     # --- escalate ---
+    REVIEWER_AUTH_OR_BILLING = "reviewer_auth_or_billing_failure"
     BUDGET_EXHAUSTION = "budget_exhaustion"
     INFRA_FAILURE = "infra_failure"
     UNKNOWN = "unknown"
@@ -90,6 +91,15 @@ def _classify_time_limit(manifest_dict: dict[str, Any]) -> BlockerKind:
 
 def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
     """Inspect project-level outcomes to classify the blocker."""
+    reviewer_failure_patterns = (
+        "billing",
+        "credit balance",
+        "purchase credits",
+        "payment required",
+        "auth",
+        "login",
+        "clisubprocesserror",
+    )
     projects = manifest_dict.get("projects", [])
 
     blocked_projects = [p for p in projects if p.get("status") in ("blocked", "failed", "skipped")]
@@ -115,6 +125,8 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
                     "violation" in finding_lower or "outside" in finding_lower
                 ):
                     return BlockerKind.SCOPE_FALSE_POSITIVE
+                if any(pattern in finding_lower for pattern in reviewer_failure_patterns):
+                    return BlockerKind.REVIEWER_AUTH_OR_BILLING
 
     # Check for reviewer false rejection pattern: deliverable_created but
     # review blocked/changes_requested.
