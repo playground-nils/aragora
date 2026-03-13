@@ -241,7 +241,6 @@ projects:
         - "Cost and budget caps enforced"
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
-      - tests/swarm/test_integration_e2e.py
       - aragora/swarm/campaign.py
     acceptance_criteria:
       - "End-to-end integration coverage exists for Phase 0B hardening behaviors"
