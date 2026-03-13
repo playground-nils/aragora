@@ -13,8 +13,8 @@ worker_model: codex
 review_model: claude
 max_parallel_ready_projects: 1
 max_retries_per_project: 2
-budget_limit_usd: 35.0
-time_limit_hours: 8.0
+budget_limit_usd: 75.0
+time_limit_hours: 48.0
 
 projects:
   - project_id: B-1
@@ -41,8 +41,8 @@ projects:
         - "Cost and budget caps enforced"
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
-      - swarm/worker_launcher.py
-      - swarm/supervisor.py
+      - aragora/swarm/worker_launcher.py
+      - aragora/swarm/supervisor.py
     acceptance_criteria:
       - "Circuit breaker behavior implemented for worker-type-specific failures"
       - "Tests cover breaker trip and recovery paths"
@@ -73,8 +73,8 @@ projects:
         - "Cost and budget caps enforced"
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
-      - swarm/supervisor.py
-      - swarm/campaign.py
+      - aragora/swarm/supervisor.py
+      - aragora/swarm/campaign.py
     acceptance_criteria:
       - "Failure escalation path implemented"
       - "Recoverable tickets can be re-entered into campaign flow"
@@ -104,8 +104,8 @@ projects:
         - "Cost and budget caps enforced"
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
-      - nomic/hardened_orchestrator.py
-      - swarm/campaign.py
+      - aragora/nomic/hardened_orchestrator.py
+      - aragora/swarm/campaign.py
     acceptance_criteria:
       - "Budget caps enforced at orchestration and campaign layers"
       - "Tests cover halt or escalation on budget pressure"
@@ -135,8 +135,8 @@ projects:
         - "Cost and budget caps enforced"
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
-      - swarm/reconciler.py
-      - swarm/campaign.py
+      - aragora/swarm/reconciler.py
+      - aragora/swarm/campaign.py
     acceptance_criteria:
       - "Deadlocks are detected and surfaced to campaign control flow"
       - "Tests cover representative stalled-state scenarios"
@@ -166,8 +166,8 @@ projects:
         - "Cost and budget caps enforced"
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
-      - swarm/supervisor.py
-      - swarm/worker_launcher.py
+      - aragora/swarm/supervisor.py
+      - aragora/swarm/worker_launcher.py
     acceptance_criteria:
       - "Required tests run before merge eligibility is granted"
       - "Tests cover both successful and blocked merge paths"
@@ -196,7 +196,7 @@ projects:
         - "Cost and budget caps enforced"
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
-      - nomic/hardened_orchestrator.py
+      - aragora/nomic/hardened_orchestrator.py
     acceptance_criteria:
       - "Quality gates default to enabled"
       - "Tests cover default and explicit override behavior"
@@ -207,13 +207,19 @@ projects:
     title: "End-to-end swarm integration test"
     source_refs:
       - docs/plans/2026-03-10-bootstrap-plan.md
-    depends_on:
-      - B-1
-      - B-2
-      - B-3
-      - B-4
-      - B-5
-      - B-6
+    dependencies:
+      - project_id: B-1
+        reason: "sequential_dependency"
+      - project_id: B-2
+        reason: "sequential_dependency"
+      - project_id: B-3
+        reason: "sequential_dependency"
+      - project_id: B-4
+        reason: "sequential_dependency"
+      - project_id: B-5
+        reason: "sequential_dependency"
+      - project_id: B-6
+        reason: "sequential_dependency"
     spec:
       raw_goal: >
         Add an end-to-end swarm integration test that exercises the Phase 0B
@@ -236,6 +242,7 @@ projects:
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
       - tests/swarm/test_integration_e2e.py
+      - aragora/swarm/campaign.py
     acceptance_criteria:
       - "End-to-end integration coverage exists for Phase 0B hardening behaviors"
       - "B-7 is dependency-gated on B-1 through B-6"
