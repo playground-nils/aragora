@@ -24,6 +24,9 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [016](016-marketplace-architecture.md) | Agent Template Marketplace Architecture | Accepted | Feb 2026 |
 | [017](017-backend-runtime-entrypoint-and-compatibility.md) | Backend Runtime Entrypoint and Compatibility | Accepted | Mar 2026 |
 | [018](018-self-hosted-worker-canonicalization.md) | Self-Hosted Worker Canonicalization | Accepted | Mar 2026 |
+| [019](019-standardized-health-check-endpoints.md) | Standardized Health Check Endpoints | Accepted | Mar 2026 |
+| [020](020-event-dispatch-consolidation.md) | Event Dispatch Consolidation | Accepted | Mar 2026 |
+| [021](021-storage-layer-consolidation.md) | Storage Layer Consolidation | Accepted | Mar 2026 |
 
 ## ADR Format
 

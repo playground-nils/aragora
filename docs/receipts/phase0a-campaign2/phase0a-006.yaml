@@ -1,0 +1,21 @@
+campaign_id: phase0a-campaign2
+changed_files:
+- docs/governance/duplicate-subsystem-resolution.md
+- docs/governance/subsystem-ledger.md
+cost_usd: 1.5
+created_at: '2026-03-13T13:33:44.052088+00:00'
+duration_seconds: null
+failure_classification: null
+final_status: completed
+manifest_input: .aragora/campaign2_runtime_manifest.yaml
+phase: 0a
+rescue_description: null
+rescue_required: false
+review_verdict: passed
+task_id: phase0a-006
+verification_results:
+  pytest_exit_code: null
+  syntax_check: null
+  truth_suite: null
+worker_branch: codex/swarm-76fb982e-subtask_
+worker_commit: 31de0405f65f1b105fcada88b844223d2e42d507

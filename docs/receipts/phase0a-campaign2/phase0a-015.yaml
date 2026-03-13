@@ -1,0 +1,20 @@
+campaign_id: phase0a-campaign2
+changed_files:
+- docs/governance/phase1-scope-boundaries.md
+cost_usd: 2.0
+created_at: '2026-03-13T13:16:00.441515+00:00'
+duration_seconds: null
+failure_classification: null
+final_status: completed
+manifest_input: .aragora/campaign2_runtime_manifest.yaml
+phase: 0a
+rescue_description: null
+rescue_required: false
+review_verdict: passed
+task_id: phase0a-015
+verification_results:
+  pytest_exit_code: null
+  syntax_check: null
+  truth_suite: null
+worker_branch: codex/swarm-1905d6b6-subtask_
+worker_commit: 18b5833c63c49d07c984401b2ed812ba90d74bfd
