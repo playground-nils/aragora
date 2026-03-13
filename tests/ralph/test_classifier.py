@@ -17,6 +17,7 @@ class TestBlockerKindEnum:
         assert BlockerKind.RECEIPT_EMISSION_GAP.is_deterministic
 
     def test_escalation_kinds(self) -> None:
+        assert not BlockerKind.REVIEWER_AUTH_OR_BILLING.is_deterministic
         assert not BlockerKind.BUDGET_EXHAUSTION.is_deterministic
         assert not BlockerKind.INFRA_FAILURE.is_deterministic
         assert not BlockerKind.UNKNOWN.is_deterministic
@@ -82,6 +83,57 @@ class TestClassifyBlocker:
         }
         result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
         assert result == BlockerKind.SCOPE_FALSE_POSITIVE
+
+    def test_blocked_with_billing_finding_escalates(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": ["Review blocked (billing): Credit balance is too low"],
+                    },
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.REVIEWER_AUTH_OR_BILLING
+
+    def test_blocked_with_auth_subprocess_finding_escalates(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": ["Review failed: CLISubprocessError. Run claude auth login."],
+                    },
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.REVIEWER_AUTH_OR_BILLING
+
+    def test_blocked_with_true_diff_missing_still_maps_to_reviewer_missing_diff(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": ["Reviewer could not verify acceptance criteria without diff."],
+                    },
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.REVIEWER_MISSING_DIFF
 
     def test_blocked_with_repeated_clean_exit(self) -> None:
         manifest = {
