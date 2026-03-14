@@ -242,6 +242,7 @@ projects:
         - "Truth-suite lane required for merge eligibility"
     file_scope_hints:
       - aragora/swarm/campaign.py
+      - tests/swarm/test_campaign.py
     acceptance_criteria:
       - "End-to-end integration coverage exists for Phase 0B hardening behaviors"
       - "B-7 is dependency-gated on B-1 through B-6"
