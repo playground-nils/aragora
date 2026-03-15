@@ -342,6 +342,53 @@ def test_start_run_prefers_explicit_spec_work_orders(
     assert work_order["metadata"]["source"] == "explicit_spec_work_order"
 
 
+def test_start_run_initializes_worker_type_circuit_breaker_metadata(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    session_path = repo / "wt-breaker-init"
+    session_path.mkdir()
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="swarm-breaker-init",
+        agent="codex",
+        branch="codex/swarm-breaker-init",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="breaker-init",
+                title="Initialize breaker metadata",
+                description="Seed default breaker metadata on the run.",
+                file_scope=["tests/swarm/test_supervisor.py"],
+            )
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"))
+
+    assert run.metadata[WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY] == {
+        "failure_threshold": 2,
+        "reset_timeout_seconds": 900.0,
+    }
+    assert run.metadata[WORKER_TYPE_CIRCUIT_BREAKERS_KEY] == {}
+
+
 # ---------- dispatch_workers / collect_results tests ----------
 
 from unittest.mock import AsyncMock, patch
@@ -753,6 +800,82 @@ async def test_dispatch_workers_trips_and_skips_worker_type_circuit_breaker(
     assert [item["target_agent"] for item in work_orders] == ["codex", "codex", "codex"]
     assert [item["status"] for item in work_orders] == ["leased", "leased", "leased"]
     assert work_orders[2]["metadata"]["last_failure_reason"] == "worker_type_blocked"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_workers_resets_closed_worker_type_circuit_breaker_after_successful_launch(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run_record = store.create_supervisor_run(
+        goal="reset closed worker breaker",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "reset closed worker breaker"},
+        work_orders=[
+            {
+                "work_order_id": "wo-reset",
+                "status": "leased",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+            }
+        ],
+        status="active",
+        metadata={
+            WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
+                "failure_threshold": 2,
+                "reset_timeout_seconds": 300.0,
+            },
+            WORKER_TYPE_CIRCUIT_BREAKERS_KEY: {
+                "claude": {
+                    "status": "closed",
+                    "failure_count": 1,
+                    "failure_threshold": 2,
+                    "reset_timeout_seconds": 300.0,
+                    "opened_at": None,
+                    "blocked_until": None,
+                    "last_failure_at": datetime.now(timezone.utc).isoformat(),
+                    "last_failure_reason": "agent_launch_failed",
+                    "last_failure_detail": "temporary launch error",
+                    "trip_count": 0,
+                    "last_reset_at": None,
+                }
+            },
+        },
+    )
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    mock_launcher.launch = AsyncMock(
+        return_value=WorkerProcess(
+            work_order_id="wo-reset",
+            agent="claude",
+            worktree_path=str(repo),
+            branch="main",
+            pid=321,
+            initial_head="abc123",
+        )
+    )
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=mock_launcher)
+
+    launched = await supervisor.dispatch_workers(run_record["run_id"])
+
+    assert len(launched) == 1
+    assert mock_launcher.launch.await_count == 1
+
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    assert updated["work_orders"][0]["status"] == "dispatched"
+
+    breaker = updated["metadata"][WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
+    assert breaker["status"] == "closed"
+    assert breaker["failure_count"] == 0
+    assert breaker["opened_at"] is None
+    assert breaker["blocked_until"] is None
+    assert breaker["last_reset_at"]
+    assert breaker["last_failure_reason"] == "agent_launch_failed"
 
 
 @pytest.mark.asyncio
