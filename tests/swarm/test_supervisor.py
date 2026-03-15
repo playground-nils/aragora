@@ -13,7 +13,11 @@ import pytest
 from aragora.nomic.dev_coordination import DevCoordinationStore
 from aragora.nomic.task_decomposer import SubTask, TaskDecomposition
 from aragora.swarm.spec import SwarmSpec
-from aragora.swarm.supervisor import SwarmSupervisor
+from aragora.swarm.supervisor import (
+    WORKER_TYPE_CIRCUIT_BREAKERS_KEY,
+    WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY,
+    SwarmSupervisor,
+)
 from aragora.swarm.worker_launcher import WorkerLauncher
 from aragora.worktree.lifecycle import ManagedWorktreeSession
 
@@ -673,6 +677,85 @@ async def test_dispatch_handles_missing_cli(repo: Path, store: DevCoordinationSt
 
 
 @pytest.mark.asyncio
+async def test_dispatch_workers_trips_and_skips_worker_type_circuit_breaker(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run_record = store.create_supervisor_run(
+        goal="trip worker breaker",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "trip worker breaker"},
+        work_orders=[
+            {
+                "work_order_id": "wo-1",
+                "status": "leased",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+            },
+            {
+                "work_order_id": "wo-2",
+                "status": "leased",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+            },
+            {
+                "work_order_id": "wo-3",
+                "status": "leased",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+            },
+        ],
+        status="active",
+        metadata={
+            "max_concurrency": 3,
+            "managed_dir_pattern": ".worktrees/custom-{agent}",
+            WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
+                "failure_threshold": 2,
+                "reset_timeout_seconds": 300.0,
+            },
+        },
+    )
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    mock_launcher.launch = AsyncMock(
+        side_effect=[
+            FileNotFoundError("claude CLI not found"),
+            FileNotFoundError("claude CLI not found"),
+        ]
+    )
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=mock_launcher)
+
+    launched = await supervisor.dispatch_workers(run_record["run_id"])
+
+    assert launched == []
+    assert mock_launcher.launch.await_count == 2
+
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    assert updated["metadata"]["max_concurrency"] == 3
+    assert updated["metadata"]["managed_dir_pattern"] == ".worktrees/custom-{agent}"
+    breaker = updated["metadata"][WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
+    assert breaker["status"] == "open"
+    assert breaker["failure_count"] == 2
+    assert breaker["trip_count"] == 1
+    assert breaker["last_failure_reason"] == "agent_unavailable"
+    assert breaker["blocked_until"]
+
+    work_orders = updated["work_orders"]
+    assert [item["target_agent"] for item in work_orders] == ["codex", "codex", "codex"]
+    assert [item["status"] for item in work_orders] == ["leased", "leased", "leased"]
+    assert work_orders[2]["metadata"]["last_failure_reason"] == "worker_type_blocked"
+
+
+@pytest.mark.asyncio
 async def test_collect_finished_results_requeues_capacity_failure_to_fallback_agent(
     repo: Path, store: DevCoordinationStore
 ) -> None:
@@ -730,7 +813,11 @@ async def test_collect_finished_results_requeues_capacity_failure_to_fallback_ag
         launcher=mock_launcher,
         decomposer=decomposer,
     )
-    run = supervisor.start_run(spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"))
+    run = supervisor.start_run(
+        spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"),
+        max_concurrency=4,
+        managed_dir_pattern=".worktrees/phase0b-{agent}",
+    )
     run.work_orders[0]["status"] = "dispatched"
     run.work_orders[0]["target_agent"] = "claude"
     run.work_orders[0]["reviewer_agent"] = "codex"
@@ -742,6 +829,8 @@ async def test_collect_finished_results_requeues_capacity_failure_to_fallback_ag
     assert len(completed) == 1
     refreshed = store.get_supervisor_run(run.run_id)
     assert refreshed is not None
+    assert refreshed["metadata"]["max_concurrency"] == 4
+    assert refreshed["metadata"]["managed_dir_pattern"] == ".worktrees/phase0b-{agent}"
     work_order = refreshed["work_orders"][0]
     assert work_order["status"] == "leased"
     assert work_order["target_agent"] == "codex"
@@ -749,7 +838,133 @@ async def test_collect_finished_results_requeues_capacity_failure_to_fallback_ag
     assert work_order["metadata"]["last_failure_reason"] == "agent_capacity"
     assert work_order["metadata"]["attempted_agents"] == ["claude"]
     assert work_order["lease_id"] == run.work_orders[0]["lease_id"]
+    breaker = refreshed["metadata"][WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
+    assert breaker["status"] == "open"
+    assert breaker["failure_count"] == breaker["failure_threshold"]
+    assert breaker["last_failure_reason"] == "agent_capacity"
+    assert breaker["last_failure_detail"] == "Credit balance is too low"
     assert store.status_summary()["counts"]["active_leases"] == 1
+
+
+def test_reset_worker_type_circuit_breaker_preserves_run_metadata(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run_record = store.create_supervisor_run(
+        goal="reset breaker metadata",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "reset breaker metadata"},
+        work_orders=[],
+        status="active",
+        metadata={
+            "max_concurrency": 5,
+            "managed_dir_pattern": ".worktrees/preserve-{agent}",
+            WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
+                "failure_threshold": 2,
+                "reset_timeout_seconds": 300.0,
+            },
+            WORKER_TYPE_CIRCUIT_BREAKERS_KEY: {
+                "claude": {
+                    "status": "open",
+                    "failure_count": 2,
+                    "failure_threshold": 2,
+                    "reset_timeout_seconds": 300.0,
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                    "blocked_until": (
+                        datetime.now(timezone.utc) + timedelta(minutes=5)
+                    ).isoformat(),
+                    "last_failure_reason": "agent_unavailable",
+                    "last_failure_detail": "CLI not found",
+                }
+            },
+        },
+    )
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store)
+
+    updated = supervisor.reset_worker_type_circuit_breaker(run_record["run_id"], "claude")
+
+    assert updated.metadata["max_concurrency"] == 5
+    assert updated.metadata["managed_dir_pattern"] == ".worktrees/preserve-{agent}"
+    breaker = updated.metadata[WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
+    assert breaker["status"] == "closed"
+    assert breaker["failure_count"] == 0
+    assert breaker["last_reset_at"]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_workers_expires_worker_type_circuit_breaker(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    expired_at = datetime.now(UTC) - timedelta(minutes=10)
+    run_record = store.create_supervisor_run(
+        goal="expire worker breaker",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "expire worker breaker"},
+        work_orders=[
+            {
+                "work_order_id": "wo-expire",
+                "status": "leased",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+            }
+        ],
+        status="active",
+        metadata={
+            WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
+                "failure_threshold": 2,
+                "reset_timeout_seconds": 60.0,
+            },
+            WORKER_TYPE_CIRCUIT_BREAKERS_KEY: {
+                "claude": {
+                    "status": "open",
+                    "failure_count": 2,
+                    "failure_threshold": 2,
+                    "reset_timeout_seconds": 60.0,
+                    "opened_at": expired_at.isoformat(),
+                    "blocked_until": (expired_at + timedelta(minutes=1)).isoformat(),
+                    "last_failure_reason": "agent_capacity",
+                    "last_failure_detail": "Credit balance is too low",
+                }
+            },
+        },
+    )
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    mock_worker = WorkerProcess(
+        work_order_id="wo-expire",
+        agent="claude",
+        worktree_path=str(repo),
+        branch="main",
+        pid=444,
+        initial_head="abc123",
+    )
+    mock_launcher.launch = AsyncMock(return_value=mock_worker)
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=mock_launcher)
+
+    launched = await supervisor.dispatch_workers(run_record["run_id"])
+
+    assert len(launched) == 1
+    assert mock_launcher.launch.await_count == 1
+
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    work_order = updated["work_orders"][0]
+    assert work_order["status"] == "dispatched"
+    assert work_order["target_agent"] == "claude"
+
+    breaker = updated["metadata"][WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
+    assert breaker["status"] == "closed"
+    assert breaker["failure_count"] == 0
+    assert breaker["opened_at"] is None
+    assert breaker["blocked_until"] is None
+    assert breaker["last_reset_at"]
 
 
 @pytest.mark.asyncio
