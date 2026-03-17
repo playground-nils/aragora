@@ -1030,17 +1030,28 @@ class SwarmSupervisor:
             if dispatch_error and dispatch_error not in blockers:
                 blockers.append(dispatch_error)
 
+        forward_progress_statuses = {"queued", "leased", "dispatched"}
+        stalled_wait_statuses = {"waiting_conflict", "waiting_resource"}
+        stalled_dead_end = bool(statuses & stalled_wait_statuses) and not (
+            statuses & forward_progress_statuses
+        )
+        stalled_no_progress = WorkerOutcome.TIMEOUT_NO_PROGRESS.value in worker_outcomes
+
         if has_deliverable:
             return "deliverable_created", blockers
+        if "scope_violation" in worker_outcomes or "scope_violation" in statuses:
+            return "blocked", blockers
+        if any(outcome.startswith("crash") for outcome in worker_outcomes):
+            return "crash", blockers
+        if stalled_no_progress or stalled_dead_end:
+            return "stalled", blockers
         if (
             any(outcome.startswith("timeout") for outcome in worker_outcomes)
             or "timed_out" in statuses
         ):
             return "timeout", blockers
-        if any(outcome.startswith("crash") for outcome in worker_outcomes) or "failed" in statuses:
+        if "failed" in statuses:
             return "crash", blockers
-        if "scope_violation" in worker_outcomes or "scope_violation" in statuses:
-            return "blocked", blockers
         if "clean_exit_no_effect" in worker_outcomes:
             return "clean_exit_no_deliverable", blockers
         if "needs_human" in statuses:
