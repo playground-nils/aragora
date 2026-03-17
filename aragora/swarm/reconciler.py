@@ -8,10 +8,13 @@ pending coordination artifacts into the global work queue.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from aragora.swarm.supervisor import SupervisorRun, SwarmSupervisor
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -73,21 +76,73 @@ class SwarmReconciler:
         *,
         interval_seconds: float | None = None,
         max_ticks: int | None = None,
+        force_collect_on_max_ticks: bool = False,
     ) -> SupervisorRun:
-        """Reconcile a run until it reaches a stable stop condition."""
+        """Reconcile a run until it reaches a stable stop condition.
+
+        When ``force_collect_on_max_ticks`` is enabled, exhausting
+        ``max_ticks`` becomes a hard stop for bounded runs: any remaining
+        dispatched workers are force-collected once so supervisor salvage can
+        preserve concrete work instead of abandoning dirty worktrees.
+        """
         interval = (
             self.config.interval_seconds if interval_seconds is None else max(0.1, interval_seconds)
         )
         tick_limit = self.config.max_ticks if max_ticks is None else max_ticks
+        # Count completed sleep/reconcile intervals after the initial tick.
+        # This preserves the immediate first reconciliation and still allows
+        # the final boundary tick before max_ticks exhaustion.
         ticks = 0
         run = await self.tick_run(run_id)
         while not self._should_stop(run):
-            ticks += 1
             if tick_limit is not None and ticks >= tick_limit:
+                if force_collect_on_max_ticks:
+                    run = await self._force_collect_dispatched(run_id)
                 break
             await asyncio.sleep(interval)
             run = await self.tick_run(run_id)
+            ticks += 1
+
         return run
+
+    async def _force_collect_dispatched(self, run_id: str) -> SupervisorRun:
+        """Force-collect dispatched work orders after bounded max_ticks exhaustion.
+
+        This is intentionally opt-in from ``watch_run()`` so generic
+        long-running supervisor sessions do not terminate active work simply
+        because a caller stopped waiting. Bounded dispatch paths can enable it
+        to treat ``max_ticks`` as a hard time cap and run one final salvage
+        collection pass before returning.
+        """
+        record = self.supervisor.store.get_supervisor_run(run_id)
+        if record is None:
+            raise KeyError(f"Unknown supervisor run: {run_id}")
+
+        work_orders = [dict(item) for item in record.get("work_orders", [])]
+        dispatched = [item for item in work_orders if str(item.get("status", "")) == "dispatched"]
+        if not dispatched:
+            return SupervisorRun.from_record(record)
+
+        logger.warning(
+            "max_ticks exhausted for run %s with %d dispatched work orders — "
+            "force-collecting with salvage",
+            run_id,
+            len(dispatched),
+        )
+
+        # Kill workers and collect — this invokes the supervisor's existing
+        # no-progress timeout path which handles salvage auto-commit.
+        for item in dispatched:
+            await self.supervisor._kill_worker(item)
+
+        # One final collect pass picks up salvaged commits from killed workers.
+        await self.supervisor.collect_finished_results(run_id)
+        self.supervisor.refresh_run(run_id)
+
+        final_record = self.supervisor.store.get_supervisor_run(run_id)
+        if final_record is None:
+            raise KeyError(f"Unknown supervisor run: {run_id}")
+        return SupervisorRun.from_record(final_record)
 
     @staticmethod
     def _should_stop(run: SupervisorRun) -> bool:
