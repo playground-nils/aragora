@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import threading
@@ -1190,14 +1191,27 @@ class PostDebateCoordinator:
                 if hollow_consensus and self.config.staking_slash_on_hollow_consensus:
                     # Slash agents that participated in hollow consensus
                     try:
-                        import asyncio
-
-                        asyncio.get_event_loop().run_until_complete(
-                            registry.slash(
-                                agent_name,
-                                reason="hollow_consensus",
-                                metadata={"debate_id": debate_id, "confidence": confidence},
-                            )
+                        position = self._run_async_callable(registry.get_stake, agent_name)
+                        if position is None:
+                            logger.debug("Agent %s has no stake, skipping slash", agent_name)
+                            continue
+                        slash_amount = max(
+                            1,
+                            int(position.effective_stake * 0.10 * self.config.staking_reward_scale),
+                        )
+                        evidence_bytes = json.dumps(
+                            {
+                                "debate_id": debate_id,
+                                "confidence": confidence,
+                                "hollow_consensus": True,
+                            }
+                        ).encode()
+                        self._run_async_callable(
+                            registry.slash,
+                            agent_name,
+                            slash_amount,
+                            "hollow_consensus",
+                            evidence_bytes,
                         )
                         results["slashed"].append(agent_name)
                     except (RuntimeError, ValueError, OSError) as e:
@@ -1206,10 +1220,11 @@ class PostDebateCoordinator:
                     # Reward agents contributing to high-confidence outcomes
                     reward_amount = int(100 * confidence * self.config.staking_reward_scale)
                     try:
-                        import asyncio
-
-                        asyncio.get_event_loop().run_until_complete(
-                            registry.reward(agent_name, reward_amount)
+                        self._run_async_callable(
+                            registry.reward,
+                            agent_name,
+                            reward_amount,
+                            "high_confidence_contribution",
                         )
                         results["rewarded"].append({"agent": agent_name, "amount": reward_amount})
                     except (RuntimeError, ValueError, OSError) as e:

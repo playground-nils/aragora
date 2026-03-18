@@ -1743,6 +1743,42 @@ class ContextInitializer:
             if compression_result and compression_result.answer:
                 ctx.rlm_compressed_context = compression_result.answer
 
+                # Wire RLM context into prompt builder for agent drill-down
+                prompt_builder = getattr(ctx, "_prompt_builder", None)
+                if (
+                    prompt_builder
+                    and hasattr(prompt_builder, "set_rlm_context")
+                    and _RLMContextClass
+                ):
+                    try:
+                        from aragora.rlm.types import AbstractionLevel, AbstractionNode
+
+                        summary_node = AbstractionNode(
+                            id="compression_summary",
+                            level=AbstractionLevel.SUMMARY,
+                            content=compression_result.answer,
+                            token_count=len(compression_result.answer) // 4,
+                        )
+                        rlm_ctx = _RLMContextClass(
+                            original_content=context_content,
+                            original_tokens=estimated_tokens,
+                            levels={AbstractionLevel.SUMMARY: [summary_node]},
+                            nodes_by_id={"compression_summary": summary_node},
+                            source_type=source_type,
+                            compression_stats={
+                                "used_true_rlm": getattr(
+                                    compression_result, "used_true_rlm", False
+                                ),
+                                "used_compression_fallback": getattr(
+                                    compression_result, "used_compression_fallback", False
+                                ),
+                            },
+                        )
+                        prompt_builder.set_rlm_context(rlm_ctx)
+                        logger.info("[rlm] Set hierarchical RLM context on prompt builder")
+                    except (ImportError, TypeError, AttributeError) as exc:
+                        logger.debug("[rlm] Could not set RLM context on prompt builder: %s", exc)
+
                 # Log which approach was used
                 if compression_result.used_true_rlm:
                     logger.info(

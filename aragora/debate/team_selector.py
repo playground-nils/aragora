@@ -165,6 +165,9 @@ class TeamSelectionConfig:
     # Control Plane health filtering (agent availability from AgentRegistry)
     enable_health_filtering: bool = True
     health_weight: float = 0.3
+    # Blockchain staking reputation scoring (stake health, slash frequency)
+    enable_staking_reputation: bool = False
+    staking_reputation_weight: float = 0.15
 
 
 class TeamSelector:
@@ -203,6 +206,7 @@ class TeamSelector:
         continuum_memory: ContinuumMemory | None = None,
         control_plane_registry: Any | None = None,
         marketplace_registry: Any | None = None,
+        staking_registry: Any | None = None,
     ):
         self.elo_system = elo_system
         # Auto-detect default CalibrationTracker if none provided.
@@ -255,6 +259,8 @@ class TeamSelector:
         self.control_plane_registry = control_plane_registry
         # Marketplace registry for template-based team selection
         self.marketplace_registry = marketplace_registry
+        # Blockchain staking registry for reputation scoring
+        self.staking_registry = staking_registry
         self.pulse_manager: Any = None  # Set externally or via Arena
         self.specialist_registry: Any = None  # Set externally or via Arena
         self._culture_recommendations_cache: dict[str, list[str]] = {}
@@ -1942,7 +1948,45 @@ class TeamSelector:
         if breakdown is not None:
             breakdown["diversity"] = round(score - _prev, 4)
 
+        # Blockchain staking reputation (stake health, slash frequency)
+        _prev = score
+        if self.staking_registry and self.config.enable_staking_reputation:
+            staking_score = self._compute_staking_reputation_score(agent)
+            score += staking_score * self.config.staking_reputation_weight
+        if breakdown is not None:
+            breakdown["staking_reputation"] = round(score - _prev, 4)
+
         return score
+
+    def _compute_staking_reputation_score(self, agent: Any) -> float:
+        """Score agent based on stake health (effective_stake / total_stake, slash frequency).
+
+        Returns a float in [0.0, 1.0]. Agents with no stake get a neutral 0.5.
+        """
+        if not self.staking_registry:
+            return 0.5
+        try:
+            import asyncio
+
+            try:
+                asyncio.get_running_loop()
+                # If in async context, can't block — return neutral
+                return 0.5
+            except RuntimeError:
+                pass
+            position = asyncio.run(
+                self.staking_registry.get_stake(getattr(agent, "name", str(agent)))
+            )
+            if position is None:
+                return 0.5
+            # Stake health: effective_stake / total_staked (1.0 = no slashing)
+            health = position.effective_stake / max(position.amount_wei, 1)
+            # Slash frequency penalty: more slashes = lower score
+            slash_count = len(position.slashing_events)
+            slash_penalty = max(0.0, 1.0 - slash_count / 10.0)
+            return health * 0.7 + slash_penalty * 0.3
+        except (ImportError, RuntimeError, ValueError, OSError, AttributeError):
+            return 0.5
 
     def _compute_reliability_budget_shares(
         self,
