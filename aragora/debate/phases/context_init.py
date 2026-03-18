@@ -1799,6 +1799,20 @@ class ContextInitializer:
                     reduction,
                 )
 
+                # Emit Prometheus metrics for RLM compression
+                try:
+                    from aragora.server.prometheus_rlm import record_rlm_compression
+
+                    record_rlm_compression(
+                        source_type=source_type,
+                        original_tokens=estimated_tokens,
+                        compressed_tokens=compressed_tokens,
+                        levels=1,
+                        success=True,
+                    )
+                except ImportError:
+                    pass
+
                 # Optionally replace context with summary for agents with small windows
                 if hasattr(ctx, "use_compressed_context") and ctx.use_compressed_context:
                     if len(compression_result.answer) < len(context_content):
@@ -1810,6 +1824,28 @@ class ContextInitializer:
 
         except asyncio.TimeoutError:
             logger.warning("[rlm] Context compression timed out after 30s")
+            try:
+                from aragora.server.prometheus_rlm import record_rlm_compression
+
+                record_rlm_compression(
+                    source_type=source_type,
+                    original_tokens=estimated_tokens,
+                    compressed_tokens=0,
+                    success=False,
+                )
+            except (ImportError, NameError):
+                pass
         except (RuntimeError, AttributeError, ImportError) as e:  # noqa: BLE001 - phase isolation
             logger.warning("[rlm] Context compression failed: %s", e)
+            try:
+                from aragora.server.prometheus_rlm import record_rlm_compression
+
+                record_rlm_compression(
+                    source_type=source_type,
+                    original_tokens=estimated_tokens,
+                    compressed_tokens=0,
+                    success=False,
+                )
+            except (ImportError, NameError):
+                pass
             # Continue without compressed context - don't break the debate

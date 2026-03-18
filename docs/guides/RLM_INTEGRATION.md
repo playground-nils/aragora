@@ -130,6 +130,18 @@ km_adapter = KnowledgeMoundAdapter(rlm, mound=knowledge_mound)
 result = await km_adapter.query("Summarize findings on auth module security")
 ```
 
+## Arena Context Compression
+
+When RLM compression is enabled on a debate, the context init phase automatically:
+
+1. Compresses long context via `AragoraRLM.compress_and_query()`
+2. Builds an `RLMContext` with `AbstractionLevel.SUMMARY` node from the result
+3. Sets it on the prompt builder via `set_rlm_context()` so agents can drill down
+4. Emits Prometheus metrics (`record_rlm_compression`) for success/failure tracking
+
+This means agents in the debate can access both the compressed summary and, via the
+prompt builder, navigate to detailed sections on demand.
+
 ## Trajectory Learning
 
 `DebateTrajectoryCollector` (in `debate_integration.py`) records RLM query trajectories from
@@ -143,17 +155,60 @@ hook = create_training_hook(collector=get_debate_trajectory_collector())
 arena = Arena(env, agents, protocol, hooks={"post_debate": hook})
 ```
 
-## Observability
+### Per-Round Recording
+
+For richer training data, the debate rounds phase records proposals and critiques each round:
 
 ```python
-from aragora.rlm import get_factory_metrics, export_to_prometheus
+from aragora.rlm.debate_integration import get_debate_trajectory_collector
+
+collector = get_debate_trajectory_collector()
+
+# Called automatically each round when RLM compression is enabled
+collector.record_round(
+    debate_id="debate_001",
+    round_num=0,
+    proposals=[{"agent": "alice", "content": "My proposal..."}],
+    critiques=[{"agent": "bob", "content": "I disagree because..."}],
+    convergence_similarity=0.3,
+)
+
+# Finalize merges per-round steps with outcome data
+trajectory = collector.record_debate_outcome(
+    debate_id="debate_001",
+    task="Design caching system",
+    consensus_reached=True,
+    confidence=0.85,
+)
+# trajectory.steps contains per-round data followed by outcome steps
+```
+
+## Observability
+
+RLM compression emits Prometheus metrics automatically when `prometheus_client` is installed.
+The metrics module is at `aragora/server/prometheus_rlm.py`.
+
+**Prometheus metrics emitted:**
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `aragora_rlm_compressions_total` | Counter | `source_type`, `status` | Total compression calls (success/failure) |
+| `aragora_rlm_compression_ratio` | Histogram | `source_type` | Ratio of compressed/original tokens |
+| `aragora_rlm_tokens_saved_total` | Counter | `source_type` | Tokens saved by compression |
+| `aragora_rlm_compression_duration_seconds` | Histogram | `source_type`, `levels` | Time per compression |
+| `aragora_rlm_queries_total` | Counter | `query_type`, `level` | RLM context queries |
+| `aragora_rlm_cache_hits_total` | Counter | — | Cache hits |
+| `aragora_rlm_cache_misses_total` | Counter | — | Cache misses |
+| `aragora_rlm_refinement_iterations` | Histogram | `strategy` | Iterations until ready=True |
+
+**Programmatic access:**
+
+```python
+from aragora.rlm import get_factory_metrics
 
 metrics = get_factory_metrics()
 print(f"True RLM calls: {metrics['true_rlm_calls']}")
 print(f"Compression fallback calls: {metrics['compression_fallback_calls']}")
-
-# Export to Prometheus / StatsD / OTEL
-export_to_prometheus(metrics)
 ```
 
 ## Error Handling
