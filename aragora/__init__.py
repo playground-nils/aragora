@@ -24,6 +24,13 @@ _EXPORT_MAP = {
     "Message": ("aragora.core", "Message"),
     "Vote": ("aragora.core", "Vote"),
     "Arena": ("aragora.debate", "Arena"),
+    # Golden 5 simplified API surface
+    "debate": ("aragora.golden", "debate"),
+    "remember": ("aragora.golden", "remember"),
+    "recall": ("aragora.golden", "recall"),
+    "review": ("aragora.golden", "review"),
+    "workflow": ("aragora.golden", "workflow"),
+    "receipt": ("aragora.golden", "receipt"),
 }
 
 
