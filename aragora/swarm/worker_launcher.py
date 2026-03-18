@@ -439,8 +439,8 @@ class WorkerLauncher:
             "--no-maintain",
             "--no-reconcile",
         ]
-        if session_id:
-            cmd.extend(["--session-id", session_id])
+        effective_session_id = session_id or Path(worktree_path).resolve().name
+        cmd.extend(["--session-id", effective_session_id])
         cmd.append("--")
         cmd.extend(inner)
         return cmd

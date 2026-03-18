@@ -135,7 +135,9 @@ class TestBuildCommand:
         cmd = launcher._build_command("claude", "fix bug", "/tmp/wt")
         assert cmd[0] == "bash"
         assert "scripts/codex_session.sh" in cmd[1]
-        assert "--session-id" not in cmd
+        # session-id is derived from worktree basename when not provided
+        idx = cmd.index("--session-id")
+        assert cmd[idx + 1] == "wt"
         assert "--" in cmd
         assert "-p" in cmd
         assert "fix bug" in cmd
@@ -163,6 +165,20 @@ class TestBuildCommand:
         launcher = WorkerLauncher()
         cmd = launcher._build_command("claude", "task", "/tmp/wt")
         assert "--model" not in cmd
+
+    def test_session_id_derived_from_worktree_basename(self):
+        launcher = WorkerLauncher()
+        cmd = launcher._build_command("codex", "task", "/managed/swarm-abc-subtask_1")
+        idx = cmd.index("--session-id")
+        assert cmd[idx + 1] == "swarm-abc-subtask_1"
+
+    def test_explicit_session_id_takes_precedence(self):
+        launcher = WorkerLauncher()
+        cmd = launcher._build_command(
+            "codex", "task", "/managed/swarm-abc-subtask_1", session_id="custom-id"
+        )
+        idx = cmd.index("--session-id")
+        assert cmd[idx + 1] == "custom-id"
 
     def test_direct_cli_command_when_session_wrapper_disabled(self):
         launcher = WorkerLauncher(LaunchConfig(use_managed_session_script=False))
