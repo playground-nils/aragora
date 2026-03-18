@@ -708,6 +708,43 @@ class FeatureFlagRegistry:
             FlagCategory.CORE,
         )
 
+        # Receipt enforcement flags (per-domain, all default OFF for gradual rollout)
+        self.register(
+            "receipt_enforcement_openclaw",
+            bool,
+            False,
+            "Require receipt gate for OpenClaw write actions",
+            FlagCategory.CORE,
+        )
+        self.register(
+            "receipt_enforcement_canvas",
+            bool,
+            False,
+            "Require receipt gate for Canvas write actions",
+            FlagCategory.CORE,
+        )
+        self.register(
+            "receipt_enforcement_computer_use",
+            bool,
+            False,
+            "Require receipt gate for Computer Use write actions",
+            FlagCategory.CORE,
+        )
+        self.register(
+            "receipt_enforcement_inbox",
+            bool,
+            False,
+            "Require receipt gate for Inbox write actions",
+            FlagCategory.CORE,
+        )
+        self.register(
+            "receipt_enforcement_shared_inbox",
+            bool,
+            False,
+            "Require receipt gate for Shared Inbox write actions",
+            FlagCategory.CORE,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Global instance and convenience functions
