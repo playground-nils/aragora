@@ -226,7 +226,24 @@ Rules:
         declared_scope: list[str],
         changed_paths: list[str],
         out_of_scope_paths: list[str],
+        *,
+        repo_root: str | None = None,
     ) -> str:
+        # Build optional repository structure context
+        repo_structure_section = ""
+        if repo_root:
+            try:
+                import os
+
+                entries = sorted(os.listdir(repo_root))
+                top_level = [e for e in entries if not e.startswith(".")][:30]
+                if top_level:
+                    repo_structure_section = (
+                        "\nRepository top-level directories/files:\n" + json.dumps(top_level) + "\n"
+                    )
+            except OSError:
+                pass
+
         return f"""You are a file-scope adjudicator for an AI development orchestration system.
 
 A worker was given this task:
@@ -240,14 +257,25 @@ All files the worker actually changed:
 
 Files flagged as OUT OF SCOPE by glob matching:
 {json.dumps(out_of_scope_paths)}
-
+{repo_structure_section}
 For each out-of-scope file, decide if the edit is JUSTIFIED or REJECTED.
 
 Justified means: the file is semantically related to the task even though it wasn't in the declared scope. Common justified cases:
-- Test files that correspond to implementation files (tests/foo/test_bar.py for foo/bar.py)
-- __init__.py files that need export updates
-- Configuration files that the implementation depends on
-- Documentation files directly related to the change
+
+1. **Dependency/lock files**: If the task involves adding, updating, or removing dependencies, changes to dependency manifests and lock files are almost always justified:
+   - Python: requirements.txt, requirements-dev.txt, pyproject.toml, setup.cfg, setup.py, poetry.lock, Pipfile, Pipfile.lock
+   - JavaScript/TypeScript: package.json, package-lock.json, yarn.lock, pnpm-lock.yaml
+   - Rust: Cargo.toml, Cargo.lock
+   - Go: go.mod, go.sum
+   - Ruby: Gemfile, Gemfile.lock
+
+2. **Test file companions**: Test files that correspond to implementation files are justified — e.g., tests/foo/test_bar.py accompanying src/foo/bar.py or aragora/foo/bar.py. The standard pattern is a mirrored directory structure under tests/.
+
+3. **Package init files**: __init__.py files that need export updates when new modules are added or public APIs change.
+
+4. **Configuration files**: Project-level config that the implementation depends on (e.g., tsconfig.json, .eslintrc, mypy.ini, pytest.ini).
+
+5. **Documentation files**: Docs directly related to the change (e.g., updating API docs when an endpoint changes).
 
 Rejected means: the file is genuinely unrelated to the declared task scope.
 
