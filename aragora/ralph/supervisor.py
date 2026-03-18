@@ -272,6 +272,16 @@ class RalphSupervisor:
         self.merge_policy = merge_policy
         self.repair_budget_usd = repair_budget_usd
         self.github = GitHubControl(repo_root=self.repo_root)
+        self._pr_registry: Any = None  # lazy PullRequestRegistry
+
+    def _get_pr_registry(self) -> Any:
+        """Lazily create and return the shared PullRequestRegistry."""
+        if self._pr_registry is None:
+            from aragora.swarm.pr_registry import PullRequestRegistry
+
+            state_dir = self.repo_root / ".aragora"
+            self._pr_registry = PullRequestRegistry(state_dir=state_dir)
+        return self._pr_registry
 
     # -- public API --
 
@@ -449,6 +459,15 @@ class RalphSupervisor:
                 target_branch=str(target.get("target_branch") or "main"),
             )
             executor.record_project_pr(str(target["project_id"]), pr_url=pr_url)
+
+        # Register in canonical PR registry
+        reg_branch = branch or (target.get("branch") if target else None)
+        if pr_url and reg_branch:
+            try:
+                creator = f"ralph-{target.get('kind', 'unknown')}"
+                self._get_pr_registry().register(reg_branch, pr_url, creator=creator)
+            except Exception:
+                logger.debug("Failed to register PR %s in registry", pr_url, exc_info=True)
 
     def _register_project_merge_target(
         self,
