@@ -795,8 +795,9 @@ class SwarmSupervisor:
             ]
         work_orders = self.bridge.build_work_orders(subtasks)
         for item in work_orders:
-            # Override file_scope from spec hints when the decomposer left it
-            # empty OR produced scopes with zero overlap with the hints.
+            # Always merge spec hints into work order file_scope so workers
+            # can touch any file the project declares, even when the
+            # decomposer assigned a narrower subset.
             if spec_hints:
                 if not item.file_scope:
                     item.file_scope = list(spec_hints)
@@ -805,15 +806,16 @@ class SwarmSupervisor:
                         item.work_order_id,
                         spec_hints,
                     )
-                elif not self._scope_overlaps_hints(item.file_scope, spec_hints):
-                    logger.warning(
-                        "Decomposer file_scope %s on work order %s has no overlap "
-                        "with spec hints %s — overriding with spec hints",
-                        item.file_scope,
-                        item.work_order_id,
-                        spec_hints,
-                    )
-                    item.file_scope = list(spec_hints)
+                else:
+                    merged = list(dict.fromkeys(item.file_scope + list(spec_hints)))
+                    if set(merged) != set(item.file_scope):
+                        logger.info(
+                            "Merged spec hints into work order %s file_scope: %s -> %s",
+                            item.work_order_id,
+                            item.file_scope,
+                            merged,
+                        )
+                    item.file_scope = merged
             item.expected_tests = self._default_tests(item, spec)
             item.risk_level = self._risk_level_for_scope(item.file_scope)
             item.approval_required = True
