@@ -4,6 +4,74 @@ set -euo pipefail
 EXTRAS=""
 PROJECT_DIR=""
 
+readonly LEGACY_CONTROL_PLANE_PACKAGE_NAME="aragora-debate"
+readonly LEGACY_CONTROL_PLANE_MARKER_PATH="aragora/server"
+
+LEGACY_CONTROL_PLANE_BASE_DEPS=(
+  "aiohttp>=3.13.3,<4.0"
+  "websockets>=13.0,<15.1"
+  "pyyaml>=6.0,<7.0"
+  "pydantic>=2.0,<3.0"
+  "pydantic-settings>=2.0,<3.0"
+  "bcrypt>=4.0,<6.0"
+  "cryptography>=46.0,<48.0"
+  "markupsafe>=2.1.0,<4.0"
+  "defusedxml>=0.7,<1.0"
+  "pyotp>=2.9,<3.0"
+  "jinja2>=3.1.6,<4.0"
+  "urllib3>=2.6.3,<3.0"
+  "httpx>=0.27,<1.0"
+  "numpy>=2.0,<3.0"
+  "watchfiles>=0.21,<2.0"
+  "boto3>=1.34,<2.0"
+  "PyJWT>=2.8,<3.0"
+  "fastapi>=0.109.0,<1.0"
+  "uvicorn[standard]>=0.27.0,<1.0"
+  "python-multipart>=0.0.22"
+  "mcp>=1.0,<2.0"
+)
+
+LEGACY_CONTROL_PLANE_DEV_DEPS=(
+  "pytest>=7.0,<10.0"
+  "pytest-asyncio>=0.21,<2.0"
+  "pytest-benchmark>=4.0,<6.0"
+  "pytest-cov>=4.0,<8.0"
+  "pytest-timeout>=2.0,<3.0"
+  "pytest-xdist>=3.5,<4.0"
+  "pytest-rerunfailures>=14.0,<15.0"
+  "pytest-randomly>=3.15,<5.0"
+  "black>=23.0,<27.0"
+  "ruff>=0.1,<1.0"
+  "bandit>=1.7,<2.0"
+  "mypy>=1.8,<2.0"
+  "mutmut>=3.0,<4.0"
+  "pre-commit>=3.6,<5.0"
+  "datamodel-code-generator>=0.25,<1.0"
+  "async-timeout>=4.0,<6.0"
+  "python3-saml>=1.15,<2.0"
+  "tiktoken>=0.5,<1.0"
+)
+
+LEGACY_CONTROL_PLANE_TEST_EXTRA_DEPS=(
+  "aiosqlite>=0.19,<1.0"
+  "supabase>=2.0,<3.0"
+  "redis>=5.0.0,<8.0"
+  "asyncpg>=0.29.0,<1.0"
+  "yt-dlp>=2024.1,<2027.0"
+  "openai>=2.0,<3.0"
+  "twilio>=8.0,<10.0"
+  "langchain>=1.0,<2.0"
+  "weaviate-client>=4.0,<5.0"
+  "z3-solver>=4.12,<5.0"
+  "weasyprint>=68.0,<70.0"
+  "reportlab>=3.6,<5.0"
+  "scikit-learn>=1.5.0,<2.0"
+  "sentence-transformers>=3.0.0,<6.0"
+  "pydub>=0.25.0,<1.0"
+  "duckduckgo-search>=6.0,<9.0"
+  "pillow>=12.1.1"
+)
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --extras)
@@ -45,6 +113,54 @@ resolve_project_root() {
   return 1
 }
 
+project_name() {
+  local pyproject_path="$1/pyproject.toml"
+  [[ -f "$pyproject_path" ]] || return 1
+  python - "$pyproject_path" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
+    import tomli as tomllib  # type: ignore[no-redef]
+
+data = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+name = data.get("project", {}).get("name", "")
+print(name if isinstance(name, str) else "")
+PY
+}
+
+is_legacy_control_plane_root() {
+  local root="$1"
+  [[ -d "$root/$LEGACY_CONTROL_PLANE_MARKER_PATH" ]] || return 1
+  [[ "$(project_name "$root")" == "$LEGACY_CONTROL_PLANE_PACKAGE_NAME" ]]
+}
+
+install_legacy_control_plane_deps() {
+  local extras="$1"
+  local -a deps=("${LEGACY_CONTROL_PLANE_BASE_DEPS[@]}")
+
+  case "$extras" in
+    "")
+      ;;
+    dev)
+      deps+=("${LEGACY_CONTROL_PLANE_DEV_DEPS[@]}")
+      ;;
+    test)
+      deps+=("${LEGACY_CONTROL_PLANE_DEV_DEPS[@]}")
+      deps+=("${LEGACY_CONTROL_PLANE_TEST_EXTRA_DEPS[@]}")
+      ;;
+    *)
+      echo "::warning::Unknown legacy control-plane extras '$extras'; installing base deps only." >&2
+      ;;
+  esac
+
+  python -m pip install "${deps[@]}"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_HINT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 
@@ -76,8 +192,14 @@ fi
 cd "$PROJECT_ROOT"
 echo "[ci-install] project_root=$PROJECT_ROOT extras=${EXTRAS:-none}"
 
-if [[ -n "$EXTRAS" ]]; then
-  python -m pip install -e ".[${EXTRAS}]"
-else
+if is_legacy_control_plane_root "$PROJECT_ROOT"; then
+  echo "[ci-install] detected standalone root metadata; restoring legacy control-plane deps"
   python -m pip install -e .
+  install_legacy_control_plane_deps "$EXTRAS"
+else
+  if [[ -n "$EXTRAS" ]]; then
+    python -m pip install -e ".[${EXTRAS}]"
+  else
+    python -m pip install -e .
+  fi
 fi
