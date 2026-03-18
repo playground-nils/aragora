@@ -21,7 +21,7 @@
 - Modify: `aragora/swarm/spec.py:147-168` (`dispatch_bounds`)
 - Test: `tests/swarm/test_file_scope_enforcement.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/swarm/test_file_scope_enforcement.py
@@ -41,12 +41,12 @@ class TestMandatoryFileScope:
         assert len(result["file_scope"]) > 0  # LLM or keyword inference
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/swarm/test_file_scope_enforcement.py::TestMandatoryFileScope -v`
 Expected: FAIL with `NameError: _ensure_work_order_scope` not defined
 
-- [ ] **Step 3: Implement _ensure_work_order_scope in supervisor.py**
+- [x] **Step 3: Implement _ensure_work_order_scope in supervisor.py**
 
 Add a method that:
 1. If work_order has file_scope → keep it
@@ -54,16 +54,16 @@ Add a method that:
 3. Else → try LLM `infer_spec_fields()` for scope hints, fall back to keyword heuristics from task title
 4. Log warning if scope remains empty (advisory, not blocking — for backward compat)
 
-- [ ] **Step 4: Wire into _build_supervised_work_orders post-processing**
+- [x] **Step 4: Wire into _build_supervised_work_orders post-processing**
 
 After the existing work order construction loop, call `_ensure_work_order_scope(wo, spec)` for each work order.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pytest tests/swarm/test_file_scope_enforcement.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add aragora/swarm/supervisor.py tests/swarm/test_file_scope_enforcement.py
@@ -76,7 +76,7 @@ git commit -m "feat(swarm): make file_scope mandatory for supervised work orders
 - Modify: `aragora/ralph/llm_classifier.py:185-221` (`adjudicate_scope`)
 - Test: `tests/ralph/test_llm_classifier.py`
 
-- [ ] **Step 1: Write failing test for improved adjudication**
+- [x] **Step 1: Write failing test for improved adjudication**
 
 ```python
 class TestImprovedScopeAdjudication:
@@ -96,23 +96,23 @@ class TestImprovedScopeAdjudication:
             assert "package.json" in verdict.justified_paths
 ```
 
-- [ ] **Step 2: Run test, verify it passes with current implementation**
+- [x] **Step 2: Run test, verify it passes with current implementation**
 
 If it already passes (the LLM mock returns the right answer), add a test for the prompt quality instead — verify the prompt includes dependency-file heuristics.
 
-- [ ] **Step 3: Enhance the scope adjudication prompt**
+- [x] **Step 3: Enhance the scope adjudication prompt**
 
 Update `adjudicate_scope()` to include in the prompt:
 - Common justified patterns: dependency files (`package.json`, `requirements.txt`, `Cargo.lock`), test files, `__init__.py`, config files
 - Task context: what the work order was trying to achieve
 - Repository structure hints (top-level dirs) for better reasoning
 
-- [ ] **Step 4: Run all scope tests**
+- [x] **Step 4: Run all scope tests**
 
 Run: `pytest tests/ralph/test_llm_classifier.py tests/swarm/test_file_scope_enforcement.py -v`
 Expected: All pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/ralph/llm_classifier.py tests/ralph/test_llm_classifier.py
@@ -131,7 +131,7 @@ git commit -m "feat(ralph): improve LLM scope adjudication with dependency-aware
 - Create: `aragora/swarm/pr_registry.py`
 - Test: `tests/swarm/test_pr_registry.py`
 
-- [ ] **Step 1: Write failing tests for PR registry**
+- [x] **Step 1: Write failing tests for PR registry**
 
 ```python
 class TestPullRequestRegistry:
@@ -160,12 +160,12 @@ class TestPullRequestRegistry:
         assert active[0]["branch"] == "fix/b"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/swarm/test_pr_registry.py -v`
 Expected: FAIL with `ImportError`
 
-- [ ] **Step 3: Implement PullRequestRegistry**
+- [x] **Step 3: Implement PullRequestRegistry**
 
 ```python
 # aragora/swarm/pr_registry.py
@@ -190,12 +190,12 @@ class PullRequestRegistry:
 
 YAML-backed persistence to `state_dir/pr_registry.yaml`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/swarm/test_pr_registry.py -v`
 Expected: All pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/swarm/pr_registry.py tests/swarm/test_pr_registry.py
@@ -209,7 +209,7 @@ git commit -m "feat(swarm): add PullRequestRegistry for canonical PR tracking (#
 - Modify: `aragora/ralph/supervisor.py` (repair PR creation)
 - Test: `tests/swarm/test_supervisor.py`
 
-- [ ] **Step 1: Write failing test for PR registration on worker completion**
+- [x] **Step 1: Write failing test for PR registration on worker completion**
 
 ```python
 def test_worker_pr_registered_on_completion(supervisor_fixtures):
@@ -222,7 +222,7 @@ def test_worker_pr_registered_on_completion(supervisor_fixtures):
     assert entry is not None
 ```
 
-- [ ] **Step 2: Implement PR registration hooks**
+- [x] **Step 2: Implement PR registration hooks**
 
 In `_apply_worker_result()`, after successful completion:
 - If worker result includes PR URL → register in `PullRequestRegistry`
@@ -232,11 +232,11 @@ In Ralph's `_create_repair_pr()`:
 - Register new PR in registry
 - If previous repair PR exists → supersede it with reason
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `pytest tests/swarm/test_supervisor.py tests/swarm/test_pr_registry.py -v`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add aragora/swarm/supervisor.py aragora/ralph/supervisor.py tests/swarm/test_supervisor.py
@@ -256,7 +256,7 @@ git commit -m "feat(swarm): wire PR registry into supervisor result flow (#841)"
 - Modify: `aragora/rlm/factory.py` (add fallback chain)
 - Test: `tests/rlm/test_rlm_hardening.py`
 
-- [ ] **Step 1: Write tests for streaming export and fallback**
+- [x] **Step 1: Write tests for streaming export and fallback**
 
 ```python
 class TestRLMHardening:
@@ -275,24 +275,24 @@ class TestRLMHardening:
         assert RLMTimeoutError is not None
 ```
 
-- [ ] **Step 2: Export missing types from __init__.py**
+- [x] **Step 2: Export missing types from __init__.py**
 
 Add to `aragora/rlm/__init__.py`:
 - `StreamingRLMAdapter` from `streaming.py`
 - `RLMCircuitBreaker` (new or from existing)
 - `RLMTimeoutError` (ensure exported)
 
-- [ ] **Step 3: Add fallback chain to factory**
+- [x] **Step 3: Add fallback chain to factory**
 
 In `aragora/rlm/factory.py`, update `get_rlm()`:
 - If `fallback=True` and real RLM unavailable → return `HierarchicalCompressor` wrapper
 - Log warning when falling back
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/rlm/test_rlm_hardening.py -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/rlm/__init__.py aragora/rlm/factory.py tests/rlm/test_rlm_hardening.py
@@ -306,7 +306,7 @@ git commit -m "feat(rlm): export streaming adapter and add fallback chain (#1008
 - Modify: `aragora/rlm/factory.py`
 - Test: `tests/rlm/test_rlm_resilience.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 class TestRLMResilience:
@@ -324,7 +324,7 @@ class TestRLMResilience:
             slow_fn()
 ```
 
-- [ ] **Step 2: Implement resilience module**
+- [x] **Step 2: Implement resilience module**
 
 ```python
 # aragora/rlm/resilience.py
@@ -340,15 +340,15 @@ def rlm_timeout(seconds: float):
     ...
 ```
 
-- [ ] **Step 3: Wire into factory**
+- [x] **Step 3: Wire into factory**
 
 `get_rlm()` should use circuit breaker state to short-circuit when RLM is consistently failing.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/rlm/ -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/rlm/resilience.py aragora/rlm/factory.py tests/rlm/test_rlm_resilience.py
@@ -367,7 +367,7 @@ git commit -m "feat(rlm): add circuit breaker and timeout enforcement (#1008)"
 - Modify: `aragora/pipeline/decision_integrity.py`
 - Test: `tests/pipeline/test_decision_integrity.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 class TestPreDebateContextPreloader:
@@ -379,7 +379,7 @@ class TestPreDebateContextPreloader:
         assert "agent_calibration" in ctx
 ```
 
-- [ ] **Step 2: Implement DecisionContextPreloader**
+- [x] **Step 2: Implement DecisionContextPreloader**
 
 ```python
 class DecisionContextPreloader:
@@ -391,15 +391,15 @@ class DecisionContextPreloader:
         # 4. Return structured context dict
 ```
 
-- [ ] **Step 3: Wire into Arena as optional pre-debate hook**
+- [x] **Step 3: Wire into Arena as optional pre-debate hook**
 
 Add `context_preloader` parameter to Arena/ArenaConfig. If set, call before first round.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/pipeline/test_decision_integrity.py -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/pipeline/decision_integrity.py tests/pipeline/test_decision_integrity.py
@@ -412,7 +412,7 @@ git commit -m "feat(pipeline): add pre-debate context preloader for kernel unifi
 - Create: `aragora/pipeline/debate_bridge.py`
 - Test: `tests/pipeline/test_debate_bridge.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 class TestDebateOutcomeBridge:
@@ -425,7 +425,7 @@ class TestDebateOutcomeBridge:
         assert "dissent_summary" in workflow_hints
 ```
 
-- [ ] **Step 2: Implement DebateOutcomeBridge**
+- [x] **Step 2: Implement DebateOutcomeBridge**
 
 Extracts from debate result:
 - Recommended agents for execution (based on debate performance)
@@ -433,15 +433,15 @@ Extracts from debate result:
 - Acceptance criteria from consensus claims
 - Cost estimate from provider routing data
 
-- [ ] **Step 3: Wire into IdeaToExecutionPipeline stage transitions**
+- [x] **Step 3: Wire into IdeaToExecutionPipeline stage transitions**
 
 After Stage 2 (Goals debate) → auto-populate Stage 3 (Workflow) with debate-derived hints.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/pipeline/test_debate_bridge.py -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/pipeline/debate_bridge.py tests/pipeline/test_debate_bridge.py
@@ -461,7 +461,7 @@ git commit -m "feat(pipeline): add debate outcome to pipeline stage bridge (#811
 - Modify: `aragora/debate/team_selector.py`
 - Test: `tests/debate/test_provider_routing_integration.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 class TestProviderRoutingIntegration:
@@ -474,11 +474,11 @@ class TestProviderRoutingIntegration:
         assert len(team) == 3
 ```
 
-- [ ] **Step 2: Add provider_hints parameter to TeamSelector.select()**
+- [x] **Step 2: Add provider_hints parameter to TeamSelector.select()**
 
 New optional parameter that applies a multiplicative bonus to agents whose backing provider appears in the hints dict. This augments existing ELO/calibration scoring without replacing it.
 
-- [ ] **Step 3: Add post-debate metric recording**
+- [x] **Step 3: Add post-debate metric recording**
 
 After Arena.run() completes, call:
 ```python
@@ -486,11 +486,11 @@ for agent in debate.agents:
     provider_router.record_outcome(agent.provider, quality=score, cost=cost)
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/debate/test_provider_routing_integration.py -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/routing/provider_router.py aragora/debate/team_selector.py tests/debate/test_provider_routing_integration.py
@@ -504,7 +504,7 @@ git commit -m "feat(routing): bridge ProviderRouter into TeamSelector for cost-a
 - Modify: `aragora/routing/provider_router.py`
 - Test: `tests/debate/test_budget_aware_debate.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 class TestBudgetAwareDebate:
@@ -522,19 +522,19 @@ class TestBudgetAwareDebate:
             assert p.estimated_cost <= 2.0 / 3
 ```
 
-- [ ] **Step 2: Add provider_budget to ArenaConfig**
+- [x] **Step 2: Add provider_budget to ArenaConfig**
 
-- [ ] **Step 3: Wire budget into Arena startup**
+- [x] **Step 3: Wire budget into Arena startup**
 
 Before debate, if `provider_budget` is set:
 1. Call `ProviderRouter.select_providers_for_debate(budget=config.provider_budget)`
 2. Pass result as `provider_hints` to `TeamSelector.select()`
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/debate/test_budget_aware_debate.py -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add aragora/debate/arena_config.py aragora/routing/provider_router.py tests/debate/test_budget_aware_debate.py
