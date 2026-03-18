@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 from aragora.ralph.classifier import BlockerKind, classify_blocker
+
+
+def test_classify_blocker_returns_none_for_still_running_stop_reason() -> None:
+    assert classify_blocker(stop_reason="still_running", manifest_dict={}) is None
 
 
 class TestBlockerKindEnum:
@@ -24,9 +26,6 @@ class TestBlockerKindEnum:
 
 
 class TestClassifyBlocker:
-    def test_still_running_returns_none(self) -> None:
-        assert classify_blocker(stop_reason="still_running", manifest_dict={}) is None
-
     def test_campaign_complete_returns_none(self) -> None:
         assert classify_blocker(stop_reason="campaign_complete", manifest_dict={}) is None
 
