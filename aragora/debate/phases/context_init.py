@@ -1743,6 +1743,42 @@ class ContextInitializer:
             if compression_result and compression_result.answer:
                 ctx.rlm_compressed_context = compression_result.answer
 
+                # Wire RLM context into prompt builder for agent drill-down
+                prompt_builder = getattr(ctx, "_prompt_builder", None)
+                if (
+                    prompt_builder
+                    and hasattr(prompt_builder, "set_rlm_context")
+                    and _RLMContextClass
+                ):
+                    try:
+                        from aragora.rlm.types import AbstractionLevel, AbstractionNode
+
+                        summary_node = AbstractionNode(
+                            id="compression_summary",
+                            level=AbstractionLevel.SUMMARY,
+                            content=compression_result.answer,
+                            token_count=len(compression_result.answer) // 4,
+                        )
+                        rlm_ctx = _RLMContextClass(
+                            original_content=context_content,
+                            original_tokens=estimated_tokens,
+                            levels={AbstractionLevel.SUMMARY: [summary_node]},
+                            nodes_by_id={"compression_summary": summary_node},
+                            source_type=source_type,
+                            compression_stats={
+                                "used_true_rlm": getattr(
+                                    compression_result, "used_true_rlm", False
+                                ),
+                                "used_compression_fallback": getattr(
+                                    compression_result, "used_compression_fallback", False
+                                ),
+                            },
+                        )
+                        prompt_builder.set_rlm_context(rlm_ctx)
+                        logger.info("[rlm] Set hierarchical RLM context on prompt builder")
+                    except (ImportError, TypeError, AttributeError) as exc:
+                        logger.debug("[rlm] Could not set RLM context on prompt builder: %s", exc)
+
                 # Log which approach was used
                 if compression_result.used_true_rlm:
                     logger.info(
@@ -1763,6 +1799,20 @@ class ContextInitializer:
                     reduction,
                 )
 
+                # Emit Prometheus metrics for RLM compression
+                try:
+                    from aragora.server.prometheus_rlm import record_rlm_compression
+
+                    record_rlm_compression(
+                        source_type=source_type,
+                        original_tokens=estimated_tokens,
+                        compressed_tokens=compressed_tokens,
+                        levels=1,
+                        success=True,
+                    )
+                except ImportError:
+                    pass
+
                 # Optionally replace context with summary for agents with small windows
                 if hasattr(ctx, "use_compressed_context") and ctx.use_compressed_context:
                     if len(compression_result.answer) < len(context_content):
@@ -1774,6 +1824,28 @@ class ContextInitializer:
 
         except asyncio.TimeoutError:
             logger.warning("[rlm] Context compression timed out after 30s")
+            try:
+                from aragora.server.prometheus_rlm import record_rlm_compression
+
+                record_rlm_compression(
+                    source_type=source_type,
+                    original_tokens=estimated_tokens,
+                    compressed_tokens=0,
+                    success=False,
+                )
+            except (ImportError, NameError):
+                pass
         except (RuntimeError, AttributeError, ImportError) as e:  # noqa: BLE001 - phase isolation
             logger.warning("[rlm] Context compression failed: %s", e)
+            try:
+                from aragora.server.prometheus_rlm import record_rlm_compression
+
+                record_rlm_compression(
+                    source_type=source_type,
+                    original_tokens=estimated_tokens,
+                    compressed_tokens=0,
+                    success=False,
+                )
+            except (ImportError, NameError):
+                pass
             # Continue without compressed context - don't break the debate
