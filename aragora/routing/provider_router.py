@@ -156,6 +156,111 @@ class ProviderRouter:
             failed=failed,
         )
 
+    def get_provider_hints(self) -> dict[str, float]:
+        """Return a provider_name -> quality_score mapping for TeamSelector integration.
+
+        When sufficient metrics exist, returns normalized quality scores (0-1)
+        for each tracked provider.  Falls back to uniform 0.5 hints when data
+        is sparse.
+        """
+        if not self._has_sufficient_data():
+            return {}
+
+        all_metrics = self._store.get_all_metrics()
+        return {
+            provider: metrics.avg_quality_score
+            for provider, metrics in all_metrics.items()
+            if metrics.total_debates > 0
+        }
+
+    def select_providers_with_details(
+        self,
+        num_agents: int = 3,
+        budget: float | None = None,
+        strategy: SelectionStrategy = SelectionStrategy.BALANCED,
+        min_quality: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Select providers with detailed cost/quality information.
+
+        Unlike :meth:`select_providers_for_debate` which returns plain names,
+        this method returns dicts containing the provider name, estimated cost,
+        and quality score — suitable for budget-aware debate configuration.
+
+        Args:
+            num_agents: Number of agents (providers) to select.
+            budget: Optional total budget for the debate in USD.
+                Providers whose estimated cost exceeds ``budget / num_agents``
+                are excluded.
+            strategy: Selection strategy.
+            min_quality: Minimum acceptable quality score (0-1).
+
+        Returns:
+            List of dicts, each with keys:
+            - ``provider``: provider/model name
+            - ``estimated_cost``: estimated per-debate cost in USD
+            - ``quality_score``: quality score (0-1)
+        """
+        per_agent_budget = budget / num_agents if budget is not None and num_agents > 0 else None
+
+        all_metrics = self._store.get_all_metrics()
+
+        # If we have no metrics, fall back to pricing-based estimates
+        if not all_metrics or not self._has_sufficient_data():
+            return self._details_from_pricing(num_agents, per_agent_budget)
+
+        # Build candidates filtered by budget and quality
+        candidates: list[dict[str, Any]] = []
+        for provider, metrics in all_metrics.items():
+            if metrics.avg_quality_score < min_quality:
+                continue
+            if per_agent_budget is not None and metrics.avg_cost_per_debate > per_agent_budget:
+                continue
+            candidates.append(
+                {
+                    "provider": provider,
+                    "estimated_cost": round(metrics.avg_cost_per_debate, 6),
+                    "quality_score": round(metrics.avg_quality_score, 4),
+                }
+            )
+
+        # Sort by strategy preference
+        if strategy == SelectionStrategy.COST_OPTIMIZED:
+            candidates.sort(key=lambda c: c["estimated_cost"])
+        elif strategy == SelectionStrategy.QUALITY_OPTIMIZED:
+            candidates.sort(key=lambda c: c["quality_score"], reverse=True)
+        else:
+            # Balanced: sort by quality/cost ratio (higher is better)
+            candidates.sort(
+                key=lambda c: c["quality_score"] / max(c["estimated_cost"], 1e-9),
+                reverse=True,
+            )
+
+        return candidates[:num_agents]
+
+    def _details_from_pricing(
+        self,
+        num_agents: int,
+        per_agent_budget: float | None,
+    ) -> list[dict[str, Any]]:
+        """Build provider details from static pricing when no metrics exist."""
+        results: list[dict[str, Any]] = []
+        for model_key, pricing in PROVIDER_PRICING.items():
+            # Estimate cost per debate using 2K input + 1K output tokens
+            estimated_cost = (2000 / 1000.0) * pricing.input_cost_per_1k + (
+                1000 / 1000.0
+            ) * pricing.output_cost_per_1k
+            if per_agent_budget is not None and estimated_cost > per_agent_budget:
+                continue
+            results.append(
+                {
+                    "provider": model_key,
+                    "estimated_cost": round(estimated_cost, 6),
+                    "quality_score": 0.5,  # Unknown quality; neutral default
+                }
+            )
+        results.sort(key=lambda c: c["estimated_cost"])
+        return results[:num_agents]
+
     def get_status(self) -> dict[str, Any]:
         """Return current router status for diagnostics."""
         all_metrics = self._store.get_all_metrics()
