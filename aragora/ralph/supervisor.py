@@ -811,10 +811,47 @@ class RalphSupervisor:
             )
 
         if snapshot.disposition in {"wait_for_review", "wait_for_required_checks"}:
+            # When admin merge is allowed and required checks are green,
+            # bypass the review gate (can't self-approve own PRs on GitHub).
+            if (
+                snapshot.disposition == "wait_for_review"
+                and snapshot.required_checks_green
+                and self.merge_policy == "admin_merge_allowed"
+            ):
+                target = self._merge_target(state) or target
+                if not target.get("auto_merge_requested"):
+                    merge_result = self._merge_pr(
+                        pr_url,
+                        required_checks_green=True,
+                        allow_admin=True,
+                    )
+                    target["auto_merge_requested"] = True
+                    target["last_merge_action"] = merge_result.to_dict()
+                    self._set_merge_target(state, target)
+                    if merge_result.merged:
+                        return StepResult(
+                            action=SupervisorAction.PR_CHECKED.value,
+                            status=SupervisorStatus.WAITING_FOR_MERGE.value,
+                            detail=f"Admin merge initiated for {pr_url}; waiting for GitHub to confirm.",
+                        )
+                    return self._escalate(
+                        state, merge_result.detail or f"Admin merge failed for {pr_url}."
+                    )
+            reason = snapshot.blocker_detail
+            if not reason:
+                if snapshot.disposition == "wait_for_review":
+                    reason = f"PR {pr_url} awaiting code review approval."
+                else:
+                    pending = [c.name for c in snapshot.required_checks if c.status != "COMPLETED"]
+                    reason = (
+                        f"PR {pr_url} waiting on required checks: {', '.join(pending)}"
+                        if pending
+                        else f"PR {pr_url} waiting on merge gates."
+                    )
             return StepResult(
                 action=SupervisorAction.PR_CHECKED.value,
                 status=SupervisorStatus.WAITING_FOR_MERGE.value,
-                detail=snapshot.blocker_detail or f"PR {pr_url} waiting on merge gates.",
+                detail=reason,
             )
 
         if snapshot.disposition == "merge_now":
