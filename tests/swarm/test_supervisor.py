@@ -1640,6 +1640,186 @@ async def test_dispatch_workers_expires_worker_type_circuit_breaker(
 
 
 @pytest.mark.asyncio
+async def test_collect_finished_results_expires_open_breaker(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    expired_at = datetime.now(UTC) - timedelta(minutes=10)
+    run_record = store.create_supervisor_run(
+        goal="expire worker breaker during collect",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "expire worker breaker during collect"},
+        work_orders=[
+            {
+                "work_order_id": "wo-finished",
+                "status": "dispatched",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            },
+            {
+                "work_order_id": "wo-dispatchable",
+                "status": "leased",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+            },
+        ],
+        status="active",
+        metadata={
+            WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
+                "failure_threshold": 2,
+                "reset_timeout_seconds": 60.0,
+            },
+            WORKER_TYPE_CIRCUIT_BREAKERS_KEY: {
+                "claude": {
+                    "status": "open",
+                    "failure_count": 2,
+                    "failure_threshold": 2,
+                    "reset_timeout_seconds": 60.0,
+                    "opened_at": expired_at.isoformat(),
+                    "blocked_until": (expired_at + timedelta(minutes=1)).isoformat(),
+                    "last_failure_reason": "agent_capacity",
+                    "last_failure_detail": "Credit balance is too low",
+                    "trip_count": 1,
+                }
+            },
+        },
+    )
+
+    finished_worker = WorkerProcess(
+        work_order_id="wo-finished",
+        agent="codex",
+        worktree_path=str(repo),
+        branch="main",
+        pid=445,
+        exit_code=0,
+        completed_at="2026-03-06T20:00:00+00:00",
+        diff="diff --git a/test.py",
+        changed_paths=["test.py"],
+        commit_shas=["abc123"],
+    )
+    launched_worker = WorkerProcess(
+        work_order_id="wo-dispatchable",
+        agent="claude",
+        worktree_path=str(repo),
+        branch="main",
+        pid=446,
+        initial_head="def456",
+    )
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    mock_launcher.collect_finished = AsyncMock(return_value=[finished_worker])
+    mock_launcher.launch = AsyncMock(return_value=launched_worker)
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=mock_launcher)
+
+    completed = await supervisor.collect_finished_results(run_record["run_id"])
+
+    assert [worker.work_order_id for worker in completed] == ["wo-finished"]
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    breaker = updated["metadata"][WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
+    assert breaker["status"] == "closed"
+    assert breaker["failure_count"] == 0
+    assert breaker["blocked_until"] is None
+    assert breaker["last_reset_at"]
+
+    launched = await supervisor.dispatch_workers(run_record["run_id"])
+
+    assert len(launched) == 1
+    assert launched[0].work_order_id == "wo-dispatchable"
+    assert mock_launcher.launch.await_count == 1
+
+    refreshed = store.get_supervisor_run(run_record["run_id"])
+    assert refreshed is not None
+    dispatchable = next(
+        item for item in refreshed["work_orders"] if item["work_order_id"] == "wo-dispatchable"
+    )
+    assert dispatchable["status"] == "dispatched"
+    assert dispatchable["target_agent"] == "claude"
+
+
+@pytest.mark.asyncio
+async def test_record_worker_type_success_noops_when_breaker_open(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    blocked_until = datetime.now(UTC) + timedelta(minutes=5)
+    run_record = store.create_supervisor_run(
+        goal="late success leaves breaker open",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "late success leaves breaker open"},
+        work_orders=[
+            {
+                "work_order_id": "wo-late-success",
+                "status": "dispatched",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+            }
+        ],
+        status="active",
+        metadata={
+            WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
+                "failure_threshold": 2,
+                "reset_timeout_seconds": 300.0,
+            },
+            WORKER_TYPE_CIRCUIT_BREAKERS_KEY: {
+                "claude": {
+                    "status": "open",
+                    "failure_count": 2,
+                    "failure_threshold": 2,
+                    "reset_timeout_seconds": 300.0,
+                    "opened_at": datetime.now(UTC).isoformat(),
+                    "blocked_until": blocked_until.isoformat(),
+                    "last_failure_reason": "agent_capacity",
+                    "last_failure_detail": "Credit balance is too low",
+                    "trip_count": 1,
+                }
+            },
+        },
+    )
+
+    finished_worker = WorkerProcess(
+        work_order_id="wo-late-success",
+        agent="claude",
+        worktree_path=str(repo),
+        branch="main",
+        pid=447,
+        exit_code=0,
+        completed_at="2026-03-06T20:00:00+00:00",
+        diff="diff --git a/test.py",
+        changed_paths=["test.py"],
+        commit_shas=["abc123"],
+    )
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    mock_launcher.collect_finished = AsyncMock(return_value=[finished_worker])
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=mock_launcher)
+
+    completed = await supervisor.collect_finished_results(run_record["run_id"])
+
+    assert [worker.work_order_id for worker in completed] == ["wo-late-success"]
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    work_order = updated["work_orders"][0]
+    assert work_order["status"] == "completed"
+
+    breaker = updated["metadata"][WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
+    assert breaker["status"] == "open"
+    assert breaker["failure_count"] == 2
+    assert breaker["blocked_until"] == blocked_until.isoformat()
+    assert breaker.get("last_reset_at") is None
+
+
+@pytest.mark.asyncio
 async def test_collect_finished_results_updates_progress_heartbeat(
     repo: Path, store: DevCoordinationStore
 ) -> None:
