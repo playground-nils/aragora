@@ -1733,9 +1733,11 @@ class CampaignExecutor:
         if spec.file_scope_hints:
             parts.append("File scope hints: " + ", ".join(spec.file_scope_hints))
         if spec.acceptance_criteria:
-            parts.append("Acceptance criteria: " + "; ".join(spec.acceptance_criteria))
+            parts.append(
+                "Acceptance criteria: " + "; ".join(str(c) for c in spec.acceptance_criteria)
+            )
         if spec.constraints:
-            parts.append("Constraints: " + "; ".join(spec.constraints))
+            parts.append("Constraints: " + "; ".join(str(c) for c in spec.constraints))
         return "\n".join(parts)
 
     def _planned_work_orders_from_decomposition(
