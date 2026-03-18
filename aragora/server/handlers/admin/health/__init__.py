@@ -213,7 +213,11 @@ class HealthHandler(SecureHandler):
             # For public routes, attempt optional auth to unlock full response
             try:
                 auth_context = await self.get_auth_context(handler, require_auth=False)
-                if auth_context:
+                if auth_context and getattr(auth_context, "user_id", None) not in {
+                    None,
+                    "",
+                    "anonymous",
+                }:
                     self.check_permission(auth_context, self.HEALTH_PERMISSION)
                     is_authenticated = True
             except (UnauthorizedError, ForbiddenError):

@@ -15,9 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy project files for dependency installation
 COPY pyproject.toml ./
 COPY aragora/ ./aragora/
+COPY scripts/ci_install_project.sh ./scripts/ci_install_project.sh
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --user .
+RUN bash scripts/ci_install_project.sh --install-mode standard --install-scope user
 
 # Production stage
 FROM python:3.11-slim

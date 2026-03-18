@@ -219,6 +219,33 @@ class TestHealthHandlerHandle:
         mock_probe.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_public_route_skips_permission_check_for_anonymous_optional_auth(self):
+        """Anonymous optional auth should not trigger permission checks."""
+        from aragora.rbac.models import AuthorizationContext
+        from aragora.server.handlers.admin._health_impl import HealthHandler
+
+        handler = HealthHandler({"storage": None, "elo_system": None})
+        mock_http_handler = MagicMock()
+        anonymous = AuthorizationContext(
+            user_id="anonymous",
+            org_id=None,
+            workspace_id=None,
+            roles=set(),
+            permissions=set(),
+        )
+
+        with (
+            patch.object(handler, "get_auth_context", new=AsyncMock(return_value=anonymous)),
+            patch.object(handler, "check_permission") as mock_check_permission,
+            patch.object(handler, "_liveness_probe") as mock_probe,
+        ):
+            mock_probe.return_value = MagicMock(status_code=200, body=b'{"status":"ok"}')
+            result = await handler.handle("/healthz", {}, mock_http_handler)
+
+        assert result.status_code == 200
+        mock_check_permission.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_handle_protected_route_requires_auth(self):
         """Test protected routes require authentication."""
         from aragora.server.handlers.admin._health_impl import HealthHandler

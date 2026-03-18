@@ -95,10 +95,18 @@ def _make_degraded_module(
     return mod
 
 
-def _make_unified_server_module(is_ready: bool = True):
+def _make_unified_server_module(
+    is_ready: bool = True,
+    handlers_initialized: bool = False,
+):
     """Create a fake aragora.server.unified_server module."""
     mod = types.ModuleType("aragora.server.unified_server")
     mod.is_server_ready = lambda: is_ready
+    mod.UnifiedHandler = type(
+        "UnifiedHandler",
+        (),
+        {"_handlers_initialized": handlers_initialized},
+    )
     return mod
 
 
@@ -199,8 +207,8 @@ def _remove_degraded():
     return patch.dict(sys.modules, {"aragora.server.degraded_mode": None})
 
 
-def _patch_unified_server(is_ready=True):
-    mod = _make_unified_server_module(is_ready)
+def _patch_unified_server(is_ready=True, handlers_initialized=False):
+    mod = _make_unified_server_module(is_ready, handlers_initialized)
     return patch.dict(sys.modules, {"aragora.server.unified_server": mod})
 
 
@@ -513,6 +521,17 @@ class TestReadinessProbeFastStartup:
             result = readiness_probe_fast(handler)
         assert _body(result)["checks"]["startup_complete"] is True
 
+    def test_unified_handler_init_fallback_marks_startup_complete(self):
+        handler = _make_mock_handler()
+        with (
+            _remove_degraded(),
+            _patch_unified_server(is_ready=False, handlers_initialized=True),
+            _patch_handler_registry({"/api/health": True}),
+        ):
+            result = readiness_probe_fast(handler)
+        assert _status(result) == 200
+        assert _body(result)["checks"]["startup_complete"] is True
+
 
 class TestReadinessProbeFastRoutes:
     """Test readiness_probe_fast() handler routes initialization check."""
@@ -546,6 +565,18 @@ class TestReadinessProbeFastRoutes:
             _patch_handler_registry({"/healthz": True, "/readyz": True}),
         ):
             result = readiness_probe_fast(handler)
+        assert _body(result)["checks"]["handlers_initialized"] is True
+
+    def test_handler_can_handle_readyz_is_fallback_when_route_index_empty(self):
+        handler = _make_mock_handler()
+        handler.can_handle = MagicMock(return_value=True)
+        with (
+            _remove_degraded(),
+            _remove_unified_server(),
+            _patch_handler_registry({}),
+        ):
+            result = readiness_probe_fast(handler)
+        assert _status(result) == 200
         assert _body(result)["checks"]["handlers_initialized"] is True
 
 

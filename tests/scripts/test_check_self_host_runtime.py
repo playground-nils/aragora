@@ -221,6 +221,54 @@ def test_wait_for_http_200_reports_last_connection_error_on_timeout() -> None:
             module._wait_for_http_200("http://127.0.0.1:8080", "/healthz", timeout_seconds=1)
 
 
+def test_main_builds_services_before_waiting_for_health(tmp_path: Path) -> None:
+    module = _load_script_module()
+    compose_path = tmp_path / "docker-compose.production.yml"
+    compose_path.write_text("services: {}\n", encoding="utf-8")
+    env_file = tmp_path / ".env.production"
+    env_file.write_text(
+        "\n".join(
+            [
+                "POSTGRES_PASSWORD=postgres-password",
+                "ARAGORA_API_TOKEN=api-token",
+                "ARAGORA_JWT_SECRET=abcdefghijklmnopqrstuvwxyz123456",
+                "ARAGORA_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "ARAGORA_SECRETS_STRICT=false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with (
+        patch.object(
+            module.sys,
+            "argv",
+            [
+                "check_self_host_runtime.py",
+                "--compose",
+                str(compose_path),
+                "--env-file",
+                str(env_file),
+                "--services",
+                "aragora",
+            ],
+        ),
+        patch.object(module, "_check_docker_daemon", return_value=None),
+        patch.object(module, "_validate_runtime_env_file", return_value=([], [])),
+        patch.object(module, "_read_env_value", return_value="api-token"),
+        patch.object(module, "_resolve_runtime_base_url", return_value="http://127.0.0.1:8080"),
+        patch.object(module, "_wait_for_service", return_value=None),
+        patch.object(module, "_wait_for_any_http_200", side_effect=["/healthz", "/readyz"]),
+        patch.object(module, "_check_api_flow", return_value=None),
+        patch.object(module, "_print_diagnostics", return_value=None),
+        patch.object(module, "_compose", return_value=_proc("")) as compose_mock,
+    ):
+        assert module.main() == 0
+
+    compose_calls = [call.args[1] for call in compose_mock.call_args_list]
+    assert ["up", "--build", "-d", "aragora"] in compose_calls
+
+
 def test_check_api_flow_accepts_auth_required_response() -> None:
     module = _load_script_module()
 
