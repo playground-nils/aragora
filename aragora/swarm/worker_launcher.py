@@ -289,6 +289,11 @@ class WorkerLauncher:
                 initial_head=worker.initial_head,
                 head_sha=worker.head_sha,
             )
+
+            # Ensure the branch is pushed if the worker produced commits.
+            if worker.commit_shas:
+                await self._auto_push(worker)
+
             self._promote_salvaged_codex_exit(worker)
             if worker.exit_code == 0 and worker.expected_tests:
                 worker.verification_results = await self._run_verification_commands(
