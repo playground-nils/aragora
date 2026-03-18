@@ -1,5 +1,11 @@
 """
-Unified Memory Gateway HTTP Handler.
+Unified Memory Gateway HTTP Handler (DEPRECATED).
+
+.. deprecated::
+    Use ``UnifiedMemoryHandler`` in ``aragora.server.handlers.memory.unified_handler``
+    (serves ``/api/v1/memory/unified/*``) instead.  This handler serves the legacy
+    unversioned ``/api/memory/unified/*`` routes and will be removed in a future
+    release once all consumers have migrated.
 
 Provides REST API endpoints for the Unified Memory Gateway:
 - Fan-out search across ContinuumMemory, KM, Supermemory, claude-mem
@@ -191,9 +197,9 @@ class MemoryUnifiedHandler(BaseHandler):
     def _query_supermemory(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Query Supermemory."""
         try:
-            from aragora.memory.supermemory import SupermemoryStore
+            from aragora.memory.backends.supermemory import SupermemoryBackend
 
-            store = SupermemoryStore()
+            store = SupermemoryBackend()
             entries = store.search(query, limit=limit)
             return [
                 {
@@ -336,7 +342,7 @@ class MemoryUnifiedHandler(BaseHandler):
         system_checks = [
             ("continuum", "aragora.memory.continuum", "ContinuumMemory"),
             ("km", "aragora.knowledge.mound", "KnowledgeMound"),
-            ("supermemory", "aragora.memory.supermemory", "SupermemoryStore"),
+            ("supermemory", "aragora.memory.backends.supermemory", "SupermemoryBackend"),
             ("claude_mem", "aragora.knowledge.mound.adapters.claude_mem", "ClaudeMemAdapter"),
         ]
 

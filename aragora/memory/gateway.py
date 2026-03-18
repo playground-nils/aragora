@@ -8,11 +8,18 @@ Single query/store interface across all 5 memory systems:
 - claude-mem (MCP cross-session memory)
 - RLM (hierarchical context navigation)
 
-The gateway provides:
-- Fan-out queries across all available systems
-- Cross-system deduplication of results
-- Unified ranking by confidence and relevance
-- Delegated writes via MemoryCoordinator
+Architecture — read/write split:
+    Reads are stateless fan-out queries: the gateway queries each configured
+    backend in parallel, deduplicates, ranks, and returns merged results.
+    No DebateContext or transactional state is required.
+
+    Writes are transactional and context-dependent: they go through
+    ``MemoryCoordinator.commit_debate_outcome()``, which requires a
+    ``DebateContext`` to apply confidence thresholds, rollback on failure,
+    and route to the correct subset of stores.  ``store()`` on this class
+    is intentionally thin — it delegates to the coordinator when one is
+    configured.  For ad-hoc writes outside a debate, use the coordinator
+    or individual stores directly.
 
 All features are opt-in via MemoryGatewayConfig.
 """
@@ -246,8 +253,9 @@ class MemoryGateway:
             content=content,
         )
 
-        # For now, return empty - actual writes go through coordinator's
-        # commit_debate_outcome which requires a DebateContext
+        # Writes require DebateContext for transactional semantics — use
+        # MemoryCoordinator.commit_debate_outcome() directly.  See module
+        # docstring for the architectural rationale behind this split.
         return {}
 
     async def _query_source(
