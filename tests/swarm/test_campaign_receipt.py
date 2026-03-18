@@ -333,6 +333,56 @@ class TestEmitReceipt:
         assert payload["planner_fallback_reason"] == "TimeoutError: planner timed out"
         assert payload["verification_missing_reason"] == "missing_verification_plan"
 
+    def test_receipt_includes_review_gate_snapshot(self, tmp_path: Path) -> None:
+        manifest_path = tmp_path / "manifest.yaml"
+        manifest_path.write_text("campaign_id: phase0a-test\n")
+        executor = CampaignExecutor(manifest_path=manifest_path, repo_root=tmp_path)
+
+        project = _make_project(status="blocked", branch="")
+        project.review = CampaignReviewGate(
+            required=True,
+            review_model="claude",
+            status=CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value,
+            findings=["Review failed: AgentConnectionError"],
+            reviewed_at="2026-03-18T16:43:23.301884+00:00",
+            raw_review={
+                "error": "AgentConnectionError",
+                "detail": (
+                    "[campaign-review] Connection failed "
+                    "(caused by: RuntimeError: certificate verify failed)"
+                ),
+            },
+        )
+        manifest = _make_manifest(projects=[project])
+        run_dict = {
+            "work_orders": [
+                {
+                    "branch": "codex/from-run",
+                    "head_sha": "abc123",
+                    "changed_paths": ["aragora/ralph/classifier.py"],
+                }
+            ]
+        }
+
+        receipt_path = executor._emit_receipt(manifest, project, run_dict)
+
+        payload = _load_text_like_yaml(receipt_path)
+        assert payload["review_gate"] == {
+            "required": True,
+            "review_model": "claude",
+            "status": "blocked_nonreviewable",
+            "findings": ["Review failed: AgentConnectionError"],
+            "reviewed_at": "2026-03-18T16:43:23.301884+00:00",
+            "raw_review": {
+                "error": "AgentConnectionError",
+                "detail": (
+                    "[campaign-review] Connection failed "
+                    "(caused by: RuntimeError: certificate verify failed)"
+                ),
+            },
+        }
+        assert payload["review_verdict"] == "failed"
+
     def test_receipt_includes_work_order_debug_snapshot(self, tmp_path: Path) -> None:
         manifest_path = tmp_path / "manifest.yaml"
         manifest_path.write_text("campaign_id: phase0a-test\n")

@@ -1042,7 +1042,7 @@ class CampaignReviewer:
                 status=CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value,
                 findings=[f"Review failed: {type(exc).__name__}"],
                 reviewed_at=_now_iso(),
-                raw_review={"error": type(exc).__name__},
+                raw_review={"error": type(exc).__name__, "detail": str(exc)[:500]},
             )
 
     @staticmethod
@@ -1952,6 +1952,7 @@ class CampaignExecutor:
                 "worker_commits": worker_commits,
                 "changed_files": _changed_files_from_run(run_dict),
                 "work_orders": _work_order_snapshots_from_run(run_dict),
+                "review_gate": project.review.to_dict(),
                 "review_verdict": _receipt_review_verdict(project.review.status),
                 "verification_results": {
                     "pytest_exit_code": None,

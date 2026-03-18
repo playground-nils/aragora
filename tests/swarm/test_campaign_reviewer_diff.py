@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from aragora.agents.errors import CLISubprocessError
+from aragora.agents.errors import AgentConnectionError, CLISubprocessError
 from aragora.swarm.campaign import (
     CampaignProject,
     CampaignReviewGate,
@@ -336,3 +336,33 @@ class TestReviewerBillingErrorDetection:
         assert any("ValueError" in f for f in gate.findings)
         # Raw exception detail should not be in findings
         assert not any("secret internal detail" in f for f in gate.findings)
+        assert gate.raw_review["error"] == "ValueError"
+        assert gate.raw_review["detail"] == "secret internal detail"
+
+    @pytest.mark.asyncio
+    async def test_agent_connection_error_keeps_detail_in_raw_review(self) -> None:
+        reviewer = CampaignReviewer()
+        project = _make_project()
+        run_dict = _make_run_dict()
+
+        review_error = AgentConnectionError(
+            "Connection failed",
+            agent_name="campaign-review",
+            cause=RuntimeError("certificate verify failed"),
+        )
+
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(side_effect=review_error)
+
+        with patch("aragora.swarm.campaign.create_agent", return_value=mock_agent):
+            gate = await reviewer.review(
+                project=project,
+                worker_model="codex",
+                review_model="claude",
+                run_dict=run_dict,
+            )
+
+        assert gate.status == CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value
+        assert gate.findings == ["Review failed: AgentConnectionError"]
+        assert gate.raw_review["error"] == "AgentConnectionError"
+        assert "certificate verify failed" in gate.raw_review["detail"]
