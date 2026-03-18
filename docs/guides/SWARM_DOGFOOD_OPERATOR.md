@@ -142,3 +142,36 @@ Check these fields before intervening:
 - `merge_error` or `merge_conflicts` on the integration outcome
 
 For the first supervised dogfood run, prefer fixing the narrow blocking issue and re-running the reconciler instead of broad manual cleanup.
+
+## 7. Lease reaping and stale session cleanup
+
+As of PR #1004, the reconciler tick automatically reaps expired leases from dead sessions. You no longer need to manually release stale leases.
+
+**How it works:**
+
+1. `reap_stale_leases()` detects dead worker PIDs using `os.kill(pid, 0)` probes
+2. `reap_expired_leases()` releases leases past their TTL expiry
+3. Both are called at the start of every `tick_run()` before refresh/dispatch
+4. `refresh_run()` also proactively reaps expired leases during each refresh cycle
+
+**Verify lease reaping is working:**
+
+```bash
+python -m aragora.cli.main swarm reconcile --all-runs --json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for run in data.get('runs', []):
+    reaped = run.get('reaped_leases', 0)
+    if reaped:
+        print(f'Run {run[\"run_id\"]}: reaped {reaped} expired leases')
+"
+```
+
+**Manual stale lease check:**
+
+```bash
+python -m aragora.cli.main swarm reap --dry-run
+python -m aragora.cli.main swarm reap          # actually release stale leases
+```
+
+Sessions that crash or timeout have their leases returned to the pool automatically, making the work order available for re-dispatch. The `_orphaned_conflict_reason()` function replaces the old `Path.exists()` check with PID-based liveness detection, solving the V8-V13 blocker where managed worktrees always existed but their worker processes were dead.

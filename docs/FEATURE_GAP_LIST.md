@@ -93,11 +93,11 @@
 
 | Feature | Current State | Gap |
 |---------|---------------|-----|
-| Self-improving platform quality | Nomic Loop 100% wired; 82 E2E tests; CLB backbone hardened (14/14 issues closed); safety gates + gauntlet gate + evolution audit + golden-path test | Diverse benchmark validated (100% pass). Production safety gate requires ENABLE_NOMIC_LOOP=true. |
-| Blockchain receipts | SHA-256 cryptographic hashing works | On-chain storage with ERC-8004 (not deployed) |
+| Self-improving platform quality | Nomic Loop 100% wired; 82 E2E tests; CLB backbone hardened (14/14 issues closed); safety gates + gauntlet gate + evolution audit + golden-path test; **Ralph V14 benchmark validated full autonomous loop** (PRs #1004-#1006) | Diverse benchmark validated (100% pass). Production safety gate requires ENABLE_NOMIC_LOOP=true. Ralph autonomy loop closed for `merge_policy=admin_merge_allowed`. |
+| Blockchain receipts | SHA-256 cryptographic hashing works; StakingRegistry (stake/slash/unstake/rewards); ComputeBudgetManager; ReceiptAnchor; SlashEvent model (hollow_consensus, factual_error, calibration_drift) | On-chain storage with ERC-8004 (not deployed); staking/slashing NOT wired into debate outcome loop; agent selection not weighted by compute budget. Tracked in new GitHub issue. |
 | Semantic convergence | **Migrated** (PR #723) | All similarity paths use embeddings. Only `unified_diff` (text display) uses difflib. |
 | OpenClaw execution | **Core loop shipped** (PR #727) | CodeImplementationTask + SpecExtractor + receipt linkage. Production validation pending. |
-| RLM context access | Code complete (283 exports) | No user-facing guide; integration with default Arena config unclear |
+| RLM context access | Code complete (92 exports, 27 test files, 15k LOC) | No user-facing guide; integration with default Arena config unclear; training pipeline (buffer/policy/reward/trainer) untested E2E. Tracked in new GitHub issue. |
 
 ---
 
@@ -151,3 +151,8 @@ These items were planned and are now shipped:
 | EU AI Act playbook GTM polish + Art. 10/11/43/49 appendix (PR #725) | Mar 2026 |
 | Enterprise Comms Hub #293 — template persistence + router wiring (PR #726) | Mar 2026 |
 | OpenClaw E2E core loop — CodeImplementationTask + ComputerUseActionBundle (PR #727) | Mar 2026 |
+| Stale lease auto-release — PID-based liveness, proactive reaping (PR #1004) | Mar 2026 |
+| Reconciler lease reaping — tick_run reaps expired leases (PR #1005) | Mar 2026 |
+| Admin merge bypass — autonomous merge when required checks pass (PR #1006) | Mar 2026 |
+| Ralph V14 benchmark — full autonomous loop validated (spec→PR→merge, zero intervention) | Mar 2026 |
+| Ralph blocker taxonomy — campaign_stalled, needs_human classification (PRs #946-#950) | Mar 2026 |

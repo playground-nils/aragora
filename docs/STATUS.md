@@ -1,9 +1,34 @@
 # Aragora Project Status
 
-*Last updated: March 6, 2026*
+*Last updated: March 18, 2026*
 
 > Compatibility mirror for older links. The canonical current-status document is [status/STATUS.md](status/STATUS.md).
 > See [README](../README.md) for the five pillars framework. See [Documentation Index](INDEX.md) for the curated technical reference map.
+
+## March 12-18, 2026 — Ralph Autonomous Loop Validation
+
+### Ralph Campaign Supervisor (V14 Benchmark)
+- **V14 benchmark validated**: Full autonomous loop — spec→deliverable→review→blocker classification→repair→PR→admin merge (zero operator intervention)
+- **3 worker attempts**: Cross-model review (codex worker, claude reviewer) correctly rejected 2 attempts with actionable feedback, passed 3rd
+- **Autonomous PR creation**: PR #1005 created and merged without human intervention
+- **11 supervisor steps**, $15 cost within $20 budget across 3 worker attempts
+- **Stale lease auto-release** (PR #1004, merged): `_orphaned_conflict_reason()` replaces `Path.exists()` with PID-based liveness; `refresh_run` proactively reaps expired leases; `reap_stale_leases()` detects dead worker PIDs
+- **Reconciler lease reaping** (PR #1005, merged): `tick_run()` calls `reap_stale_leases()` then `reap_expired_leases()` before refresh/dispatch
+- **Admin merge bypass** (PR #1006, merged): When `merge_policy=admin_merge_allowed` and required checks green, supervisor auto-merges via `--admin` even when `disposition=wait_for_review`
+
+### Blocker Taxonomy Expansion
+- `campaign_stalled` stop reason now classified (not UNKNOWN)
+- `needs_human` outcome classified as worker stall (same family as `clean_exit_no_deliverable`)
+- Reviewer infra failure diagnostics surfaced through `attempt_history`
+- CLI billing errors surfaced in reviewer diagnostics (PR #950)
+
+### Ralph Infrastructure PRs
+- PR #946: Classify `needs_human` as worker stall in blocker taxonomy
+- PR #947: Place JSON summary after diff in reviewer prompt
+- PR #948: Reconcile manifest projects after repair merge/resume
+- PR #950: Surface Claude CLI billing errors in reviewer diagnostics
+
+---
 
 ## March 2026 Sprint — Closed-Loop Backbone, Trust Wedge & Infrastructure
 
