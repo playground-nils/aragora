@@ -1781,6 +1781,17 @@ class CampaignExecutor:
         )
         work_orders = [item.to_dict() for item in self.bridge.build_work_orders(subtasks)]
         for item in work_orders:
+            # Ensure each work order's file_scope is a superset of the project's
+            # file_scope_hints.  The LLM planner may assign a narrower scope per
+            # subtask, but the supervisor enforces scope against the work order —
+            # so hints must be included or the worker is blocked for editing the
+            # files it was told to edit.
+            wo_scope = [str(s).strip() for s in item.get("file_scope", []) if str(s).strip()]
+            for hint in spec.file_scope_hints:
+                if hint not in wo_scope:
+                    wo_scope.append(hint)
+            item["file_scope"] = wo_scope
+
             inherited_tests = self._inherited_expected_tests_for_planned_work_order(item, spec)
             if inherited_tests:
                 item["expected_tests"] = inherited_tests
