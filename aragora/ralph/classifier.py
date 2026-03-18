@@ -100,6 +100,14 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
         "login",
         "clisubprocesserror",
     )
+    infra_failure_patterns = (
+        "agentconnectionerror",
+        "connection failed",
+        "certificate verify failed",
+        "ssl: certificate_verify_failed",
+        "cannot execute binary file",
+        "exec format error",
+    )
     projects = manifest_dict.get("projects", [])
 
     blocked_projects = [
@@ -120,15 +128,32 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
             rstatus = review.get("status", "")
             if rstatus:
                 review_statuses.append(rstatus)
-            findings = review.get("findings", [])
-            for finding in findings:
-                finding_lower = str(finding).lower()
-                if "scope" in finding_lower and (
-                    "violation" in finding_lower or "outside" in finding_lower
+            diagnostics: list[str] = [str(finding) for finding in review.get("findings", [])]
+
+            raw_review = review.get("raw_review", {})
+            if isinstance(raw_review, dict):
+                diagnostics.extend(str(value) for value in raw_review.values() if value)
+
+            for attempt in proj.get("attempt_history", []):
+                if not isinstance(attempt, dict):
+                    continue
+                failure_detail = attempt.get("failure_detail")
+                if failure_detail:
+                    diagnostics.append(str(failure_detail))
+                diagnostics.extend(
+                    str(blocker) for blocker in attempt.get("blockers", []) if str(blocker).strip()
+                )
+
+            for detail in diagnostics:
+                detail_lower = detail.lower()
+                if "scope" in detail_lower and (
+                    "violation" in detail_lower or "outside" in detail_lower
                 ):
                     return BlockerKind.SCOPE_FALSE_POSITIVE
-                if any(pattern in finding_lower for pattern in reviewer_failure_patterns):
+                if any(pattern in detail_lower for pattern in reviewer_failure_patterns):
                     return BlockerKind.REVIEWER_AUTH_OR_BILLING
+                if any(pattern in detail_lower for pattern in infra_failure_patterns):
+                    return BlockerKind.INFRA_FAILURE
 
     # Check for reviewer false rejection pattern: deliverable_created but
     # review blocked/changes_requested.

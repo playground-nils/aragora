@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -529,6 +530,36 @@ class TestLaunchAndWait:
 
         assert result.exit_code == 0
         assert result.stdout == "done"
+
+
+class TestVerificationCommands:
+    @pytest.mark.asyncio
+    async def test_run_verification_commands_uses_current_python_interpreter(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_python = tmp_path / "python"
+        fake_python.write_text(
+            "#!/bin/sh\necho 'broken python on PATH' >&2\nexit 126\n",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+
+        script = tmp_path / "hello.py"
+        script.write_text("print('ok from stable python')\n", encoding="utf-8")
+
+        monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+
+        result = await WorkerLauncher._run_verification_commands(
+            str(tmp_path),
+            ["python hello.py"],
+            timeout=30.0,
+        )
+
+        assert len(result) == 1
+        assert result[0]["command"] == "python hello.py"
+        assert result[0]["exit_code"] == 0
+        assert result[0]["passed"] is True
+        assert result[0]["stdout"].strip() == "ok from stable python"
 
 
 class TestWaitDetached:
