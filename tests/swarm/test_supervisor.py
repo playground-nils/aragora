@@ -1658,6 +1658,7 @@ async def test_collect_finished_results_expires_open_breaker(
                 "branch": "main",
                 "target_agent": "codex",
                 "reviewer_agent": "claude",
+                "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
             },
             {
                 "work_order_id": "wo-dispatchable",
@@ -1701,6 +1702,7 @@ async def test_collect_finished_results_expires_open_breaker(
         diff="diff --git a/test.py",
         changed_paths=["test.py"],
         commit_shas=["abc123"],
+        tests_run=["python -m pytest tests/swarm/test_supervisor.py -q"],
     )
     launched_worker = WorkerProcess(
         work_order_id="wo-dispatchable",
@@ -1762,6 +1764,7 @@ async def test_record_worker_type_success_noops_when_breaker_open(
                 "branch": "main",
                 "target_agent": "claude",
                 "reviewer_agent": "codex",
+                "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
             }
         ],
         status="active",
@@ -1797,6 +1800,7 @@ async def test_record_worker_type_success_noops_when_breaker_open(
         diff="diff --git a/test.py",
         changed_paths=["test.py"],
         commit_shas=["abc123"],
+        tests_run=["python -m pytest tests/swarm/test_supervisor.py -q"],
     )
 
     mock_launcher = MagicMock(spec=WorkerLauncher)
