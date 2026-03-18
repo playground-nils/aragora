@@ -292,14 +292,47 @@ class SwarmInterrogator:
         return None
 
     def _heuristic_spec_extraction(self) -> dict[str, Any]:
-        """Extract spec data from conversation without LLM."""
+        """Extract spec data from conversation, using LLM with keyword fallback."""
         user_messages = [m["content"] for m in self._conversation if m["role"] == "user"]
         combined = " ".join(user_messages)
 
         # Simple heuristic: first message is the goal, rest is context
         refined_goal = user_messages[0] if user_messages else ""
 
-        # Look for track keywords
+        # File scope hints use structural regex — keep as-is (not keyword classification)
+        file_scope_hints = SwarmSpec.infer_file_scope_hints(combined)
+
+        # --- LLM-based track/constraint/criteria extraction ---
+        try:
+            import asyncio
+
+            from aragora.ralph.llm_classifier import LLMBlockerClassifier
+
+            classifier = LLMBlockerClassifier()
+            verdict = asyncio.run(
+                classifier.infer_spec_fields(user_messages=user_messages, raw_goal=refined_goal)
+            )
+            # Only trust the LLM verdict if it actually ran (not a fallback default)
+            if verdict.reasoning != "LLM call failed":
+                logger.info(
+                    "LLM spec inference: tracks=%s constraints=%d criteria=%d",
+                    verdict.track_hints,
+                    len(verdict.constraints),
+                    len(verdict.acceptance_criteria),
+                )
+                return {
+                    "refined_goal": refined_goal,
+                    "acceptance_criteria": verdict.acceptance_criteria,
+                    "constraints": verdict.constraints,
+                    "track_hints": verdict.track_hints,
+                    "file_scope_hints": file_scope_hints,
+                    "estimated_complexity": "medium",
+                    "requires_approval": False,
+                }
+        except Exception:
+            logger.debug("LLM spec inference failed, using keyword fallback", exc_info=True)
+
+        # --- keyword fallback ---
         track_keywords = {
             "test": "qa",
             "security": "security",
@@ -318,7 +351,6 @@ class SwarmInterrogator:
 
         acceptance_criteria = SwarmSpec.infer_acceptance_criteria(user_messages[1:])
         constraints = SwarmSpec.infer_constraints(user_messages[1:])
-        file_scope_hints = SwarmSpec.infer_file_scope_hints(combined)
 
         return {
             "refined_goal": refined_goal,

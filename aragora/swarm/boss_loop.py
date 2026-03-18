@@ -429,7 +429,11 @@ class BossLoopConfig:
 
 
 def _classify_terminal_run_outcome(run_dict: dict[str, Any]) -> str:
-    """Map a supervisor run dict to a stable outcome classification."""
+    """Map a supervisor run dict to a stable outcome classification.
+
+    Uses LLM classification for ambiguous cases, falling back to keyword
+    matching if the LLM is unavailable.
+    """
     status = str(run_dict.get("status", "")).strip().lower()
     if status == "completed":
         deliverable = _extract_deliverable(run_dict)
@@ -449,6 +453,31 @@ def _classify_terminal_run_outcome(run_dict: dict[str, Any]) -> str:
             return "deliverable_created"
         return "needs_human"
 
+    # --- LLM classification for ambiguous terminal states ---
+    try:
+        from aragora.ralph.llm_classifier import LLMBlockerClassifier
+
+        import asyncio
+
+        classifier = LLMBlockerClassifier()
+        verdict = asyncio.run(classifier.classify_run_outcome(run_dict))
+        # Only trust the LLM verdict if it actually ran (not a fallback default)
+        if verdict.reasoning != "LLM call failed":
+            logger.info(
+                "LLM run outcome classification: %s (reasoning: %s)",
+                verdict.outcome,
+                verdict.reasoning,
+            )
+            return verdict.outcome
+    except Exception:
+        logger.debug("LLM run outcome classification failed, using keyword fallback", exc_info=True)
+
+    # --- keyword fallback ---
+    return _keyword_classify_terminal_run(run_dict)
+
+
+def _keyword_classify_terminal_run(run_dict: dict[str, Any]) -> str:
+    """Keyword-based fallback for terminal run classification."""
     details = json.dumps(run_dict, sort_keys=True).lower()
     if "timeout" in details:
         return "timeout"

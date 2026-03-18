@@ -385,3 +385,254 @@ Set ready=true ONLY if there are zero blocking issues."""
             advisory_issues=[str(i) for i in parsed.get("advisory_issues", []) if str(i).strip()],
             reasoning=str(parsed.get("reasoning", "")),
         )
+
+    # ------------------------------------------------------------------
+    # 4. Run outcome classification
+    # ------------------------------------------------------------------
+
+    async def classify_run_outcome(
+        self,
+        run_dict: dict[str, Any],
+    ) -> RunOutcomeVerdict:
+        """Classify a terminal supervisor run into an outcome category.
+
+        Replaces keyword matching on JSON-dumped run state with LLM reasoning.
+        Fail-closed: returns "blocked" on any error.
+        """
+        prompt = self._build_run_outcome_prompt(run_dict)
+        try:
+            from aragora.agents.base import create_agent
+
+            agent = create_agent(self.model, name="ralph-run-outcome-classifier", role="critic")
+            raw = await agent.generate(prompt)
+            return self._parse_run_outcome_response(raw)
+        except Exception:
+            logger.debug("LLM classify_run_outcome failed, returning blocked", exc_info=True)
+            return RunOutcomeVerdict(outcome="blocked", reasoning="LLM call failed")
+
+    @staticmethod
+    def _build_run_outcome_prompt(run_dict: dict[str, Any]) -> str:
+        summary = json.dumps(run_dict, indent=2, default=str)[:3000]
+        return f"""You are a supervisor run outcome classifier for an AI development orchestration system.
+
+Given the run state below, classify the outcome into exactly ONE of these categories:
+- deliverable_created: Worker produced commits or branch changes that can be used
+- pr_adopted: Worker adopted an existing PR
+- clean_exit_no_deliverable: Worker exited cleanly but produced nothing useful
+- needs_human: Worker needs human intervention, no salvageable output
+- timeout: Worker timed out
+- crash: Worker crashed (non-zero exit, traceback, fatal error)
+- blocked: Worker was blocked by external factors
+
+Run state:
+{summary}
+
+Return ONLY a JSON object (no markdown fences):
+{{"outcome": "<category>", "reasoning": "<one sentence>"}}"""
+
+    @staticmethod
+    def _parse_run_outcome_response(raw: str) -> RunOutcomeVerdict:
+        text = str(raw or "").strip()
+        parsed = _extract_json(text)
+        if not isinstance(parsed, dict) or "outcome" not in parsed:
+            return RunOutcomeVerdict(
+                outcome="blocked", reasoning=f"Could not parse LLM response: {text[:200]}"
+            )
+        valid_outcomes = {
+            "deliverable_created",
+            "pr_adopted",
+            "clean_exit_no_deliverable",
+            "needs_human",
+            "timeout",
+            "crash",
+            "blocked",
+        }
+        outcome = str(parsed["outcome"]).strip()
+        if outcome not in valid_outcomes:
+            return RunOutcomeVerdict(
+                outcome="blocked", reasoning=f"Unknown outcome from LLM: {outcome}"
+            )
+        return RunOutcomeVerdict(outcome=outcome, reasoning=str(parsed.get("reasoning", "")))
+
+    # ------------------------------------------------------------------
+    # 5. Capacity failure detection
+    # ------------------------------------------------------------------
+
+    async def detect_capacity_failure(
+        self,
+        stdout: str,
+        stderr: str,
+        agent_name: str,
+    ) -> CapacityVerdict:
+        """Detect whether worker failure is due to billing/quota/capacity issues.
+
+        Replaces keyword pattern matching on worker output with LLM reasoning.
+        Fail-closed: returns is_capacity=False on error (no false positives).
+        """
+        combined = "\n".join(part for part in (stdout, stderr) if part).strip()
+        if not combined:
+            return CapacityVerdict(is_capacity=False, detail="", reasoning="no output")
+
+        prompt = self._build_capacity_prompt(combined, agent_name)
+        try:
+            from aragora.agents.base import create_agent
+
+            agent = create_agent(self.model, name="ralph-capacity-detector", role="critic")
+            raw = await agent.generate(prompt)
+            return self._parse_capacity_response(raw, combined)
+        except Exception:
+            logger.debug("LLM detect_capacity_failure failed", exc_info=True)
+            return CapacityVerdict(is_capacity=False, detail="", reasoning="LLM call failed")
+
+    @staticmethod
+    def _build_capacity_prompt(combined_output: str, agent_name: str) -> str:
+        truncated = combined_output[:2000]
+        return f"""You are a failure triage classifier for an AI development orchestration system.
+
+A worker ({agent_name}) failed. Determine if the failure is due to billing, quota, rate limiting, or capacity exhaustion — vs. a bug, timeout, or other issue.
+
+Worker output:
+{truncated}
+
+Return ONLY a JSON object (no markdown fences):
+{{"is_capacity": true/false, "reasoning": "<one sentence>"}}
+
+is_capacity=true means: credit balance too low, quota exceeded, rate limited, billing issue, payment required, insufficient credits.
+is_capacity=false means: any other failure (bugs, timeouts, permission errors, crashes)."""
+
+    @staticmethod
+    def _parse_capacity_response(raw: str, combined_output: str) -> CapacityVerdict:
+        text = str(raw or "").strip()
+        parsed = _extract_json(text)
+        if not isinstance(parsed, dict):
+            return CapacityVerdict(is_capacity=False, detail="", reasoning="parse failure")
+        is_capacity = bool(parsed.get("is_capacity", False))
+        return CapacityVerdict(
+            is_capacity=is_capacity,
+            detail=combined_output if is_capacity else "",
+            reasoning=str(parsed.get("reasoning", "")),
+        )
+
+    # ------------------------------------------------------------------
+    # 6. Spec inference (track hints, constraints, acceptance criteria)
+    # ------------------------------------------------------------------
+
+    async def infer_spec_fields(
+        self,
+        user_messages: list[str],
+        raw_goal: str,
+    ) -> SpecInferenceVerdict:
+        """Infer track hints, constraints, and acceptance criteria from user input.
+
+        Replaces keyword matching for track detection, constraint extraction,
+        and acceptance criteria extraction with a single LLM call.
+        Fail-closed: returns empty fields on error.
+        """
+        prompt = self._build_spec_inference_prompt(user_messages, raw_goal)
+        try:
+            from aragora.agents.base import create_agent
+
+            agent = create_agent(self.model, name="ralph-spec-inference", role="critic")
+            raw = await agent.generate(prompt)
+            return self._parse_spec_inference_response(raw)
+        except Exception:
+            logger.debug("LLM infer_spec_fields failed", exc_info=True)
+            return SpecInferenceVerdict(
+                track_hints=[], constraints=[], acceptance_criteria=[], reasoning="LLM call failed"
+            )
+
+    @staticmethod
+    def _build_spec_inference_prompt(user_messages: list[str], raw_goal: str) -> str:
+        messages_text = "\n---\n".join(user_messages[:10]) if user_messages else "(none)"
+        return f"""You are a requirements analyst for an AI development orchestration system.
+
+Given the user's goal and conversation, extract structured spec fields.
+
+Goal: {raw_goal}
+
+User messages:
+{messages_text[:3000]}
+
+Extract:
+1. track_hints: Which work tracks apply? Options: qa, security, developer, sme, self_hosted. Only include tracks clearly relevant to the goal.
+2. constraints: Things the user said should NOT be done, or boundaries to respect. Extract full sentences.
+3. acceptance_criteria: How will we know the work is done? Extract full sentences describing success conditions.
+
+Return ONLY a JSON object (no markdown fences):
+{{"track_hints": ["track1", ...], "constraints": ["constraint1", ...], "acceptance_criteria": ["criterion1", ...], "reasoning": "<brief explanation>"}}"""
+
+    @staticmethod
+    def _parse_spec_inference_response(raw: str) -> SpecInferenceVerdict:
+        text = str(raw or "").strip()
+        parsed = _extract_json(text)
+        if not isinstance(parsed, dict):
+            return SpecInferenceVerdict(
+                track_hints=[],
+                constraints=[],
+                acceptance_criteria=[],
+                reasoning=f"Could not parse: {text[:200]}",
+            )
+        valid_tracks = {"qa", "security", "developer", "sme", "self_hosted"}
+        track_hints = [
+            str(t) for t in parsed.get("track_hints", []) if str(t).strip() in valid_tracks
+        ]
+        constraints = [str(c) for c in parsed.get("constraints", []) if str(c).strip()]
+        criteria = [str(c) for c in parsed.get("acceptance_criteria", []) if str(c).strip()]
+        return SpecInferenceVerdict(
+            track_hints=track_hints,
+            constraints=constraints,
+            acceptance_criteria=criteria,
+            reasoning=str(parsed.get("reasoning", "")),
+        )
+
+
+# ------------------------------------------------------------------
+# Additional verdict dataclasses
+# ------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RunOutcomeVerdict:
+    """Result of LLM run outcome classification."""
+
+    outcome: str
+    reasoning: str
+
+
+@dataclass(frozen=True, slots=True)
+class CapacityVerdict:
+    """Result of LLM capacity failure detection."""
+
+    is_capacity: bool
+    detail: str
+    reasoning: str
+
+
+@dataclass(frozen=True, slots=True)
+class SpecInferenceVerdict:
+    """Result of LLM spec field inference."""
+
+    track_hints: list[str]
+    constraints: list[str]
+    acceptance_criteria: list[str]
+    reasoning: str
+
+
+# ------------------------------------------------------------------
+# Shared JSON extraction helper
+# ------------------------------------------------------------------
+
+
+def _extract_json(text: str) -> dict[str, Any] | None:
+    """Best-effort JSON extraction from LLM response text."""
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except (json.JSONDecodeError, ValueError):
+                pass
+    return None

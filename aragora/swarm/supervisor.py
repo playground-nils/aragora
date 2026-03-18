@@ -1449,9 +1449,56 @@ class SwarmSupervisor:
             return "agent_unavailable"
         return "agent_launch_failed"
 
-    @staticmethod
-    def _capacity_failure_detail(result: WorkerProcess) -> str:
+    def _capacity_failure_detail(self, result: WorkerProcess) -> str:
+        """Detect capacity/billing failures in worker output.
+
+        Uses LLM classification first, falling back to keyword patterns.
+        """
         combined = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+        if not combined:
+            return ""
+
+        # --- LLM classification ---
+        llm_succeeded = False
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+
+            from aragora.ralph.llm_classifier import LLMBlockerClassifier
+
+            import asyncio
+
+            classifier = LLMBlockerClassifier()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                verdict = pool.submit(
+                    asyncio.run,
+                    classifier.detect_capacity_failure(
+                        stdout=result.stdout or "",
+                        stderr=result.stderr or "",
+                        agent_name=result.agent or "unknown",
+                    ),
+                ).result(timeout=self._LLM_CALL_TIMEOUT)
+            # Only trust the LLM verdict if it actually ran (not a fallback default)
+            if verdict.reasoning != "LLM call failed":
+                llm_succeeded = True
+                if verdict.is_capacity:
+                    logger.info(
+                        "LLM capacity detection: is_capacity=%s (reasoning: %s)",
+                        verdict.is_capacity,
+                        verdict.reasoning,
+                    )
+                    return verdict.detail or combined or f"{result.agent} worker failed"
+                return ""
+        except Exception:
+            logger.debug("LLM capacity detection failed, using keyword fallback", exc_info=True)
+
+        # --- keyword fallback (when LLM unavailable) ---
+        if not llm_succeeded:
+            return self._keyword_capacity_failure_detail(combined, result.agent or "unknown")
+        return ""
+
+    @staticmethod
+    def _keyword_capacity_failure_detail(combined: str, agent_name: str) -> str:
+        """Keyword-based fallback for capacity failure detection."""
         lowered = combined.lower()
         capacity_patterns = (
             "credit balance is too low",
@@ -1465,7 +1512,7 @@ class SwarmSupervisor:
             "payment required",
         )
         if any(pattern in lowered for pattern in capacity_patterns):
-            return combined or f"{result.agent} worker failed"
+            return combined or f"{agent_name} worker failed"
         return ""
 
     def _worker_type_circuit_breaker_policy(self, metadata: dict[str, Any]) -> dict[str, Any]:

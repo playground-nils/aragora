@@ -9,10 +9,13 @@ import pytest
 
 from aragora.ralph.classifier import BlockerKind
 from aragora.ralph.llm_classifier import (
+    CapacityVerdict,
     ClassificationVerdict,
     LLMBlockerClassifier,
     MergeVerdict,
+    RunOutcomeVerdict,
     ScopeVerdict,
+    SpecInferenceVerdict,
 )
 
 
@@ -310,3 +313,195 @@ class TestLLMEvaluateMergeReadiness:
             )
         # Fail closed: not ready
         assert verdict.ready is False
+
+
+class TestRunOutcomeVerdict:
+    def test_verdict_fields(self) -> None:
+        v = RunOutcomeVerdict(outcome="crash", reasoning="Non-zero exit code.")
+        assert v.outcome == "crash"
+        assert "exit" in v.reasoning
+
+
+class TestCapacityVerdict:
+    def test_verdict_fields(self) -> None:
+        v = CapacityVerdict(
+            is_capacity=True, detail="credit balance is too low", reasoning="Billing."
+        )
+        assert v.is_capacity is True
+        assert "credit" in v.detail
+
+
+class TestSpecInferenceVerdict:
+    def test_verdict_fields(self) -> None:
+        v = SpecInferenceVerdict(
+            track_hints=["qa", "developer"],
+            constraints=["Do not modify the database schema"],
+            acceptance_criteria=["Tests pass"],
+            reasoning="Extracted from user messages.",
+        )
+        assert "qa" in v.track_hints
+        assert len(v.constraints) == 1
+
+
+class TestLLMClassifyRunOutcome:
+    @pytest.mark.asyncio
+    async def test_classify_timeout(self) -> None:
+        llm_response = json.dumps({"outcome": "timeout", "reasoning": "Run exceeded time limit."})
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(return_value=llm_response)
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.classify_run_outcome(
+                run_dict={"status": "failed", "error": "timeout after 300s"}
+            )
+        assert verdict.outcome == "timeout"
+
+    @pytest.mark.asyncio
+    async def test_classify_crash(self) -> None:
+        llm_response = json.dumps(
+            {"outcome": "crash", "reasoning": "Non-zero exit code with traceback."}
+        )
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(return_value=llm_response)
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.classify_run_outcome(
+                run_dict={"status": "failed", "exit_code": 1, "traceback": "..."}
+            )
+        assert verdict.outcome == "crash"
+
+    @pytest.mark.asyncio
+    async def test_classify_invalid_outcome_falls_back(self) -> None:
+        llm_response = json.dumps({"outcome": "something_weird", "reasoning": "huh"})
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(return_value=llm_response)
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.classify_run_outcome(run_dict={"status": "unknown"})
+        assert verdict.outcome == "blocked"
+
+    @pytest.mark.asyncio
+    async def test_fail_closed_on_error(self) -> None:
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(side_effect=RuntimeError("API down"))
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.classify_run_outcome(run_dict={})
+        assert verdict.outcome == "blocked"
+
+
+class TestLLMDetectCapacityFailure:
+    @pytest.mark.asyncio
+    async def test_detects_billing_issue(self) -> None:
+        llm_response = json.dumps({"is_capacity": True, "reasoning": "Credit balance depleted."})
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(return_value=llm_response)
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.detect_capacity_failure(
+                stdout="", stderr="Error: credit balance is too low", agent_name="claude"
+            )
+        assert verdict.is_capacity is True
+        assert verdict.detail  # non-empty when is_capacity=True
+
+    @pytest.mark.asyncio
+    async def test_not_capacity_on_regular_error(self) -> None:
+        llm_response = json.dumps(
+            {"is_capacity": False, "reasoning": "This is a crash, not billing."}
+        )
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(return_value=llm_response)
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.detect_capacity_failure(
+                stdout="", stderr="Traceback: IndexError", agent_name="codex"
+            )
+        assert verdict.is_capacity is False
+
+    @pytest.mark.asyncio
+    async def test_empty_output_returns_not_capacity(self) -> None:
+        classifier = LLMBlockerClassifier()
+        verdict = await classifier.detect_capacity_failure(
+            stdout="", stderr="", agent_name="claude"
+        )
+        assert verdict.is_capacity is False
+
+    @pytest.mark.asyncio
+    async def test_fail_closed_on_error(self) -> None:
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(side_effect=RuntimeError("timeout"))
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.detect_capacity_failure(
+                stdout="credit balance", stderr="", agent_name="claude"
+            )
+        assert verdict.is_capacity is False
+
+
+class TestLLMInferSpecFields:
+    @pytest.mark.asyncio
+    async def test_infers_tracks_and_criteria(self) -> None:
+        llm_response = json.dumps(
+            {
+                "track_hints": ["qa", "developer"],
+                "constraints": ["Do not modify the database"],
+                "acceptance_criteria": ["All tests pass", "Coverage above 80%"],
+                "reasoning": "Goal involves testing and API work.",
+            }
+        )
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(return_value=llm_response)
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.infer_spec_fields(
+                user_messages=["Add unit tests for the API endpoint"],
+                raw_goal="Add test coverage for API",
+            )
+        assert "qa" in verdict.track_hints
+        assert "developer" in verdict.track_hints
+        assert len(verdict.acceptance_criteria) == 2
+
+    @pytest.mark.asyncio
+    async def test_filters_invalid_tracks(self) -> None:
+        llm_response = json.dumps(
+            {
+                "track_hints": ["qa", "bogus_track", "security"],
+                "constraints": [],
+                "acceptance_criteria": [],
+                "reasoning": "Filtered.",
+            }
+        )
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(return_value=llm_response)
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.infer_spec_fields(
+                user_messages=["Fix security audit findings"],
+                raw_goal="Security fix",
+            )
+        assert "qa" in verdict.track_hints
+        assert "security" in verdict.track_hints
+        assert "bogus_track" not in verdict.track_hints
+
+    @pytest.mark.asyncio
+    async def test_fail_closed_on_error(self) -> None:
+        mock_agent = AsyncMock()
+        mock_agent.generate = AsyncMock(side_effect=RuntimeError("timeout"))
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            classifier = LLMBlockerClassifier()
+            verdict = await classifier.infer_spec_fields(
+                user_messages=["anything"], raw_goal="goal"
+            )
+        assert verdict.track_hints == []
+        assert verdict.constraints == []
+        assert verdict.acceptance_criteria == []
