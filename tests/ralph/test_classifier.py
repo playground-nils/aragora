@@ -118,6 +118,56 @@ class TestClassifyBlocker:
         result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
         assert result == BlockerKind.REVIEWER_AUTH_OR_BILLING
 
+    def test_blocked_with_review_connection_error_escalates_infra(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": ["Review failed: AgentConnectionError"],
+                        "raw_review": {"error": "AgentConnectionError"},
+                    },
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.INFRA_FAILURE
+
+    def test_blocked_with_verification_exec_format_error_escalates_infra(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": [],
+                    },
+                    "attempt_history": [
+                        {
+                            "failure_detail": (
+                                "merge gate blocked: verification failed: "
+                                "python -m pytest tests/ralph/test_classifier.py -q "
+                                "(exit 126) - /bin/bash: "
+                                "/Users/armand/local/aws-cli/python: cannot execute "
+                                "binary file: Exec format error"
+                            ),
+                            "blockers": [
+                                "merge gate blocked: verification failed: python -m pytest "
+                                "tests/ralph/test_classifier.py -q (exit 126)"
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.INFRA_FAILURE
+
     def test_blocked_with_true_diff_missing_still_maps_to_reviewer_missing_diff(self) -> None:
         manifest = {
             "projects": [

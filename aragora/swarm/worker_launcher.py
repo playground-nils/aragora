@@ -13,7 +13,10 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import re
+import shlex
 import shutil
+import sys
 import time
 from typing import Any
 
@@ -921,13 +924,14 @@ class WorkerLauncher:
             command = str(raw_command).strip()
             if not command:
                 continue
+            execution_command = cls._normalize_verification_command(command)
 
             started = time.monotonic()
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "/bin/bash",
                     "-lc",
-                    command,
+                    execution_command,
                     cwd=worktree_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -971,6 +975,22 @@ class WorkerLauncher:
                 }
             )
         return results
+
+    @staticmethod
+    def _normalize_verification_command(command: str) -> str:
+        """Rewrite leading ``python`` to the current interpreter.
+
+        Verification commands are executed under ``bash -lc`` and therefore
+        inherit the caller's PATH. On this machine ``python`` can resolve to
+        a non-executable AWS CLI shim, which breaks merge-gate verification
+        even when the worker produced a valid deliverable. Preserve the
+        original command for reporting, but execute with a stable interpreter.
+        """
+        match = re.match(r"(?P<prefix>\s*)python(?=\s|$)", command)
+        if not match:
+            return command
+        prefix = match.group("prefix")
+        return f"{prefix}{shlex.quote(sys.executable)}{command[match.end() :]}"
 
     @staticmethod
     def _can_query_dirty_tree(worker: WorkerProcess) -> bool:
