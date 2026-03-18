@@ -193,6 +193,82 @@ def test_refresh_run_scales_queued_work_after_completion(
     assert counter["value"] >= 2
 
 
+def test_refresh_run_respects_dispatched_workers_as_active(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    """Dispatched workers must count toward max_concurrency.
+
+    Before the fix, refresh_run only counted 'leased' orders as active,
+    allowing new orders to be leased even when dispatched workers were still
+    running. This caused more workers than max_concurrency to run in parallel.
+    """
+    counter = {"value": 0}
+
+    def _ensure_session(**_kwargs: object) -> ManagedWorktreeSession:
+        counter["value"] += 1
+        path = repo / f"wt-conc-{counter['value']}"
+        path.mkdir(exist_ok=True)
+        return ManagedWorktreeSession(
+            session_id=f"swarm-conc-{counter['value']}",
+            agent="codex",
+            branch=f"codex/swarm-conc-{counter['value']}",
+            path=path,
+            created=True,
+            reconcile_status="up_to_date",
+            payload={},
+        )
+
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.side_effect = _ensure_session
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=8,
+        complexity_level="high",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id=f"wo-{i}", title=f"Lane {i}", description=f"Lane {i}", file_scope=[f"file{i}.py"]
+            )
+            for i in range(3)
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+    spec = SwarmSpec(raw_goal="Goal", refined_goal="Goal")
+
+    run = supervisor.start_run(spec=spec, max_concurrency=1)
+    leased = [item for item in run.work_orders if item["status"] == "leased"]
+    assert len(leased) == 1, "start_run should lease exactly 1 work order"
+
+    # Simulate dispatch: change leased → dispatched (what dispatch_workers does)
+    run_record = store.get_supervisor_run(run.run_id)
+    for item in run_record["work_orders"]:
+        if item["status"] == "leased":
+            item["status"] = "dispatched"
+    store.update_supervisor_run(
+        run.run_id,
+        work_orders=run_record["work_orders"],
+    )
+
+    # refresh_run should NOT lease another order because max_concurrency=1
+    # and there's already 1 dispatched worker.
+    refreshed = supervisor.refresh_run(run.run_id)
+    dispatched = [item for item in refreshed.work_orders if item["status"] == "dispatched"]
+    newly_leased = [item for item in refreshed.work_orders if item["status"] == "leased"]
+    queued = [item for item in refreshed.work_orders if item["status"] == "queued"]
+
+    assert len(dispatched) == 1, "dispatched worker should remain dispatched"
+    assert len(newly_leased) == 0, (
+        "no new orders should be leased while a dispatched worker is active"
+    )
+    assert len(queued) == 2, "remaining orders should stay queued"
+
+
 def test_refresh_run_releases_orphaned_conflicts_and_retries(
     repo: Path, store: DevCoordinationStore
 ) -> None:

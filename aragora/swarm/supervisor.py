@@ -249,7 +249,9 @@ class SwarmSupervisor:
             record.get("metadata", {}).get("managed_dir_pattern", ".worktrees/{agent}-auto")
         )
         work_orders = [dict(item) for item in record.get("work_orders", [])]
-        active_count = sum(1 for item in work_orders if str(item.get("status", "")) == "leased")
+        active_count = sum(
+            1 for item in work_orders if str(item.get("status", "")) in {"leased", "dispatched"}
+        )
 
         if active_count < max_concurrency:
             for item in work_orders:
