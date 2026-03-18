@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -325,6 +326,130 @@ def test_refresh_run_releases_orphaned_conflicts_and_retries(
     assert work_order["lease_id"]
     active_lease_ids = {lease.lease_id for lease in store.list_active_leases()}
     assert orphaned.lease_id not in active_lease_ids
+
+
+def test_refresh_run_releases_managed_conflicts_without_active_session(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    stale_path = repo / ".worktrees" / "codex-auto" / "swarm-stale-docs"
+    stale_path.mkdir(parents=True)
+    (stale_path / ".swarm_worker_stderr.log").write_text("old worker log\n", encoding="utf-8")
+    orphaned = store.claim_lease(
+        task_id="old-docs-lane",
+        title="Old docs lane",
+        owner_agent="codex",
+        owner_session_id="swarm-stale-docs",
+        branch="codex/stale-docs",
+        worktree_path=str(stale_path),
+        claimed_paths=["docs/guides/SWARM_DOGFOOD_OPERATOR.md"],
+    )
+
+    lifecycle = MagicMock()
+    session_path = repo / "wt-docs-fresh"
+    session_path.mkdir()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="fresh-docs",
+        agent="codex",
+        branch="codex/fresh-docs",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="docs-lane",
+                title="Write operator guide",
+                description="Add operator guide.",
+                file_scope=["docs/guides/SWARM_DOGFOOD_OPERATOR.md"],
+            )
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+    run = supervisor.start_run(spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"))
+
+    work_order = run.work_orders[0]
+    assert work_order["status"] == "leased"
+    assert work_order["lease_id"]
+    active_lease_ids = {lease.lease_id for lease in store.list_active_leases()}
+    assert orphaned.lease_id not in active_lease_ids
+
+
+def test_refresh_run_keeps_conflict_for_live_managed_session(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    live_path = repo / ".worktrees" / "codex-auto" / "swarm-live-docs"
+    live_path.mkdir(parents=True)
+    (live_path / ".codex_session_active").write_text(
+        f"pid={os.getpid()}\nsession_id=swarm-live-docs\n",
+        encoding="utf-8",
+    )
+    blocking = store.claim_lease(
+        task_id="old-docs-lane",
+        title="Old docs lane",
+        owner_agent="codex",
+        owner_session_id="swarm-live-docs",
+        branch="codex/stale-docs",
+        worktree_path=str(live_path),
+        claimed_paths=["docs/guides/SWARM_DOGFOOD_OPERATOR.md"],
+    )
+
+    lifecycle = MagicMock()
+    session_path = repo / "wt-docs-fresh-live"
+    session_path.mkdir()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="fresh-docs",
+        agent="codex",
+        branch="codex/fresh-docs",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="docs-lane",
+                title="Write operator guide",
+                description="Add operator guide.",
+                file_scope=["docs/guides/SWARM_DOGFOOD_OPERATOR.md"],
+            )
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+    run = supervisor.start_run(spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"))
+
+    work_order = run.work_orders[0]
+    assert work_order["status"] == "waiting_conflict"
+    assert not work_order["lease_id"]
+    assert work_order["conflicts"][0]["lease_id"] == blocking.lease_id
+    active_lease_ids = {lease.lease_id for lease in store.list_active_leases()}
+    assert blocking.lease_id in active_lease_ids
 
 
 def test_refresh_run_marks_resource_wait_on_disk_full(
@@ -1793,3 +1918,72 @@ def test_worker_prompt_includes_boss_lane_contract() -> None:
     assert "Receipt expectation:" in prompt
     assert "Lease id: lease-123" in prompt
     assert "Stop condition:" in prompt
+
+
+def test_refresh_run_reaps_expired_leases(repo: Path, store: DevCoordinationStore) -> None:
+    """refresh_run proactively reaps TTL-expired leases so stuck waiting_conflict
+    work orders can recover even when no new claim_lease calls occur."""
+    # Create a lease with normal TTL, then manually expire it
+    expired = store.claim_lease(
+        task_id="old-task",
+        title="Old task",
+        owner_agent="codex",
+        owner_session_id="dead-session",
+        branch="codex/dead-branch",
+        worktree_path=str(repo / "dead-wt"),
+        claimed_paths=["some/file.py"],
+    )
+    assert expired.lease_id in {l.lease_id for l in store.list_active_leases()}
+    # Backdate expiry to the past so reap_expired_leases picks it up
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE leases SET expires_at = ? WHERE lease_id = ?",
+            ("2020-01-01T00:00:00+00:00", expired.lease_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Set up a minimal supervisor with a live run
+    lifecycle = MagicMock()
+    session_path = repo / "wt-fresh"
+    session_path.mkdir()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="fresh-session",
+        agent="codex",
+        branch="codex/fresh-branch",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="fresh-lane",
+                title="Fresh work",
+                description="Do fresh work.",
+                file_scope=["other/file.py"],
+            )
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+    run = supervisor.start_run(spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"))
+
+    # refresh_run should have reaped the expired lease
+    supervisor.refresh_run(run.run_id)
+    active_lease_ids = {l.lease_id for l in store.list_active_leases()}
+    assert expired.lease_id not in active_lease_ids
