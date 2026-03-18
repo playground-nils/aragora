@@ -27,6 +27,7 @@ class BlockerKind(str, Enum):
     MANIFEST_IDENTIFIER_COLLISION = "manifest_identifier_collision"
     RUNTIME_TIMEOUT_CONFIG = "campaign_runtime_timeout_config"
     RECEIPT_EMISSION_GAP = "receipt_emission_gap"
+    WORKER_CONTEXT_OVERFLOW = "worker_context_overflow"
 
     # --- escalate ---
     REVIEWER_AUTH_OR_BILLING = "reviewer_auth_or_billing_failure"
@@ -47,6 +48,7 @@ _DETERMINISTIC_KINDS = frozenset(
         BlockerKind.MANIFEST_IDENTIFIER_COLLISION,
         BlockerKind.RUNTIME_TIMEOUT_CONFIG,
         BlockerKind.RECEIPT_EMISSION_GAP,
+        BlockerKind.WORKER_CONTEXT_OVERFLOW,
     }
 )
 
@@ -99,6 +101,10 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
         "auth",
         "login",
         "clisubprocesserror",
+        "rate limit",
+        "rate_limit",
+        "429",
+        "too many requests",
     )
     infra_failure_patterns = (
         "agentconnectionerror",
@@ -107,6 +113,16 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
         "ssl: certificate_verify_failed",
         "cannot execute binary file",
         "exec format error",
+        "permission denied",
+        "403 forbidden",
+    )
+    context_overflow_patterns = (
+        "context length exceeded",
+        "max_tokens",
+        "maximum context length",
+        "token limit",
+        "context_length_exceeded",
+        "prompt is too long",
     )
     projects = manifest_dict.get("projects", [])
 
@@ -150,6 +166,8 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
                     "violation" in detail_lower or "outside" in detail_lower
                 ):
                     return BlockerKind.SCOPE_FALSE_POSITIVE
+                if any(pattern in detail_lower for pattern in context_overflow_patterns):
+                    return BlockerKind.WORKER_CONTEXT_OVERFLOW
                 if any(pattern in detail_lower for pattern in reviewer_failure_patterns):
                     return BlockerKind.REVIEWER_AUTH_OR_BILLING
                 if any(pattern in detail_lower for pattern in infra_failure_patterns):
