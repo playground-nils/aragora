@@ -433,6 +433,11 @@ class ArenaConfig:
         enable_synthesis: bool = False,
         enable_knowledge_injection: bool = False,
         enable_meta_learning: bool = False,
+        # RLM (Recursive Language Models): context compression for long debates
+        enable_rlm: bool = False,
+        rlm_mode: str = "auto",  # "auto", "true_rlm", "compression"
+        # Blockchain staking: reward/penalize agents based on epistemic accuracy
+        enable_staking: bool = False,
         # Agent provider diversity: prefer heterogeneous model consensus
         min_provider_diversity: int = 1,  # Minimum number of distinct providers
         prefer_diverse_providers: bool = False,  # Prefer agents from different providers
@@ -543,6 +548,11 @@ class ArenaConfig:
         self.enable_synthesis = enable_synthesis
         self.enable_knowledge_injection = enable_knowledge_injection
         self.enable_meta_learning = enable_meta_learning
+
+        # RLM and blockchain staking
+        self.enable_rlm = enable_rlm
+        self.rlm_mode = rlm_mode
+        self.enable_staking = enable_staking
 
         # Agent provider diversity
         self.min_provider_diversity = min_provider_diversity

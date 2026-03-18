@@ -54,6 +54,10 @@ class PostDebateConfig:
     # Calibration → blockchain reputation: push Brier scores to ERC-8004
     auto_push_calibration: bool = False
     calibration_min_predictions: int = 5  # Min predictions before pushing
+    # Staking: reward/penalize agents based on epistemic accuracy post-debate
+    enable_staking: bool = False
+    staking_reward_scale: float = 1.0  # Multiplier for staking rewards
+    staking_slash_on_hollow_consensus: bool = True  # Slash when Trickster detects hollow consensus
     # Outcome feedback: feed systematic errors back to Nomic Loop
     auto_outcome_feedback: bool = True
     # Canvas pipeline: auto-trigger idea-to-execution visualization
@@ -116,6 +120,7 @@ class PostDebateResult:
     bridge_results: list[dict[str, Any]] = field(default_factory=list)
     llm_judge_scores: dict[str, Any] | None = None
     settlement_batch: dict[str, Any] | None = None
+    staking_result: dict[str, Any] | None = None
     cost_breakdown: dict[str, Any] | None = None
     errors: list[str] = field(default_factory=list)
 
@@ -299,6 +304,12 @@ class PostDebateCoordinator:
         # Step 7.5: Push calibration data to ERC-8004 blockchain reputation
         if self.config.auto_push_calibration:
             self._step_push_calibration(debate_id, agents)
+
+        # Step 7.6: Staking rewards/penalties based on epistemic accuracy
+        if self.config.enable_staking:
+            result.staking_result = self._step_staking_rewards(
+                debate_id, debate_result, agents, confidence
+            )
 
         # Step 7.7: Outcome feedback — feed systematic errors to Nomic Loop
         if self.config.auto_outcome_feedback:
@@ -1149,6 +1160,75 @@ class PostDebateCoordinator:
         except (ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
             logger.warning("Calibration push failed: %s", e)
             return False
+
+    def _step_staking_rewards(
+        self,
+        debate_id: str,
+        debate_result: Any,
+        agents: list[Any] | None = None,
+        confidence: float = 0.0,
+    ) -> dict[str, Any] | None:
+        """Step 7.6: Distribute staking rewards/penalties based on epistemic accuracy.
+
+        Agents that contributed to high-confidence, accurate outcomes receive rewards.
+        Agents involved in hollow consensus (detected by Trickster) face slashing.
+        """
+        try:
+            from aragora.blockchain.contracts.staking import StakingRegistry
+
+            registry = StakingRegistry()
+            results: dict[str, Any] = {"rewarded": [], "slashed": [], "debate_id": debate_id}
+
+            # Check for hollow consensus (Trickster detection)
+            hollow_consensus = False
+            if hasattr(debate_result, "metadata") and isinstance(debate_result.metadata, dict):
+                hollow_consensus = debate_result.metadata.get("hollow_consensus_detected", False)
+
+            for agent in agents or []:
+                agent_name = getattr(agent, "name", str(agent))
+
+                if hollow_consensus and self.config.staking_slash_on_hollow_consensus:
+                    # Slash agents that participated in hollow consensus
+                    try:
+                        import asyncio
+
+                        asyncio.get_event_loop().run_until_complete(
+                            registry.slash(
+                                agent_name,
+                                reason="hollow_consensus",
+                                metadata={"debate_id": debate_id, "confidence": confidence},
+                            )
+                        )
+                        results["slashed"].append(agent_name)
+                    except (RuntimeError, ValueError, OSError) as e:
+                        logger.warning("Slash failed for %s: %s", agent_name, e)
+                elif confidence >= 0.8:
+                    # Reward agents contributing to high-confidence outcomes
+                    reward_amount = int(100 * confidence * self.config.staking_reward_scale)
+                    try:
+                        import asyncio
+
+                        asyncio.get_event_loop().run_until_complete(
+                            registry.reward(agent_name, reward_amount)
+                        )
+                        results["rewarded"].append({"agent": agent_name, "amount": reward_amount})
+                    except (RuntimeError, ValueError, OSError) as e:
+                        logger.warning("Reward failed for %s: %s", agent_name, e)
+
+            if results["rewarded"] or results["slashed"]:
+                logger.info(
+                    "Staking: rewarded %d, slashed %d agents (debate %s)",
+                    len(results["rewarded"]),
+                    len(results["slashed"]),
+                    debate_id,
+                )
+            return results
+        except ImportError:
+            logger.debug("StakingRegistry not available, skipping staking rewards")
+            return None
+        except (ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            logger.warning("Staking rewards failed: %s", e)
+            return None
 
     def _step_outcome_feedback(
         self,
