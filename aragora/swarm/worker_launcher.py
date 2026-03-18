@@ -161,6 +161,15 @@ class WorkerLauncher:
             worktree_path,
         )
 
+        # Codex CLI multi-agent mode creates isolated config dirs that lack
+        # auth credentials.  Pin CODEX_HOME to the user's main config so
+        # workers can authenticate.  Claude Code doesn't use this var.
+        worker_env: dict[str, str] | None = None
+        if agent == "codex":
+            codex_home = Path.home() / ".codex"
+            if (codex_home / "auth.json").exists():
+                worker_env = {**os.environ, "CODEX_HOME": str(codex_home)}
+
         if self.config.detach:
             log_dir = Path(worktree_path)
             stdout_file = open(log_dir / ".swarm_worker_stdout.log", "w")  # noqa: SIM115
@@ -172,6 +181,7 @@ class WorkerLauncher:
                 stdout=stdout_file,
                 stderr=stderr_file,
                 start_new_session=True,
+                env=worker_env,
             )
         else:
             proc = await asyncio.create_subprocess_exec(
@@ -179,6 +189,7 @@ class WorkerLauncher:
                 cwd=worktree_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=worker_env,
             )
             self._start_live_log_capture(work_order_id, worktree_path, proc)
 
