@@ -108,11 +108,11 @@ class TestFileScopeBackfill:
         assert len(work_orders) == 1
         assert work_orders[0].file_scope == ["aragora/live", "@eslint/eslintrc"]
 
-    def test_nonempty_subtask_file_scope_preserved(
+    def test_nonempty_subtask_file_scope_merged_with_hints(
         self, repo: Path, store: DevCoordinationStore
     ) -> None:
-        """When decomposer correctly populates file_scope, spec hints
-        do NOT override it."""
+        """When decomposer populates file_scope, spec hints are merged in
+        so the worker can touch any file the project declares."""
         subtasks = [
             SubTask(
                 id="wo-1",
@@ -129,7 +129,7 @@ class TestFileScopeBackfill:
 
         work_orders = supervisor._build_supervised_work_orders(spec)
 
-        assert work_orders[0].file_scope == ["aragora/server/handlers/foo.py"]
+        assert work_orders[0].file_scope == ["aragora/server/handlers/foo.py", "aragora/server/"]
 
     def test_no_spec_hints_no_backfill(self, repo: Path, store: DevCoordinationStore) -> None:
         """When spec has no file_scope_hints, empty subtask file_scope
@@ -149,11 +149,11 @@ class TestFileScopeBackfill:
 
         assert work_orders[0].file_scope == []
 
-    def test_multiple_subtasks_backfill_only_empty_ones(
+    def test_multiple_subtasks_all_get_hints_merged(
         self, repo: Path, store: DevCoordinationStore
     ) -> None:
-        """Only subtasks with empty file_scope get backfilled; populated
-        ones keep their specific scope."""
+        """All subtasks get spec hints merged — empty ones get backfilled,
+        populated ones get hints added."""
         subtasks = [
             SubTask(
                 id="wo-1",
@@ -176,7 +176,11 @@ class TestFileScopeBackfill:
 
         work_orders = supervisor._build_supervised_work_orders(spec)
 
-        assert work_orders[0].file_scope == ["aragora/server/handlers/foo.py"]
+        assert work_orders[0].file_scope == [
+            "aragora/server/handlers/foo.py",
+            "aragora/live",
+            "aragora/server",
+        ]
         assert work_orders[1].file_scope == ["aragora/live", "aragora/server"]
 
     def test_fallback_subtask_already_uses_spec_hints(
@@ -196,13 +200,13 @@ class TestFileScopeBackfill:
         assert work_orders[0].file_scope == ["aragora/cli/main.py"]
 
 
-class TestWrongScopeOverride:
-    """Verify decomposer-produced scopes with zero overlap get overridden."""
+class TestScopeMergeWithHints:
+    """Verify spec hints are always merged into decomposer-produced scopes."""
 
-    def test_wrong_decomposer_scope_overridden_by_spec_hints(
+    def test_unrelated_decomposer_scope_gets_hints_merged(
         self, repo: Path, store: DevCoordinationStore
     ) -> None:
-        """Decomposer returns unrelated scopes; they get replaced with spec hints."""
+        """Decomposer returns unrelated scopes; spec hints are merged in."""
         subtasks = [
             SubTask(
                 id="wo-1",
@@ -219,12 +223,12 @@ class TestWrongScopeOverride:
 
         work_orders = supervisor._build_supervised_work_orders(spec)
 
-        assert work_orders[0].file_scope == ["aragora/live"]
+        assert "aragora/live" in work_orders[0].file_scope
 
-    def test_correct_narrower_decomposer_scope_preserved(
+    def test_narrower_decomposer_scope_gets_hints_merged(
         self, repo: Path, store: DevCoordinationStore
     ) -> None:
-        """Decomposer correctly narrows within hint → preserved."""
+        """Decomposer correctly narrows within hint → hints still merged."""
         subtasks = [
             SubTask(
                 id="wo-1",
@@ -241,10 +245,10 @@ class TestWrongScopeOverride:
 
         work_orders = supervisor._build_supervised_work_orders(spec)
 
-        assert work_orders[0].file_scope == ["aragora/server/handlers/foo.py"]
+        assert work_orders[0].file_scope == ["aragora/server/handlers/foo.py", "aragora/server/"]
 
-    def test_multiple_subtasks_mixed_overlap(self, repo: Path, store: DevCoordinationStore) -> None:
-        """Overlapping subtask keeps scope; non-overlapping gets overridden."""
+    def test_multiple_subtasks_all_get_hints(self, repo: Path, store: DevCoordinationStore) -> None:
+        """All subtasks get spec hints merged regardless of overlap."""
         subtasks = [
             SubTask(
                 id="wo-1",
@@ -267,13 +271,13 @@ class TestWrongScopeOverride:
 
         work_orders = supervisor._build_supervised_work_orders(spec)
 
-        assert work_orders[0].file_scope == ["aragora/live/package.json"]
-        assert work_orders[1].file_scope == ["aragora/live"]
+        assert work_orders[0].file_scope == ["aragora/live/package.json", "aragora/live"]
+        assert "aragora/live" in work_orders[1].file_scope
 
-    def test_issue_873_four_wrong_subtasks_all_overridden(
+    def test_issue_873_four_subtasks_all_get_hints(
         self, repo: Path, store: DevCoordinationStore
     ) -> None:
-        """Forensic: decomposer returned 4 subtasks all with wrong scopes."""
+        """Forensic: decomposer returned 4 subtasks — all get spec hints merged."""
         subtasks = [
             SubTask(id="s1", title="s1", description="s1", file_scope=[]),
             SubTask(
@@ -303,9 +307,10 @@ class TestWrongScopeOverride:
 
         work_orders = supervisor._build_supervised_work_orders(spec)
 
+        hints = {"aragora/live", "@eslint/eslintrc", "/aragora/live"}
         for wo in work_orders:
-            assert wo.file_scope == ["aragora/live", "@eslint/eslintrc", "/aragora/live"], (
-                f"work order {wo.work_order_id} should have spec hints as scope"
+            assert hints.issubset(set(wo.file_scope)), (
+                f"work order {wo.work_order_id} must contain all spec hints"
             )
 
     def test_no_hints_with_wrong_scope_passes_through(
@@ -327,9 +332,9 @@ class TestWrongScopeOverride:
 
         assert work_orders[0].file_scope == ["aragora/audit/"]
 
-    def test_overlap_bidirectional(self, repo: Path, store: DevCoordinationStore) -> None:
-        """Overlap works in both directions: scope under hint AND hint under scope."""
-        # Scope narrower than hint → overlap
+    def test_merge_bidirectional(self, repo: Path, store: DevCoordinationStore) -> None:
+        """Hints merged in both directions: scope under hint AND hint under scope."""
+        # Scope narrower than hint → hints merged in
         subtasks_narrow = [
             SubTask(
                 id="wo-1",
@@ -341,9 +346,9 @@ class TestWrongScopeOverride:
         supervisor = _make_supervisor(repo, store, subtasks_narrow)
         spec = SwarmSpec(raw_goal="fix", file_scope_hints=["aragora/live"])
         work_orders = supervisor._build_supervised_work_orders(spec)
-        assert work_orders[0].file_scope == ["aragora/live/components/Nav.tsx"]
+        assert work_orders[0].file_scope == ["aragora/live/components/Nav.tsx", "aragora/live"]
 
-        # Scope wider than hint → overlap (decomposer widened, still relevant)
+        # Scope wider than hint → hint still merged (no-op since already covered)
         subtasks_wide = [
             SubTask(
                 id="wo-1",
@@ -355,7 +360,7 @@ class TestWrongScopeOverride:
         supervisor2 = _make_supervisor(repo, store, subtasks_wide)
         spec2 = SwarmSpec(raw_goal="fix", file_scope_hints=["aragora/live"])
         work_orders2 = supervisor2._build_supervised_work_orders(spec2)
-        assert work_orders2[0].file_scope == ["aragora"]
+        assert work_orders2[0].file_scope == ["aragora", "aragora/live"]
 
 
 class TestScopeOverlapsHints:
