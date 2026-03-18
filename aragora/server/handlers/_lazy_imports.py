@@ -296,6 +296,7 @@ HANDLER_MODULES: dict[str, str] = {
     "TranscriptionHandler": "aragora.server.handlers.transcription",
     "UncertaintyHandler": "aragora.server.handlers.uncertainty",
     "UnifiedMetricsHandler": "aragora.server.handlers.metrics_endpoint",
+    "RalphDashboardHandler": "aragora.server.handlers.ralph_dashboard",
     "UsageMeteringHandler": "aragora.server.handlers.usage_metering",
     "VerticalsHandler": "aragora.server.handlers.verticals",
     "VoiceHandler": "aragora.server.handlers.voice.handler",
@@ -658,6 +659,7 @@ ALL_HANDLER_NAMES: list[str] = [
     "TemplateRegistryHandler",
     "ThreatIntelHandler",
     "UnifiedMetricsHandler",
+    "RalphDashboardHandler",
     # workflows/ sub-handlers
     "WorkflowBuilderHandler",
 ]

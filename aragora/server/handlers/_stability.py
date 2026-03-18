@@ -279,6 +279,7 @@ HANDLER_STABILITY: dict[str, Stability] = {
     "TemplateRegistryHandler": Stability.EXPERIMENTAL,
     "ThreatIntelHandler": Stability.EXPERIMENTAL,
     "UnifiedMetricsHandler": Stability.EXPERIMENTAL,
+    "RalphDashboardHandler": Stability.EXPERIMENTAL,
     # workflows/ sub-handlers
     "WorkflowBuilderHandler": Stability.EXPERIMENTAL,
     # Readiness check (SME onboarding)
