@@ -105,9 +105,14 @@ def readiness_probe_fast(handler: Any) -> HandlerResult:
 
     # Check server startup completed (in-memory, no I/O)
     try:
-        from aragora.server.unified_server import is_server_ready
+        from aragora.server import unified_server as unified_server_module
 
-        startup_complete = is_server_ready()
+        startup_complete = unified_server_module.is_server_ready()
+        if not startup_complete:
+            # In production the request can be flowing through the modular
+            # HTTP stack even when the module-global ready flag is stale.
+            unified_handler_cls = getattr(unified_server_module, "UnifiedHandler", None)
+            startup_complete = getattr(unified_handler_cls, "_handlers_initialized", False) is True
         checks["startup_complete"] = startup_complete
         if not startup_complete:
             ready = False
