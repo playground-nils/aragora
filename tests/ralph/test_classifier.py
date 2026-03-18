@@ -298,6 +298,107 @@ class TestClassifyBlocker:
         result = classify_blocker(stop_reason="something_new", manifest_dict={})
         assert result == BlockerKind.UNKNOWN
 
+    def test_blocked_with_rate_limit_finding_escalates(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": ["Review failed: 429 Too Many Requests"],
+                    },
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.REVIEWER_AUTH_OR_BILLING
+
+    def test_blocked_with_rate_limit_pattern_escalates(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": ["rate limit exceeded, please retry"],
+                    },
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.REVIEWER_AUTH_OR_BILLING
+
+    def test_blocked_with_context_length_exceeded(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": [],
+                    },
+                    "attempt_history": [
+                        {
+                            "failure_detail": (
+                                "Worker error: context length exceeded - "
+                                "prompt is 150000 tokens, max is 128000"
+                            ),
+                        }
+                    ],
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.WORKER_CONTEXT_OVERFLOW
+
+    def test_blocked_with_prompt_too_long(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": ["prompt is too long for this model"],
+                    },
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.WORKER_CONTEXT_OVERFLOW
+
+    def test_blocked_with_permission_denied_escalates_infra(self) -> None:
+        manifest = {
+            "projects": [
+                {
+                    "project_id": "p1",
+                    "status": "blocked",
+                    "last_run_outcome": "deliverable_created",
+                    "review": {
+                        "status": "blocked_nonreviewable",
+                        "findings": [],
+                    },
+                    "attempt_history": [
+                        {
+                            "failure_detail": "git push failed: Permission denied (publickey)",
+                        }
+                    ],
+                }
+            ]
+        }
+        result = classify_blocker(stop_reason="campaign_blocked", manifest_dict=manifest)
+        assert result == BlockerKind.INFRA_FAILURE
+
+    def test_context_overflow_is_deterministic(self) -> None:
+        assert BlockerKind.WORKER_CONTEXT_OVERFLOW.is_deterministic
+
     def test_blocked_with_no_projects(self) -> None:
         result = classify_blocker(stop_reason="campaign_blocked", manifest_dict={"projects": []})
         assert result == BlockerKind.UNKNOWN

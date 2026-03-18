@@ -142,6 +142,23 @@ _TEMPLATES: dict[BlockerKind, dict[str, Any]] = {
             "receipt file exists for every terminal project"
         ),
     },
+    BlockerKind.WORKER_CONTEXT_OVERFLOW: {
+        "title": "Reduce worker context size to fit within model limits",
+        "problem_statement": (
+            "Worker hit a context length limit (max_tokens / prompt too long). "
+            "The task scope or file_scope_hints may be too broad, causing the "
+            "worker prompt to exceed the model's context window. Narrow the "
+            "file_scope_hints or split the work order into smaller subtasks."
+        ),
+        "allowed_paths": [
+            ".aragora/campaign_manifest.yaml",
+        ],
+        "required_tests": [],
+        "done_condition": (
+            "Worker prompt fits within model context window; "
+            "file_scope_hints narrowed or work order split"
+        ),
+    },
 }
 
 
