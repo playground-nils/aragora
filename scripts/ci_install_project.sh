@@ -3,6 +3,8 @@ set -euo pipefail
 
 EXTRAS=""
 PROJECT_DIR=""
+INSTALL_MODE="editable"
+INSTALL_SCOPE="system"
 
 readonly LEGACY_CONTROL_PLANE_PACKAGE_NAME="aragora-debate"
 readonly LEGACY_CONTROL_PLANE_MARKER_PATH="aragora/server"
@@ -72,6 +74,35 @@ LEGACY_CONTROL_PLANE_TEST_EXTRA_DEPS=(
   "pillow>=12.1.1"
 )
 
+LEGACY_CONTROL_PLANE_MONITORING_DEPS=(
+  "prometheus-client>=0.19,<1.0"
+  "sentry-sdk>=2.0,<3.0"
+)
+
+LEGACY_CONTROL_PLANE_OBSERVABILITY_DEPS=(
+  "opentelemetry-api>=1.20.0,<2.0"
+  "opentelemetry-sdk>=1.20.0,<2.0"
+  "opentelemetry-exporter-otlp>=1.20.0,<2.0"
+  "opentelemetry-instrumentation-logging>=0.41b0,<1.0"
+  "prometheus-client>=0.19,<1.0"
+  "protobuf>=6.33.5"
+)
+
+LEGACY_CONTROL_PLANE_REDIS_DEPS=(
+  "redis>=5.0.0,<8.0"
+)
+
+LEGACY_CONTROL_PLANE_PERSISTENCE_DEPS=(
+  "supabase>=2.0,<3.0"
+  "sqlalchemy>=2.0.40,<3.0"
+)
+
+LEGACY_CONTROL_PLANE_POSTGRES_DEPS=(
+  "asyncpg>=0.29.0,<1.0"
+  "alembic>=1.13.0,<2.0"
+  "nest_asyncio>=1.5,<2.0"
+)
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --extras)
@@ -82,12 +113,30 @@ while [[ $# -gt 0 ]]; do
       PROJECT_DIR="${2:-}"
       shift 2
       ;;
+    --install-mode)
+      INSTALL_MODE="${2:-}"
+      shift 2
+      ;;
+    --install-scope)
+      INSTALL_SCOPE="${2:-}"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1" >&2
       exit 2
       ;;
   esac
 done
+
+if [[ "$INSTALL_MODE" != "editable" && "$INSTALL_MODE" != "standard" ]]; then
+  echo "Unknown install mode: $INSTALL_MODE" >&2
+  exit 2
+fi
+
+if [[ "$INSTALL_SCOPE" != "system" && "$INSTALL_SCOPE" != "user" ]]; then
+  echo "Unknown install scope: $INSTALL_SCOPE" >&2
+  exit 2
+fi
 
 has_project_markers() {
   local dir="$1"
@@ -142,23 +191,82 @@ is_legacy_control_plane_root() {
 install_legacy_control_plane_deps() {
   local extras="$1"
   local -a deps=("${LEGACY_CONTROL_PLANE_BASE_DEPS[@]}")
+  local -a requested_extras=()
 
-  case "$extras" in
-    "")
-      ;;
-    dev)
-      deps+=("${LEGACY_CONTROL_PLANE_DEV_DEPS[@]}")
-      ;;
-    test)
-      deps+=("${LEGACY_CONTROL_PLANE_DEV_DEPS[@]}")
-      deps+=("${LEGACY_CONTROL_PLANE_TEST_EXTRA_DEPS[@]}")
-      ;;
-    *)
-      echo "::warning::Unknown legacy control-plane extras '$extras'; installing base deps only." >&2
-      ;;
-  esac
+  append_unique_deps() {
+    local dep
+    local existing
+    local already_present
+    for dep in "$@"; do
+      already_present=0
+      for existing in "${deps[@]}"; do
+        if [[ "$existing" == "$dep" ]]; then
+          already_present=1
+          break
+        fi
+      done
+      if [[ "$already_present" -eq 0 ]]; then
+        deps+=("$dep")
+      fi
+    done
+  }
 
-  python -m pip install "${deps[@]}"
+  trim_whitespace() {
+    local value="$1"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    printf '%s\n' "$value"
+  }
+
+  if [[ -n "$extras" ]]; then
+    IFS=',' read -r -a requested_extras <<< "$extras"
+  fi
+
+  local extra
+  for extra in "${requested_extras[@]}"; do
+    extra="$(trim_whitespace "$extra")"
+    case "$extra" in
+      "")
+        ;;
+      dev)
+        append_unique_deps "${LEGACY_CONTROL_PLANE_DEV_DEPS[@]}"
+        ;;
+      test)
+        append_unique_deps "${LEGACY_CONTROL_PLANE_DEV_DEPS[@]}"
+        append_unique_deps "${LEGACY_CONTROL_PLANE_TEST_EXTRA_DEPS[@]}"
+        ;;
+      monitoring)
+        append_unique_deps "${LEGACY_CONTROL_PLANE_MONITORING_DEPS[@]}"
+        ;;
+      observability)
+        append_unique_deps "${LEGACY_CONTROL_PLANE_OBSERVABILITY_DEPS[@]}"
+        ;;
+      redis)
+        append_unique_deps "${LEGACY_CONTROL_PLANE_REDIS_DEPS[@]}"
+        ;;
+      persistence)
+        append_unique_deps "${LEGACY_CONTROL_PLANE_PERSISTENCE_DEPS[@]}"
+        ;;
+      postgres)
+        append_unique_deps "${LEGACY_CONTROL_PLANE_POSTGRES_DEPS[@]}"
+        ;;
+      rlm)
+        ;;
+      *)
+        echo "::warning::Unknown legacy control-plane extra '$extra'; skipping." >&2
+        ;;
+    esac
+  done
+
+  run_pip_install "${deps[@]}"
+}
+
+run_pip_install() {
+  if [[ "$INSTALL_SCOPE" == "user" ]]; then
+    python -m pip install --user "$@"
+  else
+    python -m pip install "$@"
+  fi
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -194,12 +302,24 @@ echo "[ci-install] project_root=$PROJECT_ROOT extras=${EXTRAS:-none}"
 
 if is_legacy_control_plane_root "$PROJECT_ROOT"; then
   echo "[ci-install] detected standalone root metadata; restoring legacy control-plane deps"
-  python -m pip install -e .
+  if [[ "$INSTALL_MODE" == "editable" ]]; then
+    run_pip_install -e .
+  else
+    run_pip_install .
+  fi
   install_legacy_control_plane_deps "$EXTRAS"
 else
   if [[ -n "$EXTRAS" ]]; then
-    python -m pip install -e ".[${EXTRAS}]"
+    if [[ "$INSTALL_MODE" == "editable" ]]; then
+      run_pip_install -e ".[${EXTRAS}]"
+    else
+      run_pip_install ".[${EXTRAS}]"
+    fi
   else
-    python -m pip install -e .
+    if [[ "$INSTALL_MODE" == "editable" ]]; then
+      run_pip_install -e .
+    else
+      run_pip_install .
+    fi
   fi
 fi

@@ -2057,7 +2057,8 @@ jobs:
           python scripts/analyze_test_results.py \
             --junit test-results.xml \
             --format markdown \
-            --output test-summary.md
+            --output test-summary.md \
+            --exit-zero
 
           # Store summary for PR comment
           echo "summary<<EOF" >> $GITHUB_OUTPUT

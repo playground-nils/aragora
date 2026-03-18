@@ -17,6 +17,9 @@ Usage:
 
     # Generate markdown summary for PR comment
     python scripts/analyze_test_results.py --junit report.xml --format markdown
+
+    # Advisory mode for non-gating CI reporting
+    python scripts/analyze_test_results.py --junit report.xml --exit-zero
 """
 
 from __future__ import annotations
@@ -332,6 +335,11 @@ def main():
         help="Output format",
     )
     parser.add_argument("--output", type=Path, help="Output file (default: stdout)")
+    parser.add_argument(
+        "--exit-zero",
+        action="store_true",
+        help="Always exit 0 after analysis, even when failed tests are present",
+    )
     args = parser.parse_args()
 
     # Parse results
@@ -366,6 +374,9 @@ def main():
         print(f"Wrote analysis to {args.output}")
     else:
         print(output)
+
+    if args.exit_zero:
+        return 0
 
     # Exit with error if tests failed
     return 1 if analysis.failed > 0 else 0

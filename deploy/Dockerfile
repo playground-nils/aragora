@@ -36,15 +36,16 @@ RUN pip install --no-cache-dir --upgrade pip wheel setuptools
 # Copy package metadata
 COPY pyproject.toml README.md ./
 COPY aragora/ ./aragora/
+COPY scripts/ci_install_project.sh ./scripts/ci_install_project.sh
 
 # Install based on variant
 ARG VARIANT
 RUN if [ "$VARIANT" = "minimal" ]; then \
-        pip install --no-cache-dir .; \
+        bash scripts/ci_install_project.sh --install-mode standard; \
     elif [ "$VARIANT" = "postgres" ]; then \
-        pip install --no-cache-dir ".[postgres,redis]"; \
+        bash scripts/ci_install_project.sh --install-mode standard --extras postgres,redis; \
     else \
-        pip install --no-cache-dir ".[persistence,redis,monitoring,observability,postgres,rlm]"; \
+        bash scripts/ci_install_project.sh --install-mode standard --extras persistence,redis,monitoring,observability,postgres,rlm; \
     fi
 
 # =============================================================================
