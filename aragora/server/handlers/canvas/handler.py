@@ -629,6 +629,30 @@ class CanvasHandler(SecureHandler):
             if not action:
                 return error_response("action is required", 400)
 
+            # Receipt enforcement gate (Phase 2 — Decision Integrity Kernel)
+            receipt_id = body.get("receipt_id")
+            try:
+                from aragora.pipeline.receipt_enforcement import (
+                    ReceiptEnforcementError,
+                    is_receipt_enforcement_enabled,
+                    require_receipt_gate,
+                    transition_receipt_executed,
+                )
+
+                if is_receipt_enforcement_enabled("canvas"):
+                    require_receipt_gate(
+                        action_domain="canvas",
+                        action_type="execute_action",
+                        actor_id=user_id or "anonymous",
+                        resource_id=canvas_id,
+                        receipt_id=receipt_id,
+                    )
+            except ReceiptEnforcementError as re_err:
+                logger.warning("Receipt enforcement denied canvas action: %s", re_err)
+                return error_response("Receipt required for this action", 428)
+            except ImportError:
+                logger.debug("Receipt enforcement module not available, skipping gate")
+
             node_id = body.get("node_id")
             params = body.get("params", {})
 
@@ -641,6 +665,19 @@ class CanvasHandler(SecureHandler):
                     **params,
                 )
             )
+
+            # Transition receipt to EXECUTED after successful action
+            if receipt_id:
+                try:
+                    from aragora.pipeline.receipt_enforcement import (
+                        is_receipt_enforcement_enabled,
+                        transition_receipt_executed,
+                    )
+
+                    if is_receipt_enforcement_enabled("canvas"):
+                        transition_receipt_executed(receipt_id)
+                except ImportError:
+                    pass
 
             return json_response(
                 {

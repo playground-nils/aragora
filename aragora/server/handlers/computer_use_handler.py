@@ -398,8 +398,14 @@ class ComputerUseHandler(BaseHandler):
                         "tenant_id": tenant_id,
                         "roles": list(getattr(auth_ctx, "roles", [])),
                     }
+                receipt_id = body.get("receipt_id")
                 result: Any = run_async(
-                    orchestrator.run_task(goal=goal, max_steps=max_steps, metadata=metadata)
+                    orchestrator.run_task(
+                        goal=goal,
+                        max_steps=max_steps,
+                        metadata=metadata,
+                        receipt_id=receipt_id,
+                    )
                 )
                 is_success = result.status == TaskStatus.COMPLETED
                 task["status"] = "completed" if is_success else "failed"
