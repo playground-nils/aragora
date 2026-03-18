@@ -190,6 +190,17 @@ def store_post_tracker_config(
         document_store: Optional document store for context injection.
         evidence_store: Optional evidence store for context injection.
     """
+    # RLM / Staking feature flags
+    arena.enable_rlm = getattr(cfg, "enable_rlm", False)
+    arena.rlm_mode = getattr(cfg, "rlm_mode", "auto")
+    arena.enable_staking = getattr(cfg, "enable_staking", False)
+    # Propagate staking flag to TeamSelector if available
+    if (
+        arena.enable_staking
+        and hasattr(arena, "agent_selector")
+        and arena.agent_selector is not None
+    ):
+        arena.agent_selector.enable_staking = True
     arena.enable_auto_revalidation = cfg.enable_auto_revalidation
     arena.revalidation_staleness_threshold = cfg.revalidation_staleness_threshold
     arena.revalidation_check_interval_seconds = cfg.revalidation_check_interval_seconds

@@ -299,7 +299,8 @@ def init_phases(arena: Arena) -> None:
         cross_debate_memory=getattr(arena, "cross_debate_memory", None),
         enable_cross_debate_memory=getattr(arena, "enable_cross_debate_memory", True),
         enable_outcome_context=getattr(arena, "enable_outcome_context", True),
-        enable_rlm_compression=getattr(arena, "use_rlm_limiter", True),
+        enable_rlm_compression=getattr(arena, "enable_rlm", True)
+        and getattr(arena, "use_rlm_limiter", True),
         # Skills system for extensible evidence collection
         skill_registry=getattr(arena, "skill_registry", None),
         enable_skills=getattr(arena, "enable_skills", False),
