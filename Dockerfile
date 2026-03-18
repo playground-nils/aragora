@@ -19,21 +19,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only project metadata for dependency resolution
+# Copy build inputs for dependency installation
 COPY pyproject.toml README.md ./
-COPY aragora/__init__.py ./aragora/__init__.py
+COPY aragora/ ./aragora/
+COPY scripts/ci_install_project.sh ./scripts/ci_install_project.sh
 
-# Install the package and its optional dependency groups.
-# This pulls all transitive deps (asyncpg, redis, prometheus-client, etc.)
-# into /usr/local/lib/python3.11/site-packages.
+# Install the package plus the legacy control-plane runtime dependency set.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[postgres,redis,monitoring]"
+    bash scripts/ci_install_project.sh \
+      --install-mode standard \
+      --extras persistence,redis,monitoring,observability,postgres,rlm
 
 # Remove the stub aragora package from site-packages so it does not
 # shadow the full source tree that we COPY in the production stage.
 RUN rm -rf /usr/local/lib/python3.11/site-packages/aragora \
            /usr/local/lib/python3.11/site-packages/aragora-*.dist-info \
-           /usr/local/lib/python3.11/site-packages/aragora-*.egg-info
+           /usr/local/lib/python3.11/site-packages/aragora-*.egg-info \
+           /usr/local/lib/python3.11/site-packages/aragora_debate-*.dist-info
 
 # ---------------------------------------------------------------------------
 # Production stage: slim runtime image
