@@ -351,6 +351,8 @@ HANDLER_MODULES: dict[str, str] = {
     "SpectateStreamHandler": "aragora.server.handlers.spectate_ws",
     # Readiness check (SME onboarding)
     "ReadinessCheckHandler": "aragora.server.handlers.readiness_check",
+    # Ralph orchestration dashboard
+    "RalphDashboardHandler": "aragora.server.handlers.ralph_dashboard",
 }
 
 # List of all handler class names (in priority order for dispatch)
@@ -660,4 +662,6 @@ ALL_HANDLER_NAMES: list[str] = [
     "UnifiedMetricsHandler",
     # workflows/ sub-handlers
     "WorkflowBuilderHandler",
+    # ralph
+    "RalphDashboardHandler",
 ]
