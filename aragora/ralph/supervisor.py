@@ -714,6 +714,10 @@ class RalphSupervisor:
                     status=SupervisorStatus.WAITING_FOR_MERGE.value,
                     detail=f"PR discovered: {discovered}. Waiting for merge.",
                 )
+            # Ensure the branch is on the remote before creating a PR.
+            # The worker's auto-push may have succeeded, but if not (e.g.
+            # network issues at worker exit), push now from the repo root.
+            self._ensure_branch_pushed(branch)
             try:
                 created = self._create_pr_for_branch(
                     branch=branch,
@@ -1206,6 +1210,33 @@ class RalphSupervisor:
             status=SupervisorStatus.ESCALATED.value,
             detail=reason,
         )
+
+    def _ensure_branch_pushed(self, branch: str) -> None:
+        """Best-effort push of the branch to origin.
+
+        If the branch is already on the remote, this is a no-op.  If not,
+        it pushes from the repo root (which sees all worktree branches).
+        """
+        try:
+            result = subprocess.run(
+                ["git", "push", "origin", branch],
+                cwd=str(self.repo_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode == 0:
+                logger.info("Branch %s pushed to origin", branch)
+            else:
+                logger.info(
+                    "Push of %s returned rc=%s: %s",
+                    branch,
+                    result.returncode,
+                    (result.stderr or "").strip()[:200],
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            logger.warning("Failed to push branch %s: %s", branch, exc)
 
     def _find_pr_for_branch(self, branch: str) -> str | None:
         return self.github.find_pr_for_branch(branch)
