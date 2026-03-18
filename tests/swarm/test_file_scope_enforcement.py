@@ -19,9 +19,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from aragora.nomic.dev_coordination import DevCoordinationStore
+from aragora.nomic.pipeline_bridge import BoundedWorkOrder
 from aragora.nomic.task_decomposer import SubTask, TaskDecomposition
 from aragora.swarm.spec import SwarmSpec
-from aragora.swarm.supervisor import SwarmSupervisor, _path_in_scope
+from aragora.swarm.supervisor import SwarmSupervisor, _ensure_work_order_scope, _path_in_scope
 from aragora.swarm.worker_launcher import LaunchConfig, WorkerLauncher, WorkerProcess
 from aragora.worktree.lifecycle import ManagedWorktreeSession
 
@@ -555,3 +556,97 @@ class TestDeriveStatusScopeViolation:
         work_orders = [{"status": "scope_violation"}, {"status": "dispatched"}]
         status = SwarmSupervisor._derive_status(work_orders)
         assert status == "active"
+
+
+# ---------------------------------------------------------------------------
+# Tests for _ensure_work_order_scope
+# ---------------------------------------------------------------------------
+
+
+def _make_work_order(
+    *,
+    work_order_id: str = "wo-1",
+    title: str = "Test task",
+    description: str = "Do something",
+    file_scope: list[str] | None = None,
+) -> BoundedWorkOrder:
+    """Helper to build a BoundedWorkOrder for scope tests."""
+    return BoundedWorkOrder(
+        work_order_id=work_order_id,
+        pipeline_task_id="task-1",
+        title=title,
+        description=description,
+        file_scope=list(file_scope) if file_scope else [],
+    )
+
+
+class TestEnsureWorkOrderScope:
+    """Tests for the _ensure_work_order_scope helper that guarantees
+    work orders carry file_scope through a 3-tier fallback."""
+
+    def test_work_order_with_existing_scope_unchanged_without_hints(self) -> None:
+        """Work order already has scope, spec has no hints -> scope unchanged."""
+        wo = _make_work_order(file_scope=["aragora/debate/**"])
+        spec = SwarmSpec(raw_goal="fix bug", file_scope_hints=[])
+        result = _ensure_work_order_scope(wo, spec)
+        assert result.file_scope == ["aragora/debate/**"]
+
+    def test_work_order_with_existing_scope_merged_with_hints(self) -> None:
+        """Work order has scope AND spec has hints -> both merged."""
+        wo = _make_work_order(file_scope=["aragora/debate/orchestrator.py"])
+        spec = SwarmSpec(raw_goal="fix bug", file_scope_hints=["aragora/debate/**"])
+        result = _ensure_work_order_scope(wo, spec)
+        assert "aragora/debate/orchestrator.py" in result.file_scope
+        assert "aragora/debate/**" in result.file_scope
+
+    def test_work_order_without_scope_gets_spec_hints(self) -> None:
+        """Work order with empty file_scope inherits spec hints."""
+        wo = _make_work_order(file_scope=[])
+        spec = SwarmSpec(raw_goal="fix bug", file_scope_hints=["aragora/debate/**"])
+        result = _ensure_work_order_scope(wo, spec)
+        assert result.file_scope == ["aragora/debate/**"]
+
+    def test_work_order_without_scope_or_hints_gets_inferred(self) -> None:
+        """Work order with no scope and no hints infers scope from title/description."""
+        wo = _make_work_order(
+            title="Fix aragora/debate/consensus.py detection",
+            description="Update aragora/debate/convergence.py similarity checks",
+            file_scope=[],
+        )
+        spec = SwarmSpec(raw_goal="fix consensus", file_scope_hints=[])
+        result = _ensure_work_order_scope(wo, spec)
+        # infer_file_scope_hints should find path-like tokens from title/description
+        assert len(result.file_scope) > 0
+        assert "aragora/debate/consensus.py" in result.file_scope
+
+    def test_both_empty_no_path_tokens_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """When scope stays empty after all attempts, a warning is logged."""
+        import logging
+
+        wo = _make_work_order(
+            title="Fix the bug",
+            description="Something is broken",
+            file_scope=[],
+        )
+        spec = SwarmSpec(raw_goal="fix stuff", file_scope_hints=[])
+        with caplog.at_level(logging.WARNING, logger="aragora.swarm.supervisor"):
+            result = _ensure_work_order_scope(wo, spec)
+        assert result.file_scope == []
+        assert any("empty file_scope after all inference" in msg for msg in caplog.messages)
+
+    def test_returns_the_work_order(self) -> None:
+        """Function returns the same work order object for convenience."""
+        wo = _make_work_order(file_scope=["aragora/live/**"])
+        spec = SwarmSpec(raw_goal="fix", file_scope_hints=[])
+        result = _ensure_work_order_scope(wo, spec)
+        assert result is wo
+
+    def test_deduplication_on_merge(self) -> None:
+        """Merging should not produce duplicate entries."""
+        wo = _make_work_order(file_scope=["aragora/live", "aragora/server"])
+        spec = SwarmSpec(
+            raw_goal="fix",
+            file_scope_hints=["aragora/live", "tests/live"],
+        )
+        result = _ensure_work_order_scope(wo, spec)
+        assert result.file_scope == ["aragora/live", "aragora/server", "tests/live"]
