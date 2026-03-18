@@ -1,6 +1,6 @@
 # Next Steps (Canonical)
 
-Last updated: 2026-03-07
+Last updated: 2026-03-18
 
 This is the single source of truth for short-horizon execution priorities.
 `docs/CANONICAL_GOALS.md` defines what Aragora is and why.
@@ -17,6 +17,9 @@ This file defines execution order.
 - Truthfulness and backlog canonicalization are complete on `main` through [#809](https://github.com/synaptent/aragora/issues/809), and the first Decision Integrity Kernel bridge tranche [#810](https://github.com/synaptent/aragora/issues/810) is also complete.
 - The current M1 kernel focus is [#811](https://github.com/synaptent/aragora/issues/811) followed by [#812](https://github.com/synaptent/aragora/issues/812).
 - Surface area should be productized sequentially, not hidden or allowed to drift.
+- **Ralph autonomous loop hardened (March 18):** LLM-powered scope validation and blocker classification shipped (PR #1020). File-scope propagation fix (#884), vague-goal LLM expansion (#888), and observability dashboard (#1007) all landed. Ralph V14 benchmark validated autonomous spec→PR→merge.
+- **Swarm control plane work next:** #840 (file-scope enforcement), #841 (canonical PR protocol), #843 (integrator view) are the natural continuation of the Ralph hardening track.
+- **Epistemic hygiene goals added (March 18):** Anti-sycophancy detection, calibration tracking, adversarial protocol red-teaming, and epistemic hygiene debate mode added to CANONICAL_GOALS.md (P4 #39-43) and Evolution Roadmap (Phase 2D). Derived from multi-model analysis sessions.
 
 ## Execution Order
 

@@ -28,6 +28,10 @@ Aragora has shipped most of the closed-loop backbone (CLB) infrastructure and co
 - Closed-loop backbone sprint (14 CLB issues: canonical contracts, spec gates, deliberation handoff, execution bundles, verification bundles, receipt normalization, outcome feedback, trust-tier propagation, external verifier, golden-path test, dogfood profile)
 - PR watch daemon fleet (3 Mac machines, 30 autonomous reviews/hour)
 - Dev swarm coordination layer
+- LLM-powered scope validation and blocker classification (6 async methods with fail-closed semantics)
+- Ralph observability dashboard (7 Prometheus metrics, 10 REST API endpoints, YAML state data service)
+- File-scope propagation fix for swarm work orders (#884)
+- LLM-first vague-goal expansion replacing keyword templates (#888)
 
 **Remaining tracked launch work:**
 - External penetration test (vendor-dependent; scheduling still pending confirmation)
