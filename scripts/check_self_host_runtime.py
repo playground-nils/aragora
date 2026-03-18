@@ -484,8 +484,8 @@ def main() -> int:
         print("[step] validating compose config")
         _compose(base_cmd, ["config", "-q"])
 
-        print(f"[step] starting services: {', '.join(services)}")
-        _compose(base_cmd, ["up", "-d", *services])
+        print(f"[step] building and starting services: {', '.join(services)}")
+        _compose(base_cmd, ["up", "--build", "-d", *services])
 
         print("[step] waiting for container health")
         for service in services:
