@@ -159,6 +159,7 @@ from .debate_integration import (
     create_training_hook,
 )
 from .hierarchy_cache import RLMHierarchyCache
+from .streaming import StreamConfig, StreamMode, StreamingRLMQuery
 from .tier3_integration import (
     PipelineRLMContext,
     GauntletRLMFinding,
@@ -272,6 +273,10 @@ __all__ = [
     "collect_trajectory_for_learning",
     "store_trajectory_learning",
     "load_trajectory_insights",
+    # Streaming (progressive context delivery)
+    "StreamingRLMQuery",
+    "StreamConfig",
+    "StreamMode",
     # Exceptions (robust error handling)
     "RLMError",
     "RLMTimeoutError",
