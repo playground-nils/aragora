@@ -441,6 +441,8 @@ class ArenaConfig:
         # Agent provider diversity: prefer heterogeneous model consensus
         min_provider_diversity: int = 1,  # Minimum number of distinct providers
         prefer_diverse_providers: bool = False,  # Prefer agents from different providers
+        # Provider budget: total USD budget for the debate (passed to ProviderRouter)
+        provider_budget: float | None = None,
         # ---- Sub-config objects (optional, for grouped construction) ----
         hook_config: HookConfig | None = None,
         tracking_config: TrackingConfig | None = None,
@@ -557,6 +559,9 @@ class ArenaConfig:
         # Agent provider diversity
         self.min_provider_diversity = min_provider_diversity
         self.prefer_diverse_providers = prefer_diverse_providers
+
+        # Provider budget for cost-constrained debates
+        self.provider_budget = provider_budget
 
         # Post-debate coordinator pipeline (default-on, opt-out via disable_post_debate_pipeline)
         self.post_debate_config = kwargs.pop("post_debate_config", None)

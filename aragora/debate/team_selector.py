@@ -268,6 +268,8 @@ class TeamSelector:
         self._pattern_affinities_cache: dict[str, dict[str, float]] = {}
         # Agents that don't match domain patterns (populated in soft filter mode)
         self._domain_non_preferred: set[str] = set()
+        # Provider routing hints (set transiently during select() calls)
+        self._current_provider_hints: dict[str, float] | None = None
         # CV cache: agent_id -> (timestamp, AgentCV)
         self._cv_cache: dict[str, tuple[float, AgentCV]] = {}
         # Hierarchy role assignments cache: debate_id -> {agent_name -> RoleAssignment}
@@ -283,6 +285,7 @@ class TeamSelector:
         context: DebateContext | None = None,
         required_hierarchy_roles: set[str] | None = None,
         debate_id: str | None = None,
+        provider_hints: dict[str, float] | None = None,
     ) -> list[Agent]:
         """Select and rank agents for debate participation.
 
@@ -294,10 +297,17 @@ class TeamSelector:
             required_hierarchy_roles: Optional set of Gastown hierarchy roles to filter by
                                       (e.g., {"orchestrator", "worker"} for coordinators and workers)
             debate_id: Optional debate ID for hierarchy role assignment caching
+            provider_hints: Optional provider-to-score mapping from ProviderRouter.
+                Each key is a provider/model name, value is a quality score (0-1).
+                When provided, applies a multiplicative bonus to each agent's
+                composite score based on their provider's hint value. Agents whose
+                provider is absent from the map receive no bonus or penalty.
 
         Returns:
             Agents sorted by performance score (highest first)
         """
+        # Stash provider_hints for use in _compute_score
+        self._current_provider_hints = provider_hints
         # 0. Assign hierarchy roles if AgentHierarchy is available
         if self.agent_hierarchy and debate_id:
             self._assign_hierarchy_roles(agents, debate_id, domain)
@@ -1956,6 +1966,20 @@ class TeamSelector:
         if breakdown is not None:
             breakdown["staking_reputation"] = round(score - _prev, 4)
 
+        # Provider routing hints (from ProviderRouter cost/quality optimization)
+        _prev = score
+        hints = getattr(self, "_current_provider_hints", None)
+        if hints:
+            # Match agent name against provider hint keys. Check both the
+            # full agent name and common provider name patterns.
+            hint_value = self._resolve_provider_hint(agent, hints)
+            if hint_value is not None:
+                # Apply multiplicative bonus: a hint of 1.0 doubles the current
+                # score contribution, 0.5 adds 50%, 0.0 adds nothing.
+                score *= 1.0 + hint_value
+        if breakdown is not None:
+            breakdown["provider_hint"] = round(score - _prev, 4)
+
         return score
 
     def _compute_staking_reputation_score(self, agent: Any) -> float:
@@ -1987,6 +2011,34 @@ class TeamSelector:
             return health * 0.7 + slash_penalty * 0.3
         except (ImportError, RuntimeError, ValueError, OSError, AttributeError):
             return 0.5
+
+    @staticmethod
+    def _resolve_provider_hint(agent: Any, hints: dict[str, float]) -> float | None:
+        """Resolve a provider hint value for an agent.
+
+        Matches the agent against the provider hints dictionary by checking:
+        1. Exact agent name match (e.g., "claude-sonnet-4")
+        2. Agent name as substring of a hint key (e.g., agent "claude" matches "claude-sonnet-4")
+        3. Hint key as substring of agent name (e.g., hint "claude" matches "claude-sonnet-4-agent")
+
+        Returns the hint value (0-1) if a match is found, None otherwise.
+        """
+        name = getattr(agent, "name", str(agent)).lower()
+
+        # 1. Exact match
+        if name in hints:
+            return hints[name]
+
+        # 2. Check case-insensitive keys
+        for key, value in hints.items():
+            key_lower = key.lower()
+            if key_lower == name:
+                return value
+            # 3. Substring match in either direction
+            if key_lower in name or name in key_lower:
+                return value
+
+        return None
 
     def _compute_reliability_budget_shares(
         self,
