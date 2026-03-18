@@ -646,6 +646,37 @@ class DebateRoundsPhase:
         # Track novelty of revised proposals
         self._convergence_tracker.track_novelty(ctx, round_num)
 
+        # Record per-round trajectory for RLM training (if RLM compression is enabled)
+        if self._compress_context:
+            try:
+                from aragora.rlm.debate_integration import get_debate_trajectory_collector
+
+                collector = get_debate_trajectory_collector()
+                proposals_data = [
+                    {
+                        "agent": getattr(p, "agent_name", ""),
+                        "content": getattr(p, "content", str(p))[:500],
+                    }
+                    for p in (ctx.proposals or [])
+                ]
+                critiques_data = [
+                    {
+                        "agent": getattr(c, "critic_name", ""),
+                        "content": getattr(c, "content", str(c))[:500],
+                    }
+                    for c in round_critiques
+                ]
+                convergence_sim = probed_convergence.similarity if probed_convergence else 0.0
+                collector.record_round(
+                    debate_id=ctx.debate_id,
+                    round_num=round_num,
+                    proposals=proposals_data,
+                    critiques=critiques_data,
+                    convergence_similarity=convergence_sim,
+                )
+            except (ImportError, AttributeError, TypeError) as e:  # noqa: BLE001
+                logger.debug("Per-round trajectory recording failed: %s", e)
+
         result.rounds_used = round_num
 
         # Create checkpoint after each round
