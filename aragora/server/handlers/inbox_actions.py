@@ -32,8 +32,36 @@ class InboxActionsMixin:
         action: str,
         email_ids: list[str],
         params: dict[str, Any],
+        *,
+        receipt_id: str | None = None,
+        actor_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Execute action on emails using Gmail connector."""
+        """Execute action on emails using Gmail connector.
+
+        When receipt enforcement is enabled for the "inbox" domain, a valid
+        approved receipt must be supplied via ``receipt_id``.
+        """
+        # Receipt gate check (no-op when enforcement is disabled)
+        try:
+            from aragora.pipeline.receipt_enforcement import (
+                ReceiptEnforcementError,
+                is_receipt_enforcement_enabled,
+                require_receipt_gate,
+            )
+
+            if is_receipt_enforcement_enabled("inbox"):
+                require_receipt_gate(
+                    action_domain="inbox",
+                    action_type=action,
+                    actor_id=actor_id or "unknown",
+                    resource_id=",".join(email_ids[:5]),
+                    receipt_id=receipt_id,
+                )
+        except ReceiptEnforcementError:
+            raise
+        except (ImportError, ValueError, RuntimeError) as exc:
+            logger.debug("Receipt enforcement check skipped: %s", exc)
+
         results = []
         for email_id in email_ids:
             try:

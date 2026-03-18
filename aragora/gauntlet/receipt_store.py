@@ -38,6 +38,11 @@ class ReceiptState(str, enum.Enum):
     EXECUTED = "EXECUTED"
     EXPIRED = "EXPIRED"
 
+    @classmethod
+    def normalize(cls, value: str) -> ReceiptState:
+        """Accept both 'created' and 'CREATED' (case-insensitive)."""
+        return cls(value.upper())
+
 
 _VALID_TRANSITIONS: dict[ReceiptState, set[ReceiptState]] = {
     ReceiptState.CREATED: {ReceiptState.APPROVED, ReceiptState.EXPIRED},
