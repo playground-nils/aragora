@@ -218,7 +218,7 @@ class MemoryUnifiedHandler(BaseHandler):
     def _query_claude_mem(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Query claude-mem MCP adapter."""
         try:
-            from aragora.knowledge.mound.adapters.claude_mem import ClaudeMemAdapter
+            from aragora.knowledge.mound.adapters.claude_mem_adapter import ClaudeMemAdapter
 
             adapter = ClaudeMemAdapter()
             entries = adapter.search(query, limit=limit)
@@ -343,7 +343,11 @@ class MemoryUnifiedHandler(BaseHandler):
             ("continuum", "aragora.memory.continuum", "ContinuumMemory"),
             ("km", "aragora.knowledge.mound", "KnowledgeMound"),
             ("supermemory", "aragora.memory.backends.supermemory", "SupermemoryBackend"),
-            ("claude_mem", "aragora.knowledge.mound.adapters.claude_mem", "ClaudeMemAdapter"),
+            (
+                "claude_mem",
+                "aragora.knowledge.mound.adapters.claude_mem_adapter",
+                "ClaudeMemAdapter",
+            ),
         ]
 
         for name, module_path, class_name in system_checks:
