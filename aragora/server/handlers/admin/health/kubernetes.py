@@ -120,6 +120,13 @@ def readiness_probe_fast(handler: Any) -> HandlerResult:
 
         route_index = get_route_index()
         has_routes = bool(route_index._exact_routes)
+        if not has_routes and hasattr(handler, "can_handle"):
+            # If this request already resolved to a readiness-capable handler,
+            # avoid failing on a stale or unbuilt shared route index.
+            try:
+                has_routes = handler.can_handle("/readyz") is True
+            except (AttributeError, TypeError, ValueError):
+                has_routes = False
         checks["handlers_initialized"] = has_routes
         if not has_routes:
             ready = False

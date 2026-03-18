@@ -548,6 +548,18 @@ class TestReadinessProbeFastRoutes:
             result = readiness_probe_fast(handler)
         assert _body(result)["checks"]["handlers_initialized"] is True
 
+    def test_handler_can_handle_readyz_is_fallback_when_route_index_empty(self):
+        handler = _make_mock_handler()
+        handler.can_handle = MagicMock(return_value=True)
+        with (
+            _remove_degraded(),
+            _remove_unified_server(),
+            _patch_handler_registry({}),
+        ):
+            result = readiness_probe_fast(handler)
+        assert _status(result) == 200
+        assert _body(result)["checks"]["handlers_initialized"] is True
+
 
 class TestReadinessProbeFastStorage:
     """Test readiness_probe_fast() storage initialization check."""
