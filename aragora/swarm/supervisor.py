@@ -170,6 +170,8 @@ class SupervisorRun:
 class SwarmSupervisor:
     """Coordinate a bounded Codex/Claude worker pool using existing primitives."""
 
+    _LLM_CALL_TIMEOUT: float = 60.0  # seconds for LLM adjudication/evaluation calls
+
     def __init__(
         self,
         repo_root: Path | None = None,
@@ -653,6 +655,8 @@ class SwarmSupervisor:
 
                 # Fail closed: check file-scope constraints on every progress snapshot
                 scope_violations = self._check_file_scope_violations(item, progress_paths)
+                if scope_violations:
+                    scope_violations = self._llm_adjudicate_scope(item, scope_violations)
                 if scope_violations:
                     self._mark_scope_violation(item, scope_violations)
                     item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
@@ -1168,6 +1172,9 @@ class SwarmSupervisor:
         # Fail closed: check file-scope before accepting any result as successful
         scope_violations = self._check_file_scope_violations(item, clean_paths)
         if scope_violations:
+            # LLM adjudication: ask frontier model if violations are justified
+            scope_violations = self._llm_adjudicate_scope(item, scope_violations)
+        if scope_violations:
             self._mark_scope_violation(item, scope_violations)
             if not _pre_outcome:
                 item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
@@ -1222,14 +1229,21 @@ class SwarmSupervisor:
             if merge_gate.get("verification_missing_reason"):
                 item["verification_missing_reason"] = merge_gate["verification_missing_reason"]
             if not bool(merge_gate.get("checks_passed")):
-                self._mark_needs_human(item, self._merge_gate_failure_reason(merge_gate))
-                item["review_status"] = "changes_requested"
-                item["receipt_id"] = None
-                if not _pre_outcome:
-                    item["worker_outcome"] = WorkerOutcome.MERGE_GATE_FAILED.value
-                self._release_terminal_lease(item)
-                item["exit_code"] = result.exit_code
-                return
+                # LLM second opinion: is the merge gate failure genuine?
+                if self._llm_override_merge_gate(item, merge_gate):
+                    # LLM says deliverable is ready despite gate failure
+                    merge_gate["checks_passed"] = True
+                    merge_gate["llm_override"] = True
+                    item["merge_gate"] = merge_gate
+                else:
+                    self._mark_needs_human(item, self._merge_gate_failure_reason(merge_gate))
+                    item["review_status"] = "changes_requested"
+                    item["receipt_id"] = None
+                    if not _pre_outcome:
+                        item["worker_outcome"] = WorkerOutcome.MERGE_GATE_FAILED.value
+                    self._release_terminal_lease(item)
+                    item["exit_code"] = result.exit_code
+                    return
 
             receipt_id = str(item.get("receipt_id", "")).strip()
             if lease_id and not receipt_id:
@@ -2093,6 +2107,99 @@ class SwarmSupervisor:
                 )
             except Exception:
                 pass  # Best-effort — local item is already marked
+
+    def _llm_adjudicate_scope(
+        self,
+        item: dict[str, Any],
+        violations: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Use LLM to filter false-positive scope violations.
+
+        Returns the reduced list of violations (may be empty if all justified).
+        On any failure, returns the original violations unchanged (fail-closed).
+        """
+        try:
+            from aragora.ralph.llm_classifier import LLMBlockerClassifier
+
+            classifier = LLMBlockerClassifier()
+            task_desc = str(item.get("task_description", item.get("title", "")))
+            declared_scope = [str(s).strip() for s in item.get("file_scope", []) if str(s).strip()]
+            changed_paths = [str(p) for p in item.get("changed_paths", [])]
+
+            import asyncio
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                verdict = pool.submit(
+                    asyncio.run,
+                    classifier.adjudicate_scope(
+                        task_description=task_desc,
+                        declared_scope=declared_scope,
+                        changed_paths=changed_paths,
+                        violations=violations,
+                    ),
+                ).result(timeout=self._LLM_CALL_TIMEOUT)
+
+            if verdict.justified_paths:
+                logger.info(
+                    "LLM scope adjudicator justified %d paths: %s (%s)",
+                    len(verdict.justified_paths),
+                    verdict.justified_paths,
+                    verdict.reasoning,
+                )
+            justified_set = set(verdict.justified_paths)
+            remaining = [v for v in violations if str(v.get("path", "")) not in justified_set]
+            return remaining
+        except Exception:
+            logger.debug("LLM scope adjudication failed, keeping all violations", exc_info=True)
+            return violations
+
+    def _llm_override_merge_gate(
+        self,
+        item: dict[str, Any],
+        merge_gate: dict[str, Any],
+    ) -> bool:
+        """Ask LLM if merge gate failure is cosmetic or genuine.
+
+        Returns True if the LLM says the deliverable is ready despite the
+        gate failure.  Returns False on any error (fail-closed).
+        """
+        try:
+            from aragora.ralph.llm_classifier import LLMBlockerClassifier
+
+            classifier = LLMBlockerClassifier()
+            acceptance_criteria = [
+                str(c).strip() for c in item.get("acceptance_criteria", []) if str(c).strip()
+            ]
+            verification_results = merge_gate.get("verification_results", [])
+            changed_paths = [str(p) for p in item.get("changed_paths", [])]
+            diff_summary = str(item.get("diff_summary", ""))[:2000]
+
+            import asyncio
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                verdict = pool.submit(
+                    asyncio.run,
+                    classifier.evaluate_merge_readiness(
+                        acceptance_criteria=acceptance_criteria,
+                        verification_results=verification_results,
+                        changed_paths=changed_paths,
+                        diff_summary=diff_summary,
+                    ),
+                ).result(timeout=self._LLM_CALL_TIMEOUT)
+
+            logger.info(
+                "LLM merge evaluation: ready=%s blocking=%s advisory=%s (%s)",
+                verdict.ready,
+                verdict.blocking_issues,
+                verdict.advisory_issues,
+                verdict.reasoning,
+            )
+            return verdict.ready
+        except Exception:
+            logger.debug("LLM merge evaluation failed, fail-closed", exc_info=True)
+            return False
 
     @staticmethod
     def _check_file_scope_violations(

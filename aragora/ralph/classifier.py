@@ -6,9 +6,13 @@ known, auto-fixable blocker kinds vs escalation-required unknowns.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from aragora.ralph.llm_classifier import LLMBlockerClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +76,49 @@ def classify_blocker(
         return _classify_time_limit(manifest_dict)
 
     if stop_reason in ("campaign_blocked", "campaign_stalled"):
-        return _classify_campaign_blocked(manifest_dict)
+        return _classify_with_llm_fallback(manifest_dict, stop_reason)
 
     return BlockerKind.UNKNOWN
+
+
+_LLM_CONFIDENCE_THRESHOLD = 0.3
+
+
+def _get_llm_classifier() -> LLMBlockerClassifier | None:
+    """Lazy-load the LLM classifier. Returns None if unavailable."""
+    try:
+        from aragora.ralph.llm_classifier import LLMBlockerClassifier
+
+        return LLMBlockerClassifier()
+    except Exception:
+        logger.debug("LLM classifier unavailable, using keyword fallback", exc_info=True)
+        return None
+
+
+def _classify_with_llm_fallback(manifest_dict: dict[str, Any], stop_reason: str) -> BlockerKind:
+    """Try LLM classification first, fall back to keyword matching."""
+    llm = _get_llm_classifier()
+    if llm is not None:
+        try:
+            verdict = asyncio.run(
+                llm.classify_blocker(manifest_dict=manifest_dict, stop_reason=stop_reason)
+            )
+            logger.info(
+                "LLM blocker classification: kind=%s confidence=%.2f reasoning=%s",
+                verdict.kind.value,
+                verdict.confidence,
+                verdict.reasoning,
+            )
+            if verdict.confidence >= _LLM_CONFIDENCE_THRESHOLD:
+                return verdict.kind
+            logger.info(
+                "LLM confidence %.2f below threshold %.2f, falling back to keyword",
+                verdict.confidence,
+                _LLM_CONFIDENCE_THRESHOLD,
+            )
+        except Exception:
+            logger.debug("LLM classification failed, using keyword fallback", exc_info=True)
+    return _keyword_classify_campaign_blocked(manifest_dict)
 
 
 def _classify_time_limit(manifest_dict: dict[str, Any]) -> BlockerKind:
@@ -91,7 +135,7 @@ def _classify_time_limit(manifest_dict: dict[str, Any]) -> BlockerKind:
     return BlockerKind.INFRA_FAILURE
 
 
-def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
+def _keyword_classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
     """Inspect project-level outcomes to classify the blocker."""
     reviewer_failure_patterns = (
         "billing",

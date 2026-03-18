@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 from aragora.ralph.classifier import BlockerKind, classify_blocker
+from aragora.ralph.llm_classifier import ClassificationVerdict
 
 
 def test_classify_blocker_returns_none_for_still_running_stop_reason() -> None:
@@ -402,3 +405,60 @@ class TestClassifyBlocker:
     def test_blocked_with_no_projects(self) -> None:
         result = classify_blocker(stop_reason="campaign_blocked", manifest_dict={"projects": []})
         assert result == BlockerKind.UNKNOWN
+
+
+class TestLLMFirstClassification:
+    def test_llm_classify_used_when_available(self) -> None:
+        """classify_blocker delegates to LLM when campaign_blocked."""
+        verdict = ClassificationVerdict(
+            kind=BlockerKind.SCOPE_FALSE_POSITIVE,
+            confidence=0.95,
+            reasoning="Test companion file.",
+        )
+        mock_classifier = AsyncMock()
+        mock_classifier.classify_blocker = AsyncMock(return_value=verdict)
+
+        with patch("aragora.ralph.classifier._get_llm_classifier", return_value=mock_classifier):
+            result = classify_blocker(
+                stop_reason="campaign_blocked",
+                manifest_dict={
+                    "projects": [
+                        {
+                            "project_id": "p1",
+                            "status": "blocked",
+                            "review": {"status": "changes_requested", "findings": ["scope issue"]},
+                        }
+                    ]
+                },
+            )
+        assert result == BlockerKind.SCOPE_FALSE_POSITIVE
+
+    def test_keyword_fallback_on_llm_failure(self) -> None:
+        """Falls back to keyword classifier when LLM returns UNKNOWN at low confidence."""
+        verdict = ClassificationVerdict(
+            kind=BlockerKind.UNKNOWN,
+            confidence=0.0,
+            reasoning="LLM call failed",
+        )
+        mock_classifier = AsyncMock()
+        mock_classifier.classify_blocker = AsyncMock(return_value=verdict)
+
+        with patch("aragora.ralph.classifier._get_llm_classifier", return_value=mock_classifier):
+            result = classify_blocker(
+                stop_reason="campaign_blocked",
+                manifest_dict={
+                    "projects": [
+                        {
+                            "project_id": "p1",
+                            "status": "blocked",
+                            "last_run_outcome": "deliverable_created",
+                            "review": {
+                                "status": "blocked_nonreviewable",
+                                "findings": ["Credit balance is too low"],
+                            },
+                        }
+                    ]
+                },
+            )
+        # Keyword fallback should catch the billing pattern
+        assert result == BlockerKind.REVIEWER_AUTH_OR_BILLING
