@@ -448,3 +448,74 @@ async def build_decision_integrity_package(
         plan=plan,
         context_snapshot=context_snapshot,
     )
+
+
+class DecisionContextPreloader:
+    """Loads relevant context BEFORE a debate starts for kernel unification.
+
+    Queries available subsystems (knowledge bridge, continuum memory,
+    calibration/ELO) to build a pre-debate context dict.  Each subsystem
+    is optional -- missing ones return empty results and failures degrade
+    gracefully.
+    """
+
+    def __init__(
+        self,
+        knowledge_bridge: Any = None,
+        memory: Any = None,
+        calibration: Any = None,
+    ) -> None:
+        self._knowledge_bridge = knowledge_bridge
+        self._memory = memory
+        self._calibration = calibration
+
+    def preload(self, task: str, domain: str | None = None) -> dict[str, Any]:
+        """Build pre-debate context from available subsystems.
+
+        Args:
+            task: The debate task/question used as the query.
+            domain: Optional domain hint for calibration lookup.
+
+        Returns:
+            Dict with keys ``precedents``, ``relevant_knowledge``, and
+            ``agent_calibration``.  Each subsystem is optional -- missing
+            ones return empty results.
+        """
+        ctx: dict[str, Any] = {
+            "precedents": [],
+            "relevant_knowledge": [],
+            "agent_calibration": {},
+        }
+
+        # 1. Query knowledge bridge for precedents (PipelineBridge.query_precedents)
+        if self._knowledge_bridge is not None:
+            try:
+                result = self._knowledge_bridge.query_precedents(task, limit=5)
+                # Handle both sync and awaitable returns gracefully
+                if isinstance(result, list):
+                    ctx["precedents"] = result
+            except (AttributeError, TypeError, ValueError, OSError, RuntimeError) as exc:
+                logger.debug("Knowledge bridge precedent query failed: %s", exc)
+
+        # 2. Query continuum memory for patterns (ContinuumMemory.retrieve)
+        if self._memory is not None:
+            try:
+                entries = self._memory.retrieve(query=task, limit=10)
+                ctx["relevant_knowledge"] = [
+                    entry.to_dict() if hasattr(entry, "to_dict") else {"content": str(entry)}
+                    for entry in entries
+                ]
+            except (AttributeError, TypeError, ValueError, OSError, RuntimeError) as exc:
+                logger.debug("Memory retrieval for pre-debate context failed: %s", exc)
+
+        # 3. Load agent calibration for domain (EloSystem.get_leaderboard / get_domain_calibration)
+        if self._calibration is not None and domain:
+            try:
+                agents = self._calibration.get_top_agents_for_domain(domain, limit=5)
+                ctx["agent_calibration"] = {
+                    getattr(a, "agent_name", str(a)): getattr(a, "elo", 0.0) for a in agents
+                }
+            except (AttributeError, TypeError, ValueError, OSError, RuntimeError) as exc:
+                logger.debug("Calibration lookup for domain %r failed: %s", domain, exc)
+
+        return ctx
