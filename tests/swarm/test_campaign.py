@@ -2009,3 +2009,128 @@ class TestCampaignCLI:
         parsed = json.loads(out)
         assert parsed["mode"] == "campaign-status"
         assert parsed["campaign_id"] == "campaign-1"
+
+
+class TestNeedsHumanWithDeliverable:
+    """Regression test for V12 bug: needs_human run with deliverable must
+    set project.branch so review can transition to WAITING_FOR_PR."""
+
+    def test_apply_dispatch_result_sets_branch_from_deliverable(self, tmp_path: Path) -> None:
+        """When dispatch returns a deliverable of type 'branch', the project
+        should have branch and commit_shas set, enabling the PR creation flow."""
+        repo = _init_repo(tmp_path)
+        manifest_path = repo / ".aragora" / "manifest.yaml"
+        manifest_path.parent.mkdir(parents=True)
+
+        manifest = CampaignManifest(
+            campaign_id="test-branch-delivery",
+            created_at=datetime.now(UTC).isoformat(),
+            source_kind="manual",
+            source_ref="test",
+            planner_strategy="model",
+            planner_model="codex",
+            worker_model="codex",
+            review_model="claude",
+            projects=[
+                CampaignProject(
+                    project_id="P-1",
+                    title="Test project",
+                    spec=SwarmSpec(
+                        raw_goal="Test",
+                        refined_goal="Test",
+                        file_scope_hints=["test.py"],
+                    ),
+                ),
+            ],
+        )
+        save_campaign_manifest(manifest_path, manifest)
+
+        executor = CampaignExecutor(
+            manifest_path=manifest_path,
+            repo_root=repo,
+            target_branch="main",
+        )
+
+        # Simulate a dispatch result where outcome is deliverable_created
+        # and the deliverable includes branch + commit_shas (the fixed path)
+        result = {
+            "status": "completed",
+            "outcome": "deliverable_created",
+            "run_id": "run-abc",
+            "run": {
+                "run_id": "run-abc",
+                "status": "needs_human",
+                "work_orders": [
+                    {
+                        "work_order_id": "wo-1",
+                        "status": "completed",
+                        "branch": "codex/swarm-abc-subtask_1",
+                        "commit_shas": ["abc123"],
+                    },
+                ],
+            },
+            "deliverable": {
+                "type": "branch",
+                "branch": "codex/swarm-abc-subtask_1",
+                "commit_shas": ["abc123"],
+                "work_order_id": "wo-1",
+            },
+        }
+
+        reloaded = load_campaign_manifest(manifest_path)
+        project = reloaded.project_map()["P-1"]
+        executor._apply_dispatch_result(reloaded, project, result)
+
+        assert project.branch == "codex/swarm-abc-subtask_1"
+        assert project.commit_shas == ["abc123"]
+        assert project.status == CampaignProjectStatus.DELIVERED.value
+
+    def test_review_pass_with_branch_transitions_to_waiting_for_pr(self, tmp_path: Path) -> None:
+        """When a project has a branch and review passes, status should be
+        WAITING_FOR_PR, not COMPLETED."""
+        repo = _init_repo(tmp_path)
+        manifest_path = repo / ".aragora" / "manifest.yaml"
+        manifest_path.parent.mkdir(parents=True)
+
+        manifest = CampaignManifest(
+            campaign_id="test-review-branch",
+            created_at=datetime.now(UTC).isoformat(),
+            source_kind="manual",
+            source_ref="test",
+            planner_strategy="model",
+            planner_model="codex",
+            worker_model="codex",
+            review_model="claude",
+            projects=[
+                CampaignProject(
+                    project_id="P-1",
+                    title="Test project",
+                    branch="codex/swarm-abc-subtask_1",
+                    status=CampaignProjectStatus.DELIVERED.value,
+                    spec=SwarmSpec(
+                        raw_goal="Test",
+                        refined_goal="Test",
+                        file_scope_hints=["test.py"],
+                    ),
+                ),
+            ],
+        )
+        save_campaign_manifest(manifest_path, manifest)
+
+        executor = CampaignExecutor(
+            manifest_path=manifest_path,
+            repo_root=repo,
+            target_branch="main",
+        )
+
+        gate = CampaignReviewGate(
+            required=True,
+            status=CampaignReviewStatus.PASSED.value,
+            review_model="claude",
+        )
+
+        reloaded = load_campaign_manifest(manifest_path)
+        project = reloaded.project_map()["P-1"]
+        executor._apply_review_result(reloaded, project, gate)
+
+        assert project.status == CampaignProjectStatus.WAITING_FOR_PR.value

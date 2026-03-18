@@ -972,3 +972,78 @@ class TestBossLoopFixtureInvocation:
         assert "run_id" in payload2
         assert isinstance(payload2["next_actions"], list)
         assert len(payload2["next_actions"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# _classify_terminal_run_outcome regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyTerminalRunOutcome:
+    """Regression tests for deliverable extraction from needs_human runs."""
+
+    def test_needs_human_with_deliverable_returns_deliverable_created(self):
+        """A needs_human run with completed work orders that have branch+commits
+        should be classified as deliverable_created, not needs_human.
+
+        This was the V12 benchmark bug: one lane succeeded, another was blocked,
+        so the overall run status was needs_human, but there WAS a deliverable.
+        """
+        from aragora.swarm.boss_loop import _classify_terminal_run_outcome
+
+        run_dict = {
+            "status": "needs_human",
+            "work_orders": [
+                {
+                    "work_order_id": "wo-1",
+                    "status": "completed",
+                    "branch": "codex/swarm-abc-subtask_1",
+                    "commit_shas": ["abc123"],
+                },
+                {
+                    "work_order_id": "wo-2",
+                    "status": "needs_human",
+                    "branch": "",
+                    "commit_shas": [],
+                },
+            ],
+        }
+        assert _classify_terminal_run_outcome(run_dict) == "deliverable_created"
+
+    def test_needs_human_without_deliverable_returns_needs_human(self):
+        from aragora.swarm.boss_loop import _classify_terminal_run_outcome
+
+        run_dict = {
+            "status": "needs_human",
+            "work_orders": [
+                {
+                    "work_order_id": "wo-1",
+                    "status": "needs_human",
+                    "branch": "",
+                    "commit_shas": [],
+                },
+            ],
+        }
+        assert _classify_terminal_run_outcome(run_dict) == "needs_human"
+
+    def test_dispatch_bounded_spec_includes_deliverable_for_needs_human(self):
+        """dispatch_bounded_spec should include the deliverable dict even when
+        the outcome would have been needs_human (now reclassified)."""
+        from aragora.swarm.boss_loop import _extract_deliverable
+
+        run_dict = {
+            "status": "needs_human",
+            "work_orders": [
+                {
+                    "work_order_id": "wo-1",
+                    "status": "completed",
+                    "branch": "codex/swarm-abc-subtask_1",
+                    "commit_shas": ["abc123"],
+                },
+            ],
+        }
+        deliverable = _extract_deliverable(run_dict)
+        assert deliverable is not None
+        assert deliverable["type"] == "branch"
+        assert deliverable["branch"] == "codex/swarm-abc-subtask_1"
+        assert deliverable["commit_shas"] == ["abc123"]

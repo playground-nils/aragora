@@ -439,6 +439,14 @@ def _classify_terminal_run_outcome(run_dict: dict[str, Any]) -> str:
             return "pr_adopted"
         return "deliverable_created"
     if status == "needs_human":
+        # A run can be "needs_human" overall (e.g. one lane blocked) but still
+        # have deliverables from other lanes.  Prioritize the deliverable so
+        # the campaign can extract branch/commit info for PR creation.
+        deliverable = _extract_deliverable(run_dict)
+        if deliverable is not None:
+            if deliverable.get("type") == "adopted_pr":
+                return "pr_adopted"
+            return "deliverable_created"
         return "needs_human"
 
     details = json.dumps(run_dict, sort_keys=True).lower()
@@ -536,6 +544,7 @@ async def dispatch_bounded_spec(
                 "outcome": outcome,
                 "run": run_dict,
                 "run_id": run_dict.get("run_id"),
+                "deliverable": deliverable,
                 "reasons": reasons or ["Worker reached needs_human state."],
             }
         return {
