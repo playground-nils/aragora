@@ -213,9 +213,10 @@ class PersistedReceipt:
     executed_at: datetime | None = None
     execution_count: int = 0
     last_error: str | None = None
+    canonical_receipt_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "receipt_id": self.receipt_id,
             "intent_hash": self.intent_hash,
             "signature": self.signature,
@@ -228,6 +229,9 @@ class PersistedReceipt:
             "execution_count": self.execution_count,
             "last_error": self.last_error,
         }
+        if self.canonical_receipt_id is not None:
+            result["canonical_receipt_id"] = self.canonical_receipt_id
+        return result
 
 
 @dataclass
@@ -526,6 +530,25 @@ class InboxTrustWedgeStore:
         )
         signer = signer or get_inbox_trust_wedge_signer()
         signed_receipt = signer.sign(payload)
+        # Best-effort persist to canonical receipt store facade
+        canonical_id: str | None = None
+        try:
+            from aragora.pipeline.receipt_store_facade import get_receipt_store_facade
+
+            facade = get_receipt_store_facade()
+            facade.persist_and_save(
+                receipt_id,
+                payload,
+                signature=signed_receipt.signature,
+                signature_key_id=signed_receipt.signature_metadata.key_id,
+                signed_at=signed_receipt.signature_metadata.timestamp,
+                signature_algorithm=signed_receipt.signature_metadata.algorithm,
+                state="CREATED",
+            )
+            canonical_id = receipt_id
+        except (ImportError, RuntimeError, OSError, ValueError, TypeError) as exc:
+            logger.debug("Canonical facade persist skipped: %s", exc)
+
         persisted = PersistedReceipt(
             receipt_id=receipt_id,
             intent_hash=intent.intent_hash(),
@@ -534,6 +557,7 @@ class InboxTrustWedgeStore:
             state=state,
             created_at=created_at,
             expires_at=expires_at,
+            canonical_receipt_id=canonical_id,
         )
         stored_decision = replace(decision, receipt_id=receipt_id)
         with self._cursor() as cursor:

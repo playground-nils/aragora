@@ -543,8 +543,19 @@ class InboxCommandHandler(InboxActionsMixin, InboxServicesMixin):
             # Sanitize action-specific params
             params = self._sanitize_action_params(action, params)
 
+            # Extract optional receipt_id for enforcement gate
+            receipt_id = body.get("receipt_id")
+            if receipt_id is not None and not isinstance(receipt_id, str):
+                receipt_id = None
+
             # Execute action
-            results = await self._execute_action(action, email_ids, params)
+            results = await self._execute_action(
+                action,
+                email_ids,
+                params,
+                receipt_id=receipt_id,
+                actor_id=body.get("actor_id"),
+            )
 
             return web.json_response(
                 {
@@ -557,6 +568,14 @@ class InboxCommandHandler(InboxActionsMixin, InboxServicesMixin):
         except (web.HTTPUnauthorized, web.HTTPForbidden):
             raise
         except (ValueError, KeyError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            # Let ReceiptEnforcementError propagate (subclass of RuntimeError)
+            try:
+                from aragora.pipeline.receipt_enforcement import ReceiptEnforcementError
+
+                if isinstance(e, ReceiptEnforcementError):
+                    raise
+            except ImportError:
+                pass
             logger.exception("Failed to execute action: %s", e)
             return web.json_response(
                 {"success": False, "error": "Internal server error"},
@@ -630,6 +649,11 @@ class InboxCommandHandler(InboxActionsMixin, InboxServicesMixin):
             # Sanitize action-specific params
             params = self._sanitize_action_params(action, params)
 
+            # Extract optional receipt_id for enforcement gate
+            receipt_id = body.get("receipt_id")
+            if receipt_id is not None and not isinstance(receipt_id, str):
+                receipt_id = None
+
             # Get matching email IDs
             email_ids = await self._get_emails_by_filter(filter_type)
 
@@ -644,7 +668,13 @@ class InboxCommandHandler(InboxActionsMixin, InboxServicesMixin):
                 )
 
             # Execute action
-            results = await self._execute_action(action, email_ids, params)
+            results = await self._execute_action(
+                action,
+                email_ids,
+                params,
+                receipt_id=receipt_id,
+                actor_id=body.get("actor_id"),
+            )
 
             return web.json_response(
                 {
@@ -658,6 +688,14 @@ class InboxCommandHandler(InboxActionsMixin, InboxServicesMixin):
         except (web.HTTPUnauthorized, web.HTTPForbidden):
             raise
         except (ValueError, KeyError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            # Let ReceiptEnforcementError propagate (subclass of RuntimeError)
+            try:
+                from aragora.pipeline.receipt_enforcement import ReceiptEnforcementError
+
+                if isinstance(e, ReceiptEnforcementError):
+                    raise
+            except ImportError:
+                pass
             logger.exception("Failed to execute bulk action: %s", e)
             return web.json_response(
                 {"success": False, "error": "Internal server error"},
