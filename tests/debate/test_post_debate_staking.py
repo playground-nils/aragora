@@ -76,7 +76,7 @@ class TestStakingSlashCallSignature:
         assert call_args[0][1] > 0
         assert call_args[0][2] == "hollow_consensus"
         assert isinstance(call_args[0][3], bytes)
-        assert "agent_1" in result["slashed"]
+        assert any(s["agent"] == "agent_1" for s in result["slashed"])
 
     def test_slash_amount_is_10_percent_of_effective_stake(self, coordinator):
         """Slash amount = 10% of effective_stake * staking_reward_scale."""
@@ -140,7 +140,7 @@ class TestStakingSlashCallSignature:
             )
 
         mock_registry.slash.assert_not_called()
-        assert "unstaked_agent" not in result["slashed"]
+        assert not any(s.get("agent") == "unstaked_agent" for s in result["slashed"])
 
 
 class TestStakingRewardCallSignature:
@@ -190,6 +190,69 @@ class TestStakingRewardCallSignature:
         assert result["rewarded"] == []
 
 
+class TestReceiptAnchorIntegration:
+    """Verify ReceiptAnchor is called before slashing for evidence traceability."""
+
+    def test_evidence_anchored_before_slash(self, coordinator):
+        """ReceiptAnchor.anchor_receipt should be called before slash."""
+        mock_registry = MagicMock()
+        mock_registry.get_stake = AsyncMock(return_value=_FakeStakePosition("a", 1000, 1000))
+        mock_registry.slash = AsyncMock()
+        mock_anchor = MagicMock()
+        mock_anchor.anchor_receipt = AsyncMock(return_value="local:abc123")
+
+        with (
+            patch(
+                "aragora.blockchain.contracts.staking.StakingRegistry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "aragora.blockchain.receipt_anchor.ReceiptAnchor",
+                return_value=mock_anchor,
+            ),
+        ):
+            result = coordinator._step_staking_rewards(
+                debate_id="d1",
+                debate_result=_FakeDebateResult(hollow=True),
+                agents=[_FakeAgent("a")],
+                confidence=0.5,
+            )
+
+        mock_anchor.anchor_receipt.assert_called_once()
+        mock_registry.slash.assert_called_once()
+        # Slashed entry should include evidence anchor ID
+        assert result["slashed"][0]["evidence_anchor"] == "local:abc123"
+
+    def test_anchor_failure_does_not_block_slash(self, coordinator):
+        """If anchoring fails, slash should still proceed."""
+        mock_registry = MagicMock()
+        mock_registry.get_stake = AsyncMock(return_value=_FakeStakePosition("a", 1000, 1000))
+        mock_registry.slash = AsyncMock()
+        mock_anchor = MagicMock()
+        mock_anchor.anchor_receipt = AsyncMock(side_effect=RuntimeError("anchor broken"))
+
+        with (
+            patch(
+                "aragora.blockchain.contracts.staking.StakingRegistry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "aragora.blockchain.receipt_anchor.ReceiptAnchor",
+                return_value=mock_anchor,
+            ),
+        ):
+            result = coordinator._step_staking_rewards(
+                debate_id="d1",
+                debate_result=_FakeDebateResult(hollow=True),
+                agents=[_FakeAgent("a")],
+                confidence=0.5,
+            )
+
+        # Slash still proceeds even when anchoring fails
+        mock_registry.slash.assert_called_once()
+        assert any(s["agent"] == "a" for s in result["slashed"])
+
+
 class TestStakingAsyncPattern:
     """Verify deprecated asyncio.get_event_loop pattern is not used."""
 
@@ -222,7 +285,7 @@ class TestStakingHollowConsensusDetection:
                 confidence=0.9,
             )
 
-        assert "a" in result["slashed"]
+        assert any(s["agent"] == "a" for s in result["slashed"])
         assert result["rewarded"] == []  # slash takes precedence over reward
 
     def test_no_hollow_and_high_confidence_rewards(self, coordinator):

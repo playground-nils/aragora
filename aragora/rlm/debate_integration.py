@@ -89,6 +89,7 @@ class DebateTrajectoryCollector:
         self.buffer = buffer or ExperienceBuffer(max_size=max_trajectories)
         self._debate_count = 0
         self._successful_debates = 0
+        self._in_progress: dict[str, Trajectory] = {}  # debate_id -> trajectory being built
 
     def record_debate_outcome(
         self,
@@ -135,6 +136,13 @@ class DebateTrajectoryCollector:
         )
 
         trajectory = self._create_trajectory(outcome, messages)
+
+        # Merge any per-round steps recorded via record_round()
+        in_progress = self._in_progress.pop(debate_id, None)
+        if in_progress and in_progress.steps:
+            # Prepend per-round steps before the final outcome steps
+            trajectory.steps = in_progress.steps + trajectory.steps
+
         self.buffer.add(trajectory)
 
         self._debate_count += 1
@@ -176,6 +184,73 @@ class DebateTrajectoryCollector:
             num_rounds=len(ctx.context_messages) // max(len(ctx.agents), 1) if ctx.agents else 0,
             agents=[a.name for a in ctx.agents] if ctx.agents else [],
             domain=ctx.domain or "general",
+        )
+
+    def record_round(
+        self,
+        debate_id: str,
+        round_num: int,
+        proposals: list[dict[str, str]],
+        critiques: list[dict[str, str]],
+        convergence_similarity: float = 0.0,
+    ) -> None:
+        """Record per-round proposals and critiques for richer training data.
+
+        Builds an in-progress trajectory round by round. Call
+        ``record_debate_outcome`` to finalize it.
+
+        Args:
+            debate_id: Unique identifier for the debate.
+            round_num: Zero-based round number.
+            proposals: List of ``{"agent": name, "content": text}`` dicts.
+            critiques: List of ``{"agent": name, "content": text}`` dicts.
+            convergence_similarity: Semantic similarity score for this round.
+        """
+        if not debate_id:
+            return
+
+        if debate_id not in self._in_progress:
+            self._in_progress[debate_id] = Trajectory(
+                trajectory_id=debate_id,
+                query="",
+                strategy="debate",
+                source_type="debate",
+            )
+
+        trajectory = self._in_progress[debate_id]
+
+        for proposal in proposals:
+            step = Step(
+                state={
+                    "round": round_num,
+                    "phase": "proposal",
+                    "convergence": convergence_similarity,
+                },
+                action=proposal.get("content", "")[:500],
+                action_type="proposal",
+                observation=proposal.get("agent", ""),
+            )
+            trajectory.add_step(step)
+
+        for critique in critiques:
+            step = Step(
+                state={
+                    "round": round_num,
+                    "phase": "critique",
+                    "convergence": convergence_similarity,
+                },
+                action=critique.get("content", "")[:500],
+                action_type="critique",
+                observation=critique.get("agent", ""),
+            )
+            trajectory.add_step(step)
+
+        logger.debug(
+            "Recorded round %d for debate %s: %d proposals, %d critiques",
+            round_num,
+            debate_id,
+            len(proposals),
+            len(critiques),
         )
 
     def _create_trajectory(

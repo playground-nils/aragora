@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -59,6 +60,8 @@ class PostDebateConfig:
     enable_staking: bool = False
     staking_reward_scale: float = 1.0  # Multiplier for staking rewards
     staking_slash_on_hollow_consensus: bool = True  # Slash when Trickster detects hollow consensus
+    # ELO-to-ReputationRegistry sync: push ELO adjustments as on-chain feedback
+    auto_sync_elo_reputation: bool = False
     # Outcome feedback: feed systematic errors back to Nomic Loop
     auto_outcome_feedback: bool = True
     # Canvas pipeline: auto-trigger idea-to-execution visualization
@@ -311,6 +314,10 @@ class PostDebateCoordinator:
             result.staking_result = self._step_staking_rewards(
                 debate_id, debate_result, agents, confidence
             )
+
+        # Step 7.6b: Sync ELO rating changes to ERC-8004 ReputationRegistry
+        if self.config.auto_sync_elo_reputation:
+            self._step_elo_reputation_sync(debate_id, agents, debate_result)
 
         # Step 7.7: Outcome feedback — feed systematic errors to Nomic Loop
         if self.config.auto_outcome_feedback:
@@ -1206,6 +1213,10 @@ class PostDebateCoordinator:
                                 "hollow_consensus": True,
                             }
                         ).encode()
+                        # Anchor evidence on-chain before slashing for traceability
+                        anchor_id = self._anchor_slash_evidence(
+                            debate_id, agent_name, evidence_bytes
+                        )
                         self._run_async_callable(
                             registry.slash,
                             agent_name,
@@ -1213,7 +1224,10 @@ class PostDebateCoordinator:
                             "hollow_consensus",
                             evidence_bytes,
                         )
-                        results["slashed"].append(agent_name)
+                        slashed_entry = {"agent": agent_name, "amount": slash_amount}
+                        if anchor_id:
+                            slashed_entry["evidence_anchor"] = anchor_id
+                        results["slashed"].append(slashed_entry)
                     except (RuntimeError, ValueError, OSError) as e:
                         logger.warning("Slash failed for %s: %s", agent_name, e)
                 elif confidence >= 0.8:
@@ -1243,6 +1257,102 @@ class PostDebateCoordinator:
             return None
         except (ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
             logger.warning("Staking rewards failed: %s", e)
+            return None
+
+    def _step_elo_reputation_sync(
+        self,
+        debate_id: str,
+        agents: list[Any] | None = None,
+        debate_result: Any = None,
+    ) -> bool:
+        """Step 7.6b: Sync ELO rating adjustments to ERC-8004 ReputationRegistry.
+
+        Reads Trickster ELO adjustments and agent ELO ratings from the debate
+        result metadata, then pushes them to the on-chain ReputationRegistry
+        via the ERC8004Adapter.
+        """
+        try:
+            from aragora.knowledge.mound.adapters.erc8004_adapter import ERC8004Adapter
+
+            adapter = ERC8004Adapter()
+            synced = 0
+
+            # Extract ELO adjustments from metadata if available
+            elo_adjustments: dict[str, float] = {}
+            if (
+                debate_result
+                and hasattr(debate_result, "metadata")
+                and isinstance(debate_result.metadata, dict)
+            ):
+                elo_adjustments = debate_result.metadata.get("elo_adjustments", {})
+
+            for agent in agents or []:
+                agent_name = getattr(agent, "name", str(agent))
+                # Get ELO rating from agent if available
+                elo_rating = None
+                elo_system = getattr(agent, "elo_system", None)
+                if elo_system and hasattr(elo_system, "get_rating"):
+                    elo_rating = elo_system.get_rating(agent_name)
+
+                adjustment = elo_adjustments.get(agent_name, 0.0)
+
+                if elo_rating is not None or adjustment != 0.0:
+                    # Convert ELO (typically 800-1200) to reputation (0-100)
+                    reputation = 50  # neutral default
+                    if elo_rating is not None:
+                        reputation = max(0, min(100, int((elo_rating - 800) / 4)))
+
+                    adapter.push_reputation(
+                        agent_id=agent_name,
+                        score=reputation,
+                        domain="elo",
+                        metadata={
+                            "debate_id": debate_id,
+                            "elo_rating": elo_rating,
+                            "adjustment": adjustment,
+                        },
+                    )
+                    synced += 1
+
+            if synced:
+                logger.info(
+                    "Synced ELO reputation for %d agents (debate %s)",
+                    synced,
+                    debate_id,
+                )
+            return synced > 0
+        except ImportError:
+            logger.debug("ERC8004Adapter not available, skipping ELO reputation sync")
+            return False
+        except (ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            logger.warning("ELO reputation sync failed: %s", e)
+            return False
+
+    def _anchor_slash_evidence(
+        self,
+        debate_id: str,
+        agent_name: str,
+        evidence_bytes: bytes,
+    ) -> str | None:
+        """Anchor slash evidence via ReceiptAnchor for on-chain traceability.
+
+        Returns the anchor ID (local or tx_hash) on success, None on failure.
+        Failure does NOT block the slash — it's best-effort anchoring.
+        """
+        try:
+            from aragora.blockchain.receipt_anchor import ReceiptAnchor
+
+            evidence_hash = hashlib.sha256(evidence_bytes).hexdigest()
+            anchor = ReceiptAnchor()
+            anchor_id = self._run_async_callable(
+                anchor.anchor_receipt,
+                evidence_hash,
+                {"debate_id": debate_id, "agent": agent_name, "type": "slash_evidence"},
+            )
+            logger.debug("Anchored slash evidence for %s: %s", agent_name, anchor_id)
+            return anchor_id
+        except (ImportError, RuntimeError, ValueError, OSError, TypeError) as e:
+            logger.debug("Evidence anchoring unavailable: %s", e)
             return None
 
     def _step_outcome_feedback(
