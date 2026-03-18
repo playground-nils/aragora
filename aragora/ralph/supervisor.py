@@ -587,7 +587,7 @@ class RalphSupervisor:
             manifest_path = Path(state.campaign_manifest_path)
             manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
             for proj in manifest_data.get("projects", []):
-                if proj.get("status") in ("blocked", "failed", "skipped"):
+                if proj.get("status") in ("blocked", "failed", "skipped", "stalled"):
                     affected.append(str(proj.get("project_id", "")))
         except Exception:
             pass
