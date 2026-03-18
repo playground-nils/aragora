@@ -9,7 +9,8 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -69,7 +70,11 @@ class TestOrchestrationCanvasReceiptGate:
     @patch("aragora.pipeline.receipt_enforcement.is_receipt_enforcement_enabled", return_value=True)
     @patch(
         "aragora.pipeline.receipt_enforcement.require_receipt_gate",
-        side_effect=ReceiptEnforcementError("Receipt required"),
+        side_effect=ReceiptEnforcementError(
+            "Receipt required",
+            action_domain="canvas",
+            action_type="execute_pipeline",
+        ),
     )
     def test_pipeline_fails_without_receipt(self, mock_gate, mock_enabled):
         """When enforcement is on and no receipt_id is provided, returns 428."""
@@ -95,9 +100,9 @@ class TestOrchestrationCanvasReceiptGate:
         canvas_mock = MagicMock()
         canvas_mock.nodes = {}
         canvas_mock.edges = {}
-        manager.get_canvas = MagicMock()
+        manager.get_canvas = AsyncMock(return_value=canvas_mock)
         handler._get_canvas_manager = MagicMock(return_value=manager)
-        handler._run_async = MagicMock(return_value=canvas_mock)
+        handler._run_async = asyncio.run
 
         # Mock the pipeline execution imports
         mock_plan = MagicMock()
@@ -147,8 +152,9 @@ class TestOrchestrationCanvasReceiptGate:
         canvas_mock = MagicMock()
         canvas_mock.nodes = {}
         canvas_mock.edges = {}
+        manager.get_canvas = AsyncMock(return_value=canvas_mock)
         handler._get_canvas_manager = MagicMock(return_value=manager)
-        handler._run_async = MagicMock(return_value=canvas_mock)
+        handler._run_async = asyncio.run
 
         mock_plan = MagicMock()
         mock_plan.id = "plan-1"
@@ -201,8 +207,9 @@ class TestOrchestrationCanvasReceiptGate:
         canvas_mock = MagicMock()
         canvas_mock.nodes = {}
         canvas_mock.edges = {}
+        manager.get_canvas = AsyncMock(return_value=canvas_mock)
         handler._get_canvas_manager = MagicMock(return_value=manager)
-        handler._run_async = MagicMock(return_value=canvas_mock)
+        handler._run_async = asyncio.run
 
         mock_plan = MagicMock()
         mock_plan.id = "plan-1"

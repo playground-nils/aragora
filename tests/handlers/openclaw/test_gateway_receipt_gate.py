@@ -110,7 +110,11 @@ class TestOpenClawReceiptGate:
         "aragora.pipeline.receipt_enforcement.require_receipt_gate",
         side_effect=__import__(
             "aragora.pipeline.receipt_enforcement", fromlist=["ReceiptEnforcementError"]
-        ).ReceiptEnforcementError("Receipt required"),
+        ).ReceiptEnforcementError(
+            "Receipt required",
+            action_domain="openclaw",
+            action_type="execute_action",
+        ),
     )
     def test_action_fails_without_receipt(self, mock_gate, mock_enabled, mock_get_store):
         """When enforcement is on and no receipt_id is provided, returns 428."""

@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -77,8 +78,7 @@ class TestCanvasReceiptGate:
         mock_gate.return_value = MagicMock()
 
         handler = _make_handler()
-        # Patch _run_async to call asyncio.run
-        handler._run_async = lambda coro: {"status": "ok"}
+        handler._run_async = asyncio.run
 
         body = _base_body(receipt_id="receipt-123")
         context = _mock_auth_context()
@@ -104,7 +104,11 @@ class TestCanvasReceiptGate:
     @patch("aragora.pipeline.receipt_enforcement.is_receipt_enforcement_enabled", return_value=True)
     @patch(
         "aragora.pipeline.receipt_enforcement.require_receipt_gate",
-        side_effect=ReceiptEnforcementError("Receipt required"),
+        side_effect=ReceiptEnforcementError(
+            "Receipt required",
+            action_domain="canvas",
+            action_type="execute_action",
+        ),
     )
     def test_action_fails_without_receipt(self, mock_gate, mock_enabled, mock_manager):
         """When enforcement is on and no receipt_id is provided, returns 428."""
@@ -133,7 +137,7 @@ class TestCanvasReceiptGate:
         mock_manager.return_value = manager
 
         handler = _make_handler()
-        handler._run_async = lambda coro: {"status": "ok"}
+        handler._run_async = asyncio.run
 
         body = _base_body()  # no receipt_id
         context = _mock_auth_context()
@@ -161,7 +165,7 @@ class TestCanvasReceiptGate:
         mock_gate.return_value = MagicMock()
 
         handler = _make_handler()
-        handler._run_async = lambda coro: {"done": True}
+        handler._run_async = asyncio.run
 
         body = _base_body(receipt_id="receipt-456")
         context = _mock_auth_context()

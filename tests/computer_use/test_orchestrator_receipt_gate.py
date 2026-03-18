@@ -80,7 +80,11 @@ class TestComputerUseReceiptGate:
     @patch("aragora.pipeline.receipt_enforcement.is_receipt_enforcement_enabled", return_value=True)
     @patch(
         "aragora.pipeline.receipt_enforcement.require_receipt_gate",
-        side_effect=ReceiptEnforcementError("Receipt required"),
+        side_effect=ReceiptEnforcementError(
+            "Receipt required",
+            action_domain="computer_use",
+            action_type="run_task",
+        ),
     )
     def test_task_fails_without_receipt(self, mock_gate, mock_enabled, orchestrator):
         """When enforcement is on and no receipt_id is provided, raises error."""
