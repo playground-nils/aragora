@@ -69,7 +69,7 @@ def classify_blocker(
     if stop_reason == "time_limit_exceeded":
         return _classify_time_limit(manifest_dict)
 
-    if stop_reason == "campaign_blocked":
+    if stop_reason in ("campaign_blocked", "campaign_stalled"):
         return _classify_campaign_blocked(manifest_dict)
 
     return BlockerKind.UNKNOWN
@@ -102,7 +102,9 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
     )
     projects = manifest_dict.get("projects", [])
 
-    blocked_projects = [p for p in projects if p.get("status") in ("blocked", "failed", "skipped")]
+    blocked_projects = [
+        p for p in projects if p.get("status") in ("blocked", "failed", "skipped", "stalled")
+    ]
     if not blocked_projects:
         return BlockerKind.UNKNOWN
 
@@ -140,13 +142,13 @@ def _classify_campaign_blocked(manifest_dict: dict[str, Any]) -> BlockerKind:
     # Check for repeated worker stalls (no usable deliverable).
     # Both clean_exit_no_deliverable and needs_human represent the same
     # failure family: the worker finished but produced nothing actionable.
-    _STALL_OUTCOMES = {"clean_exit_no_deliverable", "needs_human"}
+    _STALL_OUTCOMES = {"clean_exit_no_deliverable", "needs_human", "stalled"}
     stall_count = sum(1 for o in outcomes if o in _STALL_OUTCOMES)
     if stall_count >= 2:
         return BlockerKind.WORKER_CLEAN_EXIT_NO_EFFECT
 
     # Check for receipt gaps: terminal projects without receipt_id.
-    terminal_statuses = frozenset({"completed", "failed", "blocked", "skipped"})
+    terminal_statuses = frozenset({"completed", "failed", "blocked", "skipped", "stalled"})
     for proj in projects:
         if proj.get("status") in terminal_statuses and not proj.get("receipt_id"):
             return BlockerKind.RECEIPT_EMISSION_GAP
