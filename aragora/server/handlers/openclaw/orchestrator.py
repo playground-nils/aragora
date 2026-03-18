@@ -343,6 +343,30 @@ class SessionOrchestrationMixin(OpenClawMixinBase):
             if not is_valid:
                 return error_response(error, 400)
 
+            # Receipt enforcement gate (Phase 2 — Decision Integrity Kernel)
+            receipt_id = body.get("receipt_id")
+            try:
+                from aragora.pipeline.receipt_enforcement import (
+                    ReceiptEnforcementError,
+                    is_receipt_enforcement_enabled,
+                    require_receipt_gate,
+                    transition_receipt_executed,
+                )
+
+                if is_receipt_enforcement_enabled("openclaw"):
+                    require_receipt_gate(
+                        action_domain="openclaw",
+                        action_type="execute_action",
+                        actor_id=user_id,
+                        resource_id=session_id,
+                        receipt_id=receipt_id,
+                    )
+            except ReceiptEnforcementError as re_err:
+                logger.warning("Receipt enforcement denied openclaw action: %s", re_err)
+                return error_response("Receipt required for this action", 428)
+            except ImportError:
+                logger.debug("Receipt enforcement module not available, skipping gate")
+
             # Sanitize input data to prevent command injection
             sanitized_input = sanitize_action_parameters(input_data)
 
@@ -370,6 +394,19 @@ class SessionOrchestrationMixin(OpenClawMixinBase):
             # In a real implementation, this would dispatch to the OpenClaw runtime
             # For now, we just mark it as running
             store.update_action(action.id, status=ActionStatus.RUNNING)
+
+            # Transition receipt to EXECUTED after successful action creation
+            if receipt_id:
+                try:
+                    from aragora.pipeline.receipt_enforcement import (
+                        is_receipt_enforcement_enabled,
+                        transition_receipt_executed,
+                    )
+
+                    if is_receipt_enforcement_enabled("openclaw"):
+                        transition_receipt_executed(receipt_id)
+                except ImportError:
+                    pass
 
             logger.info(
                 "Created action %s (type: %s) in session %s", action.id, action_type, session_id

@@ -550,6 +550,30 @@ class OrchestrationCanvasHandler(SecureHandler):
     ) -> HandlerResult:
         """Execute the orchestration pipeline defined by this canvas."""
         try:
+            # Receipt enforcement gate (Phase 2 — Decision Integrity Kernel)
+            # Defense-in-depth: pipeline executor may have its own gate too
+            receipt_id = body.get("receipt_id")
+            try:
+                from aragora.pipeline.receipt_enforcement import (
+                    ReceiptEnforcementError,
+                    is_receipt_enforcement_enabled,
+                    require_receipt_gate,
+                )
+
+                if is_receipt_enforcement_enabled("canvas"):
+                    require_receipt_gate(
+                        action_domain="canvas",
+                        action_type="execute_pipeline",
+                        actor_id=user_id or "anonymous",
+                        resource_id=canvas_id,
+                        receipt_id=receipt_id,
+                    )
+            except ReceiptEnforcementError as re_err:
+                logger.warning("Receipt enforcement denied pipeline execution: %s", re_err)
+                return error_response("Receipt required for this action", 428)
+            except ImportError:
+                logger.debug("Receipt enforcement module not available, skipping gate")
+
             store = self._get_store()
             canvas_meta = store.load_canvas(canvas_id)
             if not canvas_meta:
@@ -628,6 +652,19 @@ class OrchestrationCanvasHandler(SecureHandler):
                 _execute(),
                 name=f"orch-plan-exec-{canvas_id[:8]}",
             )
+
+            # Transition receipt to EXECUTED after successful pipeline queue
+            if receipt_id:
+                try:
+                    from aragora.pipeline.receipt_enforcement import (
+                        is_receipt_enforcement_enabled,
+                        transition_receipt_executed,
+                    )
+
+                    if is_receipt_enforcement_enabled("canvas"):
+                        transition_receipt_executed(receipt_id)
+                except ImportError:
+                    pass
 
             return json_response(
                 {
