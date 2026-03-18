@@ -355,6 +355,9 @@ class FeedbackPhase:
         # 1d. Apply Trickster evidence quality adjustments to ELO
         self._apply_trickster_elo_feedback(ctx)
 
+        # 1d-2. Propagate Trickster hollow consensus flag to result metadata
+        self._propagate_hollow_consensus_to_metadata(ctx)
+
         # 1e. Apply RhetoricalObserver quality signals to ELO
         self._apply_rhetorical_observer_feedback(ctx)
 
@@ -1436,6 +1439,36 @@ class FeedbackPhase:
                 )
         except (TypeError, ValueError, AttributeError, KeyError, RuntimeError) as e:
             logger.warning("Trickster ELO feedback failed: %s", e)
+
+    def _propagate_hollow_consensus_to_metadata(self, ctx: DebateContext) -> None:
+        """Bridge Trickster hollow consensus detection to result metadata.
+
+        PostDebateCoordinator reads result.metadata["hollow_consensus_detected"]
+        to trigger staking slashes. Without this bridge, hollow consensus is
+        tracked by Trickster internally but never flows to post-debate actions.
+        """
+        trickster = getattr(ctx, "_trickster", None)
+        if trickster is None:
+            return
+
+        result = ctx.result
+        if not result or not hasattr(result, "metadata"):
+            return
+
+        try:
+            stats = trickster.get_stats()
+            hollow_count = stats.get("hollow_alerts_detected", 0)
+            if isinstance(result.metadata, dict):
+                result.metadata["hollow_consensus_detected"] = hollow_count > 0
+                if hollow_count > 0:
+                    result.metadata["hollow_alerts_count"] = hollow_count
+                    logger.info(
+                        "hollow_consensus propagated to metadata: %d alerts (debate %s)",
+                        hollow_count,
+                        ctx.debate_id,
+                    )
+        except (TypeError, ValueError, AttributeError) as e:
+            logger.debug("Failed to propagate hollow consensus to metadata: %s", e)
 
     def _apply_rhetorical_observer_feedback(self, ctx: DebateContext) -> None:
         """Apply RhetoricalObserver quality signals as ELO adjustments.
