@@ -666,7 +666,12 @@ class DevCoordinationStore:
             "CREATE INDEX IF NOT EXISTS idx_receipts_task ON completion_receipts(task_id, created_at)"
         )
 
-    def status_summary(self) -> dict[str, Any]:
+    def status_summary(
+        self,
+        *,
+        include_integrator_artifacts: bool = False,
+        integrator_limit: int = 200,
+    ) -> dict[str, Any]:
         active_leases = self.list_active_leases()
         pending_integrations = self.list_integration_decisions(only_pending=True)
         salvage = self.list_salvage_candidates(statuses=sorted(_OPEN_SALVAGE_STATUSES))
@@ -689,7 +694,7 @@ class DevCoordinationStore:
                     **violation,
                 }
             )
-        return {
+        payload = {
             "db_path": str(self.db_path),
             "fleet_path": str(self.fleet_store.path),
             "active_leases": [item.to_dict() for item in active_leases],
@@ -709,6 +714,9 @@ class DevCoordinationStore:
                 "scope_violations": len(scope_violations),
             },
         }
+        if include_integrator_artifacts:
+            payload["integrator"] = self.integrator_snapshot(limit=integrator_limit)
+        return payload
 
     def create_supervisor_run(
         self,
@@ -870,6 +878,28 @@ class DevCoordinationStore:
             active.append(lease)
         return active
 
+    def list_leases(
+        self,
+        *,
+        statuses: list[str] | None = None,
+        limit: int | None = 500,
+    ) -> list[WorkLease]:
+        query = "SELECT * FROM leases ORDER BY updated_at DESC"
+        params: tuple[Any, ...] = ()
+        if isinstance(limit, int) and limit > 0:
+            query += " LIMIT ?"
+            params = (limit,)
+        conn = self._connect()
+        try:
+            rows = conn.execute(query, params).fetchall()
+        finally:
+            conn.close()
+        leases = [WorkLease.from_row(row) for row in rows]
+        if statuses is None:
+            return leases
+        allowed = set(statuses)
+        return [item for item in leases if item.status in allowed]
+
     def reap_expired_leases(self) -> list[WorkLease]:
         now = _utcnow()
         conn = self._connect()
@@ -990,22 +1020,37 @@ class DevCoordinationStore:
         lease_id: str | None = None,
         *,
         task_id: str | None = None,
+        limit: int | None = None,
     ) -> list[CompletionReceipt]:
+        suffix = ""
+        params: list[Any] = []
+        if isinstance(limit, int) and limit > 0:
+            suffix = " LIMIT ?"
         conn = self._connect()
         try:
             if lease_id:
+                params = [lease_id]
+                if suffix:
+                    params.append(limit)
                 rows = conn.execute(
-                    "SELECT * FROM completion_receipts WHERE lease_id = ? ORDER BY created_at DESC",
-                    (lease_id,),
+                    "SELECT * FROM completion_receipts WHERE lease_id = ? ORDER BY created_at DESC"
+                    + suffix,
+                    tuple(params),
                 ).fetchall()
             elif task_id:
+                params = [task_id]
+                if suffix:
+                    params.append(limit)
                 rows = conn.execute(
-                    "SELECT * FROM completion_receipts WHERE task_id = ? ORDER BY created_at DESC",
-                    (task_id,),
+                    "SELECT * FROM completion_receipts WHERE task_id = ? ORDER BY created_at DESC"
+                    + suffix,
+                    tuple(params),
                 ).fetchall()
             else:
+                params = [limit] if suffix else []
                 rows = conn.execute(
-                    "SELECT * FROM completion_receipts ORDER BY created_at DESC"
+                    "SELECT * FROM completion_receipts ORDER BY created_at DESC" + suffix,
+                    tuple(params),
                 ).fetchall()
         finally:
             conn.close()
@@ -1027,17 +1072,28 @@ class DevCoordinationStore:
         *,
         only_pending: bool = False,
         receipt_id: str | None = None,
+        limit: int | None = None,
     ) -> list[IntegrationDecision]:
+        suffix = ""
+        params: list[Any] = []
+        if isinstance(limit, int) and limit > 0:
+            suffix = " LIMIT ?"
         conn = self._connect()
         try:
             if receipt_id:
+                params = [receipt_id]
+                if suffix:
+                    params.append(limit)
                 rows = conn.execute(
-                    "SELECT * FROM integration_decisions WHERE receipt_id = ? ORDER BY created_at DESC",
-                    (receipt_id,),
+                    "SELECT * FROM integration_decisions WHERE receipt_id = ? ORDER BY created_at DESC"
+                    + suffix,
+                    tuple(params),
                 ).fetchall()
             else:
+                params = [limit] if suffix else []
                 rows = conn.execute(
-                    "SELECT * FROM integration_decisions ORDER BY created_at DESC"
+                    "SELECT * FROM integration_decisions ORDER BY created_at DESC" + suffix,
+                    tuple(params),
                 ).fetchall()
         finally:
             conn.close()
@@ -1045,6 +1101,27 @@ class DevCoordinationStore:
         if only_pending:
             return [item for item in decisions if item.decision in _PENDING_INTEGRATION_DECISIONS]
         return decisions
+
+    def integrator_snapshot(self, *, limit: int = 200) -> dict[str, Any]:
+        bounded_limit = max(1, int(limit))
+        return {
+            "generated_at": _utcnow().isoformat(),
+            "leases": [item.to_dict() for item in self.list_leases(limit=bounded_limit)],
+            "developer_tasks": [
+                item.to_dict()
+                for item in self.list_developer_tasks(open_only=False, limit=bounded_limit)
+            ],
+            "completion_receipts": [
+                item.to_dict() for item in self.list_completion_receipts(limit=bounded_limit)
+            ],
+            "integration_decisions": [
+                item.to_dict() for item in self.list_integration_decisions(limit=bounded_limit)
+            ],
+            "salvage_candidates": [
+                item.to_dict()
+                for item in self.list_salvage_candidates(statuses=sorted(_OPEN_SALVAGE_STATUSES))
+            ],
+        }
 
     def list_salvage_candidates(self, statuses: list[str] | None = None) -> list[SalvageCandidate]:
         conn = self._connect()

@@ -441,7 +441,9 @@ def _cmd_worktree_fleet_status(
     try:
         from aragora.nomic.dev_coordination import DevCoordinationStore
 
-        coordination_summary = DevCoordinationStore(repo_root=repo_path).status_summary()
+        coordination_summary = DevCoordinationStore(repo_root=repo_path).status_summary(
+            include_integrator_artifacts=True
+        )
     except (ImportError, RuntimeError, OSError, ValueError) as exc:
         coordination_summary = {"error": str(exc), "counts": {}}
     claims_by_session: dict[str, list[str]] = {}
@@ -541,6 +543,11 @@ def _cmd_worktree_fleet_status(
                 f"  lease_health: {lane.get('lease_health', 'idle')} "
                 f"merge_readiness: {lane.get('merge_readiness', 'unknown')}"
             )
+            if lane.get("task_key") or lane.get("task_id"):
+                task_ref = lane.get("task_key") or lane.get("task_id")
+                print(
+                    f"  task: {task_ref} canonical: {'yes' if lane.get('canonical_lane') else 'no'}"
+                )
             if lane.get("collisions"):
                 print(f"  collisions: {', '.join(lane['collisions'])}")
             if isinstance(lane.get("scope_violation"), dict):
@@ -549,6 +556,11 @@ def _cmd_worktree_fleet_status(
                 print("  receipt: missing")
             elif lane.get("receipt_id"):
                 print(f"  receipt: {lane['receipt_id']}")
+            if lane.get("integration_decision"):
+                print(f"  decision: {lane['integration_decision']}")
+            actions = lane.get("available_actions")
+            if isinstance(actions, list) and actions:
+                print(f"  actions: {', '.join(str(item) for item in actions[:4])}")
         claimed_paths = row.get("claimed_paths")
         if isinstance(claimed_paths, list) and claimed_paths:
             print(f"  claimed_paths({len(claimed_paths)}): {', '.join(claimed_paths[:8])}")

@@ -184,6 +184,7 @@ def _merge_readiness(
 def _next_action(
     *,
     readiness: str,
+    lane_health: str,
     stale_heartbeat: bool,
     missing_receipt: bool,
     scope_violation: bool,
@@ -191,8 +192,12 @@ def _next_action(
     collisions: list[str],
     queue_status: str,
 ) -> str:
-    if superseded:
-        return "Close or archive the superseded lane."
+    if superseded or lane_health == "superseded":
+        return "Archive the superseded lane and keep the canonical lane."
+    if lane_health == "expired":
+        return "Salvage or reassign the expired lane before resuming work."
+    if lane_health == "stalled":
+        return "Inspect the stalled lane and decide whether to salvage, supersede, or reassign it."
     if collisions:
         return "Resolve the branch or file-scope collision before integrating."
     if scope_violation:
@@ -208,6 +213,85 @@ def _next_action(
     if readiness == "merged":
         return "No action needed; the lane is already merged."
     return "Monitor the lane or reconcile it if progress stalls."
+
+
+def _item_timestamp(item: dict[str, Any] | None, *keys: str) -> datetime:
+    if not isinstance(item, dict):
+        return datetime.min.replace(tzinfo=UTC)
+    for key in keys:
+        parsed = _parse_iso_timestamp(item.get(key))
+        if parsed is not None:
+            return parsed
+    meta = _metadata(item)
+    for key in keys:
+        parsed = _parse_iso_timestamp(meta.get(key))
+        if parsed is not None:
+            return parsed
+    return datetime.min.replace(tzinfo=UTC)
+
+
+def _sort_newest(items: list[dict[str, Any]], *keys: str) -> list[dict[str, Any]]:
+    return sorted(items, key=lambda item: _item_timestamp(item, *keys), reverse=True)
+
+
+def _lane_health(
+    *,
+    readiness: str,
+    status: str,
+    lease_status: str,
+    stale_heartbeat: bool,
+    missing_receipt: bool,
+    scope_violation: bool,
+    superseded: bool,
+    collisions: list[str],
+) -> str:
+    if superseded or status == "discarded":
+        return "superseded"
+    if lease_status == "expired" or status == "timed_out":
+        return "expired"
+    if stale_heartbeat or status in {"dispatch_failed", "failed"}:
+        return "stalled"
+    if readiness == "merged":
+        return "merged"
+    if readiness == "blocked" or missing_receipt or scope_violation or collisions:
+        return "blocked"
+    return "healthy"
+
+
+def _available_actions(
+    *,
+    canonical_lane: bool,
+    readiness: str,
+    lane_health: str,
+    missing_receipt: bool,
+    scope_violation: bool,
+    superseded: bool,
+    collisions: list[str],
+    decision: str,
+) -> list[str]:
+    if superseded or lane_health == "superseded" or readiness == "superseded":
+        return ["archive"]
+    if readiness == "merged":
+        return ["archive"]
+
+    actions: list[str] = []
+    if lane_health in {"expired", "stalled"}:
+        actions.extend(["salvage", "reassign", "archive"])
+    if collisions or scope_violation:
+        actions.extend(["request_changes", "supersede"])
+    if missing_receipt:
+        actions.append("attach_receipt")
+    if decision == "request_changes":
+        actions.extend(["request_changes", "supersede"])
+    if decision == "salvage":
+        actions.extend(["salvage", "archive"])
+    if readiness in {"ready", "review"} and not (collisions or scope_violation or missing_receipt):
+        actions.extend(["merge", "cherry_pick", "request_changes"])
+    if not canonical_lane and readiness not in {"merged", "superseded"}:
+        actions.append("supersede")
+    if not actions:
+        actions.append("monitor")
+    return list(dict.fromkeys(actions))
 
 
 def build_integrator_view(
@@ -226,6 +310,54 @@ def build_integrator_view(
     merge_queue = [item for item in (merge_queue or []) if isinstance(item, dict)]
     coordination = coordination if isinstance(coordination, dict) else {}
     now = now or datetime.now(UTC)
+    integrator = coordination.get("integrator", {})
+    integrator = integrator if isinstance(integrator, dict) else {}
+
+    tasks = _sort_newest(
+        [dict(item) for item in integrator.get("developer_tasks", []) if isinstance(item, dict)],
+        "updated_at",
+        "created_at",
+    )
+    leases = _sort_newest(
+        [dict(item) for item in integrator.get("leases", []) if isinstance(item, dict)],
+        "updated_at",
+        "created_at",
+        "expires_at",
+    )
+    receipts = _sort_newest(
+        [
+            dict(item)
+            for item in integrator.get("completion_receipts", [])
+            if isinstance(item, dict)
+        ],
+        "created_at",
+    )
+    decisions = _sort_newest(
+        [
+            dict(item)
+            for item in integrator.get("integration_decisions", [])
+            if isinstance(item, dict)
+        ],
+        "created_at",
+    )
+    salvage_candidates = _sort_newest(
+        [dict(item) for item in integrator.get("salvage_candidates", []) if isinstance(item, dict)],
+        "updated_at",
+        "created_at",
+    )
+
+    run_by_id: dict[str, dict[str, Any]] = {}
+    work_order_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for run in runs:
+        run_id = _text(run.get("run_id"))
+        if run_id:
+            run_by_id[run_id] = run
+        for work_order in run.get("work_orders", []):
+            if not isinstance(work_order, dict):
+                continue
+            work_order_id = _first_text(work_order.get("work_order_id"), work_order.get("task_id"))
+            if run_id and work_order_id:
+                work_order_by_key[(run_id, work_order_id)] = work_order
 
     worktrees_by_branch: dict[str, list[dict[str, Any]]] = defaultdict(list)
     worktrees_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -253,6 +385,7 @@ def build_integrator_view(
 
     worktree_branch_counts: dict[str, int] = defaultdict(int)
     work_order_branch_counts: dict[str, int] = defaultdict(int)
+    task_branch_counts: dict[str, int] = defaultdict(int)
     queue_branch_counts: dict[str, int] = defaultdict(int)
     for branch, rows_for_branch in worktrees_by_branch.items():
         worktree_branch_counts[branch] += len(rows_for_branch)
@@ -263,17 +396,30 @@ def build_integrator_view(
             branch = _text(work_order.get("branch"))
             if branch:
                 work_order_branch_counts[branch] += 1
+    for task in tasks:
+        branch = _text(task.get("branch"))
+        if branch:
+            task_branch_counts[branch] += 1
 
     queue_by_branch: dict[str, list[dict[str, Any]]] = defaultdict(list)
     queue_by_session: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    queue_by_receipt: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    queue_by_task: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in merge_queue:
         branch = _text(item.get("branch"))
         session_id = _text(item.get("session_id"))
+        meta = _metadata(item)
+        receipt_id = _first_text(item.get("receipt_id"), meta.get("receipt_id"))
+        task_id = _first_text(item.get("task_id"), meta.get("task_id"))
         if branch:
             queue_by_branch[branch].append(item)
             queue_branch_counts[branch] += 1
         if session_id:
             queue_by_session[session_id].append(item)
+        if receipt_id:
+            queue_by_receipt[receipt_id].append(item)
+        if task_id:
+            queue_by_task[task_id].append(item)
 
     scope_violations = coordination.get("scope_violations", [])
     scope_violation_by_lease: dict[str, dict[str, Any]] = {}
@@ -289,23 +435,141 @@ def build_integrator_view(
         if session_id or branch:
             scope_violation_by_session_branch[(session_id, branch)] = item
 
+    tasks_by_key: dict[str, dict[str, Any]] = {}
+    tasks_by_run_task: dict[tuple[str, str], dict[str, Any]] = {}
+    tasks_by_session_branch: dict[tuple[str, str], dict[str, Any]] = {}
+    for task in tasks:
+        task_key = _text(task.get("task_key"))
+        if task_key:
+            tasks_by_key[task_key] = task
+        run_id = _text(task.get("run_id"))
+        task_id = _text(task.get("task_id"))
+        if run_id and task_id:
+            tasks_by_run_task[(run_id, task_id)] = task
+        session_id = _text(task.get("owner_session_id"))
+        branch = _text(task.get("branch"))
+        if session_id or branch:
+            tasks_by_session_branch[(session_id, branch)] = task
+
+    leases_by_id: dict[str, dict[str, Any]] = {}
+    leases_by_task: dict[str, dict[str, Any]] = {}
+    leases_by_session_branch: dict[tuple[str, str], dict[str, Any]] = {}
+    for lease in leases:
+        lease_id = _text(lease.get("lease_id"))
+        if lease_id and lease_id not in leases_by_id:
+            leases_by_id[lease_id] = lease
+        task_id = _text(lease.get("task_id"))
+        if task_id and task_id not in leases_by_task:
+            leases_by_task[task_id] = lease
+        key = (_text(lease.get("owner_session_id")), _text(lease.get("branch")))
+        if (key[0] or key[1]) and key not in leases_by_session_branch:
+            leases_by_session_branch[key] = lease
+
+    receipts_by_id: dict[str, dict[str, Any]] = {}
+    receipts_by_task: dict[str, dict[str, Any]] = {}
+    receipts_by_lease: dict[str, dict[str, Any]] = {}
+    receipts_by_session_branch: dict[tuple[str, str], dict[str, Any]] = {}
+    for receipt in receipts:
+        receipt_id = _text(receipt.get("receipt_id"))
+        if receipt_id and receipt_id not in receipts_by_id:
+            receipts_by_id[receipt_id] = receipt
+        task_id = _text(receipt.get("task_id"))
+        if task_id and task_id not in receipts_by_task:
+            receipts_by_task[task_id] = receipt
+        lease_id = _text(receipt.get("lease_id"))
+        if lease_id and lease_id not in receipts_by_lease:
+            receipts_by_lease[lease_id] = receipt
+        key = (_text(receipt.get("owner_session_id")), _text(receipt.get("branch")))
+        if (key[0] or key[1]) and key not in receipts_by_session_branch:
+            receipts_by_session_branch[key] = receipt
+
+    decisions_by_receipt: dict[str, dict[str, Any]] = {}
+    for decision in decisions:
+        receipt_id = _text(decision.get("receipt_id"))
+        if receipt_id and receipt_id not in decisions_by_receipt:
+            decisions_by_receipt[receipt_id] = decision
+
+    salvage_by_branch: dict[str, dict[str, Any]] = {}
+    salvage_by_path: dict[str, dict[str, Any]] = {}
+    for candidate in salvage_candidates:
+        branch = _text(candidate.get("branch"))
+        if branch and branch not in salvage_by_branch:
+            salvage_by_branch[branch] = candidate
+        path = _text(candidate.get("worktree_path"))
+        if path and path not in salvage_by_path:
+            salvage_by_path[path] = candidate
+
     lanes: list[dict[str, Any]] = []
+    seen_task_keys: set[str] = set()
+    seen_work_order_keys: set[tuple[str, str]] = set()
     seen_worktree_keys: set[tuple[str, str]] = set()
     seen_queue_keys: set[tuple[str, str, str]] = set()
+
+    def _queue_key(item: dict[str, Any] | None) -> tuple[str, str, str]:
+        item = item if isinstance(item, dict) else {}
+        return (
+            _text(item.get("id")),
+            _text(item.get("branch")),
+            _text(item.get("session_id")),
+        )
+
+    def _pick_first(*candidates: Any) -> dict[str, Any] | None:
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                return candidate
+            if isinstance(candidate, list):
+                for item in candidate:
+                    if isinstance(item, dict):
+                        return item
+        return None
+
+    def _mark_lane_sources(
+        *,
+        task: dict[str, Any] | None = None,
+        worktree_row: dict[str, Any] | None = None,
+        queue_item: dict[str, Any] | None = None,
+    ) -> None:
+        if isinstance(task, dict):
+            task_key = _text(task.get("task_key"))
+            if task_key:
+                seen_task_keys.add(task_key)
+            run_id = _text(task.get("run_id"))
+            task_id = _text(task.get("task_id"))
+            if run_id and task_id:
+                seen_work_order_keys.add((run_id, task_id))
+        if isinstance(worktree_row, dict):
+            seen_worktree_keys.add(
+                (_text(worktree_row.get("session_id")), _text(worktree_row.get("branch")))
+            )
+        if isinstance(queue_item, dict):
+            seen_queue_keys.add(_queue_key(queue_item))
 
     def build_lane(
         *,
         source: str,
         run: dict[str, Any] | None = None,
         work_order: dict[str, Any] | None = None,
+        task: dict[str, Any] | None = None,
+        lease: dict[str, Any] | None = None,
+        receipt: dict[str, Any] | None = None,
+        decision: dict[str, Any] | None = None,
+        salvage: dict[str, Any] | None = None,
         worktree_row: dict[str, Any] | None = None,
         queue_item: dict[str, Any] | None = None,
+        canonical_lane: bool,
     ) -> dict[str, Any]:
         work_order = work_order or {}
+        task = task or {}
+        lease = lease or {}
+        receipt = receipt or {}
+        decision = decision or {}
+        salvage = salvage or {}
         worktree_row = worktree_row or {}
         queue_item = queue_item or {}
         run = run or {}
         work_order_meta = _metadata(work_order)
+        lease_meta = _metadata(lease)
+        receipt_meta = _metadata(receipt)
         queue_meta = _metadata(queue_item)
         inferred_status = ""
         if bool(worktree_row.get("has_lock")) and bool(worktree_row.get("pid_alive")):
@@ -313,45 +577,106 @@ def build_integrator_view(
         elif bool(worktree_row.get("has_lock")):
             inferred_status = "needs_human"
         status = _first_text(
-            work_order.get("status"), worktree_row.get("status"), inferred_status, "unknown"
+            task.get("status"),
+            work_order.get("status"),
+            worktree_row.get("status"),
+            inferred_status,
+            "unknown",
         ).lower()
         branch = _first_text(
-            work_order.get("branch"), worktree_row.get("branch"), queue_item.get("branch")
+            task.get("branch"),
+            lease.get("branch"),
+            receipt.get("branch"),
+            work_order.get("branch"),
+            worktree_row.get("branch"),
+            queue_item.get("branch"),
         )
         worktree_path = _first_text(
+            task.get("worktree_path"),
+            lease.get("worktree_path"),
+            receipt.get("worktree_path"),
             work_order.get("worktree_path"),
             worktree_row.get("path"),
             queue_meta.get("integration_workspace_path"),
         )
         session_id = _first_text(
+            task.get("owner_session_id"),
+            lease.get("owner_session_id"),
+            receipt.get("owner_session_id"),
+            lease_meta.get("owner_session_id"),
             work_order_meta.get("owner_session_id"),
             worktree_row.get("session_id"),
             queue_item.get("session_id"),
         )
         owner_agent = _first_text(
+            task.get("owner_agent"),
+            lease.get("owner_agent"),
+            receipt.get("owner_agent"),
             work_order.get("target_agent"),
             work_order_meta.get("owner_agent"),
             worktree_row.get("agent"),
         )
-        receipt_id = _extract_receipt_id(work_order, queue_item)
+        reviewer_agent = _first_text(
+            task.get("reviewer_agent"),
+            receipt_meta.get("reviewer_agent"),
+            work_order.get("reviewer_agent"),
+            work_order_meta.get("reviewer_agent"),
+        )
+        task_key = _first_text(
+            task.get("task_key"),
+            receipt_meta.get("task_key"),
+            lease_meta.get("task_key"),
+        )
+        task_id = _first_text(
+            task.get("task_id"),
+            receipt.get("task_id"),
+            lease.get("task_id"),
+            work_order.get("work_order_id"),
+            work_order.get("task_id"),
+        )
+        receipt_id = _first_text(
+            task.get("receipt_id"),
+            receipt.get("receipt_id"),
+            lease_meta.get("last_receipt_id"),
+            _extract_receipt_id(work_order, queue_item),
+        )
         queue_status = _merge_queue_status(queue_item)
+        decision_type = _first_text(
+            decision.get("decision"),
+            queue_meta.get("integration_decision"),
+        ).lower()
         branch_collision = bool(
             branch
             and (
                 worktree_branch_counts.get(branch, 0) > 1
                 or work_order_branch_counts.get(branch, 0) > 1
+                or task_branch_counts.get(branch, 0) > 1
                 or queue_branch_counts.get(branch, 0) > 1
             )
         )
 
+        lease_claimed_paths = [
+            _text(path) for path in lease.get("claimed_paths", []) if _text(path)
+        ]
         claimed_paths = sorted(
-            {
-                _text(claim.get("path"))
-                for claim in claims_by_session.get(session_id, [])
-                if _text(claim.get("path"))
-            }
+            set(lease_claimed_paths).union(
+                {
+                    _text(claim.get("path"))
+                    for claim in claims_by_session.get(session_id, [])
+                    if _text(claim.get("path"))
+                }
+            )
         )
-        file_scope = [_text(path) for path in work_order.get("file_scope", []) if _text(path)]
+        file_scope = [
+            _text(path)
+            for path in (
+                task.get("allowed_paths")
+                or work_order.get("file_scope")
+                or lease.get("allowed_globs")
+                or []
+            )
+            if _text(path)
+        ]
         collision_reasons: list[str] = []
         if branch_collision:
             collision_reasons.append(f"branch:{branch}")
@@ -362,50 +687,109 @@ def build_integrator_view(
         collision_reasons = sorted(set(collision_reasons))
 
         heartbeat_source = _first_text(
+            task.get("updated_at"),
+            lease.get("updated_at"),
             work_order.get("last_progress_at"),
             work_order.get("last_observed_at"),
             work_order.get("dispatched_at"),
             worktree_row.get("last_activity"),
             queue_item.get("updated_at"),
+            receipt.get("created_at"),
         )
         heartbeat_age_seconds = _age_seconds(heartbeat_source, now=now)
+        lease_status = _text(lease.get("status")).lower()
+        lane_in_flight = (
+            status in {"queued", "leased", "dispatched", "active", "integrating"}
+            or lease_status == "active"
+            or queue_status in {"queued", "validating", "integrating"}
+        )
         stale_heartbeat = bool(
             (
-                work_order
-                and status in {"leased", "dispatched", "active"}
+                (work_order or task or lease)
+                and lane_in_flight
                 and heartbeat_age_seconds is not None
                 and heartbeat_age_seconds >= _STALE_LANE_AFTER_SECONDS
             )
             or (bool(worktree_row.get("has_lock")) and not bool(worktree_row.get("pid_alive")))
         )
 
-        superseded = _is_superseded(work_order, queue_item)
+        superseded = _is_superseded(task, work_order, queue_item) or status == "discarded"
         missing_receipt = _explicit_missing_receipt(work_order, queue_item) or (
-            _receipt_expected(status, queue_status) and not receipt_id
+            (
+                _receipt_expected(status, queue_status)
+                or bool(decision_type)
+                or status in {"completed", "changes_requested", "integrating", "merged", "salvage"}
+            )
+            and not receipt_id
         )
         if status in {"queued", "leased", "dispatched"} and queue_status in {"", "queued"}:
             missing_receipt = (
                 False if not _explicit_missing_receipt(work_order, queue_item) else True
             )
 
-        lease_id = _first_text(work_order.get("lease_id"), work_order_meta.get("lease_id"))
+        lease_id = _first_text(
+            task.get("lease_id"),
+            lease.get("lease_id"),
+            work_order.get("lease_id"),
+            work_order_meta.get("lease_id"),
+        )
         scope_violation_record = (
             scope_violation_by_lease.get(lease_id)
             if lease_id
             else scope_violation_by_session_branch.get((session_id, branch))
         )
+        if not isinstance(scope_violation_record, dict):
+            fallback_violation = _metadata(task).get("last_scope_violation")
+            if isinstance(fallback_violation, dict):
+                scope_violation_record = fallback_violation
         scope_violation = isinstance(scope_violation_record, dict)
-        lease_health = "idle"
-        if lease_id:
-            lease_health = "stale" if stale_heartbeat else "healthy"
+
+        if superseded or decision_type == "discard":
+            readiness = "superseded"
+        elif queue_status == "merged" or status == "merged":
+            readiness = "merged"
+        elif decision_type in {"merge", "cherry_pick"}:
+            readiness = "merged" if queue_status == "merged" else "integrating"
+        elif decision_type == "pending_review":
+            readiness = "review"
+        elif decision_type in {"request_changes", "salvage"}:
+            readiness = "blocked"
+        elif receipt_id and status in {
+            "completed",
+            "needs_human",
+            "changes_requested",
+            "integrating",
+        }:
+            readiness = "blocked" if missing_receipt else "review"
+        else:
+            readiness = _merge_readiness(
+                status=status,
+                queue_status=queue_status,
+                stale_heartbeat=stale_heartbeat,
+                missing_receipt=missing_receipt,
+                scope_violation=scope_violation,
+                superseded=superseded,
+                collisions=collision_reasons,
+            )
+
+        if superseded:
+            lease_health = "superseded"
+        elif lease_status == "expired" or status == "timed_out":
+            lease_health = "expired"
+        elif stale_heartbeat:
+            lease_health = "stalled"
+        elif lease_status in {"completed", "released"}:
+            lease_health = lease_status
+        elif lease_id or bool(worktree_row.get("has_lock")):
+            lease_health = "healthy"
         elif status in {"leased", "dispatched"}:
             lease_health = "missing"
-        elif bool(worktree_row.get("has_lock")):
-            lease_health = "stale" if stale_heartbeat else "healthy"
-
-        readiness = _merge_readiness(
+        else:
+            lease_health = "idle"
+        lane_health = _lane_health(
+            readiness=readiness,
             status=status,
-            queue_status=queue_status,
+            lease_status=lease_status,
             stale_heartbeat=stale_heartbeat,
             missing_receipt=missing_receipt,
             scope_violation=scope_violation,
@@ -414,6 +798,7 @@ def build_integrator_view(
         )
 
         title = _first_text(
+            task.get("title"),
             work_order.get("title"),
             work_order.get("description"),
             queue_item.get("title"),
@@ -422,9 +807,10 @@ def build_integrator_view(
             session_id,
             "lane",
         )
-        pr = _extract_pr_link(work_order, queue_item)
+        pr = _extract_pr_link(receipt, work_order, queue_item)
         blockers = sorted(
             {
+                *[_text(item) for item in task.get("blocked_by", []) if _text(item)],
                 *[_text(item) for item in work_order.get("blockers", []) if _text(item)],
                 *collision_reasons,
             }
@@ -437,9 +823,23 @@ def build_integrator_view(
             blockers.append("scope_violation")
         if superseded:
             blockers.append("superseded")
+        if decision_type in {"request_changes", "salvage"}:
+            blockers.append(f"decision:{decision_type}")
         blockers = sorted(set(blockers))
 
+        available_actions = _available_actions(
+            canonical_lane=canonical_lane,
+            readiness=readiness,
+            lane_health=lane_health,
+            missing_receipt=missing_receipt,
+            scope_violation=scope_violation,
+            superseded=superseded,
+            collisions=collision_reasons,
+            decision=decision_type,
+        )
+        decision_needed = canonical_lane and readiness in {"ready", "review", "blocked"}
         lane_id = _first_text(
+            task_key,
             work_order.get("work_order_id"),
             queue_item.get("id"),
             branch,
@@ -452,14 +852,20 @@ def build_integrator_view(
             "source": source,
             "run_id": _text(run.get("run_id")),
             "work_order_id": _text(work_order.get("work_order_id")),
+            "task_key": task_key or None,
+            "task_id": task_id or None,
             "title": title,
             "status": status,
+            "canonical_lane": canonical_lane,
             "owner_agent": owner_agent or None,
+            "reviewer_agent": reviewer_agent or None,
             "owner_session_id": session_id or None,
             "branch": branch or None,
             "worktree_path": worktree_path or None,
             "lease_id": lease_id or None,
+            "lease_status": lease_status or None,
             "lease_health": lease_health,
+            "lane_health": lane_health,
             "heartbeat_at": heartbeat_source or None,
             "heartbeat_age_seconds": round(heartbeat_age_seconds, 1)
             if heartbeat_age_seconds is not None
@@ -470,15 +876,41 @@ def build_integrator_view(
             "queue_item_id": _text(queue_item.get("id")) or None,
             "merge_queue_status": queue_status or None,
             "receipt_id": receipt_id or None,
+            "receipt_summary": {
+                "confidence": receipt.get("confidence"),
+                "outcome": _text(receipt.get("outcome")) or None,
+                "created_at": _text(receipt.get("created_at")) or None,
+                "tests_run": [_text(item) for item in receipt.get("tests_run", []) if _text(item)],
+                "validations_run": [
+                    _text(item) for item in receipt.get("validations_run", []) if _text(item)
+                ],
+            }
+            if receipt_id
+            else None,
+            "integration_decision": decision_type or None,
+            "integration_decision_id": _text(decision.get("decision_id")) or None,
+            "decision_context": {
+                "rationale": _text(decision.get("rationale")) or None,
+                "followups": [_text(item) for item in decision.get("followups", []) if _text(item)],
+                "chosen_commits": [
+                    _text(item) for item in decision.get("chosen_commits", []) if _text(item)
+                ],
+            }
+            if decision_type
+            else None,
             "missing_receipt": missing_receipt,
             "scope_violation": scope_violation_record,
             "superseded": superseded,
             "collisions": collision_reasons,
             "pr": pr,
             "merge_readiness": readiness,
+            "decision_needed": decision_needed,
+            "available_actions": available_actions,
+            "salvage_candidate_id": _text(salvage.get("candidate_id")) or None,
             "blockers": blockers,
             "next_action": _next_action(
                 readiness=readiness,
+                lane_health=lane_health,
                 stale_heartbeat=stale_heartbeat,
                 missing_receipt=missing_receipt,
                 scope_violation=scope_violation,
@@ -488,37 +920,142 @@ def build_integrator_view(
             ),
         }
 
+    for task in tasks:
+        run_id = _text(task.get("run_id"))
+        task_id = _text(task.get("task_id"))
+        worktree_path = _text(task.get("worktree_path"))
+        branch = _text(task.get("branch"))
+        session_id = _text(task.get("owner_session_id"))
+        receipt_id = _text(task.get("receipt_id"))
+        lease_id = _text(task.get("lease_id"))
+        matched_run = run_by_id.get(run_id, {})
+        work_order = work_order_by_key.get((run_id, task_id), {})
+        matched_lease = _pick_first(
+            leases_by_id.get(lease_id),
+            leases_by_task.get(task_id),
+            leases_by_session_branch.get((session_id, branch)),
+        )
+        matched_receipt = _pick_first(
+            receipts_by_id.get(receipt_id),
+            receipts_by_lease.get(lease_id),
+            receipts_by_task.get(task_id),
+            receipts_by_session_branch.get((session_id, branch)),
+        )
+        effective_receipt_id = _first_text(
+            receipt_id,
+            matched_receipt.get("receipt_id") if isinstance(matched_receipt, dict) else "",
+        )
+        matched_decision = _pick_first(
+            decisions_by_receipt.get(effective_receipt_id),
+        )
+        matched_row = _pick_first(
+            worktrees_by_path.get(worktree_path, []),
+            worktrees_by_session.get(session_id, []),
+            worktrees_by_branch.get(branch, []),
+        )
+        matched_queue = _pick_first(
+            queue_by_receipt.get(effective_receipt_id, []),
+            queue_by_task.get(task_id, []),
+            queue_by_branch.get(branch, []),
+            queue_by_session.get(session_id, []),
+        )
+        matched_salvage = _pick_first(
+            salvage_by_path.get(worktree_path),
+            salvage_by_branch.get(branch),
+        )
+        _mark_lane_sources(task=task, worktree_row=matched_row, queue_item=matched_queue)
+        lanes.append(
+            build_lane(
+                source="task",
+                run=matched_run,
+                work_order=work_order,
+                task=task,
+                lease=matched_lease,
+                receipt=matched_receipt,
+                decision=matched_decision,
+                salvage=matched_salvage,
+                worktree_row=matched_row,
+                queue_item=matched_queue,
+                canonical_lane=True,
+            )
+        )
+
     for run in runs:
         for work_order in run.get("work_orders", []):
             if not isinstance(work_order, dict):
                 continue
+            run_id = _text(run.get("run_id"))
+            work_order_id = _first_text(work_order.get("work_order_id"), work_order.get("task_id"))
+            if (run_id, work_order_id) in seen_work_order_keys:
+                continue
+            matched_task = tasks_by_run_task.get((run_id, work_order_id))
+            if (
+                isinstance(matched_task, dict)
+                and _text(matched_task.get("task_key")) in seen_task_keys
+            ):
+                continue
             branch = _text(work_order.get("branch"))
             worktree_path = _text(work_order.get("worktree_path"))
-            matched_row = None
-            if branch and worktrees_by_branch.get(branch):
-                matched_row = worktrees_by_branch[branch][0]
-            elif worktree_path and worktrees_by_path.get(worktree_path):
-                matched_row = worktrees_by_path[worktree_path][0]
-            queue_item = queue_by_branch.get(branch, [None])[0] if branch else None
-            if matched_row:
-                seen_worktree_keys.add(
-                    (_text(matched_row.get("session_id")), _text(matched_row.get("branch")))
-                )
-            if isinstance(queue_item, dict):
-                seen_queue_keys.add(
-                    (
-                        _text(queue_item.get("id")),
-                        _text(queue_item.get("branch")),
-                        _text(queue_item.get("session_id")),
-                    )
-                )
+            session_id = _first_text(
+                work_order.get("owner_session_id"),
+                _metadata(work_order).get("owner_session_id"),
+            )
+            lease_id = _first_text(
+                work_order.get("lease_id"), _metadata(work_order).get("lease_id")
+            )
+            receipt_id = _first_text(
+                work_order.get("receipt_id"),
+                _metadata(work_order).get("last_receipt_id"),
+            )
+            matched_row = _pick_first(
+                worktrees_by_path.get(worktree_path, []),
+                worktrees_by_session.get(session_id, []),
+                worktrees_by_branch.get(branch, []),
+            )
+            matched_lease = _pick_first(
+                leases_by_id.get(lease_id),
+                leases_by_task.get(work_order_id),
+                leases_by_session_branch.get((session_id, branch)),
+            )
+            matched_receipt = _pick_first(
+                receipts_by_id.get(receipt_id),
+                receipts_by_lease.get(lease_id),
+                receipts_by_task.get(work_order_id),
+                receipts_by_session_branch.get((session_id, branch)),
+            )
+            effective_receipt_id = _first_text(
+                receipt_id,
+                matched_receipt.get("receipt_id") if isinstance(matched_receipt, dict) else "",
+            )
+            matched_decision = _pick_first(decisions_by_receipt.get(effective_receipt_id))
+            queue_item = _pick_first(
+                queue_by_receipt.get(effective_receipt_id, []),
+                queue_by_task.get(work_order_id, []),
+                queue_by_branch.get(branch, []),
+                queue_by_session.get(session_id, []),
+            )
+            matched_salvage = _pick_first(
+                salvage_by_path.get(worktree_path),
+                salvage_by_branch.get(branch),
+            )
+            _mark_lane_sources(
+                task=matched_task,
+                worktree_row=matched_row,
+                queue_item=queue_item,
+            )
             lanes.append(
                 build_lane(
                     source="swarm",
                     run=run,
                     work_order=work_order,
+                    task=matched_task,
+                    lease=matched_lease,
+                    receipt=matched_receipt,
+                    decision=matched_decision,
+                    salvage=matched_salvage,
                     worktree_row=matched_row,
-                    queue_item=queue_item if isinstance(queue_item, dict) else None,
+                    queue_item=queue_item,
+                    canonical_lane=not bool(tasks),
                 )
             )
 
@@ -527,42 +1064,115 @@ def build_integrator_view(
         if key in seen_worktree_keys:
             continue
         branch = _text(row.get("branch"))
-        queue_item = queue_by_branch.get(branch, [None])[0] if branch else None
-        if isinstance(queue_item, dict):
-            seen_queue_keys.add(
-                (
-                    _text(queue_item.get("id")),
-                    _text(queue_item.get("branch")),
-                    _text(queue_item.get("session_id")),
-                )
-            )
+        session_id = _text(row.get("session_id"))
+        matched_task = _pick_first(tasks_by_session_branch.get((session_id, branch)))
+        lease_id = _first_text(
+            matched_task.get("lease_id") if isinstance(matched_task, dict) else "",
+        )
+        receipt_id = _first_text(
+            matched_task.get("receipt_id") if isinstance(matched_task, dict) else "",
+        )
+        matched_lease = _pick_first(
+            leases_by_id.get(lease_id),
+            leases_by_session_branch.get((session_id, branch)),
+        )
+        matched_receipt = _pick_first(
+            receipts_by_id.get(receipt_id),
+            receipts_by_lease.get(lease_id),
+            receipts_by_session_branch.get((session_id, branch)),
+        )
+        effective_receipt_id = _first_text(
+            receipt_id,
+            matched_receipt.get("receipt_id") if isinstance(matched_receipt, dict) else "",
+        )
+        matched_decision = _pick_first(decisions_by_receipt.get(effective_receipt_id))
+        queue_item = _pick_first(
+            queue_by_receipt.get(effective_receipt_id, []),
+            queue_by_task.get(
+                _text(matched_task.get("task_id")) if isinstance(matched_task, dict) else "",
+                [],
+            ),
+            queue_by_branch.get(branch, []),
+            queue_by_session.get(session_id, []),
+        )
+        matched_salvage = _pick_first(
+            salvage_by_path.get(_text(row.get("path"))),
+            salvage_by_branch.get(branch),
+        )
+        _mark_lane_sources(task=matched_task, worktree_row=row, queue_item=queue_item)
         lanes.append(
             build_lane(
                 source="fleet",
+                task=matched_task,
+                lease=matched_lease,
+                receipt=matched_receipt,
+                decision=matched_decision,
+                salvage=matched_salvage,
                 worktree_row=row,
-                queue_item=queue_item if isinstance(queue_item, dict) else None,
+                queue_item=queue_item,
+                canonical_lane=False,
             )
         )
 
     for item in merge_queue:
-        queue_key = (
-            _text(item.get("id")),
-            _text(item.get("branch")),
-            _text(item.get("session_id")),
-        )
+        queue_key = _queue_key(item)
         if queue_key in seen_queue_keys:
             continue
         session_id = _text(item.get("session_id"))
-        matched_row = worktrees_by_session.get(session_id, [None])[0] if session_id else None
+        branch = _text(item.get("branch"))
+        meta = _metadata(item)
+        receipt_id = _first_text(item.get("receipt_id"), meta.get("receipt_id"))
+        task_id = _first_text(item.get("task_id"), meta.get("task_id"))
+        matched_task = _pick_first(
+            tasks_by_session_branch.get((session_id, branch)),
+            tasks_by_run_task.get((_text(meta.get("run_id")), task_id)),
+        )
+        lease_id = _first_text(
+            meta.get("lease_id"),
+            matched_task.get("lease_id") if isinstance(matched_task, dict) else "",
+        )
+        matched_lease = _pick_first(
+            leases_by_id.get(lease_id),
+            leases_by_task.get(task_id),
+            leases_by_session_branch.get((session_id, branch)),
+        )
+        matched_receipt = _pick_first(
+            receipts_by_id.get(receipt_id),
+            receipts_by_lease.get(lease_id),
+            receipts_by_task.get(task_id),
+            receipts_by_session_branch.get((session_id, branch)),
+        )
+        effective_receipt_id = _first_text(
+            receipt_id,
+            matched_receipt.get("receipt_id") if isinstance(matched_receipt, dict) else "",
+        )
+        matched_decision = _pick_first(decisions_by_receipt.get(effective_receipt_id))
+        matched_row = _pick_first(
+            worktrees_by_session.get(session_id, []),
+            worktrees_by_branch.get(branch, []),
+        )
+        matched_salvage = _pick_first(
+            salvage_by_branch.get(branch),
+            salvage_by_path.get(
+                _text(matched_row.get("path")) if isinstance(matched_row, dict) else ""
+            ),
+        )
+        _mark_lane_sources(task=matched_task, worktree_row=matched_row, queue_item=item)
         lanes.append(
             build_lane(
                 source="merge_queue",
+                task=matched_task,
+                lease=matched_lease,
+                receipt=matched_receipt,
+                decision=matched_decision,
+                salvage=matched_salvage,
                 worktree_row=matched_row if isinstance(matched_row, dict) else None,
                 queue_item=item,
+                canonical_lane=False,
             )
         )
 
-    def lane_sort_key(item: dict[str, Any]) -> tuple[int, str, str]:
+    def lane_sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
         readiness = _text(item.get("merge_readiness"))
         priority = {
             "blocked": 0,
@@ -574,14 +1184,24 @@ def build_integrator_view(
             "merged": 6,
             "superseded": 7,
         }.get(readiness, 8)
-        return (priority, _text(item.get("branch")), _text(item.get("lane_id")))
+        canonical_priority = 0 if bool(item.get("canonical_lane")) else 1
+        return (
+            canonical_priority,
+            priority,
+            _text(item.get("branch")),
+            _text(item.get("lane_id")),
+        )
 
     lanes.sort(key=lane_sort_key)
 
     alerts = {
         "collisions": [],
+        "stalled_lanes": [],
+        "expired_lanes": [],
         "stale_heartbeats": [],
         "superseded_lanes": [],
+        "orphan_lanes": [],
+        "needs_decision": [],
         "missing_receipts": [],
         "scope_violations": [],
         "merge_ready": [],
@@ -595,10 +1215,18 @@ def build_integrator_view(
         }
         if lane["collisions"]:
             alerts["collisions"].append({**ref, "reasons": lane["collisions"]})
+        if lane.get("lane_health") == "stalled":
+            alerts["stalled_lanes"].append(ref)
+        if lane.get("lane_health") == "expired":
+            alerts["expired_lanes"].append(ref)
         if lane["stale_heartbeat"]:
             alerts["stale_heartbeats"].append(ref)
         if lane["superseded"]:
             alerts["superseded_lanes"].append(ref)
+        if not lane.get("canonical_lane", False):
+            alerts["orphan_lanes"].append(ref)
+        if lane.get("decision_needed"):
+            alerts["needs_decision"].append(ref)
         if lane["missing_receipt"]:
             alerts["missing_receipts"].append(ref)
         if isinstance(lane.get("scope_violation"), dict):
@@ -623,6 +1251,12 @@ def build_integrator_view(
         "blocked_lanes": sum(1 for lane in lanes if lane["merge_readiness"] == "blocked"),
         "review_lanes": sum(1 for lane in lanes if lane["merge_readiness"] == "review"),
         "in_progress_lanes": sum(1 for lane in lanes if lane["merge_readiness"] == "in_progress"),
+        "healthy_lanes": sum(1 for lane in lanes if lane.get("lane_health") == "healthy"),
+        "stalled_lanes": len(alerts["stalled_lanes"]),
+        "expired_lanes": len(alerts["expired_lanes"]),
+        "canonical_lanes": sum(1 for lane in lanes if lane.get("canonical_lane")),
+        "orphan_lanes": len(alerts["orphan_lanes"]),
+        "decision_lanes": len(alerts["needs_decision"]),
         "collision_lanes": len(alerts["collisions"]),
         "stale_heartbeat_lanes": len(alerts["stale_heartbeats"]),
         "superseded_lanes": len(alerts["superseded_lanes"]),

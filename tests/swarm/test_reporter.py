@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 
-from aragora.swarm.reporter import SwarmReport, SwarmReporter
+from aragora.swarm.reporter import SwarmReport, SwarmReporter, build_integrator_view
 from aragora.swarm.spec import SwarmSpec
 
 
@@ -189,3 +190,252 @@ class TestSwarmReporter:
         report = await reporter.generate(spec, result)
 
         assert report.success is False
+
+
+class TestIntegratorView:
+    def test_build_integrator_view_prefers_canonical_task_lane(self):
+        now = datetime(2026, 3, 18, 12, 0, tzinfo=UTC)
+        payload = build_integrator_view(
+            runs=[
+                {
+                    "run_id": "run-1",
+                    "status": "active",
+                    "goal": "Ship the integrator lane",
+                    "work_orders": [
+                        {
+                            "work_order_id": "wo-1",
+                            "title": "Build integrator lane",
+                            "status": "completed",
+                            "branch": "codex/integrator-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/integrator",
+                            "target_agent": "codex",
+                            "reviewer_agent": "claude",
+                        }
+                    ],
+                }
+            ],
+            worktrees=[
+                {
+                    "session_id": "sess-1",
+                    "path": "/tmp/repo/.worktrees/integrator",
+                    "branch": "codex/integrator-lane",
+                    "has_lock": True,
+                    "pid_alive": True,
+                    "agent": "codex",
+                    "last_activity": (now - timedelta(minutes=2)).isoformat(),
+                }
+            ],
+            claims=[{"session_id": "sess-1", "path": "aragora/swarm/reporter.py"}],
+            merge_queue=[
+                {
+                    "id": "mq-1",
+                    "branch": "codex/integrator-lane",
+                    "session_id": "sess-1",
+                    "status": "needs_human",
+                    "metadata": {
+                        "receipt_id": "rcpt-1",
+                        "task_id": "wo-1",
+                        "pr_url": "https://github.com/synaptent/aragora/pull/1051",
+                        "pr_number": 1051,
+                    },
+                }
+            ],
+            coordination={
+                "counts": {"active_leases": 1},
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-1",
+                            "task_id": "wo-1",
+                            "run_id": "run-1",
+                            "goal": "Ship the integrator lane",
+                            "title": "Build integrator lane",
+                            "status": "completed",
+                            "owner_agent": "codex",
+                            "reviewer_agent": "claude",
+                            "owner_session_id": "sess-1",
+                            "branch": "codex/integrator-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/integrator",
+                            "lease_id": "lease-1",
+                            "receipt_id": "rcpt-1",
+                            "allowed_paths": ["aragora/swarm/reporter.py"],
+                            "updated_at": (now - timedelta(minutes=3)).isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-1",
+                            "task_id": "wo-1",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-1",
+                            "branch": "codex/integrator-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/integrator",
+                            "claimed_paths": ["aragora/swarm/reporter.py"],
+                            "status": "completed",
+                            "updated_at": (now - timedelta(minutes=4)).isoformat(),
+                            "expires_at": (now + timedelta(hours=2)).isoformat(),
+                            "metadata": {"task_key": "run-1:wo-1"},
+                        }
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "rcpt-1",
+                            "lease_id": "lease-1",
+                            "task_id": "wo-1",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-1",
+                            "branch": "codex/integrator-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/integrator",
+                            "confidence": 0.94,
+                            "outcome": "deliverable_created",
+                            "tests_run": ["python -m pytest tests/swarm/test_reporter.py -q"],
+                            "validations_run": [
+                                "python -m pytest tests/swarm/test_reporter.py -q",
+                                "ruff check aragora/swarm/reporter.py",
+                            ],
+                            "created_at": (now - timedelta(minutes=5)).isoformat(),
+                            "metadata": {
+                                "task_key": "run-1:wo-1",
+                                "reviewer_agent": "claude",
+                            },
+                            "pr_url": "https://github.com/synaptent/aragora/pull/1051",
+                            "pr_number": 1051,
+                        }
+                    ],
+                    "integration_decisions": [
+                        {
+                            "decision_id": "dec-1",
+                            "lease_id": "lease-1",
+                            "receipt_id": "rcpt-1",
+                            "decision": "pending_review",
+                            "target_branch": "main",
+                            "rationale": "Awaiting integrator review",
+                            "chosen_commits": ["abc12345"],
+                            "followups": ["check merge gate"],
+                            "decided_by": "system",
+                            "created_at": (now - timedelta(minutes=4)).isoformat(),
+                        }
+                    ],
+                    "salvage_candidates": [],
+                },
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert payload["summary"]["canonical_lanes"] == 1
+        assert payload["summary"]["decision_lanes"] == 1
+        assert payload["alerts"]["needs_decision"][0]["lane_id"] == "run-1:wo-1"
+        assert lane["source"] == "task"
+        assert lane["canonical_lane"] is True
+        assert lane["task_key"] == "run-1:wo-1"
+        assert lane["merge_readiness"] == "review"
+        assert lane["lane_health"] == "healthy"
+        assert lane["integration_decision"] == "pending_review"
+        assert lane["pr"]["number"] == 1051
+        assert lane["available_actions"][:3] == ["merge", "cherry_pick", "request_changes"]
+
+    def test_build_integrator_view_marks_expired_and_superseded_lanes(self):
+        now = datetime(2026, 3, 18, 12, 0, tzinfo=UTC)
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-expired",
+                            "task_id": "wo-expired",
+                            "run_id": "run-1",
+                            "goal": "Recover expired lane",
+                            "title": "Recover expired lane",
+                            "status": "timed_out",
+                            "owner_session_id": "sess-expired",
+                            "branch": "codex/expired",
+                            "worktree_path": "/tmp/repo/.worktrees/expired",
+                            "lease_id": "lease-expired",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                        },
+                        {
+                            "task_key": "run-1:wo-superseded",
+                            "task_id": "wo-superseded",
+                            "run_id": "run-1",
+                            "goal": "Replace stale lane",
+                            "title": "Replace stale lane",
+                            "status": "discarded",
+                            "owner_session_id": "sess-old",
+                            "branch": "codex/old-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/old",
+                            "lease_id": "lease-old",
+                            "receipt_id": "rcpt-old",
+                            "updated_at": (now - timedelta(minutes=45)).isoformat(),
+                        },
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-expired",
+                            "task_id": "wo-expired",
+                            "owner_session_id": "sess-expired",
+                            "branch": "codex/expired",
+                            "worktree_path": "/tmp/repo/.worktrees/expired",
+                            "status": "expired",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        },
+                        {
+                            "lease_id": "lease-old",
+                            "task_id": "wo-superseded",
+                            "owner_session_id": "sess-old",
+                            "branch": "codex/old-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/old",
+                            "status": "completed",
+                            "updated_at": (now - timedelta(hours=1)).isoformat(),
+                            "expires_at": (now + timedelta(hours=1)).isoformat(),
+                        },
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "rcpt-old",
+                            "lease_id": "lease-old",
+                            "task_id": "wo-superseded",
+                            "owner_session_id": "sess-old",
+                            "branch": "codex/old-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/old",
+                            "created_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "integration_decisions": [
+                        {
+                            "decision_id": "dec-old",
+                            "lease_id": "lease-old",
+                            "receipt_id": "rcpt-old",
+                            "decision": "discard",
+                            "target_branch": "main",
+                            "rationale": "Superseded by a cleaner replacement lane",
+                            "created_at": (now - timedelta(minutes=50)).isoformat(),
+                        }
+                    ],
+                    "salvage_candidates": [
+                        {
+                            "candidate_id": "salv-1",
+                            "branch": "codex/expired",
+                            "worktree_path": "/tmp/repo/.worktrees/expired",
+                            "status": "detected",
+                            "updated_at": (now - timedelta(minutes=20)).isoformat(),
+                        }
+                    ],
+                }
+            },
+            now=now,
+        )
+
+        lanes = {lane["task_id"]: lane for lane in payload["lanes"]}
+        expired = lanes["wo-expired"]
+        superseded = lanes["wo-superseded"]
+
+        assert payload["summary"]["expired_lanes"] == 1
+        assert payload["summary"]["superseded_lanes"] == 1
+        assert expired["lane_health"] == "expired"
+        assert expired["available_actions"][:2] == ["salvage", "reassign"]
+        assert expired["salvage_candidate_id"] == "salv-1"
+        assert superseded["merge_readiness"] == "superseded"
+        assert superseded["lane_health"] == "superseded"
+        assert superseded["available_actions"] == ["archive"]
