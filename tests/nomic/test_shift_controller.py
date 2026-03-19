@@ -199,6 +199,32 @@ class TestCheckShouldStop:
             assert should_stop is True
             assert "RefreshDue" in reason
 
+    def test_check_should_stop_dirty_worktree_when_enabled(self, config):
+        from aragora.nomic.shift_controller import ShiftController
+
+        config.enforce_clean_repo = True
+        ctrl = ShiftController(config)
+        _run(ctrl.start_shift(assessment_id="a-1"))
+
+        with patch.object(ctrl, "_is_repo_dirty", return_value=True):
+            should_stop, reason = ctrl.check_should_stop()
+
+        assert should_stop is True
+        assert "DirtyWorktree" in reason
+
+    def test_check_should_stop_colliding_worktrees_when_enabled(self, config):
+        from aragora.nomic.shift_controller import ShiftController
+
+        config.enforce_worktree_collision_check = True
+        ctrl = ShiftController(config)
+        _run(ctrl.start_shift(assessment_id="a-1"))
+
+        with patch.object(ctrl, "_has_colliding_worktrees", return_value=True):
+            should_stop, reason = ctrl.check_should_stop()
+
+        assert should_stop is True
+        assert "CollidingWorktrees" in reason
+
     def test_no_stop_when_within_bounds(self, config):
         from aragora.nomic.shift_controller import ShiftController
 
@@ -250,6 +276,16 @@ class TestPauseResume:
 
         with pytest.raises(ValueError, match="assessment_id is required"):
             _run(ctrl.resume_after_refresh(new_assessment_id=""))
+
+    def test_resume_requires_new_assessment_id(self, config):
+        from aragora.nomic.shift_controller import ShiftController
+
+        ctrl = ShiftController(config)
+        _run(ctrl.start_shift(assessment_id="a-1"))
+        _run(ctrl.pause_for_refresh())
+
+        with pytest.raises(ValueError, match="must differ from the previous assessment"):
+            _run(ctrl.resume_after_refresh(new_assessment_id="a-1"))
 
     def test_resume_fails_if_not_paused(self, config):
         from aragora.nomic.shift_controller import ShiftController
@@ -303,12 +339,14 @@ class TestRunCycle:
 
         with patch("aragora.nomic.shift_controller.time") as mock_time:
             mock_time.time.return_value = ctrl.state.started_at + 60
-            result = _run(ctrl.run_cycle("improve coverage"))
+            result = _run(ctrl.run_cycle("improve coverage", cost_usd=1.25, receipt_id="rcpt-1"))
 
         assert result["completed"] is True
         assert result["cycle"] == 1
         assert ctrl.state.current_cycle == 1
         assert "improve coverage" in ctrl.state.objectives_completed
+        assert ctrl.state.budget_spent_usd == pytest.approx(1.25)
+        assert ctrl.state.last_receipt_id == "rcpt-1"
 
     def test_run_cycle_stops_on_limit(self, config):
         from aragora.nomic.shift_controller import ShiftController
@@ -330,6 +368,49 @@ class TestRunCycle:
         ctrl = ShiftController(config)
         with pytest.raises(RuntimeError, match="No active shift"):
             _run(ctrl.run_cycle("objective"))
+
+    def test_run_cycle_stops_on_missing_receipt_when_required(self, config):
+        from aragora.nomic.shift_controller import ShiftController
+
+        config.require_receipts = True
+        ctrl = ShiftController(config)
+        _run(ctrl.start_shift(assessment_id="a-1"))
+
+        with patch("aragora.nomic.shift_controller.time") as mock_time:
+            mock_time.time.return_value = ctrl.state.started_at + 60
+            result = _run(ctrl.run_cycle("objective without receipt"))
+
+        assert result["completed"] is False
+        assert "MissingReceipt" in result["stop_reason"]
+        assert "objective without receipt" in ctrl.state.objectives_failed
+
+    def test_run_cycle_stops_on_quality_gate_failure(self, config):
+        from aragora.nomic.shift_controller import ShiftController
+
+        ctrl = ShiftController(config)
+        _run(ctrl.start_shift(assessment_id="a-1"))
+
+        with patch("aragora.nomic.shift_controller.time") as mock_time:
+            mock_time.time.return_value = ctrl.state.started_at + 60
+            result = _run(ctrl.run_cycle("objective", quality_gate_passed=False))
+
+        assert result["completed"] is False
+        assert "QualityGateFailed" in result["stop_reason"]
+        assert "objective" in ctrl.state.objectives_failed
+
+    def test_run_cycle_stops_on_ownership_ambiguity(self, config):
+        from aragora.nomic.shift_controller import ShiftController
+
+        ctrl = ShiftController(config)
+        _run(ctrl.start_shift(assessment_id="a-1"))
+
+        with patch("aragora.nomic.shift_controller.time") as mock_time:
+            mock_time.time.return_value = ctrl.state.started_at + 60
+            result = _run(ctrl.run_cycle("objective", ownership_clear=False))
+
+        assert result["completed"] is False
+        assert "OwnershipAmbiguous" in result["stop_reason"]
+        assert "objective" in ctrl.state.objectives_failed
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +436,27 @@ class TestProgressSummary:
         assert summary["remaining_hours"] == 0.75
         assert summary["cycles_completed"] == 0
         assert summary["max_cycles"] == 10
+
+    def test_progress_summary_includes_assessment_and_blockers(self, config):
+        from aragora.nomic.shift_controller import ShiftController
+
+        ctrl = ShiftController(config)
+        _run(ctrl.start_shift(assessment_id="a-1"))
+        ctrl.state.current_objective = "improve coverage"
+        ctrl.state.last_receipt_id = "rcpt-1"
+        ctrl.state.blocked_reasons = ["RefreshDue"]
+        ctrl.state.next_refresh_actions = ["Run `aragora assess --save --diff` before resuming."]
+        ctrl.state.stop_reason = "RefreshDue"
+
+        with patch("aragora.nomic.shift_controller.time") as mock_time:
+            mock_time.time.return_value = ctrl.state.started_at + 15 * 60
+            summary = ctrl.get_progress_summary()
+
+        assert summary["assessment_id"] == "a-1"
+        assert summary["current_objective"] == "improve coverage"
+        assert summary["last_receipt_id"] == "rcpt-1"
+        assert summary["blocked_reasons"] == ["RefreshDue"]
+        assert summary["stop_reason"] == "RefreshDue"
 
     def test_progress_summary_no_shift(self, config):
         from aragora.nomic.shift_controller import ShiftController
@@ -437,8 +539,12 @@ class TestShiftStateSerialization:
             last_refresh_at=1200.0,
             last_checkpoint_at=1250.0,
             assessment_id="assess-x",
+            current_objective="obj-running",
+            last_receipt_id="rcpt-1",
             objectives_completed=["obj1", "obj2"],
             objectives_failed=["obj3"],
+            blocked_reasons=["RefreshDue"],
+            next_refresh_actions=["Run `aragora assess --save --diff` before resuming."],
             stop_reason="",
         )
 
@@ -454,8 +560,11 @@ class TestShiftStateSerialization:
         assert restored.refresh_count == state.refresh_count
         assert restored.last_refresh_at == state.last_refresh_at
         assert restored.assessment_id == state.assessment_id
+        assert restored.current_objective == "obj-running"
+        assert restored.last_receipt_id == "rcpt-1"
         assert restored.objectives_completed == ["obj1", "obj2"]
         assert restored.objectives_failed == ["obj3"]
+        assert restored.blocked_reasons == ["RefreshDue"]
 
     def test_to_dict_is_json_serializable(self):
         from aragora.nomic.shift_controller import ShiftState

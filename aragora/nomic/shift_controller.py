@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -49,6 +50,10 @@ class ShiftConfig:
     budget_limit_usd: float = 10.0
     max_cycles: int = 50
     require_fresh_assessment: bool = True  # Must have assessment before starting
+    require_receipts: bool = False  # Require receipt_id when recording a cycle
+    enforce_clean_repo: bool = False  # Stop if repo cleanliness cannot be proven
+    enforce_worktree_collision_check: bool = False  # Stop on duplicate worktree refs
+    repo_path: str | None = None  # Repo to validate for hygiene checks
     checkpoint_dir: str = ".aragora_shifts"
 
 
@@ -72,8 +77,12 @@ class ShiftState:
     last_refresh_at: float = 0.0
     last_checkpoint_at: float = 0.0
     assessment_id: str | None = None  # Links to CanonicalRepoAssessment
+    current_objective: str = ""
+    last_receipt_id: str | None = None
     objectives_completed: list[str] = field(default_factory=list)
     objectives_failed: list[str] = field(default_factory=list)
+    blocked_reasons: list[str] = field(default_factory=list)
+    next_refresh_actions: list[str] = field(default_factory=list)
     stop_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -90,8 +99,12 @@ class ShiftState:
             "last_refresh_at": self.last_refresh_at,
             "last_checkpoint_at": self.last_checkpoint_at,
             "assessment_id": self.assessment_id,
+            "current_objective": self.current_objective,
+            "last_receipt_id": self.last_receipt_id,
             "objectives_completed": list(self.objectives_completed),
             "objectives_failed": list(self.objectives_failed),
+            "blocked_reasons": list(self.blocked_reasons),
+            "next_refresh_actions": list(self.next_refresh_actions),
             "stop_reason": self.stop_reason,
         }
 
@@ -110,8 +123,12 @@ class ShiftState:
             last_refresh_at=data.get("last_refresh_at", 0.0),
             last_checkpoint_at=data.get("last_checkpoint_at", 0.0),
             assessment_id=data.get("assessment_id"),
+            current_objective=data.get("current_objective", ""),
+            last_receipt_id=data.get("last_receipt_id"),
             objectives_completed=data.get("objectives_completed", []),
             objectives_failed=data.get("objectives_failed", []),
+            blocked_reasons=data.get("blocked_reasons", []),
+            next_refresh_actions=data.get("next_refresh_actions", []),
             stop_reason=data.get("stop_reason", ""),
         )
 
@@ -183,6 +200,10 @@ class ShiftController:
             "budget_limit_usd": self._config.budget_limit_usd,
             "max_cycles": self._config.max_cycles,
             "require_fresh_assessment": self._config.require_fresh_assessment,
+            "require_receipts": self._config.require_receipts,
+            "enforce_clean_repo": self._config.enforce_clean_repo,
+            "enforce_worktree_collision_check": self._config.enforce_worktree_collision_check,
+            "repo_path": self._config.repo_path,
             "checkpoint_dir": self._config.checkpoint_dir,
         }
 
@@ -203,7 +224,15 @@ class ShiftController:
         )
         return self._state
 
-    async def run_cycle(self, objective: str) -> dict[str, Any]:
+    async def run_cycle(
+        self,
+        objective: str,
+        *,
+        cost_usd: float = 0.0,
+        receipt_id: str | None = None,
+        quality_gate_passed: bool = True,
+        ownership_clear: bool = True,
+    ) -> dict[str, Any]:
         """Run one improvement cycle within the shift.
 
         Checks all stop conditions before execution.  The controller does
@@ -212,6 +241,10 @@ class ShiftController:
 
         Args:
             objective: Description of the improvement objective.
+            cost_usd: Optional cost accrued by the cycle.
+            receipt_id: Optional receipt/provenance id for the cycle.
+            quality_gate_passed: Whether execution cleared quality gates.
+            ownership_clear: Whether ownership/scope was unambiguous.
 
         Returns:
             Dict with ``completed``, ``cycle``, ``stop_reason`` keys.
@@ -229,9 +262,34 @@ class ShiftController:
         if should_stop:
             return {"completed": False, "cycle": self._state.current_cycle, "stop_reason": reason}
 
+        self._state.current_objective = objective
+        self._state.stop_reason = ""
+        self._state.blocked_reasons = []
+        self._state.next_refresh_actions = []
+
+        if not ownership_clear:
+            return self._block_cycle(
+                objective,
+                "OwnershipAmbiguous: objective lacks clear ownership or scope evidence",
+            )
+
+        if self._config.require_receipts and not receipt_id:
+            return self._block_cycle(
+                objective,
+                "MissingReceipt: cycle result did not include a receipt_id",
+            )
+
+        if not quality_gate_passed:
+            return self._block_cycle(
+                objective,
+                "QualityGateFailed: cycle did not clear quality gates",
+            )
+
         # Record the cycle
         self._state.current_cycle += 1
         self._state.elapsed_seconds = time.time() - self._state.started_at
+        self._state.budget_spent_usd += max(0.0, float(cost_usd))
+        self._state.last_receipt_id = receipt_id
         self._state.objectives_completed.append(objective)
 
         # Save checkpoint
@@ -257,6 +315,12 @@ class ShiftController:
 
         if self._state.status not in ("running",):
             return True, f"ShiftNotRunning: status={self._state.status}"
+
+        if self._config.enforce_clean_repo and self._is_repo_dirty():
+            return True, "DirtyWorktree: repository has uncommitted changes"
+
+        if self._config.enforce_worktree_collision_check and self._has_colliding_worktrees():
+            return True, "CollidingWorktrees: duplicate worktree paths or branches detected"
 
         # Time limit
         elapsed_hours = (time.time() - self._state.started_at) / 3600.0
@@ -301,7 +365,7 @@ class ShiftController:
     # Pause / resume
     # ------------------------------------------------------------------
 
-    async def pause_for_refresh(self) -> ShiftState:
+    async def pause_for_refresh(self, reason: str | None = None) -> ShiftState:
         """Pause the shift for mandatory assessment refresh.
 
         Saves a checkpoint and sets the status to ``paused_for_refresh``.
@@ -315,7 +379,11 @@ class ShiftController:
         if self._state is None:
             raise RuntimeError("No active shift to pause")
 
+        pause_reason = reason or self._state.stop_reason or "RefreshDue"
         self._state.status = "paused_for_refresh"
+        self._state.stop_reason = pause_reason
+        self._state.blocked_reasons = [pause_reason]
+        self._state.next_refresh_actions = self._recommended_refresh_actions(pause_reason)
         self._state.elapsed_seconds = time.time() - self._state.started_at
         self._save_checkpoint()
         logger.info(
@@ -344,11 +412,17 @@ class ShiftController:
             raise RuntimeError(f"Shift is not paused for refresh (status={self._state.status})")
         if not new_assessment_id:
             raise ValueError("A fresh assessment_id is required to resume")
+        if self._config.require_fresh_assessment and new_assessment_id == self._state.assessment_id:
+            raise ValueError("A fresh assessment_id must differ from the previous assessment")
 
         self._state.status = "running"
         self._state.assessment_id = new_assessment_id
         self._state.refresh_count += 1
         self._state.last_refresh_at = time.time()
+        self._state.stop_reason = ""
+        self._state.blocked_reasons = []
+        self._state.next_refresh_actions = []
+        self._state.current_objective = ""
         self._save_checkpoint()
         logger.info(
             "shift_resumed shift_id=%s assessment=%s refresh_count=%d",
@@ -379,6 +453,10 @@ class ShiftController:
 
         self._state.status = "completed"
         self._state.stop_reason = reason
+        self._state.blocked_reasons = [reason] if reason and reason != "completed" else []
+        self._state.next_refresh_actions = (
+            self._recommended_refresh_actions(reason) if self._state.blocked_reasons else []
+        )
         self._state.elapsed_seconds = time.time() - self._state.started_at
         self._save_checkpoint()
         logger.info(
@@ -416,6 +494,7 @@ class ShiftController:
             "active": True,
             "shift_id": self._state.shift_id,
             "status": self._state.status,
+            "assessment_id": self._state.assessment_id,
             "elapsed_hours": round(elapsed_hours, 2),
             "remaining_hours": round(remaining_hours, 2),
             "budget_spent_usd": round(self._state.budget_spent_usd, 4),
@@ -428,6 +507,11 @@ class ShiftController:
             "objectives_failed": len(self._state.objectives_failed),
             "refresh_count": self._state.refresh_count,
             "minutes_until_next_refresh": round(next_refresh_minutes, 1),
+            "current_objective": self._state.current_objective,
+            "last_receipt_id": self._state.last_receipt_id,
+            "stop_reason": self._state.stop_reason,
+            "blocked_reasons": list(self._state.blocked_reasons),
+            "next_refresh_actions": list(self._state.next_refresh_actions),
         }
 
     # ------------------------------------------------------------------
@@ -455,6 +539,88 @@ class ShiftController:
             self._state.last_checkpoint_at = time.time()
         except (OSError, ImportError, ValueError) as exc:
             logger.warning("shift_checkpoint_save_failed: %s", exc)
+
+    def _block_cycle(self, objective: str, reason: str) -> dict[str, Any]:
+        """Record a truthful blocked cycle without pretending execution succeeded."""
+        if self._state is None:
+            raise RuntimeError("No active shift; cannot block cycle")
+        self._state.stop_reason = reason
+        self._state.blocked_reasons = [reason]
+        self._state.next_refresh_actions = self._recommended_refresh_actions(reason)
+        self._state.objectives_failed.append(objective)
+        self._state.elapsed_seconds = time.time() - self._state.started_at
+        self._save_checkpoint()
+        return {
+            "completed": False,
+            "cycle": self._state.current_cycle,
+            "stop_reason": reason,
+        }
+
+    def _recommended_refresh_actions(self, reason: str) -> list[str]:
+        """Suggest next refresh steps after a blocked or paused shift."""
+        actions = [
+            "Run `aragora assess --save --diff` before resuming the shift.",
+            "Review the accepted backlog slice and current stop reason before continuing.",
+        ]
+        if reason.startswith("DirtyWorktree"):
+            actions.insert(0, "Reconcile or clean the dirty worktree before resuming.")
+        elif reason.startswith("CollidingWorktrees"):
+            actions.insert(0, "Reconcile duplicate/colliding worktrees before resuming.")
+        elif reason.startswith("MissingReceipt"):
+            actions.insert(0, "Ensure cycle execution returns a receipt_id before resuming.")
+        elif reason.startswith("QualityGateFailed"):
+            actions.insert(0, "Inspect and resolve the failing quality gates before resuming.")
+        elif reason.startswith("OwnershipAmbiguous"):
+            actions.insert(0, "Tighten file ownership or scope evidence for the next cycle.")
+        return actions
+
+    def _repo_path(self) -> Path:
+        return Path(self._config.repo_path or Path.cwd()).resolve()
+
+    def _is_repo_dirty(self) -> bool:
+        proc = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=self._repo_path(),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            logger.debug("shift_repo_cleanliness_check_failed returncode=%s", proc.returncode)
+            return True
+        return bool(proc.stdout.strip())
+
+    def _has_colliding_worktrees(self) -> bool:
+        proc = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=self._repo_path(),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            logger.debug("shift_worktree_collision_check_failed returncode=%s", proc.returncode)
+            return True
+
+        paths: set[str] = set()
+        branches: set[str] = set()
+        current_path: str | None = None
+
+        for line in proc.stdout.splitlines():
+            if line.startswith("worktree "):
+                current_path = line.split(" ", 1)[1].strip()
+                if current_path in paths:
+                    return True
+                paths.add(current_path)
+            elif line.startswith("branch "):
+                branch = line.split(" ", 1)[1].strip()
+                if current_path and branch in branches:
+                    return True
+                if branch:
+                    branches.add(branch)
+        return False
 
     @classmethod
     def resume_from_checkpoint(
@@ -495,6 +661,12 @@ class ShiftController:
             budget_limit_usd=cfg_data.get("budget_limit_usd", 10.0),
             max_cycles=cfg_data.get("max_cycles", 50),
             require_fresh_assessment=cfg_data.get("require_fresh_assessment", True),
+            require_receipts=cfg_data.get("require_receipts", False),
+            enforce_clean_repo=cfg_data.get("enforce_clean_repo", False),
+            enforce_worktree_collision_check=cfg_data.get(
+                "enforce_worktree_collision_check", False
+            ),
+            repo_path=cfg_data.get("repo_path"),
             checkpoint_dir=checkpoint_dir,
         )
 
