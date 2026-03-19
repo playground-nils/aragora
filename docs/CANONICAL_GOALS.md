@@ -2,7 +2,7 @@
 
 **Single source of truth for all goals across aragoradocs.**
 **This document defines WHAT Aragora is and WHY. The [Evolution Roadmap](plans/ARAGORA_EVOLUTION_ROADMAP.md) defines HOW.**
-**Last updated: March 1, 2026**
+**Last updated: March 18, 2026**
 
 ---
 
@@ -446,6 +446,7 @@ The [Evolution Roadmap](plans/ARAGORA_EVOLUTION_ROADMAP.md) is the HOW document 
 | 36 | **Agent handoff patterns** (specialist delegation mid-debate) | P5, P6 | EVOLUTION_ROADMAP |
 | 37 | **10+ agent coordinated debates** without deadlock | P1, P5 | HONEST_ASSESSMENT |
 | 38 | **Market resolution mechanism** for long-horizon settlement claims | P1, P4 | EVOLUTION_ROADMAP |
+| 44 | **Continuous self-assessment and autonomous improvement cadence** | P5 | [#1036](https://github.com/synaptent/aragora/issues/1036) |
 
 ---
 

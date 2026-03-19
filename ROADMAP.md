@@ -207,6 +207,7 @@ for capturing this cohort is now.
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
 - [ ] EU AI Act compliance package — final packaging polish, regulator-ready validation, and customer rollout hardening
 - [ ] SOC 2 Type II audit engagement kickoff (controls are ready; external auditor engagement pending)
+- [ ] Autonomous improvement cadence — assessment compiler + pause-refresh shift controller for 8+ hour unattended self-improvement shifts. Epic: [#1036](https://github.com/synaptent/aragora/issues/1036)
 
 ### Q3 2026 Priorities
 - [ ] Cloud marketplace listings: AWS Marketplace and Azure Marketplace

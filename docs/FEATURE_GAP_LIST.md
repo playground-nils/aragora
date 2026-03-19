@@ -62,6 +62,7 @@
 | International expansion / EU data residency | Not started | Data residency controls needed for EU enterprise buyers. |
 | 10+ agent coordinated debates | Scaffolding | Current practical limit: 2-6 agents. Coordination infrastructure exists; scale testing needed. Tracked in [#815](https://github.com/synaptent/aragora/issues/815). |
 | Compute escrow mechanism | Not started | Settlement stakes via crypto compute escrow. Design in docs/plans/. |
+| Autonomous improvement cadence | Not started | Bounded assessment→backlog→execution→pause→refresh cycles for 8+ hour unattended shifts. Assessment compiler ([#1037](https://github.com/synaptent/aragora/issues/1037)) and pause-refresh shift controller ([#1038](https://github.com/synaptent/aragora/issues/1038)). Epic: [#1036](https://github.com/synaptent/aragora/issues/1036). |
 
 ---
 

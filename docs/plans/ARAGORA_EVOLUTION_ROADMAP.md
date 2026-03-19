@@ -1089,6 +1089,39 @@ for proposal in proposals:
 
 ---
 
+## Phase 7: Autonomous Improvement Cadence
+
+**Rationale**: The Nomic Loop and HardenedOrchestrator can execute individual self-improvement cycles, but there is no higher-level controller that continuously identifies what to improve, sequences the work, and manages agent fatigue across long unattended shifts. The goal is bounded assessment-backlog-execution-pause-refresh cycles targeting 8+ hour autonomous operation.
+
+**Tracking**: [#1036](https://github.com/synaptent/aragora/issues/1036) (epic), [#1037](https://github.com/synaptent/aragora/issues/1037) (assessment compiler), [#1038](https://github.com/synaptent/aragora/issues/1038) (pause-refresh shift controller)
+
+### 7A. Assessment Compiler (#1037)
+
+Automated codebase assessment that produces a prioritized backlog of improvement tasks.
+
+**Implementation**:
+1. Run static analysis, test coverage gaps, type error inventory, and code quality signals
+2. Cross-reference against FEATURE_GAP_LIST.md and open GitHub issues
+3. Produce a ranked backlog with estimated effort and expected impact
+4. Feed directly into the SelfImprovePipeline as goal candidates
+
+**Integration**: Extends `aragora/nomic/meta_planner.py` with structured assessment input.
+
+### 7B. Pause-Refresh Shift Controller (#1038)
+
+Bounded work shifts with context refresh to prevent drift and accumulation of stale state.
+
+**Implementation**:
+1. Shift lifecycle: assess -> plan -> execute N items -> pause -> refresh context -> resume
+2. Configurable shift duration, pause interval, and maximum items per shift
+3. Context refresh clears accumulated state, re-reads `main`, and re-runs assessment
+4. Integrates with existing HardenedOrchestrator safety gates (gauntlet, auto-revert)
+5. Shift telemetry: items attempted, items landed, items reverted, wall-clock time
+
+**Integration**: Wraps `aragora/nomic/hardened_orchestrator.py` and `aragora/nomic/autonomous_orchestrator.py` in a shift-aware loop.
+
+---
+
 ## Implementation Priority
 
 | Phase | Weeks | Key Deliverable | User Value |
@@ -1100,6 +1133,7 @@ for proposal in proposals:
 | 4 | 8-10 | Merkle receipt chain + GraphRAG explainability | "Every decision has a cryptographic audit trail" |
 | 5 | 10-14 | Canvas GUI | "Professional, intuitive, not a developer tool" |
 | 6 | 14-18 | Agent team orchestration hardening | "Enterprise-grade, handles day-long debates" |
+| 7 | 18-22 | Autonomous improvement cadence | "The system continuously improves itself for 8+ hours unattended" |
 
 ## Success Criteria
 

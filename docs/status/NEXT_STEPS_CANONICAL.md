@@ -15,7 +15,9 @@ This file defines execution order.
 - The moat is the receipt-gated decision kernel: prompt/spec/debate/consensus/cryptographic receipt/policy-gated action.
 - GitHub issues now carry active execution status, owners, and acceptance criteria. Docs should summarize context and order, not act as the only operational backlog.
 - Truthfulness and backlog canonicalization are complete on `main` through [#809](https://github.com/synaptent/aragora/issues/809), and the first Decision Integrity Kernel bridge tranche [#810](https://github.com/synaptent/aragora/issues/810) is also complete.
-- The current M1 kernel focus is [#811](https://github.com/synaptent/aragora/issues/811) followed by [#812](https://github.com/synaptent/aragora/issues/812).
+- **Decision Integrity Kernel Phases 1-4 complete (March 18):** PRs [#1022](https://github.com/synaptent/aragora/pull/1022), [#1029](https://github.com/synaptent/aragora/pull/1029), [#1031](https://github.com/synaptent/aragora/pull/1031), [#1039](https://github.com/synaptent/aragora/pull/1039) merged. [#805](https://github.com/synaptent/aragora/issues/805) is complete. [#811](https://github.com/synaptent/aragora/issues/811) and [#812](https://github.com/synaptent/aragora/issues/812) landed on `main`.
+- **LLM scope classifier bundle landed (March 18):** [#840](https://github.com/synaptent/aragora/issues/840), [#841](https://github.com/synaptent/aragora/issues/841), [#1008](https://github.com/synaptent/aragora/issues/1008), [#811](https://github.com/synaptent/aragora/issues/811), [#813](https://github.com/synaptent/aragora/issues/813) merged via PRs [#1032](https://github.com/synaptent/aragora/pull/1032), [#1033](https://github.com/synaptent/aragora/pull/1033), [#1034](https://github.com/synaptent/aragora/pull/1034).
+- **Autonomous cadence is the next program track:** [#1036](https://github.com/synaptent/aragora/issues/1036) (epic), [#1037](https://github.com/synaptent/aragora/issues/1037) (assessment compiler), [#1038](https://github.com/synaptent/aragora/issues/1038) (pause-refresh shift controller). Goal: bounded assessment-backlog-execution-pause-refresh cycles targeting 8+ hour unattended shifts.
 - Surface area should be productized sequentially, not hidden or allowed to drift.
 - **Ralph autonomous loop hardened (March 18):** LLM-powered scope validation and blocker classification shipped (PR #1020). File-scope propagation fix (#884), vague-goal LLM expansion (#888), and observability dashboard (#1007) all landed. Ralph V14 benchmark validated autonomous spec→PR→merge.
 - **Swarm control plane work next:** #840 (file-scope enforcement), #841 (canonical PR protocol), #843 (integrator view) are the natural continuation of the Ralph hardening track.
@@ -36,12 +38,17 @@ This file defines execution order.
 ### 2) Decision Integrity Kernel Unification
 - Tracking: [#805](https://github.com/synaptent/aragora/issues/805), [#810](https://github.com/synaptent/aragora/issues/810), [#811](https://github.com/synaptent/aragora/issues/811), [#812](https://github.com/synaptent/aragora/issues/812), [#813](https://github.com/synaptent/aragora/issues/813), [#814](https://github.com/synaptent/aragora/issues/814), [#815](https://github.com/synaptent/aragora/issues/815), [#816](https://github.com/synaptent/aragora/issues/816)
 - Goal: unify `prompt -> specification -> adversarial debate -> consensus/dissent -> cryptographic decision receipt -> policy gate -> execution` as one canonical runtime.
-- Current tranche: [#811](https://github.com/synaptent/aragora/issues/811) and [#812](https://github.com/synaptent/aragora/issues/812) after [#810](https://github.com/synaptent/aragora/issues/810) landed on `main`.
+- Current status: DIK Phases 1-4 complete on `main` (PRs #1022, #1029, #1031, #1039). [#805](https://github.com/synaptent/aragora/issues/805) complete. [#811](https://github.com/synaptent/aragora/issues/811) and [#812](https://github.com/synaptent/aragora/issues/812) landed. LLM scope classifier bundle (#840, #841, #1008, #813) landed via PRs #1032, #1033, #1034. Remaining: [#814](https://github.com/synaptent/aragora/issues/814), [#815](https://github.com/synaptent/aragora/issues/815), [#816](https://github.com/synaptent/aragora/issues/816) (M3 Strategic Moat Scale-Out).
 - Why now:
   - This is the architectural center of Aragora's differentiation.
   - Provider routing, OpenClaw, 10+ agent scale, and ERC-8004 only matter if they plug into the same receipt-gated kernel.
 
-### 3) Sequential Surface Productization
+### 3) Autonomous Improvement Cadence
+- Tracking: [#1036](https://github.com/synaptent/aragora/issues/1036) (epic), [#1037](https://github.com/synaptent/aragora/issues/1037) (assessment compiler), [#1038](https://github.com/synaptent/aragora/issues/1038) (pause-refresh shift controller)
+- Goal: bounded assessment-backlog-execution-pause-refresh cycles targeting 8+ hour unattended autonomous shifts. Integrates with existing SelfImprovePipeline and HardenedOrchestrator.
+- Why now: the Nomic Loop and Ralph autonomous loop are proven; the next leverage point is continuous cadence, not individual cycle quality.
+
+### 4) Sequential Surface Productization
 - Tracking: [#806](https://github.com/synaptent/aragora/issues/806), [#817](https://github.com/synaptent/aragora/issues/817), [#818](https://github.com/synaptent/aragora/issues/818), [#819](https://github.com/synaptent/aragora/issues/819), [#820](https://github.com/synaptent/aragora/issues/820)
 - Goal: productize every exposed surface in waves, starting from the inbox trust wedge and public proof surfaces.
 - Rules:
@@ -49,7 +56,7 @@ This file defines execution order.
   - Keep partial surfaces visible, but label and harden them honestly.
   - Prefer one surface wave at a time over broad parallel productization.
 
-### 4) Assurance And GTM Closeout (Kept Warm, Not Main Product Lane)
+### 5) Assurance And GTM Closeout (Kept Warm, Not Main Product Lane)
 - Tracking: [#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509)
 - Goal: keep enterprise assurance truthfulness real without turning pentest/GTM work into the primary execution lane before the core kernel is unified.
 - Acceptance:
