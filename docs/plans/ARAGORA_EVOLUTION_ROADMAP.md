@@ -833,6 +833,8 @@ Enhance Nomic Loop Phase 4 (Verify):
 
 **Integration**: Build on `IdeaToExecutionPipeline.from_system_metrics()`, `SelfImprovePipeline`, `execute_to_github_issue()`, `plan_from_issue_list()`, Boss loop, and worktree autopilot instead of creating a separate planning silo.
 
+**Status (March 2026)**: The assessment compiler and shift controller are now on `main`. The next required tranche is the control-plane truth layer: canonical task claims, universal run receipts/provenance, integrator visibility, and real dogfooding of the cadence on bounded Aragora backlog lanes.
+
 ---
 
 ## Phase 4: Decision Accountability (Week 8-10)

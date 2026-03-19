@@ -151,6 +151,10 @@ def test_record_completion_creates_pending_integration(store: DevCoordinationSto
 
     assert isinstance(receipt, CompletionReceipt)
     assert receipt.artifact_hash
+    assert receipt.task_id == "clb-4"
+    assert receipt.validations_run == [
+        "python -m pytest tests/pipeline/test_backbone_contracts.py -q"
+    ]
     assert store.list_active_leases() == []
 
     pending = store.list_integration_decisions(only_pending=True)
@@ -161,6 +165,67 @@ def test_record_completion_creates_pending_integration(store: DevCoordinationSto
     merge_queue = store.fleet_store.list_merge_queue()
     assert len(merge_queue) == 1
     assert merge_queue[0]["metadata"]["receipt_id"] == receipt.receipt_id
+    assert merge_queue[0]["metadata"]["task_id"] == "clb-4"
+
+
+def test_record_completion_persists_extended_receipt_provenance(
+    store: DevCoordinationStore,
+) -> None:
+    lease = store.claim_lease(
+        task_id="wo-extended",
+        title="Extended receipt lane",
+        owner_agent="codex",
+        owner_session_id="sess-extended",
+        branch="codex/extended",
+        worktree_path="/tmp/wt-extended",
+        claimed_paths=["aragora/swarm/supervisor.py"],
+        expected_tests=["python -m pytest tests/swarm/test_supervisor.py -q"],
+        metadata={
+            "supervisor_run_id": "run-123",
+            "work_order_id": "wo-extended",
+            "task_key": "run-123:wo-extended",
+            "reviewer_agent": "claude",
+            "risk_level": "high",
+        },
+    )
+
+    receipt = store.record_completion(
+        lease_id=lease.lease_id,
+        owner_agent="codex",
+        owner_session_id="sess-extended",
+        branch="codex/extended",
+        worktree_path="/tmp/wt-extended",
+        base_sha="abc12345",
+        head_sha="def67890",
+        commit_shas=["def67890"],
+        changed_paths=["aragora/swarm/supervisor.py"],
+        tests_run=["python -m pytest tests/swarm/test_supervisor.py -q"],
+        validations_run=[
+            "python -m pytest tests/swarm/test_supervisor.py -q",
+            "ruff check aragora/swarm/supervisor.py",
+        ],
+        blockers=["needs integrator review"],
+        outcome="deliverable_created",
+        risks=["merge-risk:review"],
+        pr_url="https://github.com/synaptent/aragora/pull/1044",
+        pr_number=1044,
+        confidence=0.91,
+        metadata={"verification_results": [{"command": "ruff check", "passed": True}]},
+    )
+
+    stored = store.get_completion_receipt(receipt.receipt_id)
+
+    assert stored is not None
+    assert stored.task_id == "wo-extended"
+    assert stored.base_sha == "abc12345"
+    assert stored.head_sha == "def67890"
+    assert stored.outcome == "deliverable_created"
+    assert stored.risks == ["merge-risk:review"]
+    assert stored.pr_url == "https://github.com/synaptent/aragora/pull/1044"
+    assert stored.pr_number == 1044
+    assert stored.metadata["task_key"] == "run-123:wo-extended"
+    assert stored.metadata["verification_results"][0]["command"] == "ruff check"
+    assert store.list_completion_receipts(task_id="wo-extended")[0].receipt_id == receipt.receipt_id
 
 
 def test_record_completion_rejects_out_of_scope_changes(store: DevCoordinationStore) -> None:
@@ -287,6 +352,58 @@ def test_supervisor_run_tracks_lease_completion_and_decision(store: DevCoordinat
     assert refreshed is not None
     assert refreshed["work_orders"][0]["status"] == "changes_requested"
     assert refreshed["status"] == "needs_human"
+
+
+def test_list_developer_tasks_flattens_supervisor_runs(store: DevCoordinationStore) -> None:
+    run = store.create_supervisor_run(
+        goal="Ship canonical queue",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={"raw_goal": "Ship canonical queue", "refined_goal": "Ship canonical queue"},
+        work_orders=[
+            {
+                "work_order_id": "wo-queue",
+                "title": "Queue lane",
+                "file_scope": ["aragora/nomic/dev_coordination.py"],
+                "expected_tests": ["python -m pytest tests/nomic/test_dev_coordination.py -q"],
+                "success_criteria": {
+                    "tests": ["python -m pytest tests/nomic/test_dev_coordination.py -q"]
+                },
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "risk_level": "high",
+            }
+        ],
+    )
+
+    task = store.get_developer_task(f"{run['run_id']}:wo-queue")
+    assert task is not None
+    assert task.status == "queued"
+    assert task.priority == 75
+    assert task.allowed_paths == ["aragora/nomic/dev_coordination.py"]
+    assert "python -m pytest tests/nomic/test_dev_coordination.py -q" in task.acceptance_checks
+
+    lease = store.claim_lease(
+        task_id="wo-queue",
+        title="Queue lane",
+        owner_agent="codex",
+        owner_session_id="sess-queue",
+        branch="codex/queue",
+        worktree_path="/tmp/wt-queue",
+        claimed_paths=["aragora/nomic/dev_coordination.py"],
+        metadata={"supervisor_run_id": run["run_id"], "work_order_id": "wo-queue"},
+    )
+
+    refreshed = store.get_developer_task(f"{run['run_id']}:wo-queue")
+    assert refreshed is not None
+    assert refreshed.status == "leased"
+    assert refreshed.lease_id == lease.lease_id
+    assert refreshed.owner_session_id == "sess-queue"
 
 
 def test_record_integration_decision_updates_queue(store: DevCoordinationStore) -> None:
@@ -527,6 +644,84 @@ async def test_sync_pending_work_queue_projects_items(
     assert any(item_id.startswith("integration:") for item_id in item_ids)
     integration_item = next(item for item in items if item.id.startswith("integration:"))
     assert integration_item.metadata["receipt_id"] == receipt.receipt_id
+
+
+@pytest.mark.asyncio
+async def test_sync_developer_task_queue_projects_open_tasks(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Project queued developer task",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Project queued developer task",
+            "refined_goal": "Project queued developer task",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-sync-task",
+                "title": "Queue me",
+                "file_scope": ["aragora/nomic/dev_coordination.py"],
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+    queue = GlobalWorkQueue(storage_dir=repo / ".work_queue")
+
+    counts = await store.sync_developer_task_queue(queue)
+    item = await queue.get(f"task:{run['run_id']}:wo-sync-task")
+
+    assert counts["created"] == 1
+    assert item is not None
+    assert item.status == WorkStatus.READY
+    assert item.metadata["task_id"] == "wo-sync-task"
+
+
+@pytest.mark.asyncio
+async def test_sync_developer_task_queue_completes_resolved_tasks(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Complete task queue item",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={"raw_goal": "Complete task queue item", "refined_goal": "Complete task queue item"},
+        work_orders=[
+            {
+                "work_order_id": "wo-close-task",
+                "title": "Close me",
+                "file_scope": ["aragora/nomic/dev_coordination.py"],
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+    queue = GlobalWorkQueue(storage_dir=repo / ".work_queue")
+
+    await store.sync_developer_task_queue(queue)
+    run_record = store.get_supervisor_run(run["run_id"])
+    assert run_record is not None
+    run_record["work_orders"][0]["status"] = "merged"
+    store.update_supervisor_run(run["run_id"], work_orders=run_record["work_orders"])
+
+    counts = await store.sync_developer_task_queue(queue)
+    item = await queue.get(f"task:{run['run_id']}:wo-close-task")
+
+    assert counts["completed"] == 1
+    assert item is not None
+    assert item.status == WorkStatus.COMPLETED
 
 
 @pytest.mark.asyncio

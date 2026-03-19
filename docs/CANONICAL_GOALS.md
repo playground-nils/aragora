@@ -326,7 +326,7 @@ From the honest assessment, these claims are currently scaffolding and must beco
 
 | Claim | Current State | Goal State |
 |-------|--------------|------------|
-| Self-improving platform | Nomic Loop fully wired end-to-end (Phase 10C, Jan 2026); dogfood benchmark cycles running; idea-to-execution, issue sync, and bounded autonomous maintenance primitives exist on `main` | Consistent autonomous improvement with 80%+ quality pass rate and a recurring assessment -> backlog -> shift -> refresh cadence |
+| Self-improving platform | Nomic Loop fully wired end-to-end (Phase 10C, Jan 2026); dogfood benchmark cycles running; idea-to-execution, issue sync, canonical assessment compilation, and bounded shift control exist on `main` | Consistent autonomous improvement with 80%+ quality pass rate and a recurring assessment -> backlog -> shift -> refresh cadence backed by truthful task claims, run receipts, and integrator visibility |
 | Blockchain receipts | SHA-256 hashing, no on-chain storage; ERC-8004 contracts undeployed | Receipts stored on-chain with deployed ERC-8004 contracts |
 | Semantic convergence | difflib text matching only (tier 1) | Embedding-based semantic similarity detection |
 | 43-agent parallel coordination | All exist individually; practical debates use 2-6 | Demonstrated coordination of 10+ agents on a single task |
