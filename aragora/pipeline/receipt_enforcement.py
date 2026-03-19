@@ -3,13 +3,17 @@
 Phase 1 adds a single enforcement surface that write-capable handlers can call
 without changing default behavior. Enforcement stays disabled until the
 per-domain feature flag is enabled.
+
+Phase 4 adds Prometheus metrics (counter + latency histogram) and automatic
+exemption checks via the ExemptionRegistry.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from aragora.config.feature_flags import is_enabled
 from aragora.gauntlet.receipt_models import DecisionReceipt
@@ -21,6 +25,58 @@ from aragora.gauntlet.receipt_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Prometheus metrics — lazy-initialized to avoid import cost when
+# prometheus_client is not installed.
+# ---------------------------------------------------------------------------
+
+_metrics_initialized = False
+_enforcement_total: Any = None
+_enforcement_latency: Any = None
+
+
+def _ensure_metrics() -> None:
+    """Lazily initialize Prometheus metrics; no-op if already done."""
+    global _metrics_initialized, _enforcement_total, _enforcement_latency
+    if _metrics_initialized:
+        return
+    try:
+        from prometheus_client import Counter, Histogram
+
+        _enforcement_total = Counter(
+            "aragora_receipt_enforcement_total",
+            "Receipt enforcement decisions",
+            ["domain", "result"],
+        )
+        _enforcement_latency = Histogram(
+            "aragora_receipt_enforcement_latency_seconds",
+            "Receipt enforcement check latency",
+            ["domain"],
+        )
+    except (ImportError, ValueError):
+        # ImportError: prometheus_client not installed
+        # ValueError: metrics already registered in the default registry
+        pass
+    _metrics_initialized = True
+
+
+def _record_enforcement_metric(domain: str, result: str, elapsed: float) -> None:
+    """Emit Prometheus counter + histogram if metrics are available."""
+    _ensure_metrics()
+    if _enforcement_total is not None:
+        _enforcement_total.labels(domain=domain, result=result).inc()
+    if _enforcement_latency is not None:
+        _enforcement_latency.labels(domain=domain).observe(elapsed)
+
+
+def reset_enforcement_metrics() -> None:
+    """Reset metrics initialization flag (for testing)."""
+    global _metrics_initialized, _enforcement_total, _enforcement_latency
+    _metrics_initialized = False
+    _enforcement_total = None
+    _enforcement_latency = None
+
 
 _FEATURE_FLAG_BY_DOMAIN: Final[dict[str, str]] = {
     "openclaw": "receipt_enforcement_openclaw",
@@ -106,10 +162,13 @@ def require_receipt_gate(
 ) -> StoredReceipt | None:
     """Validate an approved receipt before an action-taking path proceeds."""
 
+    t0 = time.monotonic()
     normalized_domain = _normalize_domain(action_domain)
     normalized_receipt_id = str(receipt_id or "").strip() or None
 
+    # --- Explicit exemption supplied by caller ---
     if exempt is not None:
+        elapsed = time.monotonic() - t0
         _log_enforcement_event(
             result="exempted",
             action_domain=normalized_domain,
@@ -119,9 +178,33 @@ def require_receipt_gate(
             receipt_id=normalized_receipt_id,
             detail=f"{exempt.category}:{exempt.approved_by}:{exempt.reason}",
         )
+        _record_enforcement_metric(normalized_domain, "exempted", elapsed)
         return None
 
+    # --- Check the ExemptionRegistry for automatic exemptions ---
+    from aragora.pipeline.receipt_exemptions import ExemptionRegistry
+
+    registry_exemption = ExemptionRegistry.get_instance().is_exempt(
+        normalized_domain,
+        action_type,
+    )
+    if registry_exemption is not None:
+        elapsed = time.monotonic() - t0
+        _log_enforcement_event(
+            result="exempted",
+            action_domain=normalized_domain,
+            action_type=action_type,
+            actor_id=actor_id,
+            resource_id=resource_id,
+            receipt_id=normalized_receipt_id,
+            detail=f"{registry_exemption.category}:{registry_exemption.approved_by}:{registry_exemption.reason}",
+        )
+        _record_enforcement_metric(normalized_domain, "exempted", elapsed)
+        return None
+
+    # --- Feature flag disabled → pass-through ---
     if not is_receipt_enforcement_enabled(normalized_domain):
+        elapsed = time.monotonic() - t0
         _log_enforcement_event(
             result="disabled",
             action_domain=normalized_domain,
@@ -130,9 +213,13 @@ def require_receipt_gate(
             resource_id=resource_id,
             receipt_id=normalized_receipt_id,
         )
+        _record_enforcement_metric(normalized_domain, "disabled", elapsed)
         return None
 
+    # --- Enforcement is ON — receipt is required ---
     if normalized_receipt_id is None:
+        elapsed = time.monotonic() - t0
+        _record_enforcement_metric(normalized_domain, "blocked", elapsed)
         raise ReceiptEnforcementError(
             f"{normalized_domain} action {action_type!r} requires an approved execution receipt",
             action_domain=normalized_domain,
@@ -142,6 +229,8 @@ def require_receipt_gate(
     store = get_receipt_store()
     stored = store.get(normalized_receipt_id)
     if stored is None:
+        elapsed = time.monotonic() - t0
+        _record_enforcement_metric(normalized_domain, "blocked", elapsed)
         raise ReceiptEnforcementError(
             f"Receipt {normalized_receipt_id!r} not found",
             action_domain=normalized_domain,
@@ -150,6 +239,8 @@ def require_receipt_gate(
         )
 
     if stored.state != ReceiptState.APPROVED:
+        elapsed = time.monotonic() - t0
+        _record_enforcement_metric(normalized_domain, "blocked", elapsed)
         raise ReceiptEnforcementError(
             f"Receipt {normalized_receipt_id!r} is in state {stored.state.value}, expected APPROVED",
             action_domain=normalized_domain,
@@ -158,6 +249,8 @@ def require_receipt_gate(
         )
 
     if not stored.signature:
+        elapsed = time.monotonic() - t0
+        _record_enforcement_metric(normalized_domain, "blocked", elapsed)
         raise ReceiptEnforcementError(
             f"Receipt {normalized_receipt_id!r} is missing a cryptographic signature",
             action_domain=normalized_domain,
@@ -166,6 +259,8 @@ def require_receipt_gate(
         )
 
     if not store.verify_receipt(normalized_receipt_id):
+        elapsed = time.monotonic() - t0
+        _record_enforcement_metric(normalized_domain, "blocked", elapsed)
         raise ReceiptEnforcementError(
             f"Receipt {normalized_receipt_id!r} failed signature verification",
             action_domain=normalized_domain,
@@ -176,6 +271,8 @@ def require_receipt_gate(
     try:
         receipt = DecisionReceipt.from_dict(stored.receipt_data)
     except (TypeError, ValueError, KeyError) as exc:
+        elapsed = time.monotonic() - t0
+        _record_enforcement_metric(normalized_domain, "blocked", elapsed)
         raise ReceiptEnforcementError(
             f"Receipt {normalized_receipt_id!r} could not be reconstructed for integrity validation",
             action_domain=normalized_domain,
@@ -183,6 +280,8 @@ def require_receipt_gate(
             receipt_id=normalized_receipt_id,
         ) from exc
     if not receipt.verify_integrity():
+        elapsed = time.monotonic() - t0
+        _record_enforcement_metric(normalized_domain, "blocked", elapsed)
         raise ReceiptEnforcementError(
             f"Receipt {normalized_receipt_id!r} failed integrity verification",
             action_domain=normalized_domain,
@@ -190,6 +289,7 @@ def require_receipt_gate(
             receipt_id=normalized_receipt_id,
         )
 
+    elapsed = time.monotonic() - t0
     _log_enforcement_event(
         result="allowed",
         action_domain=normalized_domain,
@@ -198,6 +298,7 @@ def require_receipt_gate(
         resource_id=resource_id,
         receipt_id=normalized_receipt_id,
     )
+    _record_enforcement_metric(normalized_domain, "allowed", elapsed)
     return stored
 
 
@@ -259,5 +360,6 @@ __all__ = [
     "ReceiptExemption",
     "is_receipt_enforcement_enabled",
     "require_receipt_gate",
+    "reset_enforcement_metrics",
     "transition_receipt_executed",
 ]
