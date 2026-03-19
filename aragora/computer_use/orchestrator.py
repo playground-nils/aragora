@@ -315,6 +315,7 @@ class ComputerUseOrchestrator:
         max_steps: int | None = None,
         initial_context: str = "",
         metadata: dict[str, Any] | None = None,
+        receipt_id: str | None = None,
     ) -> TaskResult:
         """
         Execute a computer-use task.
@@ -324,6 +325,7 @@ class ComputerUseOrchestrator:
             max_steps: Maximum steps (overrides config)
             initial_context: Additional context for Claude
             metadata: Optional metadata to attach
+            receipt_id: Optional receipt ID for enforcement gate
 
         Returns:
             TaskResult with all step details
@@ -333,6 +335,28 @@ class ComputerUseOrchestrator:
 
         task_id = f"task-{uuid.uuid4().hex[:8]}"
         max_steps = max_steps or self._config.max_steps
+
+        # Receipt enforcement gate (Phase 2 — Decision Integrity Kernel)
+        try:
+            from aragora.pipeline.receipt_enforcement import (
+                ReceiptEnforcementError,
+                is_receipt_enforcement_enabled,
+                require_receipt_gate,
+            )
+
+            if is_receipt_enforcement_enabled("computer_use"):
+                actor_id = (metadata or {}).get("user_id", "system")
+                require_receipt_gate(
+                    action_domain="computer_use",
+                    action_type="run_task",
+                    actor_id=actor_id,
+                    resource_id=task_id,
+                    receipt_id=receipt_id,
+                )
+        except ReceiptEnforcementError:
+            raise
+        except ImportError:
+            logger.debug("Receipt enforcement module not available, skipping gate")
 
         result = TaskResult(
             task_id=task_id,
@@ -523,6 +547,19 @@ class ComputerUseOrchestrator:
             self._policy_checker.reset()
             if self._bridge is not None and hasattr(self._bridge, "reset"):
                 self._bridge.reset()
+
+        # Transition receipt to EXECUTED after successful task completion
+        if receipt_id and result.status == TaskStatus.COMPLETED:
+            try:
+                from aragora.pipeline.receipt_enforcement import (
+                    is_receipt_enforcement_enabled,
+                    transition_receipt_executed,
+                )
+
+                if is_receipt_enforcement_enabled("computer_use"):
+                    transition_receipt_executed(receipt_id)
+            except ImportError:
+                pass
 
         return result
 

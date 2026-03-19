@@ -87,6 +87,9 @@ class MergedConfig:
         "revalidation_staleness_threshold",
         "revalidation_check_interval_seconds",
         "revalidation_scheduler",
+        "enable_rlm",
+        "rlm_mode",
+        "enable_staking",
         "use_rlm_limiter",
         "rlm_limiter",
         "rlm_compression_threshold",
@@ -212,6 +215,9 @@ class MergedConfig:
     revalidation_staleness_threshold: float
     revalidation_check_interval_seconds: int
     revalidation_scheduler: Any
+    enable_rlm: bool
+    rlm_mode: str
+    enable_staking: bool
     use_rlm_limiter: bool
     rlm_limiter: Any
     rlm_compression_threshold: int
@@ -349,6 +355,9 @@ def merge_config_objects(  # noqa: C901 - complexity inherent in config merging
     revalidation_staleness_threshold: float,
     revalidation_check_interval_seconds: int,
     revalidation_scheduler: Any,
+    enable_rlm: bool = False,
+    rlm_mode: str = "auto",
+    enable_staking: bool = False,
     use_rlm_limiter: bool,
     rlm_limiter: Any,
     rlm_compression_threshold: int,
@@ -845,6 +854,9 @@ def merge_config_objects(  # noqa: C901 - complexity inherent in config merging
     cfg.revalidation_staleness_threshold = revalidation_staleness_threshold
     cfg.revalidation_check_interval_seconds = revalidation_check_interval_seconds
     cfg.revalidation_scheduler = revalidation_scheduler
+    cfg.enable_rlm = enable_rlm
+    cfg.rlm_mode = rlm_mode
+    cfg.enable_staking = enable_staking
     cfg.use_rlm_limiter = use_rlm_limiter
     cfg.rlm_limiter = rlm_limiter
     cfg.rlm_compression_threshold = rlm_compression_threshold

@@ -882,6 +882,10 @@ class ArenaConfig:
             # "stability_min_rounds": self.stability_min_rounds,
             # "stability_agreement_threshold": self.stability_agreement_threshold,
             # "stability_conflict_confidence": self.stability_conflict_confidence,
+            # RLM / Staking feature flags
+            "enable_rlm": self.enable_rlm,
+            "rlm_mode": self.rlm_mode,
+            "enable_staking": self.enable_staking,
             # RLM Cognitive Limiter
             "use_rlm_limiter": self.use_rlm_limiter,
             "rlm_limiter": self.rlm_limiter,

@@ -113,6 +113,7 @@ async def handle_create_shared_inbox(
     admins: list[str] | None = None,
     settings: dict[str, Any] | None = None,
     created_by: str | None = None,
+    receipt_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Create a new shared inbox.
@@ -129,6 +130,27 @@ async def handle_create_shared_inbox(
     }
     """
     try:
+        # Receipt enforcement gate (no-op when disabled)
+        try:
+            from aragora.pipeline.receipt_enforcement import (
+                ReceiptEnforcementError,
+                is_receipt_enforcement_enabled,
+                require_receipt_gate,
+            )
+
+            if is_receipt_enforcement_enabled("shared_inbox"):
+                require_receipt_gate(
+                    action_domain="shared_inbox",
+                    action_type="create_inbox",
+                    actor_id=created_by or "unknown",
+                    resource_id=workspace_id,
+                    receipt_id=receipt_id,
+                )
+        except ReceiptEnforcementError:
+            raise
+        except (ImportError, ValueError, RuntimeError) as exc:
+            logger.debug("Receipt enforcement check skipped: %s", exc)
+
         inbox_id = f"inbox_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc)
 
@@ -194,6 +216,14 @@ async def handle_create_shared_inbox(
         }
 
     except (KeyError, ValueError, OSError, TypeError, RuntimeError) as e:
+        # Let ReceiptEnforcementError propagate (subclass of RuntimeError)
+        try:
+            from aragora.pipeline.receipt_enforcement import ReceiptEnforcementError
+
+            if isinstance(e, ReceiptEnforcementError):
+                raise
+        except ImportError:
+            pass
         logger.exception("Failed to create shared inbox: %s", e)
         return {
             "success": False,
@@ -523,6 +553,7 @@ async def handle_update_message_status(
     status: str,
     updated_by: str | None = None,
     org_id: str | None = None,
+    receipt_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Update message status.
@@ -533,6 +564,27 @@ async def handle_update_message_status(
     }
     """
     try:
+        # Receipt enforcement gate (no-op when disabled)
+        try:
+            from aragora.pipeline.receipt_enforcement import (
+                ReceiptEnforcementError,
+                is_receipt_enforcement_enabled,
+                require_receipt_gate,
+            )
+
+            if is_receipt_enforcement_enabled("shared_inbox"):
+                require_receipt_gate(
+                    action_domain="shared_inbox",
+                    action_type="update_status",
+                    actor_id=updated_by or "unknown",
+                    resource_id=message_id,
+                    receipt_id=receipt_id,
+                )
+        except ReceiptEnforcementError:
+            raise
+        except (ImportError, ValueError, RuntimeError) as exc:
+            logger.debug("Receipt enforcement check skipped: %s", exc)
+
         now = datetime.now(timezone.utc)
         is_resolved = False
         previous_status = None
@@ -588,9 +640,26 @@ async def handle_update_message_status(
             "message": message.to_dict(),
         }
 
-    except ValueError:
+    except ValueError as e:
+        # Let ReceiptEnforcementError propagate (subclass of RuntimeError,
+        # not ValueError, but guard for future changes)
+        try:
+            from aragora.pipeline.receipt_enforcement import ReceiptEnforcementError
+
+            if isinstance(e, ReceiptEnforcementError):
+                raise
+        except ImportError:
+            pass
         return {"success": False, "error": f"Invalid status: {status}"}
     except (KeyError, OSError, TypeError, RuntimeError) as e:
+        # Let ReceiptEnforcementError propagate (subclass of RuntimeError)
+        try:
+            from aragora.pipeline.receipt_enforcement import ReceiptEnforcementError
+
+            if isinstance(e, ReceiptEnforcementError):
+                raise
+        except ImportError:
+            pass
         logger.exception("Failed to update message status: %s", e)
         return {
             "success": False,

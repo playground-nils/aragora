@@ -859,6 +859,9 @@ class TestMiscellaneous:
     def test_threat_intel_handler_is_experimental(self):
         assert HANDLER_STABILITY["ThreatIntelHandler"] == Stability.EXPERIMENTAL
 
+    def test_ralph_dashboard_handler_is_experimental(self):
+        assert HANDLER_STABILITY["RalphDashboardHandler"] == Stability.EXPERIMENTAL
+
     def test_moderation_handlers_are_experimental(self):
         assert HANDLER_STABILITY["ModerationHandler"] == Stability.EXPERIMENTAL
         assert HANDLER_STABILITY["ModerationAnalyticsHandler"] == Stability.EXPERIMENTAL
