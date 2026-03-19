@@ -421,6 +421,7 @@ ConnectorManagementHandler = _safe_import(
 TaskExecutionHandler = _safe_import(
     "aragora.server.handlers.tasks.execution", "TaskExecutionHandler"
 )
+TaskQueueHandler = _safe_import("aragora.server.handlers.tasks.queue", "TaskQueueHandler")
 
 # Decision plans
 PlansHandler = _safe_import("aragora.server.handlers.plans", "PlansHandler")
@@ -629,6 +630,7 @@ ADMIN_HANDLER_REGISTRY: list[tuple[str, object]] = [
     ("_gastown_dashboard_handler", GasTownDashboardHandler),
     ("_connector_management_handler", ConnectorManagementHandler),
     ("_task_execution_handler", TaskExecutionHandler),
+    ("_task_queue_handler", TaskQueueHandler),
     # Decision plans
     ("_plans_handler", PlansHandler),
     # Playground (public demo)
@@ -823,6 +825,7 @@ __all__ = [
     "GasTownDashboardHandler",
     "ConnectorManagementHandler",
     "TaskExecutionHandler",
+    "TaskQueueHandler",
     # Decision plans
     "PlansHandler",
     # Playground

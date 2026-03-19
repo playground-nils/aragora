@@ -85,6 +85,9 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # coordinate (multi-agent worktree coordination)
     "cmd_coordinate": ("aragora.cli.commands.coordinate", "cmd_coordinate"),
     "add_coordinate_parser": ("aragora.cli.commands.coordinate", "add_coordinate_parser"),
+    # tasks (public operator surface over queue / leases)
+    "cmd_tasks": ("aragora.cli.commands.tasks", "cmd_tasks"),
+    "add_tasks_parser": ("aragora.cli.commands.tasks", "add_tasks_parser"),
     # pipeline (idea-to-execution pipeline)
     "cmd_pipeline": ("aragora.cli.commands.pipeline", "cmd_pipeline"),
     "add_pipeline_parser": ("aragora.cli.commands.pipeline", "add_pipeline_parser"),
