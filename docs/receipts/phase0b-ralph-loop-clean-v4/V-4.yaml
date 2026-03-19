@@ -1,0 +1,40 @@
+budget:
+  available_budget_usd: 15.0
+  budget_exhausted: false
+  budget_limit_usd: 20.0
+  committed_cost_usd: 5.0
+  project_estimated_cost_usd: 5.0
+  reserved_cost_usd: 0
+  spent_cost_usd: 5.0
+campaign_id: phase0b-ralph-loop-clean-v4
+changed_files: []
+cost_usd: 5.0
+created_at: '2026-03-18T15:43:16.621872+00:00'
+duration_seconds: null
+failure_classification: stall
+final_status: rejected
+manifest_input: .worktrees/codex-auto/codex-20260318-153843-52faebe7/.aragora/phase0b_runtime_manifest.yaml
+phase: 0b
+planner_fallback_reason: 'AgentConnectionError: [task-planner_fallback] Connection
+  failed: Cannot connect to host openrouter.ai:443 ssl:True [SSLCertVerificationError:
+  (1, ''[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get
+  local issuer certificate (_ssl.c:1020)'')] (caused by: ClientConnectorCertificateError:
+  Cannot connect to host openrouter.ai:443 ssl:True [SSLCertVerificationError: (1,
+  ''[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local
+  issuer certificate (_ssl.c:102'
+planner_strategy_requested: model
+planner_strategy_used: heuristic
+rescue_description: null
+rescue_required: false
+review_verdict: skipped
+task_id: V-4
+verification_missing_reason: null
+verification_results:
+  pytest_exit_code: null
+  syntax_check: null
+  truth_suite: null
+worker_branch: null
+worker_branches: []
+worker_commit: null
+worker_commits: []
+worker_receipt_id: None
