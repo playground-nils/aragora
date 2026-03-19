@@ -37,6 +37,8 @@ class StoppingConfig:
     max_cycles: int = 50  # Absolute cycle-count cap
     max_duration_hours: float = 8.0  # Wall-clock time limit
     min_goal_confidence: float = 0.7  # Goal proposer confidence floor
+    refresh_interval_minutes: float = 0.0  # Shift refresh pause interval (0 = disabled)
+    last_refresh_at: float = 0.0  # Epoch timestamp of last refresh (0 = use start_time)
 
 
 class StoppingRuleEngine:
@@ -48,6 +50,7 @@ class StoppingRuleEngine:
         CycleLimit            - total cycles >= max_cycles
         TimeLimit             - elapsed wall-clock time >= max_duration
         NoViableGoals         - goal proposer returned 0 goals above threshold
+        ShiftRefreshDue       - mandatory assessment refresh after interval
     """
 
     def should_stop(
@@ -81,6 +84,7 @@ class StoppingRuleEngine:
             self._check_cycle_limit(telemetry, config),
             self._check_time_limit(start_time, config),
             self._check_no_viable_goals(goal_proposer, config),
+            self._check_shift_refresh_due(start_time, config),
         ]
 
         for stop, reason in checks:
@@ -208,6 +212,27 @@ class StoppingRuleEngine:
             return (
                 True,
                 f"NoViableGoals: no goals above confidence {config.min_goal_confidence}",
+            )
+        return False, ""
+
+    @staticmethod
+    def _check_shift_refresh_due(
+        start_time: float | None,
+        config: StoppingConfig,
+    ) -> tuple[bool, str]:
+        """ShiftRefreshDue: mandatory assessment refresh after interval."""
+        if start_time is None or config.refresh_interval_minutes <= 0:
+            return False, ""
+
+        reference = config.last_refresh_at if config.last_refresh_at > 0 else start_time
+        elapsed_since_refresh = time.time() - reference
+        interval_seconds = config.refresh_interval_minutes * 60
+
+        if elapsed_since_refresh >= interval_seconds:
+            return (
+                True,
+                f"ShiftRefreshDue: {elapsed_since_refresh / 60:.0f}m since last refresh "
+                f"(interval={config.refresh_interval_minutes:.0f}m)",
             )
         return False, ""
 
