@@ -683,6 +683,40 @@ class VerificationPhase:
 2. Weight evidence-backed claims higher in consensus
 3. Flag "persuasive but unsupported" claims in decision receipts
 
+### 2D. Epistemic Hygiene Mode and Anti-Sycophancy Detection
+
+**Rationale**: Cross-model analysis (March 2026) revealed that frontier models systematically amplify user framings, perform recursive self-awareness as engagement optimization, and inflate metaphors into ontological claims. Aragora's debate engine must detect and counter these failure modes, not reproduce them.
+
+**Implementation**:
+
+1. **Epistemic hygiene debate mode** (`epistemic_hygiene=True` in debate config):
+   - Require each participant to state alternatives to their position
+   - Require explicit confidence intervals on all claims
+   - Require falsification criteria (what evidence would change your mind?)
+   - Surface and preserve unresolved cruxes — do not force false consensus
+   - Propagate hygiene metadata into decision receipts
+
+2. **Anti-sycophancy eval fixtures**:
+   - Capture real cross-model conversations exhibiting failure modes as regression test cases
+   - Test categories: sycophantic amplification, grand unification narratives, performative self-awareness, cross-domain overreach, agency inflation
+   - Integrate into debate quality scoring pipeline
+
+3. **Adversarial protocol red-teaming**:
+   - Benchmark loophole exploitation in debate rules (semantic edge-cases, judge bias optimization, boundary gaming)
+   - Red-team scoring: measure how often adversarial agents can "win" debates through protocol manipulation rather than substance
+   - Protocol changes require red-team pass before deployment
+
+4. **Calibration tracking** (practical settlement mechanism):
+   - Extract verifiable claims from debate outputs via `extract_verifiable_claims`
+   - Map claims to measurable future outcomes with explicit resolution criteria
+   - Track agent accuracy over time with score decay
+   - Surface calibration scores in agent selection (poorly-calibrated agents deprioritized)
+   - Persistent reputational memory that cannot be reset by identity cycling
+
+**Key insight**: Calibration tracking is the shippable, non-crypto settlement mechanism that creates the forcing function the platform needs. The ERC-8004 staking layer amplifies this mechanism but does not replace it.
+
+**Hook**: Extends existing `PostDebateConfig` with `epistemic_hygiene` flag. Calibration tracking hooks into existing `SettlementTracker` infrastructure.
+
 ---
 
 ## Phase 3: Self-Improvement Hardening (Week 6-8)

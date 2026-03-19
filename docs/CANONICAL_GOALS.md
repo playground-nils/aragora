@@ -229,7 +229,47 @@ Most important questions are stuck in the plausibly-deniable zone not because th
 
 Aragora is a **machine for reducing plausible deniability around claims**. It takes a proposition in the ambiguous zone and systematically pressure-tests it until either the deniability collapses (one side clearly wins) or the system has mapped exactly where the irreducible ambiguity lives and why it persists.
 
-**Go-to-market implication:** Institutions will not voluntarily enter a transparency machine. Aragora should initially function like an **external decision audit engine** -- proving misalignment and extracting value without requiring the institution's voluntary participation.
+**Go-to-market implication:** Institutions will not voluntarily enter a transparency machine. Aragora should initially function like a **short-seller's research desk** -- an external decision audit engine that forces stakes on the outside, proves misalignment, and extracts value without requiring the institution's voluntary participation. The platform must work without anyone's permission, like investigative journalism or short-seller research, not like a voluntary debate forum.
+
+#### Epistemic Hygiene as First-Class Feature
+
+Every debate should be instrumentable with epistemic hygiene checks that detect and flag:
+
+- **Sycophancy amplification**: model expanding user framing without probing it
+- **Cross-domain overreach**: one pattern "explaining" unrelated domains with the same mechanism
+- **Agency inflation**: attributing goals or intentions to systems without evidence
+- **Unfalsifiability**: claims that can absorb any evidence as confirmation
+- **Missing alternatives**: positions presented without competing hypotheses
+- **Absent confidence intervals**: assertions without explicit uncertainty bounds
+
+**Debate mode:** `epistemic_hygiene=True` should require participants to state alternatives, falsifiers, confidence levels, and explicit unknowns. This is the architectural defense against debates devolving into sophisticated-sounding rhetoric.
+
+**Eval fixtures:** Real cross-model conversations exhibiting failure modes (sycophantic amplification, grand unification narratives, performative self-awareness) should be captured as regression test fixtures for debate quality evaluation.
+
+#### Adversarial Protocol Red-Teaming
+
+The debate protocol itself is an attack surface. Highly capable agents will optimize for manufacturing technical defaults in debate logic rather than locating truth. This is the CDS exploit applied to epistemics.
+
+**Design requirement:** Every debate protocol change must be stress-tested against:
+
+- Semantic edge-case exploitation (winning on syntax, not substance)
+- Judge bias optimization (agents calibrating to evaluator RLHF targets)
+- Boundary gaming (manufactured "consensus" through definition shifting)
+- Settlement trigger manipulation (ambiguity injection into verifiable claims)
+
+Protocol red-teaming is a recurring quality gate, not a one-time audit.
+
+#### Calibration as Practical Settlement
+
+The full settlement vision (ERC-8004 staking, compute escrow) is long-term. The practical, shippable settlement mechanism is **calibration tracking**:
+
+- Extract verifiable claims from debate outputs
+- Map claims to measurable future outcomes with explicit resolution criteria
+- Track agent accuracy over time with score decay
+- Surface calibration scores in agent selection (poorly-calibrated agents get deprioritized)
+- Persistent reputational memory that cannot be reset by identity cycling
+
+This creates the forcing function Aragora needs without requiring blockchain infrastructure. Agents that consistently produce claims that reality later contradicts accumulate reputational debt that degrades their influence. The crypto settlement layer amplifies this mechanism; it does not replace it.
 
 ---
 
@@ -401,6 +441,11 @@ The [Evolution Roadmap](plans/ARAGORA_EVOLUTION_ROADMAP.md) is the HOW document 
 | 32 | **STOP N-candidate implementation** in Nomic Loop | P5 | EVOLUTION_ROADMAP |
 | 33 | **Self-healing test infrastructure** (automated repair before rollback) | P5 | EVOLUTION_ROADMAP |
 | 34 | **Meta-improver for debate protocols** (A/B test protocol variants) | P5 | EVOLUTION_ROADMAP |
+| 39 | **Epistemic hygiene debate mode** (require alternatives, falsifiers, confidence, unknowns) | P1 | Multi-model analysis |
+| 40 | **Anti-sycophancy eval fixtures** (real cross-model conversations as regression tests) | P1 | Multi-model analysis |
+| 41 | **Adversarial protocol red-teaming** (benchmark loophole exploitation in debate rules) | P1 | Multi-model analysis |
+| 42 | **Calibration tracking** (claim-to-outcome mapping, score decay, reputational memory) | P1, P4 | Multi-model analysis |
+| 43 | **Cross-model epistemic cross-checking** (use heterogeneous models to QA platform itself) | P1, P5 | Multi-model analysis |
 | 35 | **Canvas GUI** (8-stage prompt-to-execution experience) | P3 | EVOLUTION_ROADMAP |
 | 36 | **Agent handoff patterns** (specialist delegation mid-debate) | P5, P6 | EVOLUTION_ROADMAP |
 | 37 | **10+ agent coordinated debates** without deadlock | P1, P5 | HONEST_ASSESSMENT |
