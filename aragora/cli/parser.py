@@ -193,6 +193,7 @@ Examples:
     _add_inbox_wedge_parser(subparsers)
     _add_triage_parser(subparsers)
     _add_ralph_parser(subparsers)
+    _add_assess_parser(subparsers)
 
     return parser
 
@@ -2437,3 +2438,25 @@ def _add_ralph_parser(subparsers) -> None:
             "aragora.cli.commands.ralph", fromlist=["cmd_ralph"]
         ).cmd_ralph(args)
     )
+
+
+def _add_assess_parser(subparsers) -> None:
+    """Add the 'assess' subcommand for canonical repository assessment."""
+    p = subparsers.add_parser("assess", help="Run canonical repository assessment")
+    p.add_argument(
+        "--format",
+        choices=["json", "text"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    p.add_argument(
+        "--save",
+        action="store_true",
+        help="Persist assessment to strategic memory store",
+    )
+    p.add_argument(
+        "--diff",
+        action="store_true",
+        help="Show delta from previous assessment",
+    )
+    p.set_defaults(func=_lazy("aragora.cli.commands.assess", "cmd_assess"))
