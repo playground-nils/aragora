@@ -1,0 +1,9 @@
+{
+  "config_id": "p-codex_w-codex_r-codex",
+  "experiment_id": "phase0b-b6-matrix-20260317",
+  "experiment_label": "p-codex_w-codex_r-codex",
+  "project_id": "B-6",
+  "recorded_at": "2026-03-17T15:54:07.473588+00:00",
+  "runtime_manifest_path": "/Users/armand/Development/aragora/.worktrees/codex-auto/bench-codex-codex-codex-20260317-155353-b21f3bf6/.aragora/phase0b_runtime_manifest.yaml",
+  "runtime_path": "/Users/armand/Development/aragora/.worktrees/codex-auto/bench-codex-codex-codex-20260317-155353-b21f3bf6"
+}
