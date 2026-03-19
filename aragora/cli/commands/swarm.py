@@ -66,11 +66,23 @@ def _build_boss_payload(
     from aragora.swarm.reporter import build_boss_payload, build_integrator_view
     from aragora.worktree.fleet import FleetCoordinationStore, build_fleet_rows
 
+    try:
+        from aragora.nomic.dev_coordination import DevCoordinationStore
+    except (ImportError, RuntimeError, OSError, ValueError):
+        DevCoordinationStore = None  # type: ignore[assignment]
+
     worktrees = build_fleet_rows(repo_root, base_branch=target_branch, tail=0)
     store = FleetCoordinationStore(repo_root)
     claims = store.list_claims()
     merge_queue = store.list_merge_queue()
     coordination = store.status_summary()
+    if DevCoordinationStore is not None:
+        try:
+            coordination = DevCoordinationStore(repo_root=repo_root).status_summary(
+                include_integrator_artifacts=True
+            )
+        except (RuntimeError, OSError, ValueError):
+            pass
     integrator_view = build_integrator_view(
         runs=[run],
         worktrees=worktrees,

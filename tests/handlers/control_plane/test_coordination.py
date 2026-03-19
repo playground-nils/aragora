@@ -671,6 +671,112 @@ class TestRouteDispatch:
         data = json.loads(result.body)
         assert data["integrator_view"]["summary"]["total_lanes"] == 0
 
+    @patch("aragora.nomic.dev_coordination.DevCoordinationStore.status_summary")
+    @patch("aragora.server.handlers.control_plane.coordination.FleetCoordinationStore")
+    @patch("aragora.server.handlers.control_plane.coordination.build_fleet_rows")
+    @patch("aragora.server.handlers.control_plane.coordination.resolve_repo_root")
+    def test_get_coordination_fleet_status_surfaces_canonical_lane_metadata(
+        self,
+        mock_resolve,
+        mock_build_rows,
+        mock_store_cls,
+        mock_status_summary,
+        handler: ControlPlaneHandler,
+    ):
+        mock_resolve.return_value = Path(__file__).resolve().parents[3]
+        mock_build_rows.return_value = [
+            {
+                "session_id": "sess-a",
+                "path": "/tmp/repo/.worktrees/docs",
+                "branch": "codex/docs-lane",
+                "has_lock": True,
+                "pid_alive": True,
+                "agent": "codex",
+                "last_activity": "2026-03-18T10:00:00+00:00",
+            }
+        ]
+        mock_status_summary.return_value = {
+            "counts": {"active_leases": 1},
+            "integrator": {
+                "developer_tasks": [
+                    {
+                        "task_key": "run-1:docs-lane",
+                        "task_id": "docs-lane",
+                        "run_id": "run-1",
+                        "goal": "Ship docs lane",
+                        "title": "Write operator guide",
+                        "status": "completed",
+                        "owner_agent": "codex",
+                        "reviewer_agent": "claude",
+                        "owner_session_id": "sess-a",
+                        "branch": "codex/docs-lane",
+                        "worktree_path": "/tmp/repo/.worktrees/docs",
+                        "lease_id": "lease-1",
+                        "receipt_id": "rcpt-1",
+                        "updated_at": "2026-03-18T09:58:00+00:00",
+                    }
+                ],
+                "leases": [
+                    {
+                        "lease_id": "lease-1",
+                        "task_id": "docs-lane",
+                        "owner_session_id": "sess-a",
+                        "branch": "codex/docs-lane",
+                        "worktree_path": "/tmp/repo/.worktrees/docs",
+                        "status": "completed",
+                        "updated_at": "2026-03-18T09:57:00+00:00",
+                        "expires_at": "2026-03-18T17:00:00+00:00",
+                    }
+                ],
+                "completion_receipts": [
+                    {
+                        "receipt_id": "rcpt-1",
+                        "lease_id": "lease-1",
+                        "task_id": "docs-lane",
+                        "owner_session_id": "sess-a",
+                        "branch": "codex/docs-lane",
+                        "worktree_path": "/tmp/repo/.worktrees/docs",
+                        "created_at": "2026-03-18T09:56:00+00:00",
+                        "confidence": 0.93,
+                    }
+                ],
+                "integration_decisions": [
+                    {
+                        "decision_id": "dec-1",
+                        "lease_id": "lease-1",
+                        "receipt_id": "rcpt-1",
+                        "decision": "pending_review",
+                        "target_branch": "main",
+                        "rationale": "Awaiting integrator review",
+                        "created_at": "2026-03-18T09:56:30+00:00",
+                    }
+                ],
+                "salvage_candidates": [],
+            },
+        }
+        store = MagicMock()
+        store.list_claims.return_value = [{"session_id": "sess-a", "path": "aragora/docs.md"}]
+        store.list_merge_queue.return_value = [
+            {
+                "id": "mq-1",
+                "branch": "codex/docs-lane",
+                "session_id": "sess-a",
+                "status": "needs_human",
+                "metadata": {"receipt_id": "rcpt-1", "task_id": "docs-lane"},
+            }
+        ]
+        mock_store_cls.return_value = store
+
+        result = handler._handle_fleet_status({})
+
+        assert result.status_code == 200
+        data = json.loads(result.body)
+        lane = data["integrator_view"]["lanes"][0]
+        assert lane["canonical_lane"] is True
+        assert lane["task_key"] == "run-1:docs-lane"
+        assert lane["integration_decision"] == "pending_review"
+        assert "merge" in lane["available_actions"]
+
     @patch("aragora.server.handlers.control_plane.coordination.FleetCoordinationStore")
     @patch("aragora.server.handlers.control_plane.coordination.build_fleet_rows")
     @patch("aragora.swarm.SwarmSupervisor")

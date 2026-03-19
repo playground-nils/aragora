@@ -726,7 +726,9 @@ class CoordinationHandlerMixin:
         try:
             from aragora.nomic.dev_coordination import DevCoordinationStore
 
-            coordination_summary = DevCoordinationStore(repo_root=repo_root).status_summary()
+            coordination_summary = DevCoordinationStore(repo_root=repo_root).status_summary(
+                include_integrator_artifacts=True
+            )
         except (ImportError, RuntimeError, OSError, ValueError, sqlite3.Error) as exc:
             coordination_summary = {"error": str(exc), "counts": {}}
         claims_by_session: dict[str, list[str]] = {}

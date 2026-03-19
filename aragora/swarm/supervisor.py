@@ -432,7 +432,7 @@ class SwarmSupervisor:
                 else SupervisorRun.from_record(record)
             )
             runs.append(current)
-        coordination = self.store.status_summary()
+        coordination = self.store.status_summary(include_integrator_artifacts=True)
         return {
             "runs": [run.to_dict() for run in runs],
             "counts": {
