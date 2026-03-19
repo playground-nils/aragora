@@ -19,6 +19,9 @@ This file defines execution order.
 - Recent swarm-control-plane hardening on `main` improved file-scope ownership and PR supersession foundations, but the integrator view, task claim protocol, and universal run receipts are still open across [#836](https://github.com/synaptent/aragora/issues/836), [#837](https://github.com/synaptent/aragora/issues/837), [#842](https://github.com/synaptent/aragora/issues/842), and [#843](https://github.com/synaptent/aragora/issues/843).
 - Long unattended self-improvement is now an explicit product/engineering goal, but it is not yet truthful to treat it as solved. The missing pieces are the canonical assessment compiler and pause-refresh shift contract tracked in [#1036](https://github.com/synaptent/aragora/issues/1036), [#1037](https://github.com/synaptent/aragora/issues/1037), and [#1038](https://github.com/synaptent/aragora/issues/1038).
 - Surface area should be productized sequentially, not hidden or allowed to drift.
+- **Ralph autonomous loop hardened (March 18):** LLM-powered scope validation and blocker classification shipped (PR #1020). File-scope propagation fix (#884), vague-goal LLM expansion (#888), and observability dashboard (#1007) all landed. Ralph V14 benchmark validated autonomous spec→PR→merge.
+- **Swarm control plane work next:** #840 (file-scope enforcement), #841 (canonical PR protocol), #843 (integrator view) are the natural continuation of the Ralph hardening track.
+- **Epistemic hygiene goals added (March 18):** Anti-sycophancy detection, calibration tracking, adversarial protocol red-teaming, and epistemic hygiene debate mode added to CANONICAL_GOALS.md (P4 #39-43) and Evolution Roadmap (Phase 2D). Derived from multi-model analysis sessions.
 
 ## Execution Order
 
