@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -505,3 +506,105 @@ class TestLLMInferSpecFields:
         assert verdict.track_hints == []
         assert verdict.constraints == []
         assert verdict.acceptance_criteria == []
+
+
+# ---------------------------------------------------------------------------
+# Tests for improved scope adjudication prompt content
+# ---------------------------------------------------------------------------
+
+
+class TestScopePromptContent:
+    """Verify the _build_scope_prompt includes dependency-aware patterns,
+    test companion patterns, and optional repository structure context."""
+
+    def test_prompt_mentions_dependency_files(self) -> None:
+        prompt = LLMBlockerClassifier._build_scope_prompt(
+            task_description="Update React to v19",
+            declared_scope=["src/components/**"],
+            changed_paths=["src/components/App.tsx", "package.json"],
+            out_of_scope_paths=["package.json"],
+        )
+        # Dependency file patterns should be in the prompt
+        assert "package.json" in prompt
+        assert "requirements.txt" in prompt
+        assert "Cargo.lock" in prompt
+        assert "pyproject.toml" in prompt
+        assert "setup.cfg" in prompt
+        assert "go.mod" in prompt
+
+    def test_prompt_mentions_lock_files(self) -> None:
+        prompt = LLMBlockerClassifier._build_scope_prompt(
+            task_description="Add new dependency",
+            declared_scope=["aragora/server/**"],
+            changed_paths=["aragora/server/app.py", "poetry.lock"],
+            out_of_scope_paths=["poetry.lock"],
+        )
+        assert "package-lock.json" in prompt
+        assert "yarn.lock" in prompt
+        assert "poetry.lock" in prompt
+        assert "Pipfile.lock" in prompt
+
+    def test_prompt_mentions_test_companion_pattern(self) -> None:
+        prompt = LLMBlockerClassifier._build_scope_prompt(
+            task_description="Fix consensus detection",
+            declared_scope=["aragora/debate/**"],
+            changed_paths=["aragora/debate/consensus.py", "tests/debate/test_consensus.py"],
+            out_of_scope_paths=["tests/debate/test_consensus.py"],
+        )
+        # Should mention the test companion pattern
+        assert "test_bar.py" in prompt or "test file" in prompt.lower()
+        assert "tests/" in prompt
+
+    def test_prompt_mentions_init_files(self) -> None:
+        prompt = LLMBlockerClassifier._build_scope_prompt(
+            task_description="Add new module",
+            declared_scope=["aragora/new_module/**"],
+            changed_paths=["aragora/new_module/core.py", "aragora/__init__.py"],
+            out_of_scope_paths=["aragora/__init__.py"],
+        )
+        assert "__init__.py" in prompt
+
+    def test_prompt_includes_repo_structure_when_provided(self, tmp_path: Path) -> None:
+        """When repo_root is given, top-level dirs appear in the prompt."""
+        (tmp_path / "aragora").mkdir()
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "scripts").mkdir()
+
+        prompt = LLMBlockerClassifier._build_scope_prompt(
+            task_description="Fix bug",
+            declared_scope=["aragora/**"],
+            changed_paths=["aragora/foo.py", "docs/bar.md"],
+            out_of_scope_paths=["docs/bar.md"],
+            repo_root=str(tmp_path),
+        )
+        assert "Repository top-level directories" in prompt
+        assert "aragora" in prompt
+        assert "tests" in prompt
+        assert "docs" in prompt
+
+    def test_prompt_omits_repo_structure_when_not_provided(self) -> None:
+        """Without repo_root, no repository structure section appears."""
+        prompt = LLMBlockerClassifier._build_scope_prompt(
+            task_description="Fix bug",
+            declared_scope=["aragora/**"],
+            changed_paths=["aragora/foo.py"],
+            out_of_scope_paths=[],
+        )
+        assert "Repository top-level directories" not in prompt
+
+    def test_prompt_omits_hidden_dirs_from_repo_structure(self, tmp_path: Path) -> None:
+        """Dotfiles/dotdirs should be filtered out of repo structure."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".env").write_text("SECRET=x\n")
+        (tmp_path / "aragora").mkdir()
+
+        prompt = LLMBlockerClassifier._build_scope_prompt(
+            task_description="Fix bug",
+            declared_scope=["aragora/**"],
+            changed_paths=["aragora/foo.py"],
+            out_of_scope_paths=[],
+            repo_root=str(tmp_path),
+        )
+        assert ".git" not in prompt
+        assert ".env" not in prompt

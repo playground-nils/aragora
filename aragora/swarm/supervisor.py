@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aragora.nomic.approval import ApprovalLevel, ApprovalPolicy
 from aragora.nomic.dev_coordination import (
@@ -27,6 +27,9 @@ from aragora.nomic.task_decomposer import SubTask, TaskDecomposer
 from aragora.swarm.spec import SwarmSpec
 from aragora.swarm.worker_launcher import SESSION_ARTIFACTS, WorkerLauncher, WorkerProcess
 from aragora.worktree.lifecycle import WorktreeLifecycleService
+
+if TYPE_CHECKING:
+    from aragora.swarm.pr_registry import PullRequestRegistry
 
 UTC = timezone.utc
 logger = logging.getLogger(__name__)
@@ -61,6 +64,68 @@ def _path_in_scope(path: str, scope_pattern: str) -> bool:
     if not clean_path or not clean_scope:
         return False
     return _path_matches_glob(clean_path, clean_scope)
+
+
+def _ensure_work_order_scope(
+    item: BoundedWorkOrder,
+    spec: SwarmSpec,
+) -> BoundedWorkOrder:
+    """Ensure a work order has non-empty file_scope through a 3-tier fallback.
+
+    1. If the work order already has ``file_scope`` entries, merge in spec hints
+       (preserving deduplication) so the worker can touch any file the project
+       declares.
+    2. If the work order has empty ``file_scope`` but the spec carries
+       ``file_scope_hints``, backfill them directly.
+    3. If both are empty, attempt keyword-based inference from the work order
+       title and description via ``SwarmSpec.infer_file_scope_hints()``.
+
+    A warning is logged when scope remains empty after all attempts — this is
+    advisory, not blocking, to maintain backward compatibility.
+
+    Returns the (mutated) work order for convenience.
+    """
+    spec_hints = list(spec.file_scope_hints) if spec.file_scope_hints else []
+
+    if item.file_scope and spec_hints:
+        # Merge: keep work order scope, append any new spec hints
+        merged = list(dict.fromkeys(item.file_scope + spec_hints))
+        if set(merged) != set(item.file_scope):
+            logger.info(
+                "Merged spec hints into work order %s file_scope: %s -> %s",
+                item.work_order_id,
+                item.file_scope,
+                merged,
+            )
+        item.file_scope = merged
+    elif not item.file_scope and spec_hints:
+        # Backfill from spec hints
+        item.file_scope = list(spec_hints)
+        logger.info(
+            "Backfilled empty file_scope on work order %s from spec hints: %s",
+            item.work_order_id,
+            spec_hints,
+        )
+    elif not item.file_scope and not spec_hints:
+        # Last resort: infer from task title + description
+        inference_text = " ".join(filter(None, [item.title or "", item.description or ""]))
+        inferred = SwarmSpec.infer_file_scope_hints(inference_text)
+        if inferred:
+            item.file_scope = inferred
+            logger.info(
+                "Inferred file_scope on work order %s from title/description: %s",
+                item.work_order_id,
+                inferred,
+            )
+        else:
+            logger.warning(
+                "Work order %s has empty file_scope after all inference attempts "
+                "(spec hints empty, keyword inference found nothing). "
+                "Scope enforcement will be open for this work order.",
+                item.work_order_id,
+            )
+
+    return item
 
 
 class SupervisorRunStatus(str, Enum):
@@ -190,6 +255,16 @@ class SwarmSupervisor:
         self.decomposer = decomposer or TaskDecomposer()
         self.approval_policy = approval_policy or ApprovalPolicy()
         self.launcher = launcher or WorkerLauncher()
+        self._pr_registry: PullRequestRegistry | None = None
+
+    def _get_pr_registry(self) -> PullRequestRegistry:
+        """Lazily create and return the shared PullRequestRegistry."""
+        if self._pr_registry is None:
+            from aragora.swarm.pr_registry import PullRequestRegistry
+
+            state_dir = self.repo_root / ".aragora"
+            self._pr_registry = PullRequestRegistry(state_dir=state_dir)
+        return self._pr_registry
 
     def start_run(
         self,
@@ -837,27 +912,7 @@ class SwarmSupervisor:
             ]
         work_orders = self.bridge.build_work_orders(subtasks)
         for item in work_orders:
-            # Always merge spec hints into work order file_scope so workers
-            # can touch any file the project declares, even when the
-            # decomposer assigned a narrower subset.
-            if spec_hints:
-                if not item.file_scope:
-                    item.file_scope = list(spec_hints)
-                    logger.info(
-                        "Backfilled empty file_scope on work order %s from spec hints: %s",
-                        item.work_order_id,
-                        spec_hints,
-                    )
-                else:
-                    merged = list(dict.fromkeys(item.file_scope + list(spec_hints)))
-                    if set(merged) != set(item.file_scope):
-                        logger.info(
-                            "Merged spec hints into work order %s file_scope: %s -> %s",
-                            item.work_order_id,
-                            item.file_scope,
-                            merged,
-                        )
-                    item.file_scope = merged
+            _ensure_work_order_scope(item, spec)
             item.expected_tests = self._default_tests(item, spec)
             item.risk_level = self._risk_level_for_scope(item.file_scope)
             item.approval_required = True
@@ -1313,6 +1368,8 @@ class SwarmSupervisor:
                     worker_type_circuit_breakers,
                     str(item.get("target_agent", result.agent)),
                 )
+            # Register PR in canonical registry if the work order produced one
+            self._register_pr_if_present(item, result)
             item["status"] = "completed"
             item["review_status"] = "pending_heterogeneous_review"
             return
@@ -1361,6 +1418,24 @@ class SwarmSupervisor:
             self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
         except KeyError:
             return
+
+    def _register_pr_if_present(self, item: dict[str, Any], result: WorkerProcess) -> None:
+        """Register the work order's PR in the canonical PR registry if present."""
+        pr_url = str(item.get("pr_url", "") or "").strip()
+        adopted_pr = str(item.get("adopted_pr", "") or "").strip()
+        url = pr_url or adopted_pr
+        if not url:
+            return
+        branch = str(item.get("branch", "") or result.branch or "").strip()
+        if not branch:
+            return
+        creator = str(
+            item.get("work_order_id", "") or item.get("target_agent", "") or result.agent
+        ).strip()
+        try:
+            self._get_pr_registry().register(branch, url, creator=creator)
+        except Exception:
+            logger.debug("Failed to register PR %s in registry", url, exc_info=True)
 
     def _requeue_after_dispatch_error(
         self,
