@@ -192,6 +192,7 @@ Examples:
     _add_signing_parser(subparsers)
     _add_inbox_wedge_parser(subparsers)
     _add_triage_parser(subparsers)
+    _add_tasks_parser(subparsers)
     _add_ralph_parser(subparsers)
 
     return parser
@@ -2100,6 +2101,13 @@ def _add_inbox_wedge_parser(subparsers) -> None:
     from aragora.cli.commands.inbox_wedge import add_inbox_wedge_parser
 
     add_inbox_wedge_parser(subparsers)
+
+
+def _add_tasks_parser(subparsers) -> None:
+    """Add the 'tasks' subcommand for developer task queue."""
+    from aragora.cli.commands.tasks import add_tasks_parser
+
+    add_tasks_parser(subparsers)
 
 
 def _add_triage_parser(subparsers) -> None:

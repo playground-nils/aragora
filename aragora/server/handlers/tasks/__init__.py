@@ -9,7 +9,9 @@ task execution via the workflow engine and control plane scheduler.
 from __future__ import annotations
 
 from aragora.server.handlers.tasks.execution import TaskExecutionHandler
+from aragora.server.handlers.tasks.queue import TaskQueueHandler
 
 __all__ = [
     "TaskExecutionHandler",
+    "TaskQueueHandler",
 ]

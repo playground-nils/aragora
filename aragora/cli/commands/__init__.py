@@ -96,6 +96,9 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # triage (inbox trust wedge)
     "cmd_triage": ("aragora.cli.commands.triage", "cmd_triage"),
     "add_triage_parser": ("aragora.cli.commands.triage", "add_triage_parser"),
+    # tasks (developer task queue)
+    "cmd_tasks": ("aragora.cli.commands.tasks", "cmd_tasks"),
+    "add_tasks_parser": ("aragora.cli.commands.tasks", "add_tasks_parser"),
 }
 
 __all__ = list(_LAZY_IMPORTS.keys())

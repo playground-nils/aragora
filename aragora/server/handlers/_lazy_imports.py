@@ -181,6 +181,7 @@ HANDLER_MODULES: dict[str, str] = {
     "StreamingConnectorHandler": "aragora.server.handlers.streaming.handler",
     # tasks/ directory
     "TaskExecutionHandler": "aragora.server.handlers.tasks.execution",
+    "TaskQueueHandler": "aragora.server.handlers.tasks.queue",
     # verification/ directory
     "FormalVerificationHandler": "aragora.server.handlers.verification",
     "VerificationHandler": "aragora.server.handlers.verification",
@@ -630,6 +631,7 @@ ALL_HANDLER_NAMES: list[str] = [
     "StreamingConnectorHandler",
     # tasks
     "TaskExecutionHandler",
+    "TaskQueueHandler",
     # top-level handlers
     "AuditTrailHandler",
     "BenchmarkingHandler",
