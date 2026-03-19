@@ -23,6 +23,7 @@ def _swarm_args(**overrides: object) -> argparse.Namespace:
     defaults: dict[str, object] = {
         "swarm_action_or_goal": "run",
         "swarm_goal": None,
+        "swarm_campaign_target": None,
         "spec": None,
         "skip_interrogation": False,
         "dry_run": False,
@@ -41,6 +42,14 @@ def _swarm_args(**overrides: object) -> argparse.Namespace:
         "managed_dir_pattern": ".worktrees/{agent}-auto",
         "json": False,
         "run_id": None,
+        "readiness": None,
+        "lane_id": None,
+        "receipt_id": None,
+        "lease_id": None,
+        "lane_branch": None,
+        "decided_by": "cli-integrator",
+        "rationale": "",
+        "new_pr_url": None,
         "status_limit": 20,
         "refresh_scaling": False,
         "no_dispatch": False,
@@ -141,6 +150,27 @@ class TestSwarmParser:
         assert args.swarm_action_or_goal == "runner"
         assert args.swarm_goal == "register"
         assert args.json is True
+
+    def test_swarm_integrator_parser(self):
+        from aragora.cli.parser import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "swarm",
+                "integrator",
+                "merge",
+                "--lane-id",
+                "lane-1",
+                "--rationale",
+                "Ship it",
+            ]
+        )
+        assert args.command == "swarm"
+        assert args.swarm_action_or_goal == "integrator"
+        assert args.swarm_goal == "merge"
+        assert args.lane_id == "lane-1"
+        assert args.rationale == "Ship it"
 
     def test_swarm_parser_accepts_spec_dispatch_options(self):
         from aragora.cli.parser import build_parser
@@ -895,6 +925,125 @@ class TestSwarmCommand:
         out = capsys.readouterr().out
         assert '"blocked_reason": "no_fresh_registered_runners"' in out
         assert '"rejected_runner_ids": [' in out
+
+    def test_cmd_swarm_integrator_view_text(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="integrator",
+        )
+
+        with (
+            patch("aragora.worktree.fleet.resolve_repo_root") as resolve_repo_root,
+            patch("aragora.cli.commands.swarm._load_integrator_view") as load_view,
+        ):
+            resolve_repo_root.return_value = Path("/tmp/repo")
+            load_view.return_value = {
+                "summary": {
+                    "total_lanes": 1,
+                    "ready_lanes": 1,
+                    "blocked_lanes": 0,
+                    "review_lanes": 0,
+                    "stale_heartbeat_lanes": 0,
+                    "superseded_lanes": 0,
+                },
+                "lanes": [
+                    {
+                        "lane_id": "lane-1",
+                        "title": "Write operator guide",
+                        "branch": "codex/docs-lane",
+                        "status": "completed",
+                        "merge_readiness": "ready",
+                        "canonical_lane": True,
+                        "receipt_id": "rcpt-1",
+                        "lease_id": "lease-1",
+                        "blockers": [],
+                        "next_action": "Queue or validate this lane for merge.",
+                    }
+                ],
+                "next_actions": ["Queue or validate this lane for merge."],
+            }
+            cmd_swarm(args)
+
+        out = capsys.readouterr().out
+        assert "Swarm Integrator View (1 lanes)" in out
+        assert "Write operator guide" in out
+        assert "lane_id=lane-1" in out
+        assert "receipt=rcpt-1 lease=lease-1" in out
+
+    def test_cmd_swarm_integrator_merge_records_decision(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="integrator",
+            swarm_goal="merge",
+            lane_id="lane-1",
+            rationale="Ready to merge",
+            decided_by="human-integrator",
+        )
+        mock_store = MagicMock()
+        mock_store.record_integration_decision.return_value = SimpleNamespace(
+            decision="merge",
+            decision_id="dec-1",
+        )
+
+        with (
+            patch("aragora.worktree.fleet.resolve_repo_root") as resolve_repo_root,
+            patch("aragora.cli.commands.swarm._load_integrator_view") as load_view,
+            patch("aragora.nomic.dev_coordination.DevCoordinationStore", return_value=mock_store),
+        ):
+            resolve_repo_root.return_value = Path("/tmp/repo")
+            load_view.return_value = {
+                "lanes": [
+                    {
+                        "lane_id": "lane-1",
+                        "receipt_id": "rcpt-1",
+                        "lease_id": "lease-1",
+                        "branch": "codex/docs-lane",
+                    }
+                ]
+            }
+            cmd_swarm(args)
+
+        call = mock_store.record_integration_decision.call_args
+        assert call.kwargs["receipt_id"] == "rcpt-1"
+        assert call.kwargs["lease_id"] == "lease-1"
+        assert call.kwargs["decided_by"] == "human-integrator"
+        out = capsys.readouterr().out
+        assert "decision_id=dec-1" in out
+        assert "decision=merge" in out
+
+    def test_cmd_swarm_integrator_supersede_updates_registry(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="integrator",
+            swarm_goal="supersede",
+            lane_id="lane-1",
+            new_pr_url="https://github.com/synaptent/aragora/pull/9999",
+            rationale="Replacement PR is canonical",
+        )
+        mock_entry = SimpleNamespace(status="active", superseded=[{"pr_url": "old"}])
+
+        with (
+            patch("aragora.worktree.fleet.resolve_repo_root") as resolve_repo_root,
+            patch("aragora.cli.commands.swarm._load_integrator_view") as load_view,
+            patch("aragora.swarm.pr_registry.PullRequestRegistry") as registry_cls,
+        ):
+            resolve_repo_root.return_value = Path("/tmp/repo")
+            load_view.return_value = {
+                "lanes": [
+                    {
+                        "lane_id": "lane-1",
+                        "branch": "codex/docs-lane",
+                    }
+                ]
+            }
+            registry_cls.return_value.supersede.return_value = mock_entry
+            cmd_swarm(args)
+
+        registry_cls.return_value.supersede.assert_called_once_with(
+            "codex/docs-lane",
+            "https://github.com/synaptent/aragora/pull/9999",
+            reason="Replacement PR is canonical",
+        )
+        out = capsys.readouterr().out
+        assert "branch=codex/docs-lane" in out
+        assert "superseded_count=1" in out
 
     def test_cmd_swarm_reconcile_watch_uses_watch_run(self, capsys):
         args = _swarm_args(

@@ -347,6 +347,10 @@ class ControlPlaneHandler(
         if path == "/api/v1/coordination/fleet/merge-queue":
             return self._handle_fleet_merge_queue(query_params)
 
+        # /api/v1/coordination/swarm/integrator
+        if path == "/api/v1/coordination/swarm/integrator":
+            return self._handle_swarm_integrator(query_params)
+
         # /api/v1/coordination/consent
         if path == "/api/v1/coordination/consent":
             return self._handle_list_consents(query_params)
@@ -496,6 +500,25 @@ class ControlPlaneHandler(
             if err:
                 return err
             return self._handle_fleet_merge_enqueue(body)
+
+        # /api/v1/coordination/swarm/integrator/*
+        if path == "/api/v1/coordination/swarm/integrator/merge":
+            body, err = self.read_json_body_validated(handler)
+            if err:
+                return err
+            return self._handle_swarm_integrator_merge(body)
+
+        if path == "/api/v1/coordination/swarm/integrator/archive":
+            body, err = self.read_json_body_validated(handler)
+            if err:
+                return err
+            return self._handle_swarm_integrator_archive(body)
+
+        if path == "/api/v1/coordination/swarm/integrator/supersede":
+            body, err = self.read_json_body_validated(handler)
+            if err:
+                return err
+            return self._handle_swarm_integrator_supersede(body)
 
         # /api/v1/coordination/approve/:id
         if path.startswith("/api/v1/coordination/approve/"):

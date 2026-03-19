@@ -552,6 +552,76 @@ class CoordinationHandlerMixin:
     def _fleet_store(self, repo_root: Path) -> FleetCoordinationStore:
         return FleetCoordinationStore(repo_root)
 
+    def _build_integrator_lane_view(
+        self,
+        *,
+        repo_root: Path,
+        base_branch: str = "main",
+    ) -> dict[str, Any]:
+        worktrees = build_fleet_rows(repo_root, base_branch=base_branch, tail=0)
+        store = self._fleet_store(repo_root)
+        claims = store.list_claims()
+        queue = store.list_merge_queue()
+        try:
+            from aragora.nomic.dev_coordination import DevCoordinationStore
+
+            coordination_summary = DevCoordinationStore(repo_root=repo_root).status_summary(
+                include_integrator_artifacts=True
+            )
+        except (ImportError, RuntimeError, OSError, ValueError, sqlite3.Error) as exc:
+            coordination_summary = {"error": str(exc), "counts": {}}
+        return build_integrator_view(
+            runs=[],
+            worktrees=worktrees,
+            claims=claims,
+            merge_queue=queue,
+            coordination=coordination_summary,
+        )
+
+    @staticmethod
+    def _resolve_integrator_lane(
+        view: dict[str, Any],
+        *,
+        lane_id: str = "",
+        receipt_id: str = "",
+        lease_id: str = "",
+        branch: str = "",
+    ) -> dict[str, Any] | None:
+        lanes = [item for item in view.get("lanes", []) if isinstance(item, dict)]
+        lane_id = str(lane_id or "").strip()
+        receipt_id = str(receipt_id or "").strip()
+        lease_id = str(lease_id or "").strip()
+        branch = str(branch or "").strip()
+
+        if lane_id:
+            for lane in lanes:
+                if str(lane.get("lane_id", "")).strip() == lane_id:
+                    return lane
+            return None
+        if receipt_id:
+            for lane in lanes:
+                if str(lane.get("receipt_id", "")).strip() == receipt_id:
+                    return lane
+            return None
+        if lease_id:
+            for lane in lanes:
+                if str(lane.get("lease_id", "")).strip() == lease_id:
+                    return lane
+            return None
+        if branch:
+            canonical = [
+                lane
+                for lane in lanes
+                if str(lane.get("branch", "")).strip() == branch
+                and bool(lane.get("canonical_lane"))
+            ]
+            if canonical:
+                return canonical[0]
+            for lane in lanes:
+                if str(lane.get("branch", "")).strip() == branch:
+                    return lane
+        return None
+
     @api_endpoint(
         method="POST",
         path="/api/v1/coordination/swarm/run",
@@ -701,6 +771,200 @@ class CoordinationHandlerMixin:
             coordination=payload.get("coordination", {}),
         )
         return json_response(payload)
+
+    @api_endpoint(
+        method="GET",
+        path="/api/v1/coordination/swarm/integrator",
+        summary="Get the unified integrator lane view",
+        tags=["Coordination"],
+    )
+    @require_permission("coordination:stats.read")
+    def _handle_swarm_integrator(self, query_params: dict[str, Any]) -> HandlerResult:
+        """Return the integrator lane view built from current coordination state."""
+        repo_root = self._fleet_repo_root()
+        base_branch = str(query_params.get("base", "main")).strip() or "main"
+        view = self._build_integrator_lane_view(repo_root=repo_root, base_branch=base_branch)
+        readiness = str(query_params.get("readiness", "")).strip()
+        if readiness:
+            filtered = dict(view)
+            filtered["lanes"] = [
+                item
+                for item in view.get("lanes", [])
+                if isinstance(item, dict)
+                and str(item.get("merge_readiness", "")).strip() == readiness
+            ]
+            view = filtered
+        return json_response(view)
+
+    @api_endpoint(
+        method="POST",
+        path="/api/v1/coordination/swarm/integrator/merge",
+        summary="Record an integrator merge decision for a lane",
+        tags=["Coordination"],
+    )
+    @handle_errors("coordination swarm integrator merge")
+    @require_permission("coordination:workspaces.write")
+    def _handle_swarm_integrator_merge(self, body: dict[str, Any]) -> HandlerResult:
+        """Record a merge decision using the resolved lane receipt."""
+        from aragora.nomic.dev_coordination import DevCoordinationStore, IntegrationDecisionType
+
+        repo_root = self._fleet_repo_root()
+        base_branch = str(body.get("target_branch", "main")).strip() or "main"
+        view = self._build_integrator_lane_view(repo_root=repo_root, base_branch=base_branch)
+        lane = self._resolve_integrator_lane(
+            view,
+            lane_id=str(body.get("lane_id", "")).strip(),
+            receipt_id=str(body.get("receipt_id", "")).strip(),
+            lease_id=str(body.get("lease_id", "")).strip(),
+            branch=str(body.get("branch", "")).strip(),
+        )
+        if lane is None:
+            return error_response(
+                "Unable to resolve integrator lane from lane_id, receipt_id, lease_id, or branch",
+                404,
+            )
+        receipt_id = str(body.get("receipt_id") or lane.get("receipt_id") or "").strip()
+        lease_id = str(body.get("lease_id") or lane.get("lease_id") or "").strip()
+        if not receipt_id:
+            return error_response("Selected lane has no receipt_id", 409)
+        decision = DevCoordinationStore(repo_root=repo_root).record_integration_decision(
+            receipt_id=receipt_id,
+            lease_id=lease_id or None,
+            decided_by=str(body.get("decided_by", "human-integrator")).strip()
+            or "human-integrator",
+            decision=IntegrationDecisionType.MERGE,
+            rationale=str(body.get("rationale", "")).strip()
+            or "Integrator approved lane for merge",
+            target_branch=base_branch,
+        )
+        return json_response(
+            {
+                "lane_id": lane.get("lane_id"),
+                "receipt_id": receipt_id,
+                "lease_id": lease_id or None,
+                "decision": decision.decision,
+                "decision_id": decision.decision_id,
+            }
+        )
+
+    @api_endpoint(
+        method="POST",
+        path="/api/v1/coordination/swarm/integrator/archive",
+        summary="Archive an integrator lane and record a discard decision",
+        tags=["Coordination"],
+    )
+    @handle_errors("coordination swarm integrator archive")
+    @require_permission("coordination:workspaces.write")
+    def _handle_swarm_integrator_archive(self, body: dict[str, Any]) -> HandlerResult:
+        """Archive a lane using the resolved receipt and optionally close its canonical PR."""
+        from aragora.nomic.dev_coordination import DevCoordinationStore, IntegrationDecisionType
+
+        repo_root = self._fleet_repo_root()
+        base_branch = str(body.get("target_branch", "main")).strip() or "main"
+        view = self._build_integrator_lane_view(repo_root=repo_root, base_branch=base_branch)
+        lane = self._resolve_integrator_lane(
+            view,
+            lane_id=str(body.get("lane_id", "")).strip(),
+            receipt_id=str(body.get("receipt_id", "")).strip(),
+            lease_id=str(body.get("lease_id", "")).strip(),
+            branch=str(body.get("branch", "")).strip(),
+        )
+        if lane is None:
+            return error_response(
+                "Unable to resolve integrator lane from lane_id, receipt_id, lease_id, or branch",
+                404,
+            )
+        receipt_id = str(body.get("receipt_id") or lane.get("receipt_id") or "").strip()
+        lease_id = str(body.get("lease_id") or lane.get("lease_id") or "").strip()
+        if not receipt_id:
+            return error_response("Selected lane has no receipt_id", 409)
+        decision = DevCoordinationStore(repo_root=repo_root).record_integration_decision(
+            receipt_id=receipt_id,
+            lease_id=lease_id or None,
+            decided_by=str(body.get("decided_by", "human-integrator")).strip()
+            or "human-integrator",
+            decision=IntegrationDecisionType.DISCARD,
+            rationale=str(body.get("rationale", "")).strip() or "Integrator archived lane",
+            target_branch=base_branch,
+        )
+        branch = str(body.get("branch") or lane.get("branch") or "").strip()
+        if branch:
+            try:
+                from aragora.swarm.pr_registry import PullRequestRegistry
+
+                PullRequestRegistry().close(branch, outcome="archived")
+            except (ImportError, RuntimeError, OSError, ValueError):
+                pass
+        return json_response(
+            {
+                "lane_id": lane.get("lane_id"),
+                "receipt_id": receipt_id,
+                "lease_id": lease_id or None,
+                "branch": branch or None,
+                "decision": decision.decision,
+                "decision_id": decision.decision_id,
+            }
+        )
+
+    @api_endpoint(
+        method="POST",
+        path="/api/v1/coordination/swarm/integrator/supersede",
+        summary="Supersede the canonical PR for an integrator lane",
+        tags=["Coordination"],
+    )
+    @handle_errors("coordination swarm integrator supersede")
+    @require_permission("coordination:workspaces.write")
+    def _handle_swarm_integrator_supersede(self, body: dict[str, Any]) -> HandlerResult:
+        """Replace the canonical PR for a lane with a new PR URL."""
+        repo_root = self._fleet_repo_root()
+        base_branch = str(body.get("target_branch", "main")).strip() or "main"
+        view = self._build_integrator_lane_view(repo_root=repo_root, base_branch=base_branch)
+        lane = self._resolve_integrator_lane(
+            view,
+            lane_id=str(body.get("lane_id", "")).strip(),
+            receipt_id=str(body.get("receipt_id", "")).strip(),
+            lease_id=str(body.get("lease_id", "")).strip(),
+            branch=str(body.get("branch", "")).strip(),
+        )
+        branch = str(body.get("branch") or (lane or {}).get("branch") or "").strip()
+        new_pr_url = str(body.get("new_pr_url", "")).strip()
+        if not branch or not new_pr_url:
+            return error_response("branch and new_pr_url are required", 400)
+        try:
+            from dataclasses import asdict, is_dataclass
+
+            from aragora.swarm.pr_registry import PullRequestRegistry
+
+            entry = PullRequestRegistry().supersede(
+                branch,
+                new_pr_url,
+                reason=str(body.get("rationale", "")).strip()
+                or "Integrator superseded the canonical PR",
+            )
+            if entry is None:
+                return error_response(f"Branch not found: {branch}", 404)
+            if is_dataclass(entry):
+                entry_payload = asdict(entry)
+            elif isinstance(entry, dict):
+                entry_payload = dict(entry)
+            else:
+                entry_payload = {
+                    "branch": getattr(entry, "branch", branch),
+                    "pr_url": getattr(entry, "pr_url", new_pr_url),
+                    "status": getattr(entry, "status", "active"),
+                    "superseded": list(getattr(entry, "superseded", []) or []),
+                    "metadata": dict(getattr(entry, "metadata", {}) or {}),
+                }
+            return json_response(
+                {
+                    "branch": branch,
+                    "new_pr_url": new_pr_url,
+                    "entry": entry_payload,
+                }
+            )
+        except (ImportError, RuntimeError, OSError, ValueError) as exc:
+            logger.warning("Supersede failed: %s", exc)
+            return error_response("Supersede failed", 500)
 
     @api_endpoint(
         method="GET",
