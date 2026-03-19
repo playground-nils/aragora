@@ -1052,6 +1052,7 @@ class SwarmSupervisor:
         target_agent = str(work_order.get("target_agent", "codex")).strip() or "codex"
         managed_dir = self._managed_dir_for_agent(managed_dir_pattern, target_agent)
         wo_id = str(work_order.get("work_order_id", "task"))
+        task_key = f"{run_id}:{wo_id}"
         session_key = f"swarm-{run_id[:8]}-{wo_id}"
         session = self.lifecycle.ensure_managed_worktree(
             managed_dir=managed_dir,
@@ -1083,6 +1084,7 @@ class SwarmSupervisor:
             metadata={
                 "supervisor_run_id": run_id,
                 "work_order_id": str(work_order.get("work_order_id", "")),
+                "task_key": task_key,
                 "reviewer_agent": str(work_order.get("reviewer_agent", "")),
                 "risk_level": str(work_order.get("risk_level", "review")),
                 "approval_required": True,
@@ -1097,6 +1099,7 @@ class SwarmSupervisor:
                 "worktree_path": str(session.path),
                 "target_agent": target_agent,
                 "approval_required": True,
+                "task_key": task_key,
             }
         )
 
@@ -1340,12 +1343,39 @@ class SwarmSupervisor:
                         owner_session_id=str(item.get("owner_session_id", result.session_id)),
                         branch=str(item.get("branch", result.branch)),
                         worktree_path=str(item.get("worktree_path", result.worktree_path)),
+                        base_sha=str(item.get("initial_head", result.initial_head)),
+                        head_sha=str(result.head_sha or item.get("head_sha", "")),
                         commit_shas=list(result.commit_shas),
                         changed_paths=clean_paths,
                         tests_run=list(result.tests_run),
+                        validations_run=list(result.tests_run),
                         assumptions=[],
-                        blockers=[],
+                        blockers=[
+                            str(blocker).strip()
+                            for blocker in item.get("blockers", [])
+                            if str(blocker).strip()
+                        ],
+                        outcome=self._work_order_deliverable_type(item) or "completed",
+                        risks=[
+                            str(blocker).strip()
+                            for blocker in item.get("blockers", [])
+                            if str(blocker).strip()
+                        ],
+                        pr_url=str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip(),
+                        pr_number=self._extract_pr_number(
+                            str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip()
+                        ),
                         confidence=self._completion_confidence(item, result),
+                        metadata={
+                            "task_key": str(item.get("task_key", "")).strip() or None,
+                            "verification_results": list(
+                                item.get("verification_results", []) or []
+                            ),
+                            "worker_outcome": str(item.get("worker_outcome", "")).strip() or None,
+                            "approval_required": bool(item.get("approval_required", False)),
+                            "risk_level": str(item.get("risk_level", "")).strip() or None,
+                            "success_criteria": dict(item.get("success_criteria") or {}),
+                        },
                     )
                 except FileScopeViolationError as exc:
                     self._mark_needs_human(
@@ -1436,6 +1466,14 @@ class SwarmSupervisor:
             self._get_pr_registry().register(branch, url, creator=creator)
         except Exception:
             logger.debug("Failed to register PR %s in registry", url, exc_info=True)
+
+    @staticmethod
+    def _extract_pr_number(pr_reference: str) -> int | None:
+        text = str(pr_reference or "").strip().rstrip("/")
+        if not text:
+            return None
+        tail = text.rsplit("/", 1)[-1]
+        return int(tail) if tail.isdigit() else None
 
     def _requeue_after_dispatch_error(
         self,

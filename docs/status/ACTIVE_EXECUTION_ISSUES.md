@@ -54,23 +54,24 @@ Current tranche: the base kernel is on `main` through [#811](https://github.com/
 Epic: [#836](https://github.com/synaptent/aragora/issues/836), [#989](https://github.com/synaptent/aragora/issues/989), [#1036](https://github.com/synaptent/aragora/issues/1036)
 
 Recent reality on `main`:
-- File-scope backfill/inference and canonical PR tracking landed recently, but the broader acceptance for [#840](https://github.com/synaptent/aragora/issues/840) and [#841](https://github.com/synaptent/aragora/issues/841) still extends beyond those initial merges.
-- The remaining gap is no longer “can Aragora execute work at all?” It is whether lane ownership, provenance, assessment, and pause-refresh governance stay truthful during long unattended runs.
+- File-scope ownership ([#840](https://github.com/synaptent/aragora/issues/840)) and canonical PR/supersession tracking ([#841](https://github.com/synaptent/aragora/issues/841)) are now closed on `main`.
+- The canonical assessment compiler ([#1037](https://github.com/synaptent/aragora/issues/1037)) and pause-refresh shift controller ([#1038](https://github.com/synaptent/aragora/issues/1038)) are also closed on `main`.
+- The remaining gap is no longer “can Aragora execute work at all?” It is whether task claims, universal run receipts, and integrator visibility stay truthful during long unattended runs.
 
 | Issue | State | Priority | Owner | Milestone | Scope |
 |------|-------|----------|-------|-----------|-------|
 | [#836](https://github.com/synaptent/aragora/issues/836) | Open | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Developer Swarm Control Plane epic |
 | [#837](https://github.com/synaptent/aragora/issues/837) | Open | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Add developer task queue and claim protocol |
-| [#840](https://github.com/synaptent/aragora/issues/840) | Open | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Enforce file-scope ownership on agent lanes |
-| [#841](https://github.com/synaptent/aragora/issues/841) | Open | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Add canonical PR and supersession protocol |
+| [#840](https://github.com/synaptent/aragora/issues/840) | Closed | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Enforce file-scope ownership on agent lanes |
+| [#841](https://github.com/synaptent/aragora/issues/841) | Closed | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Add canonical PR and supersession protocol |
 | [#842](https://github.com/synaptent/aragora/issues/842) | Open | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Emit receipts and provenance for every agent run |
 | [#843](https://github.com/synaptent/aragora/issues/843) | Open | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Build integrator view for active swarm lanes |
 | [#871](https://github.com/synaptent/aragora/issues/871) | Open | `priority:high` | `owner:team-platform` | `none` | Autonomous Repo Maintenance MVP via Boss loop |
 | [#989](https://github.com/synaptent/aragora/issues/989) | Open | `priority:high` | `owner:team-core` | `2026-M3 Strategic Moat Scale-Out` | Bootstrapped local-first idea-to-execution workbench |
 | [#990](https://github.com/synaptent/aragora/issues/990) | Open | `priority:high` | `owner:team-core` | `2026-M3 Strategic Moat Scale-Out` | Dogfood the pipeline to build more of Aragora itself |
 | [#1036](https://github.com/synaptent/aragora/issues/1036) | Open | `priority:high` | `owner:team-core` | `2026-M3 Strategic Moat Scale-Out` | Continuous self-assessment and autonomous improvement cadence epic |
-| [#1037](https://github.com/synaptent/aragora/issues/1037) | Open | `priority:high` | `owner:team-core` | `2026-M3 Strategic Moat Scale-Out` | Compile a canonical repo assessment into pipeline-ready backlog artifacts |
-| [#1038](https://github.com/synaptent/aragora/issues/1038) | Open | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Add pause-refresh checkpoints for long unattended self-improvement shifts |
+| [#1037](https://github.com/synaptent/aragora/issues/1037) | Closed | `priority:high` | `owner:team-core` | `2026-M3 Strategic Moat Scale-Out` | Compile a canonical repo assessment into pipeline-ready backlog artifacts |
+| [#1038](https://github.com/synaptent/aragora/issues/1038) | Closed | `priority:high` | `owner:team-platform` | `2026-M3 Scale and Reliability` | Add pause-refresh checkpoints for long unattended self-improvement shifts |
 
 ## Sequential Surface Productization
 

@@ -37,6 +37,32 @@ _ACTIVE_LEASE_STATUSES = {"active"}
 _PENDING_INTEGRATION_DECISIONS = {"pending_review"}
 _OPEN_SALVAGE_STATUSES = {"detected", "claimed"}
 _OPEN_SUPERVISOR_RUN_STATUSES = {"planned", "active", "needs_human"}
+_OPEN_DEVELOPER_TASK_STATUSES = {
+    "queued",
+    "leased",
+    "dispatched",
+    "active",
+    "waiting_conflict",
+    "dispatch_failed",
+    "completed",
+    "needs_human",
+    "changes_requested",
+    "timed_out",
+    "failed",
+    "integrating",
+}
+_QUEUEABLE_DEVELOPER_TASK_STATUSES = {
+    "queued",
+    "leased",
+    "dispatched",
+    "active",
+    "waiting_conflict",
+    "dispatch_failed",
+    "needs_human",
+    "changes_requested",
+    "timed_out",
+    "failed",
+}
 
 
 class LeaseConflictError(ValueError):
@@ -165,34 +191,54 @@ class CompletionReceipt:
 
     receipt_id: str
     lease_id: str
+    task_id: str
     owner_agent: str
     owner_session_id: str
     branch: str
     worktree_path: str
+    base_sha: str = ""
+    head_sha: str = ""
     commit_shas: list[str] = field(default_factory=list)
     changed_paths: list[str] = field(default_factory=list)
     tests_run: list[str] = field(default_factory=list)
+    validations_run: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
+    outcome: str = "completed"
+    risks: list[str] = field(default_factory=list)
+    pr_url: str = ""
+    pr_number: int | None = None
     confidence: float = 0.0
     created_at: str = field(default_factory=lambda: _utcnow().isoformat())
     artifact_hash: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not self.validations_run and self.tests_run:
+            self.validations_run = list(self.tests_run)
         if not self.artifact_hash:
             self.artifact_hash = _artifact_hash(
                 {
                     "lease_id": self.lease_id,
+                    "task_id": self.task_id,
                     "owner_agent": self.owner_agent,
                     "owner_session_id": self.owner_session_id,
                     "branch": self.branch,
                     "worktree_path": self.worktree_path,
+                    "base_sha": self.base_sha,
+                    "head_sha": self.head_sha,
                     "commit_shas": self.commit_shas,
                     "changed_paths": self.changed_paths,
                     "tests_run": self.tests_run,
+                    "validations_run": self.validations_run,
                     "assumptions": self.assumptions,
                     "blockers": self.blockers,
+                    "outcome": self.outcome,
+                    "risks": self.risks,
+                    "pr_url": self.pr_url,
+                    "pr_number": self.pr_number,
                     "confidence": self.confidence,
+                    "metadata": self.metadata,
                 }
             )
 
@@ -200,18 +246,27 @@ class CompletionReceipt:
         return {
             "receipt_id": self.receipt_id,
             "lease_id": self.lease_id,
+            "task_id": self.task_id,
             "owner_agent": self.owner_agent,
             "owner_session_id": self.owner_session_id,
             "branch": self.branch,
             "worktree_path": self.worktree_path,
+            "base_sha": self.base_sha,
+            "head_sha": self.head_sha,
             "commit_shas": list(self.commit_shas),
             "changed_paths": list(self.changed_paths),
             "tests_run": list(self.tests_run),
+            "validations_run": list(self.validations_run),
             "assumptions": list(self.assumptions),
             "blockers": list(self.blockers),
+            "outcome": self.outcome,
+            "risks": list(self.risks),
+            "pr_url": self.pr_url or None,
+            "pr_number": self.pr_number,
             "confidence": self.confidence,
             "created_at": self.created_at,
             "artifact_hash": self.artifact_hash,
+            "metadata": dict(self.metadata),
         }
 
     @classmethod
@@ -219,18 +274,97 @@ class CompletionReceipt:
         return cls(
             receipt_id=row["receipt_id"],
             lease_id=row["lease_id"],
+            task_id=row["task_id"],
             owner_agent=row["owner_agent"],
             owner_session_id=row["owner_session_id"],
             branch=row["branch"],
             worktree_path=row["worktree_path"],
+            base_sha=row["base_sha"],
+            head_sha=row["head_sha"],
             commit_shas=_json_loads(row["commit_shas_json"], []),
             changed_paths=_json_loads(row["changed_paths_json"], []),
             tests_run=_json_loads(row["tests_run_json"], []),
+            validations_run=_json_loads(row["validations_run_json"], []),
             assumptions=_json_loads(row["assumptions_json"], []),
             blockers=_json_loads(row["blockers_json"], []),
+            outcome=row["outcome"],
+            risks=_json_loads(row["risks_json"], []),
+            pr_url=row["pr_url"],
+            pr_number=row["pr_number"],
             confidence=float(row["confidence"]),
             created_at=row["created_at"],
             artifact_hash=row["artifact_hash"],
+            metadata=_json_loads(row["metadata_json"], {}),
+        )
+
+
+@dataclass(slots=True)
+class DeveloperTask:
+    """Canonical task-queue projection for supervised swarm work."""
+
+    task_key: str
+    task_id: str
+    run_id: str
+    goal: str
+    title: str
+    status: str
+    priority: int = 50
+    owner_agent: str = ""
+    reviewer_agent: str = ""
+    blocked_by: list[str] = field(default_factory=list)
+    acceptance_checks: list[str] = field(default_factory=list)
+    allowed_paths: list[str] = field(default_factory=list)
+    lease_id: str | None = None
+    owner_session_id: str | None = None
+    branch: str | None = None
+    worktree_path: str | None = None
+    receipt_id: str | None = None
+    created_at: str = field(default_factory=lambda: _utcnow().isoformat())
+    updated_at: str = field(default_factory=lambda: _utcnow().isoformat())
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_key": self.task_key,
+            "task_id": self.task_id,
+            "run_id": self.run_id,
+            "goal": self.goal,
+            "title": self.title,
+            "status": self.status,
+            "priority": self.priority,
+            "owner_agent": self.owner_agent or None,
+            "reviewer_agent": self.reviewer_agent or None,
+            "blocked_by": list(self.blocked_by),
+            "acceptance_checks": list(self.acceptance_checks),
+            "allowed_paths": list(self.allowed_paths),
+            "lease_id": self.lease_id,
+            "owner_session_id": self.owner_session_id,
+            "branch": self.branch,
+            "worktree_path": self.worktree_path,
+            "receipt_id": self.receipt_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "metadata": dict(self.metadata),
+        }
+
+    def to_work_item(self) -> WorkItem:
+        status = _developer_task_work_status(self.status)
+        blockers = list(self.blocked_by)
+        if status == WorkStatus.BLOCKED and not blockers:
+            blockers = [f"task_status:{self.status}"]
+        return WorkItem(
+            id=f"task:{self.task_key}",
+            work_type=WorkType.CUSTOM,
+            title=self.title,
+            description=self.goal or self.title,
+            status=status,
+            created_at=_parse_dt(self.created_at),
+            updated_at=_parse_dt(self.updated_at),
+            base_priority=self.priority,
+            assigned_to=self.owner_session_id or self.owner_agent or None,
+            blockers=blockers,
+            tags=["developer-task", "swarm", self.status],
+            metadata=self.to_dict(),
         )
 
 
@@ -503,15 +637,41 @@ class DevCoordinationStore:
                 CREATE INDEX IF NOT EXISTS idx_supervisor_runs_status ON supervisor_runs(status, updated_at);
                 """
             )
+            self._ensure_completion_receipt_columns(conn)
             conn.commit()
         finally:
             conn.close()
+
+    @staticmethod
+    def _ensure_completion_receipt_columns(conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(completion_receipts)").fetchall()
+        }
+        required_columns = {
+            "task_id": "TEXT NOT NULL DEFAULT ''",
+            "base_sha": "TEXT NOT NULL DEFAULT ''",
+            "head_sha": "TEXT NOT NULL DEFAULT ''",
+            "validations_run_json": "TEXT NOT NULL DEFAULT '[]'",
+            "outcome": "TEXT NOT NULL DEFAULT 'completed'",
+            "risks_json": "TEXT NOT NULL DEFAULT '[]'",
+            "pr_url": "TEXT NOT NULL DEFAULT ''",
+            "pr_number": "INTEGER",
+            "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+        }
+        for name, ddl in required_columns.items():
+            if name in columns:
+                continue
+            conn.execute(f"ALTER TABLE completion_receipts ADD COLUMN {name} {ddl}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_receipts_task ON completion_receipts(task_id, created_at)"
+        )
 
     def status_summary(self) -> dict[str, Any]:
         active_leases = self.list_active_leases()
         pending_integrations = self.list_integration_decisions(only_pending=True)
         salvage = self.list_salvage_candidates(statuses=sorted(_OPEN_SALVAGE_STATUSES))
         supervisor_runs = self.list_supervisor_runs(statuses=sorted(_OPEN_SUPERVISOR_RUN_STATUSES))
+        developer_tasks = self.list_developer_tasks(open_only=True)
         scope_violations = []
         for lease in active_leases:
             violation = lease.metadata.get("last_scope_violation")
@@ -536,12 +696,14 @@ class DevCoordinationStore:
             "pending_integrations": [item.to_dict() for item in pending_integrations],
             "open_salvage_candidates": [item.to_dict() for item in salvage],
             "supervisor_runs": supervisor_runs,
+            "developer_tasks": [item.to_dict() for item in developer_tasks],
             "scope_violations": scope_violations,
             "counts": {
                 "active_leases": len(active_leases),
                 "pending_integrations": len(pending_integrations),
                 "open_salvage_candidates": len(salvage),
                 "supervisor_runs": len(supervisor_runs),
+                "open_developer_tasks": len(developer_tasks),
                 "fleet_claims": len(self.fleet_store.list_claims()),
                 "fleet_merge_queue": len(self.fleet_store.list_merge_queue()),
                 "scope_violations": len(scope_violations),
@@ -629,6 +791,34 @@ class DevCoordinationStore:
             return runs
         allowed = set(statuses)
         return [item for item in runs if str(item.get("status", "")) in allowed]
+
+    def list_developer_tasks(
+        self,
+        *,
+        open_only: bool = False,
+        run_id: str | None = None,
+        limit: int = 200,
+    ) -> list[DeveloperTask]:
+        tasks: list[DeveloperTask] = []
+        for run in self.list_supervisor_runs(limit=max(1, int(limit))):
+            current_run_id = str(run.get("run_id", "")).strip()
+            if run_id and current_run_id != str(run_id).strip():
+                continue
+            for raw_item in run.get("work_orders", []):
+                if not isinstance(raw_item, dict):
+                    continue
+                task = self._developer_task_from_run(run, raw_item)
+                if open_only and task.status not in _OPEN_DEVELOPER_TASK_STATUSES:
+                    continue
+                tasks.append(task)
+        tasks.sort(key=lambda item: item.updated_at, reverse=True)
+        return tasks
+
+    def get_developer_task(self, task_key: str) -> DeveloperTask | None:
+        for task in self.list_developer_tasks(limit=500):
+            if task.task_key == str(task_key).strip():
+                return task
+        return None
 
     def update_supervisor_run(
         self,
@@ -795,13 +985,23 @@ class DevCoordinationStore:
 
         return stale
 
-    def list_completion_receipts(self, lease_id: str | None = None) -> list[CompletionReceipt]:
+    def list_completion_receipts(
+        self,
+        lease_id: str | None = None,
+        *,
+        task_id: str | None = None,
+    ) -> list[CompletionReceipt]:
         conn = self._connect()
         try:
             if lease_id:
                 rows = conn.execute(
                     "SELECT * FROM completion_receipts WHERE lease_id = ? ORDER BY created_at DESC",
                     (lease_id,),
+                ).fetchall()
+            elif task_id:
+                rows = conn.execute(
+                    "SELECT * FROM completion_receipts WHERE task_id = ? ORDER BY created_at DESC",
+                    (task_id,),
                 ).fetchall()
             else:
                 rows = conn.execute(
@@ -810,6 +1010,17 @@ class DevCoordinationStore:
         finally:
             conn.close()
         return [CompletionReceipt.from_row(row) for row in rows]
+
+    def get_completion_receipt(self, receipt_id: str) -> CompletionReceipt | None:
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM completion_receipts WHERE receipt_id = ?",
+                (receipt_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        return None if row is None else CompletionReceipt.from_row(row)
 
     def list_integration_decisions(
         self,
@@ -1226,31 +1437,24 @@ class DevCoordinationStore:
         owner_session_id: str,
         branch: str,
         worktree_path: str,
+        base_sha: str | None = None,
+        head_sha: str | None = None,
         commit_shas: list[str] | None = None,
         changed_paths: list[str] | None = None,
         tests_run: list[str] | None = None,
+        validations_run: list[str] | None = None,
         assumptions: list[str] | None = None,
         blockers: list[str] | None = None,
+        outcome: str = "completed",
+        risks: list[str] | None = None,
+        pr_url: str | None = None,
+        pr_number: int | None = None,
         confidence: float = 0.0,
+        metadata: dict[str, Any] | None = None,
     ) -> CompletionReceipt:
         normalized_changed_paths = [
             _normalize_claim(item) for item in changed_paths or [] if str(item).strip()
         ]
-        receipt = CompletionReceipt(
-            receipt_id=str(uuid.uuid4())[:12],
-            lease_id=lease_id,
-            owner_agent=owner_agent,
-            owner_session_id=owner_session_id,
-            branch=branch,
-            worktree_path=str(Path(worktree_path).resolve()),
-            commit_shas=list(commit_shas or []),
-            changed_paths=normalized_changed_paths,
-            tests_run=list(tests_run or []),
-            assumptions=list(assumptions or []),
-            blockers=list(blockers or []),
-            confidence=float(confidence),
-        )
-
         now = _utcnow().isoformat()
         conn = self._connect()
         try:
@@ -1260,6 +1464,37 @@ class DevCoordinationStore:
             if lease_row is None:
                 raise KeyError(f"Unknown lease_id: {lease_id}")
             lease = WorkLease.from_row(lease_row)
+            lease_metadata = _json_loads(lease_row["metadata_json"], {})
+            receipt = CompletionReceipt(
+                receipt_id=str(uuid.uuid4())[:12],
+                lease_id=lease_id,
+                task_id=lease.task_id,
+                owner_agent=owner_agent,
+                owner_session_id=owner_session_id,
+                branch=branch,
+                worktree_path=str(Path(worktree_path).resolve()),
+                base_sha=str(base_sha or lease_metadata.get("base_sha") or "").strip(),
+                head_sha=str(head_sha or "").strip(),
+                commit_shas=list(commit_shas or []),
+                changed_paths=normalized_changed_paths,
+                tests_run=list(tests_run or []),
+                validations_run=list(validations_run or tests_run or []),
+                assumptions=list(assumptions or []),
+                blockers=list(blockers or []),
+                outcome=str(outcome or "completed").strip() or "completed",
+                risks=list(risks or blockers or []),
+                pr_url=str(pr_url or "").strip(),
+                pr_number=pr_number,
+                confidence=float(confidence),
+                metadata={
+                    **dict(metadata or {}),
+                    "supervisor_run_id": lease_metadata.get("supervisor_run_id"),
+                    "work_order_id": lease_metadata.get("work_order_id"),
+                    "task_key": lease_metadata.get("task_key"),
+                    "reviewer_agent": lease_metadata.get("reviewer_agent"),
+                    "risk_level": lease_metadata.get("risk_level"),
+                },
+            )
             violations = self._validate_completion_scope(
                 lease,
                 changed_paths=receipt.changed_paths,
@@ -1292,7 +1527,15 @@ class DevCoordinationStore:
                 )
                 raise FileScopeViolationError(violations)
             conn.execute(
-                "INSERT INTO completion_receipts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO completion_receipts (
+                    receipt_id, lease_id, owner_agent, owner_session_id, branch, worktree_path,
+                    commit_shas_json, changed_paths_json, tests_run_json, assumptions_json,
+                    blockers_json, confidence, created_at, artifact_hash, task_id, base_sha,
+                    head_sha, validations_run_json, outcome, risks_json, pr_url, pr_number,
+                    metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     receipt.receipt_id,
                     receipt.lease_id,
@@ -1308,6 +1551,15 @@ class DevCoordinationStore:
                     receipt.confidence,
                     receipt.created_at,
                     receipt.artifact_hash,
+                    receipt.task_id,
+                    receipt.base_sha,
+                    receipt.head_sha,
+                    _json_dump(receipt.validations_run),
+                    receipt.outcome,
+                    _json_dump(receipt.risks),
+                    receipt.pr_url,
+                    receipt.pr_number,
+                    _json_dump(receipt.metadata),
                 ),
             )
             conn.execute(
@@ -1317,7 +1569,7 @@ class DevCoordinationStore:
                     now,
                     _json_dump(
                         {
-                            **_json_loads(lease_row["metadata_json"], {}),
+                            **lease_metadata,
                             "last_receipt_id": receipt.receipt_id,
                         }
                     ),
@@ -1365,7 +1617,16 @@ class DevCoordinationStore:
                 "receipt_id": receipt.receipt_id,
                 "files": receipt.changed_paths,
                 "tests_run": receipt.tests_run,
+                "validations_run": receipt.validations_run,
                 "confidence": receipt.confidence,
+                "task_id": receipt.task_id,
+                "base_sha": receipt.base_sha,
+                "head_sha": receipt.head_sha,
+                "outcome": receipt.outcome,
+                "risks": receipt.risks,
+                "pr_url": receipt.pr_url or None,
+                "pr_number": receipt.pr_number,
+                "metadata": dict(receipt.metadata),
             },
         )
         self._publish(
@@ -1376,6 +1637,7 @@ class DevCoordinationStore:
                 "receipt_id": receipt.receipt_id,
                 "commit_shas": receipt.commit_shas,
                 "artifact_hash": receipt.artifact_hash,
+                "task_id": receipt.task_id,
             },
         )
         self.fleet_store.enqueue_merge(
@@ -1385,10 +1647,18 @@ class DevCoordinationStore:
             metadata={
                 "lease_id": lease_id,
                 "receipt_id": receipt.receipt_id,
+                "task_id": receipt.task_id,
                 "tests_run": receipt.tests_run,
+                "validations_run": receipt.validations_run,
                 "changed_paths": receipt.changed_paths,
                 "confidence": receipt.confidence,
                 "artifact_hash": receipt.artifact_hash,
+                "base_sha": receipt.base_sha,
+                "head_sha": receipt.head_sha,
+                "outcome": receipt.outcome,
+                "risks": receipt.risks,
+                "pr_url": receipt.pr_url or None,
+                "pr_number": receipt.pr_number,
             },
         )
         self._sync_supervisor_run_from_lease(
@@ -1614,6 +1884,70 @@ class DevCoordinationStore:
             for item in self.list_salvage_candidates(statuses=sorted(_OPEN_SALVAGE_STATUSES))
         )
         return items
+
+    def developer_task_work_items(self) -> list[WorkItem]:
+        items: list[WorkItem] = []
+        for task in self.list_developer_tasks(open_only=True):
+            if task.status not in _QUEUEABLE_DEVELOPER_TASK_STATUSES:
+                continue
+            items.append(task.to_work_item())
+        return items
+
+    async def sync_developer_task_queue(
+        self,
+        queue: GlobalWorkQueue | None = None,
+        *,
+        complete_missing: bool = True,
+    ) -> dict[str, int]:
+        """Project open developer tasks into the global work queue."""
+        work_queue = queue or GlobalWorkQueue(storage_dir=self.repo_root / ".work_queue")
+        await work_queue.initialize()
+
+        desired_items = {item.id: item for item in self.developer_task_work_items()}
+        existing_items = {item.id: item for item in await work_queue.list_items(limit=10_000)}
+
+        counts = {
+            "created": 0,
+            "updated": 0,
+            "reopened": 0,
+            "completed": 0,
+            "skipped_active": 0,
+            "open_items": len(desired_items),
+        }
+
+        for item_id, item in desired_items.items():
+            existing = existing_items.get(item_id)
+            if existing and existing.status in (WorkStatus.CLAIMED, WorkStatus.IN_PROGRESS):
+                counts["skipped_active"] += 1
+                continue
+            await work_queue.upsert(item, allow_reopen=True, preserve_claimed=True)
+            if existing is None:
+                counts["created"] += 1
+            elif existing.status in (WorkStatus.COMPLETED, WorkStatus.FAILED):
+                counts["reopened"] += 1
+            else:
+                counts["updated"] += 1
+
+        if complete_missing:
+            for item_id, existing in existing_items.items():
+                if not item_id.startswith("task:") or item_id in desired_items:
+                    continue
+                if existing.status in (
+                    WorkStatus.CLAIMED,
+                    WorkStatus.IN_PROGRESS,
+                    WorkStatus.COMPLETED,
+                    WorkStatus.FAILED,
+                ):
+                    continue
+                completed = await work_queue.complete(
+                    item_id,
+                    result={"source": "dev_coordination", "reason": "task_no_longer_open"},
+                )
+                if completed is not None:
+                    counts["completed"] += 1
+
+        await work_queue.reprioritize()
+        return counts
 
     async def sync_pending_work_queue(
         self,
@@ -1947,6 +2281,67 @@ class DevCoordinationStore:
         }
 
     @staticmethod
+    def _developer_task_from_run(
+        run: dict[str, Any],
+        work_order: dict[str, Any],
+    ) -> DeveloperTask:
+        run_id = str(run.get("run_id", "")).strip()
+        task_id = (
+            str(work_order.get("work_order_id", "")).strip()
+            or str(work_order.get("task_id", "")).strip()
+            or "task"
+        )
+        status = str(work_order.get("status", "")).strip().lower() or "queued"
+        metadata = dict(work_order.get("metadata") or {})
+        lease_id = _optional_text(work_order.get("lease_id"))
+        return DeveloperTask(
+            task_key=f"{run_id}:{task_id}",
+            task_id=task_id,
+            run_id=run_id,
+            goal=str(run.get("goal", "")).strip(),
+            title=str(work_order.get("title", "")).strip() or task_id,
+            status=status,
+            priority=_developer_task_priority(work_order),
+            owner_agent=_optional_text(
+                work_order.get("target_agent"),
+                metadata.get("owner_agent"),
+            )
+            or "",
+            reviewer_agent=_optional_text(
+                work_order.get("reviewer_agent"),
+                metadata.get("reviewer_agent"),
+            )
+            or "",
+            blocked_by=_developer_task_blockers(work_order),
+            acceptance_checks=_developer_task_acceptance_checks(work_order),
+            allowed_paths=[
+                str(item).strip() for item in work_order.get("file_scope", []) if str(item).strip()
+            ],
+            lease_id=lease_id or None,
+            owner_session_id=_optional_text(work_order.get("owner_session_id")) or None,
+            branch=_optional_text(work_order.get("branch")) or None,
+            worktree_path=_optional_text(work_order.get("worktree_path")) or None,
+            receipt_id=_optional_text(work_order.get("receipt_id")) or None,
+            created_at=str(run.get("created_at", _utcnow().isoformat())),
+            updated_at=_developer_task_updated_at(work_order, run),
+            metadata={
+                **metadata,
+                "target_branch": str(run.get("target_branch", "")).strip() or None,
+                "run_status": str(run.get("status", "")).strip() or None,
+                "success_criteria": dict(work_order.get("success_criteria") or {}),
+                "dependency_ids": [
+                    str(item).strip()
+                    for item in work_order.get("dependency_ids", [])
+                    if str(item).strip()
+                ],
+                "risk_level": str(work_order.get("risk_level", "")).strip() or None,
+                "estimated_complexity": str(work_order.get("estimated_complexity", "")).strip()
+                or None,
+                "approval_required": bool(work_order.get("approval_required", False)),
+            },
+        )
+
+    @staticmethod
     def _derive_supervisor_run_status(work_orders: list[dict[str, Any]]) -> str:
         statuses = {str(item.get("status", "")).strip() for item in work_orders if item}
         if not statuses:
@@ -2022,6 +2417,126 @@ class DevCoordinationStore:
             conn.commit()
         finally:
             conn.close()
+
+
+def _optional_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _flatten_acceptance_value(value: Any) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, dict):
+        items: list[str] = []
+        for key, nested in value.items():
+            for text in _flatten_acceptance_value(nested):
+                items.append(f"{key}: {text}")
+        return items
+    if isinstance(value, list):
+        items: list[str] = []
+        for nested in value:
+            items.extend(_flatten_acceptance_value(nested))
+        return items
+    text = str(value or "").strip()
+    return [text] if text else []
+
+
+def _developer_task_acceptance_checks(work_order: dict[str, Any]) -> list[str]:
+    checks: list[str] = []
+    for entry in work_order.get("expected_tests", []):
+        text = str(entry).strip()
+        if text and text not in checks:
+            checks.append(text)
+    for entry in _flatten_acceptance_value(work_order.get("success_criteria", {})):
+        if entry not in checks:
+            checks.append(entry)
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict):
+        for entry in metadata.get("acceptance_criteria", []):
+            text = str(entry).strip()
+            if text and text not in checks:
+                checks.append(text)
+    return checks
+
+
+def _developer_task_blockers(work_order: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    for value in work_order.get("blockers", []):
+        text = str(value).strip()
+        if text and text not in blockers:
+            blockers.append(text)
+    for key in ("dispatch_error", "failure_reason"):
+        text = str(work_order.get(key, "")).strip()
+        if text and text not in blockers:
+            blockers.append(text)
+    if isinstance(work_order.get("scope_violation"), dict):
+        blockers.append("scope_violation")
+    return blockers
+
+
+def _developer_task_priority(work_order: dict[str, Any]) -> int:
+    explicit = work_order.get("priority")
+    if isinstance(explicit, int):
+        return max(0, min(100, explicit))
+    if isinstance(explicit, str):
+        normalized = explicit.strip().lower()
+        if normalized.isdigit():
+            return max(0, min(100, int(normalized)))
+        named = {
+            "critical": 95,
+            "high": 80,
+            "medium": 60,
+            "normal": 50,
+            "low": 35,
+        }
+        if normalized in named:
+            return named[normalized]
+    risk_level = str(work_order.get("risk_level", "")).strip().lower()
+    risk_priority = {
+        "critical": 90,
+        "high": 75,
+        "review": 60,
+        "medium": 55,
+        "low": 45,
+    }
+    return risk_priority.get(risk_level, 50)
+
+
+def _developer_task_updated_at(work_order: dict[str, Any], run: dict[str, Any]) -> str:
+    for key in (
+        "last_observed_at",
+        "last_progress_at",
+        "completed_at",
+        "dispatched_at",
+        "leased_at",
+        "started_at",
+    ):
+        text = str(work_order.get(key, "")).strip()
+        if text:
+            return text
+    return str(run.get("updated_at", _utcnow().isoformat()))
+
+
+def _developer_task_work_status(status: str) -> WorkStatus:
+    normalized = str(status or "").strip().lower()
+    if normalized == "queued":
+        return WorkStatus.READY
+    if normalized == "leased":
+        return WorkStatus.CLAIMED
+    if normalized in {"dispatched", "active"}:
+        return WorkStatus.IN_PROGRESS
+    if normalized in {"waiting_conflict", "dispatch_failed", "needs_human", "changes_requested"}:
+        return WorkStatus.BLOCKED
+    if normalized in {"timed_out", "failed"}:
+        return WorkStatus.FAILED
+    if normalized in {"merged", "discarded", "salvage", "completed", "integrating"}:
+        return WorkStatus.COMPLETED
+    return WorkStatus.PENDING
 
 
 def _safe_kill_probe(raw_pid: Any) -> Exception | None:
@@ -2206,11 +2721,18 @@ def _build_parser() -> argparse.ArgumentParser:
     complete.add_argument("--session-id", required=True)
     complete.add_argument("--branch", required=True)
     complete.add_argument("--worktree", required=True)
+    complete.add_argument("--base-sha", default=None)
+    complete.add_argument("--head-sha", default=None)
     complete.add_argument("--commit", action="append", default=[])
     complete.add_argument("--changed-path", action="append", default=[])
     complete.add_argument("--test", action="append", default=[])
+    complete.add_argument("--validation", action="append", default=[])
     complete.add_argument("--assumption", action="append", default=[])
     complete.add_argument("--blocker", action="append", default=[])
+    complete.add_argument("--outcome", default="completed")
+    complete.add_argument("--risk", action="append", default=[])
+    complete.add_argument("--pr-url", default=None)
+    complete.add_argument("--pr-number", type=int, default=None)
     complete.add_argument("--confidence", type=float, default=0.0)
     complete.add_argument("--json", action="store_true")
 
@@ -2246,6 +2768,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sync_queue.add_argument("--json", action="store_true")
 
+    tasks = sub.add_parser("tasks", help="List canonical developer tasks")
+    tasks.add_argument("--open-only", action="store_true")
+    tasks.add_argument("--json", action="store_true")
+
+    sync_tasks = sub.add_parser(
+        "sync-tasks",
+        help="Project open developer tasks into the global work queue",
+    )
+    sync_tasks.add_argument("--json", action="store_true")
+
     reap = sub.add_parser("reap", help="Expire stale leases and release mirrored fleet claims")
     reap.add_argument("--json", action="store_true")
 
@@ -2267,7 +2799,8 @@ def main() -> int:
             print(  # noqa: T201
                 f"active_leases={counts['active_leases']} "
                 f"pending_integrations={counts['pending_integrations']} "
-                f"open_salvage_candidates={counts['open_salvage_candidates']}"
+                f"open_salvage_candidates={counts['open_salvage_candidates']} "
+                f"open_developer_tasks={counts['open_developer_tasks']}"
             )
         return 0
 
@@ -2305,11 +2838,18 @@ def main() -> int:
             owner_session_id=args.session_id,
             branch=args.branch,
             worktree_path=args.worktree,
+            base_sha=args.base_sha,
+            head_sha=args.head_sha,
             commit_shas=args.commit,
             changed_paths=args.changed_path,
             tests_run=args.test,
+            validations_run=args.validation,
             assumptions=args.assumption,
             blockers=args.blocker,
+            outcome=args.outcome,
+            risks=args.risk,
+            pr_url=args.pr_url,
+            pr_number=args.pr_number,
             confidence=args.confidence,
         )
         if args.json:
@@ -2367,6 +2907,32 @@ def main() -> int:
         payload = {
             "ok": True,
             "counts": asyncio.run(store.sync_pending_work_queue()),
+        }
+        if args.json:
+            print(json.dumps(payload, indent=2))  # noqa: T201
+        else:
+            print(json.dumps(payload["counts"], indent=2))  # noqa: T201
+        return 0
+
+    if args.command == "tasks":
+        payload = {
+            "ok": True,
+            "count": 0,
+            "tasks": [
+                item.to_dict() for item in store.list_developer_tasks(open_only=args.open_only)
+            ],
+        }
+        payload["count"] = len(payload["tasks"])
+        if args.json:
+            print(json.dumps(payload, indent=2))  # noqa: T201
+        else:
+            print(payload["count"])  # noqa: T201
+        return 0
+
+    if args.command == "sync-tasks":
+        payload = {
+            "ok": True,
+            "counts": asyncio.run(store.sync_developer_task_queue()),
         }
         if args.json:
             print(json.dumps(payload, indent=2))  # noqa: T201
