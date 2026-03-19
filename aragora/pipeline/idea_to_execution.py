@@ -499,6 +499,67 @@ class IdeaToExecutionPipeline:
         )
         return result
 
+    @classmethod
+    async def from_assessment(
+        cls,
+        assessment: Any | None = None,
+        pipeline_id: str | None = None,
+    ) -> PipelineResult:
+        """Create pipeline from canonical assessment.
+
+        Derives improvement ideas from the assessment's candidates and
+        feature inventory, then feeds them into the standard pipeline.
+
+        Args:
+            assessment: Optional CanonicalRepoAssessment. If None, one
+                will be compiled on the fly.
+            pipeline_id: Optional external pipeline ID.
+
+        Returns:
+            PipelineResult with assessment-derived improvement ideas.
+        """
+        pid = pipeline_id or f"assess-{uuid.uuid4().hex[:12]}"
+
+        if assessment is None:
+            try:
+                from aragora.nomic.canonical_assessment import CanonicalAssessmentCompiler
+
+                compiler = CanonicalAssessmentCompiler()
+                assessment = await compiler.compile()
+            except (ImportError, AttributeError):
+                logger.debug("CanonicalAssessmentCompiler unavailable")
+                assessment = None
+
+        ideas: list[str] = []
+
+        if assessment is not None:
+            # Derive ideas from improvement candidates
+            for candidate in getattr(assessment, "improvement_candidates", [])[:10]:
+                prio_val = candidate.get("priority", 0) if isinstance(candidate, dict) else 0
+                priority = "high" if prio_val > 0.7 else "medium"
+                desc = candidate.get("description", "") if isinstance(candidate, dict) else ""
+                if desc:
+                    ideas.append(f"[{priority}] {desc}")
+
+            # Derive ideas from scaffolding features
+            for feature in getattr(assessment, "feature_inventory", []):
+                if getattr(feature, "status", None) == "scaffolding":
+                    ideas.append(f"[medium] Harden scaffolding: {feature.name}")
+
+        if not ideas:
+            ideas = [
+                "[low] Review and update test coverage",
+                "[low] Check for dependency updates",
+            ]
+
+        pipeline = cls()
+        result = pipeline.from_ideas(
+            ideas,
+            auto_advance=True,
+            pipeline_id=pid,
+        )
+        return result
+
     def from_debate(
         self,
         cartographer_data: dict[str, Any],
