@@ -125,6 +125,7 @@ EXEMPT_HANDLERS = frozenset(
         "EvolutionHandler",
         # Task execution (rate-limited, has internal validation)
         "TaskExecutionHandler",
+        "TaskQueueHandler",
         # Playground - intentionally public demo endpoint (rate-limited, mock agents only)
         "PlaygroundHandler",
         # Compliance reporting (uses internal auth or admin-only access)

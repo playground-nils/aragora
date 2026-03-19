@@ -182,6 +182,7 @@ Examples:
     _add_coordinate_parser(subparsers)
     _add_self_improve_parser(subparsers)
     _add_swarm_parser(subparsers)
+    _add_tasks_parser(subparsers)
     _add_worktree_parser(subparsers)
     _add_outcome_parser(subparsers)
     _add_explain_parser(subparsers)
@@ -2417,6 +2418,13 @@ def _add_swarm_parser(subparsers) -> None:
             "aragora.cli.commands.swarm", fromlist=["cmd_swarm"]
         ).cmd_swarm(args)
     )
+
+
+def _add_tasks_parser(subparsers) -> None:
+    """Add the public tasks command."""
+    from aragora.cli.commands.tasks import add_tasks_parser
+
+    add_tasks_parser(subparsers)
 
 
 def _add_ralph_parser(subparsers) -> None:

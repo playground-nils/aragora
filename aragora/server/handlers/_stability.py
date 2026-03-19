@@ -252,6 +252,7 @@ HANDLER_STABILITY: dict[str, Stability] = {
     "StreamingConnectorHandler": Stability.EXPERIMENTAL,
     # tasks
     "TaskExecutionHandler": Stability.EXPERIMENTAL,
+    "TaskQueueHandler": Stability.EXPERIMENTAL,
     # top-level handlers
     "AuditTrailHandler": Stability.STABLE,
     "BenchmarkingHandler": Stability.EXPERIMENTAL,

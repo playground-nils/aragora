@@ -405,6 +405,7 @@ if TYPE_CHECKING:
     from .sso import SSOHandler
     from .streaming.handler import StreamingConnectorHandler
     from .tasks.execution import TaskExecutionHandler
+    from .tasks.queue import TaskQueueHandler
     from .template_discovery import TemplateDiscoveryHandler
     from .template_marketplace import TemplateMarketplaceHandler
     from .threat_intel import ThreatIntelHandler
@@ -855,6 +856,7 @@ __all__ = [
     "StreamingConnectorHandler",
     # tasks
     "TaskExecutionHandler",
+    "TaskQueueHandler",
     # top-level handlers
     "AuditTrailHandler",
     "BenchmarkingHandler",
