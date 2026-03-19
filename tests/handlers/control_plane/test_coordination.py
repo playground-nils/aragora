@@ -675,6 +675,109 @@ class TestRouteDispatch:
     @patch("aragora.server.handlers.control_plane.coordination.FleetCoordinationStore")
     @patch("aragora.server.handlers.control_plane.coordination.build_fleet_rows")
     @patch("aragora.server.handlers.control_plane.coordination.resolve_repo_root")
+    def test_get_coordination_swarm_integrator_view(
+        self,
+        mock_resolve,
+        mock_build_rows,
+        mock_store_cls,
+        mock_status_summary,
+        handler: ControlPlaneHandler,
+        mock_http_handler: MagicMock,
+    ):
+        mock_resolve.return_value = Path("/tmp/repo")
+        mock_build_rows.return_value = [
+            {
+                "session_id": "sess-a",
+                "path": "/tmp/repo/.worktrees/docs",
+                "branch": "codex/docs-lane",
+                "has_lock": True,
+                "pid_alive": True,
+                "agent": "codex",
+                "last_activity": "2026-03-18T10:00:00+00:00",
+            }
+        ]
+        store = MagicMock()
+        store.list_claims.return_value = []
+        store.list_merge_queue.return_value = [
+            {
+                "id": "mq-1",
+                "branch": "codex/docs-lane",
+                "session_id": "sess-a",
+                "status": "needs_human",
+                "metadata": {"receipt_id": "rcpt-1", "task_id": "docs-lane"},
+            }
+        ]
+        mock_store_cls.return_value = store
+        mock_status_summary.return_value = {
+            "integrator": {
+                "developer_tasks": [
+                    {
+                        "task_key": "run-1:docs-lane",
+                        "task_id": "docs-lane",
+                        "title": "Write operator guide",
+                        "status": "completed",
+                        "owner_session_id": "sess-a",
+                        "branch": "codex/docs-lane",
+                        "worktree_path": "/tmp/repo/.worktrees/docs",
+                        "lease_id": "lease-1",
+                        "receipt_id": "rcpt-1",
+                        "updated_at": "2026-03-18T09:58:00+00:00",
+                    }
+                ],
+                "leases": [
+                    {
+                        "lease_id": "lease-1",
+                        "task_id": "docs-lane",
+                        "owner_session_id": "sess-a",
+                        "branch": "codex/docs-lane",
+                        "worktree_path": "/tmp/repo/.worktrees/docs",
+                        "status": "completed",
+                        "updated_at": "2026-03-18T09:57:00+00:00",
+                        "expires_at": "2026-03-18T17:00:00+00:00",
+                    }
+                ],
+                "completion_receipts": [
+                    {
+                        "receipt_id": "rcpt-1",
+                        "lease_id": "lease-1",
+                        "task_id": "docs-lane",
+                        "owner_session_id": "sess-a",
+                        "branch": "codex/docs-lane",
+                        "worktree_path": "/tmp/repo/.worktrees/docs",
+                        "created_at": "2026-03-18T09:56:00+00:00",
+                        "confidence": 0.93,
+                    }
+                ],
+                "integration_decisions": [
+                    {
+                        "decision_id": "dec-1",
+                        "lease_id": "lease-1",
+                        "receipt_id": "rcpt-1",
+                        "decision": "pending_review",
+                        "target_branch": "main",
+                        "rationale": "Awaiting integrator review",
+                        "created_at": "2026-03-18T09:56:30+00:00",
+                    }
+                ],
+                "salvage_candidates": [],
+            }
+        }
+        mock_http_handler.path = "/api/v1/coordination/swarm/integrator"
+
+        result = handler.handle("/api/v1/coordination/swarm/integrator", {}, mock_http_handler)
+
+        assert result is not None
+        assert result.status_code == 200
+        data = json.loads(result.body)
+        assert data["summary"]["total_lanes"] == 1
+        assert data["lanes"][0]["branch"] == "codex/docs-lane"
+        assert data["lanes"][0]["receipt_id"] == "rcpt-1"
+        assert "merge" in data["lanes"][0]["available_actions"]
+
+    @patch("aragora.nomic.dev_coordination.DevCoordinationStore.status_summary")
+    @patch("aragora.server.handlers.control_plane.coordination.FleetCoordinationStore")
+    @patch("aragora.server.handlers.control_plane.coordination.build_fleet_rows")
+    @patch("aragora.server.handlers.control_plane.coordination.resolve_repo_root")
     def test_get_coordination_fleet_status_surfaces_canonical_lane_metadata(
         self,
         mock_resolve,
@@ -849,6 +952,135 @@ class TestRouteDispatch:
         assert data["integrator_view"]["alerts"]["collisions"][0]["reasons"] == [
             "path:aragora/swarm/reporter.py"
         ]
+
+    @patch("aragora.server.handlers.control_plane.coordination.resolve_repo_root")
+    @patch.object(ControlPlaneHandler, "_build_integrator_lane_view")
+    @patch("aragora.nomic.dev_coordination.DevCoordinationStore")
+    def test_post_coordination_swarm_integrator_merge(
+        self,
+        mock_store_cls,
+        mock_build_view,
+        mock_resolve,
+        handler: ControlPlaneHandler,
+    ):
+        from aragora.nomic.dev_coordination import IntegrationDecisionType
+
+        mock_resolve.return_value = Path("/tmp/repo")
+        mock_build_view.return_value = {
+            "lanes": [
+                {
+                    "lane_id": "lane-1",
+                    "receipt_id": "rcpt-1",
+                    "lease_id": "lease-1",
+                    "branch": "codex/docs-lane",
+                }
+            ]
+        }
+        mock_store = MagicMock()
+        mock_store.record_integration_decision.return_value = MagicMock(
+            decision=IntegrationDecisionType.MERGE.value,
+            decision_id="dec-1",
+        )
+        mock_store_cls.return_value = mock_store
+
+        result = handler._handle_swarm_integrator_merge(
+            {
+                "lane_id": "lane-1",
+                "decided_by": "human-integrator",
+                "rationale": "Ready to merge",
+            }
+        )
+
+        assert result.status_code == 200
+        call = mock_store.record_integration_decision.call_args
+        assert call.kwargs["receipt_id"] == "rcpt-1"
+        assert call.kwargs["lease_id"] == "lease-1"
+        assert call.kwargs["decision"] == IntegrationDecisionType.MERGE
+
+    @patch("aragora.server.handlers.control_plane.coordination.resolve_repo_root")
+    @patch.object(ControlPlaneHandler, "_build_integrator_lane_view")
+    @patch("aragora.swarm.pr_registry.PullRequestRegistry")
+    @patch("aragora.nomic.dev_coordination.DevCoordinationStore")
+    def test_post_coordination_swarm_integrator_archive_closes_pr(
+        self,
+        mock_store_cls,
+        mock_registry_cls,
+        mock_build_view,
+        mock_resolve,
+        handler: ControlPlaneHandler,
+    ):
+        from aragora.nomic.dev_coordination import IntegrationDecisionType
+
+        mock_resolve.return_value = Path("/tmp/repo")
+        mock_build_view.return_value = {
+            "lanes": [
+                {
+                    "lane_id": "lane-1",
+                    "receipt_id": "rcpt-1",
+                    "lease_id": "lease-1",
+                    "branch": "codex/docs-lane",
+                }
+            ]
+        }
+        mock_store = MagicMock()
+        mock_store.record_integration_decision.return_value = MagicMock(
+            decision=IntegrationDecisionType.DISCARD.value,
+            decision_id="dec-2",
+        )
+        mock_store_cls.return_value = mock_store
+
+        result = handler._handle_swarm_integrator_archive({"lane_id": "lane-1"})
+
+        assert result.status_code == 200
+        mock_registry_cls.return_value.close.assert_called_once_with(
+            "codex/docs-lane",
+            outcome="archived",
+        )
+
+    @patch("aragora.server.handlers.control_plane.coordination.resolve_repo_root")
+    @patch.object(ControlPlaneHandler, "_build_integrator_lane_view")
+    @patch("aragora.swarm.pr_registry.PullRequestRegistry")
+    def test_post_coordination_swarm_integrator_supersede(
+        self,
+        mock_registry_cls,
+        mock_build_view,
+        mock_resolve,
+        handler: ControlPlaneHandler,
+    ):
+        mock_resolve.return_value = Path("/tmp/repo")
+        mock_build_view.return_value = {
+            "lanes": [
+                {
+                    "lane_id": "lane-1",
+                    "branch": "codex/docs-lane",
+                }
+            ]
+        }
+        mock_registry_cls.return_value.supersede.return_value = MagicMock(
+            branch="codex/docs-lane",
+            pr_url="https://github.com/synaptent/aragora/pull/9999",
+            creator="codex",
+            created_at="2026-03-18T12:00:00+00:00",
+            status="active",
+            superseded=[{"pr_url": "old"}],
+            gate_snapshot=None,
+            metadata={},
+        )
+
+        result = handler._handle_swarm_integrator_supersede(
+            {
+                "lane_id": "lane-1",
+                "new_pr_url": "https://github.com/synaptent/aragora/pull/9999",
+                "rationale": "Replacement PR is canonical",
+            }
+        )
+
+        assert result.status_code == 200
+        mock_registry_cls.return_value.supersede.assert_called_once_with(
+            "codex/docs-lane",
+            "https://github.com/synaptent/aragora/pull/9999",
+            reason="Replacement PR is canonical",
+        )
 
     @patch("aragora.server.handlers.control_plane.coordination.FleetCoordinationStore")
     @patch("aragora.server.handlers.control_plane.coordination.resolve_repo_root")

@@ -26,7 +26,16 @@ from uuid import uuid4
 def _resolve_swarm_action_goal(args: argparse.Namespace) -> tuple[str, str | None]:
     first = getattr(args, "swarm_action_or_goal", None)
     second = getattr(args, "swarm_goal", None)
-    if first in {"run", "boss", "boss-loop", "runner", "status", "reconcile", "campaign"}:
+    if first in {
+        "run",
+        "boss",
+        "boss-loop",
+        "runner",
+        "status",
+        "reconcile",
+        "campaign",
+        "integrator",
+    }:
         return str(first), second
     return "run", first
 
@@ -126,6 +135,122 @@ def _blocked_boss_payload(
         "integrator_summary": {},
         "routing": routing,
     }
+
+
+def _load_integrator_view(repo_root: Path, *, base_branch: str) -> dict[str, object]:
+    from aragora.swarm.reporter import build_integrator_view
+    from aragora.worktree.fleet import FleetCoordinationStore, build_fleet_rows
+
+    try:
+        from aragora.nomic.dev_coordination import DevCoordinationStore
+    except (ImportError, RuntimeError, OSError, ValueError):
+        DevCoordinationStore = None  # type: ignore[assignment]
+
+    worktrees = build_fleet_rows(repo_root, base_branch=base_branch, tail=0)
+    store = FleetCoordinationStore(repo_root)
+    claims = store.list_claims()
+    merge_queue = store.list_merge_queue()
+    coordination: dict[str, object] = {}
+    if DevCoordinationStore is not None:
+        try:
+            coordination = DevCoordinationStore(repo_root=repo_root).status_summary(
+                include_integrator_artifacts=True
+            )
+        except (RuntimeError, OSError, ValueError):
+            coordination = {}
+    return build_integrator_view(
+        runs=[],
+        worktrees=worktrees,
+        claims=claims,
+        merge_queue=merge_queue,
+        coordination=coordination,
+    )
+
+
+def _find_integrator_lane(
+    view: dict[str, object],
+    *,
+    lane_id: str = "",
+    receipt_id: str = "",
+    lease_id: str = "",
+    branch: str = "",
+) -> dict[str, object] | None:
+    lanes = [item for item in view.get("lanes", []) if isinstance(item, dict)]
+    lane_id = str(lane_id or "").strip()
+    receipt_id = str(receipt_id or "").strip()
+    lease_id = str(lease_id or "").strip()
+    branch = str(branch or "").strip()
+
+    if lane_id:
+        for lane in lanes:
+            if str(lane.get("lane_id", "")).strip() == lane_id:
+                return lane
+        return None
+    if receipt_id:
+        for lane in lanes:
+            if str(lane.get("receipt_id", "")).strip() == receipt_id:
+                return lane
+        return None
+    if lease_id:
+        for lane in lanes:
+            if str(lane.get("lease_id", "")).strip() == lease_id:
+                return lane
+        return None
+    if branch:
+        canonical = [
+            lane
+            for lane in lanes
+            if str(lane.get("branch", "")).strip() == branch and bool(lane.get("canonical_lane"))
+        ]
+        if canonical:
+            return canonical[0]
+        for lane in lanes:
+            if str(lane.get("branch", "")).strip() == branch:
+                return lane
+    return None
+
+
+def _render_integrator_table(view: dict[str, object]) -> None:
+    summary = view.get("summary", {}) if isinstance(view.get("summary"), dict) else {}
+    print(f"Swarm Integrator View ({summary.get('total_lanes', 0)} lanes)")
+    print(
+        "  ready={ready} blocked={blocked} review={review} stale={stale} superseded={superseded}".format(
+            ready=summary.get("ready_lanes", 0),
+            blocked=summary.get("blocked_lanes", 0),
+            review=summary.get("review_lanes", 0),
+            stale=summary.get("stale_heartbeat_lanes", 0),
+            superseded=summary.get("superseded_lanes", 0),
+        )
+    )
+    print()
+    icons = {"ready": "+", "blocked": "!", "review": "?", "merged": "=", "superseded": "x"}
+    lanes = [item for item in view.get("lanes", []) if isinstance(item, dict)]
+    for lane in lanes:
+        readiness = str(lane.get("merge_readiness", "unknown"))
+        icon = icons.get(readiness, " ")
+        canonical = "*" if bool(lane.get("canonical_lane")) else " "
+        print(f"{canonical}[{icon}] {lane.get('title', 'untitled')}")
+        print(
+            "    lane_id={lane_id} branch={branch} readiness={readiness} status={status}".format(
+                lane_id=lane.get("lane_id", ""),
+                branch=lane.get("branch", ""),
+                readiness=readiness,
+                status=lane.get("status", ""),
+            )
+        )
+        receipt_id = str(lane.get("receipt_id", "") or "").strip()
+        lease_id = str(lane.get("lease_id", "") or "").strip()
+        if receipt_id or lease_id:
+            print(f"    receipt={receipt_id or 'none'} lease={lease_id or 'none'}")
+        blockers = lane.get("blockers", [])
+        if isinstance(blockers, list) and blockers:
+            print(f"    blockers: {', '.join(str(item) for item in blockers)}")
+        next_action = str(lane.get("next_action", "") or "").strip()
+        if next_action:
+            print(f"    next: {next_action}")
+        print()
+    for action_text in [item for item in view.get("next_actions", []) if str(item).strip()][:5]:
+        print(f"next: {action_text}")
 
 
 def cmd_swarm(args: argparse.Namespace) -> None:
@@ -250,6 +375,155 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         else:
             print(render_runner_registration_text(payload))
         return
+
+    if action == "integrator":
+        import sys
+
+        subaction = str(goal or "view").strip().lower() or "view"
+        repo_root = resolve_repo_root(Path.cwd())
+        base_branch = str(getattr(args, "target_branch", "main") or "main")
+        view = _load_integrator_view(repo_root, base_branch=base_branch)
+        readiness_filter = str(getattr(args, "readiness", None) or "").strip()
+        if readiness_filter:
+            filtered_view = dict(view)
+            filtered_view["lanes"] = [
+                item
+                for item in view.get("lanes", [])
+                if isinstance(item, dict)
+                and str(item.get("merge_readiness", "")).strip() == readiness_filter
+            ]
+            view = filtered_view
+
+        if subaction in {"view", "status"}:
+            if as_json:
+                print(json.dumps(view, indent=2))
+            else:
+                _render_integrator_table(view)
+            return
+
+        lane = _find_integrator_lane(
+            view,
+            lane_id=str(getattr(args, "lane_id", None) or ""),
+            receipt_id=str(getattr(args, "receipt_id", None) or ""),
+            lease_id=str(getattr(args, "lease_id", None) or ""),
+            branch=str(getattr(args, "lane_branch", None) or ""),
+        )
+        if lane is None:
+            print(
+                "Error: integrator action requires a resolvable lane via "
+                "--lane-id, --receipt-id, --lease-id, or --lane-branch",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        rationale = str(getattr(args, "rationale", "") or "").strip()
+        decided_by = str(getattr(args, "decided_by", "cli-integrator") or "cli-integrator").strip()
+
+        if subaction in {"merge", "archive"}:
+            from aragora.nomic.dev_coordination import DevCoordinationStore, IntegrationDecisionType
+
+            resolved_receipt_id = str(
+                getattr(args, "receipt_id", None) or lane.get("receipt_id") or ""
+            ).strip()
+            resolved_lease_id = str(
+                getattr(args, "lease_id", None) or lane.get("lease_id") or ""
+            ).strip()
+            if not resolved_receipt_id:
+                print(
+                    "Error: selected lane has no receipt_id; cannot record an integration decision",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            decision_type = (
+                IntegrationDecisionType.MERGE
+                if subaction == "merge"
+                else IntegrationDecisionType.DISCARD
+            )
+            decision = DevCoordinationStore(repo_root=repo_root).record_integration_decision(
+                receipt_id=resolved_receipt_id,
+                lease_id=resolved_lease_id or None,
+                decided_by=decided_by,
+                decision=decision_type,
+                rationale=rationale
+                or (
+                    "Integrator approved lane for merge"
+                    if subaction == "merge"
+                    else "Integrator archived lane"
+                ),
+                target_branch=base_branch,
+            )
+            branch = str(lane.get("branch", "") or "").strip()
+            if subaction == "archive" and branch:
+                try:
+                    from aragora.swarm.pr_registry import PullRequestRegistry
+
+                    PullRequestRegistry().close(branch, outcome="archived")
+                except (ImportError, RuntimeError, OSError, ValueError):
+                    pass
+            payload = {
+                "lane_id": lane.get("lane_id"),
+                "receipt_id": resolved_receipt_id,
+                "lease_id": resolved_lease_id or None,
+                "branch": branch or None,
+                "decision": decision.decision,
+                "decision_id": decision.decision_id,
+            }
+            if as_json:
+                print(json.dumps(payload, indent=2))
+            else:
+                print(
+                    "decision_id={decision_id} decision={decision} lane_id={lane_id} receipt_id={receipt_id}".format(
+                        decision_id=payload["decision_id"],
+                        decision=payload["decision"],
+                        lane_id=payload["lane_id"],
+                        receipt_id=payload["receipt_id"],
+                    )
+                )
+            return
+
+        if subaction == "supersede":
+            from aragora.swarm.pr_registry import PullRequestRegistry
+
+            branch = str(getattr(args, "lane_branch", None) or lane.get("branch") or "").strip()
+            new_pr_url = str(getattr(args, "new_pr_url", None) or "").strip()
+            if not branch or not new_pr_url:
+                print(
+                    "Error: integrator supersede requires a lane branch and --new-pr-url",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            entry = PullRequestRegistry().supersede(
+                branch,
+                new_pr_url,
+                reason=rationale or "Integrator superseded the canonical PR",
+            )
+            if entry is None:
+                print(f"Error: branch not found in PR registry: {branch}", file=sys.stderr)
+                sys.exit(1)
+            payload = {
+                "branch": branch,
+                "new_pr_url": new_pr_url,
+                "status": entry.status,
+                "superseded_count": len(entry.superseded),
+            }
+            if as_json:
+                print(json.dumps(payload, indent=2))
+            else:
+                print(
+                    "branch={branch} superseded_count={count} new_pr={url}".format(
+                        branch=branch,
+                        count=payload["superseded_count"],
+                        url=new_pr_url,
+                    )
+                )
+            return
+
+        print(
+            "Error: swarm integrator action must be one of view, status, merge, archive, or supersede",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if action == "boss-loop":
         from aragora.swarm.boss_loop import BossLoop, BossLoopConfig

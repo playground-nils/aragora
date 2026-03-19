@@ -2129,7 +2129,7 @@ def _add_swarm_parser(subparsers) -> None:
     swarm_parser.add_argument(
         "swarm_action_or_goal",
         nargs="?",
-        help="Action (run/status/reconcile/campaign) or your goal in plain language",
+        help="Action (run/status/reconcile/campaign/integrator) or your goal in plain language",
     )
     swarm_parser.add_argument(
         "swarm_goal",
@@ -2228,6 +2228,46 @@ def _add_swarm_parser(subparsers) -> None:
         "--run-id",
         default=None,
         help="Specific supervisor run ID for 'status'",
+    )
+    swarm_parser.add_argument(
+        "--readiness",
+        default=None,
+        help="Optional integrator readiness filter (for 'integrator' view)",
+    )
+    swarm_parser.add_argument(
+        "--lane-id",
+        default=None,
+        help="Integrator lane id for 'integrator' actions",
+    )
+    swarm_parser.add_argument(
+        "--receipt-id",
+        default=None,
+        help="Explicit completion receipt id for 'integrator' actions",
+    )
+    swarm_parser.add_argument(
+        "--lease-id",
+        default=None,
+        help="Explicit lease id for 'integrator' actions",
+    )
+    swarm_parser.add_argument(
+        "--lane-branch",
+        default=None,
+        help="Explicit lane branch for 'integrator supersede' or lane resolution",
+    )
+    swarm_parser.add_argument(
+        "--decided-by",
+        default="cli-integrator",
+        help="Integrator actor recorded on merge/archive decisions (default: cli-integrator)",
+    )
+    swarm_parser.add_argument(
+        "--rationale",
+        default="",
+        help="Integrator rationale for merge/archive/supersede actions",
+    )
+    swarm_parser.add_argument(
+        "--new-pr-url",
+        default=None,
+        help="Replacement PR URL for 'integrator supersede'",
     )
     swarm_parser.add_argument(
         "--status-limit",
