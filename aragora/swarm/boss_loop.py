@@ -742,7 +742,7 @@ class BossLoop:
             self._stop_reason = BossStopReason.MAX_ITERATIONS.value
 
         total_elapsed = time.monotonic() - start_time
-        return BossLoopResult(
+        result = BossLoopResult(
             run_id=self.run_id,
             iterations_completed=iteration,
             total_elapsed_seconds=total_elapsed,
@@ -754,6 +754,23 @@ class BossLoop:
             needs_human_reasons=self._collect_needs_human_reasons(),
             next_actions=self._derive_next_actions(),
         )
+        try:
+            from aragora.receipts.provenance import emit_operational_receipt
+
+            emit_operational_receipt(
+                source="boss_loop",
+                action="run_completed",
+                actor="boss-loop",
+                inputs={"run_id": str(self.run_id), "config": str(self.config)},
+                outputs={
+                    "iterations_completed": result.iterations_completed,
+                    "stop_reason": result.stop_reason,
+                },
+                verdict="pass" if result.iterations_completed > 0 else "fail",
+            )
+        except (ImportError, RuntimeError, AttributeError):
+            pass
+        return result
 
     async def _run_iteration(self, iteration: int) -> BossIterationStatus:
         """Execute a single Boss loop iteration."""

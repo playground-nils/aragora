@@ -576,6 +576,22 @@ class RalphSupervisor:
 
         if stop_reason == "campaign_complete":
             state.status = SupervisorStatus.COMPLETED.value
+            try:
+                from aragora.receipts.provenance import emit_operational_receipt
+
+                emit_operational_receipt(
+                    source="ralph",
+                    action="campaign_completed",
+                    actor=f"ralph-{state.kind}" if hasattr(state, "kind") else "ralph",
+                    inputs={"manifest_path": str(getattr(state, "manifest_path", ""))},
+                    outputs={
+                        "status": "completed",
+                        "step_count": getattr(state, "step_count", 0),
+                    },
+                    verdict="pass",
+                )
+            except (ImportError, RuntimeError):
+                pass
             return StepResult(
                 action=SupervisorAction.CAMPAIGN_COMPLETED.value,
                 status=SupervisorStatus.COMPLETED.value,
@@ -1293,6 +1309,19 @@ class RalphSupervisor:
         state.status = SupervisorStatus.ESCALATED.value
         state.escalation_reason = reason
         logger.warning("Ralph supervisor escalating: %s", reason)
+        try:
+            from aragora.receipts.provenance import emit_operational_receipt
+
+            emit_operational_receipt(
+                source="ralph",
+                action="campaign_escalated",
+                actor=f"ralph-{state.kind}" if hasattr(state, "kind") else "ralph",
+                inputs={"manifest_path": str(getattr(state, "manifest_path", ""))},
+                outputs={"reason": reason},
+                verdict="escalated",
+            )
+        except (ImportError, RuntimeError):
+            pass
         return StepResult(
             action=SupervisorAction.ESCALATED.value,
             status=SupervisorStatus.ESCALATED.value,

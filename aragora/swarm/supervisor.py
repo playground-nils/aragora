@@ -1363,6 +1363,31 @@ class SwarmSupervisor:
                     return
                 item["receipt_id"] = receipt.receipt_id
                 item["confidence"] = receipt.confidence
+            # Best-effort operational receipt for audit trail
+            try:
+                from aragora.receipts.provenance import emit_operational_receipt
+
+                emit_operational_receipt(
+                    source="swarm_supervisor",
+                    action="work_order_completed",
+                    actor=str(item.get("target_agent", result.agent)),
+                    inputs={
+                        "work_order_id": str(item.get("id", "")),
+                        "goal": str(item.get("goal", "")),
+                        "file_scope": list(item.get("file_scope", [])),
+                    },
+                    outputs={
+                        "commit_shas": list(result.commit_shas),
+                        "changed_paths": clean_paths,
+                        "branch": str(item.get("branch", result.branch)),
+                        "exit_code": result.exit_code,
+                    },
+                    verdict="pass",
+                    confidence=receipt.confidence,
+                    receipt_id=receipt.receipt_id,
+                )
+            except (ImportError, RuntimeError):
+                pass
             if worker_type_circuit_breakers is not None:
                 self._record_worker_type_success(
                     worker_type_circuit_breakers,
