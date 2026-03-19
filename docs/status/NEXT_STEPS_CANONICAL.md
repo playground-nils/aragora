@@ -1,6 +1,6 @@
 # Next Steps (Canonical)
 
-Last updated: 2026-03-07
+Last updated: 2026-03-18
 
 This is the single source of truth for short-horizon execution priorities.
 `docs/CANONICAL_GOALS.md` defines what Aragora is and why.
@@ -15,7 +15,9 @@ This file defines execution order.
 - The moat is the receipt-gated decision kernel: prompt/spec/debate/consensus/cryptographic receipt/policy-gated action.
 - GitHub issues now carry active execution status, owners, and acceptance criteria. Docs should summarize context and order, not act as the only operational backlog.
 - Truthfulness and backlog canonicalization are complete on `main` through [#809](https://github.com/synaptent/aragora/issues/809), and the first Decision Integrity Kernel bridge tranche [#810](https://github.com/synaptent/aragora/issues/810) is also complete.
-- The current M1 kernel focus is [#811](https://github.com/synaptent/aragora/issues/811) followed by [#812](https://github.com/synaptent/aragora/issues/812).
+- The core kernel base is now on `main` through [#811](https://github.com/synaptent/aragora/issues/811) and [#812](https://github.com/synaptent/aragora/issues/812); provider-routing integration has also landed in part on `main`, while the remaining runtime/accountability scale-out continues in [#813](https://github.com/synaptent/aragora/issues/813) through [#816](https://github.com/synaptent/aragora/issues/816).
+- Recent swarm-control-plane hardening on `main` improved file-scope ownership and PR supersession foundations, but the integrator view, task claim protocol, and universal run receipts are still open across [#836](https://github.com/synaptent/aragora/issues/836), [#837](https://github.com/synaptent/aragora/issues/837), [#842](https://github.com/synaptent/aragora/issues/842), and [#843](https://github.com/synaptent/aragora/issues/843).
+- Long unattended self-improvement is now an explicit product/engineering goal, but it is not yet truthful to treat it as solved. The missing pieces are the canonical assessment compiler and pause-refresh shift contract tracked in [#1036](https://github.com/synaptent/aragora/issues/1036), [#1037](https://github.com/synaptent/aragora/issues/1037), and [#1038](https://github.com/synaptent/aragora/issues/1038).
 - Surface area should be productized sequentially, not hidden or allowed to drift.
 
 ## Execution Order
@@ -33,12 +35,19 @@ This file defines execution order.
 ### 2) Decision Integrity Kernel Unification
 - Tracking: [#805](https://github.com/synaptent/aragora/issues/805), [#810](https://github.com/synaptent/aragora/issues/810), [#811](https://github.com/synaptent/aragora/issues/811), [#812](https://github.com/synaptent/aragora/issues/812), [#813](https://github.com/synaptent/aragora/issues/813), [#814](https://github.com/synaptent/aragora/issues/814), [#815](https://github.com/synaptent/aragora/issues/815), [#816](https://github.com/synaptent/aragora/issues/816)
 - Goal: unify `prompt -> specification -> adversarial debate -> consensus/dissent -> cryptographic decision receipt -> policy gate -> execution` as one canonical runtime.
-- Current tranche: [#811](https://github.com/synaptent/aragora/issues/811) and [#812](https://github.com/synaptent/aragora/issues/812) after [#810](https://github.com/synaptent/aragora/issues/810) landed on `main`.
+- Current tranche: the kernel base landed through [#811](https://github.com/synaptent/aragora/issues/811) and [#812](https://github.com/synaptent/aragora/issues/812); the remaining scale-out is [#813](https://github.com/synaptent/aragora/issues/813) through [#816](https://github.com/synaptent/aragora/issues/816).
 - Why now:
   - This is the architectural center of Aragora's differentiation.
   - Provider routing, OpenClaw, 10+ agent scale, and ERC-8004 only matter if they plug into the same receipt-gated kernel.
 
-### 3) Sequential Surface Productization
+### 3) Developer Swarm Control Plane And Autonomous Self-Improvement Cadence
+- Tracking: [#836](https://github.com/synaptent/aragora/issues/836), [#837](https://github.com/synaptent/aragora/issues/837), [#840](https://github.com/synaptent/aragora/issues/840), [#841](https://github.com/synaptent/aragora/issues/841), [#842](https://github.com/synaptent/aragora/issues/842), [#843](https://github.com/synaptent/aragora/issues/843), [#871](https://github.com/synaptent/aragora/issues/871), [#989](https://github.com/synaptent/aragora/issues/989), [#990](https://github.com/synaptent/aragora/issues/990), [#1036](https://github.com/synaptent/aragora/issues/1036), [#1037](https://github.com/synaptent/aragora/issues/1037), [#1038](https://github.com/synaptent/aragora/issues/1038)
+- Goal: make long unattended repo improvement truthful by keeping lane ownership, receipts, worktree hygiene, assessment, and pause-refresh cadence canonical.
+- Why now:
+  - Recent high-churn sessions proved Aragora can generate and land useful autonomous work, but they also exposed drift, duplicate lanes, stale assumptions, and repo hygiene gaps.
+  - The codebase already contains most of the execution substrate; what is missing is the control plane and assessment loop that make long runs defensible.
+
+### 4) Sequential Surface Productization
 - Tracking: [#806](https://github.com/synaptent/aragora/issues/806), [#817](https://github.com/synaptent/aragora/issues/817), [#818](https://github.com/synaptent/aragora/issues/818), [#819](https://github.com/synaptent/aragora/issues/819), [#820](https://github.com/synaptent/aragora/issues/820)
 - Goal: productize every exposed surface in waves, starting from the inbox trust wedge and public proof surfaces.
 - Rules:
@@ -46,7 +55,7 @@ This file defines execution order.
   - Keep partial surfaces visible, but label and harden them honestly.
   - Prefer one surface wave at a time over broad parallel productization.
 
-### 4) Assurance And GTM Closeout (Kept Warm, Not Main Product Lane)
+### 5) Assurance And GTM Closeout (Kept Warm, Not Main Product Lane)
 - Tracking: [#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509)
 - Goal: keep enterprise assurance truthfulness real without turning pentest/GTM work into the primary execution lane before the core kernel is unified.
 - Acceptance:

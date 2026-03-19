@@ -30,7 +30,10 @@ Aragora has shipped most of the closed-loop backbone (CLB) infrastructure and co
 - Dev swarm coordination layer
 
 **Remaining tracked launch work:**
-- External penetration test (vendor-dependent; scheduling still pending confirmation)
+- External penetration test and audit engagement (vendor-dependent; scheduling still pending confirmation)
+- Decision-Integrity Kernel scale-out beyond the base kernel already on `main`
+- Developer swarm control plane and autonomous self-improvement hardening
+- Sequential productization of exposed proof/demo/inbox surfaces
 
 **EU AI Act enforcement date: August 2, 2026** — the compliance CLI and audit trail infrastructure
 position Aragora as a natural adoption path for enterprises facing this deadline.

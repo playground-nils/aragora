@@ -86,6 +86,10 @@ The system should provide a full audit trail suitable for various regulatory fra
 
 The system should be able to self-repair and self-improve and orchestrate swarms of heterogeneous agents to build its own software and other software repos in a higher-assurance way than swarms of a single model and faster than a single model. The Nomic Loop is the autonomous self-improvement cycle where agents debate improvements, design solutions, implement code, and verify changes.
 
+The long-run operating target is a repeating cadence, not a single heroic autonomous run:
+`ground-up assessment -> canonical improvement backlog -> bounded autonomous execution shift -> pause -> fresh assessment -> repeat`.
+Long unattended autonomy is only valid if the refresh step is mandatory, evidence-backed, and able to stop truthfully when repo state, ownership, receipts, or quality gates become ambiguous.
+
 **The Nomic Loop Phases:**
 
 | Phase | Name | Purpose |
@@ -282,7 +286,7 @@ From the honest assessment, these claims are currently scaffolding and must beco
 
 | Claim | Current State | Goal State |
 |-------|--------------|------------|
-| Self-improving platform | Nomic Loop fully wired end-to-end (Phase 10C, Jan 2026); 66 E2E tests passing; dogfood benchmark cycles running | Consistent autonomous improvement with 80%+ quality pass rate |
+| Self-improving platform | Nomic Loop fully wired end-to-end (Phase 10C, Jan 2026); dogfood benchmark cycles running; idea-to-execution, issue sync, and bounded autonomous maintenance primitives exist on `main` | Consistent autonomous improvement with 80%+ quality pass rate and a recurring assessment -> backlog -> shift -> refresh cadence |
 | Blockchain receipts | SHA-256 hashing, no on-chain storage; ERC-8004 contracts undeployed | Receipts stored on-chain with deployed ERC-8004 contracts |
 | Semantic convergence | difflib text matching only (tier 1) | Embedding-based semantic similarity detection |
 | 43-agent parallel coordination | All exist individually; practical debates use 2-6 | Demonstrated coordination of 10+ agents on a single task |
@@ -465,7 +469,7 @@ Each aragoradocs file serves a specific purpose. Goals are consolidated here.
 
 These claims require qualification in all documents:
 
-1. **"Self-improving platform"** -- Nomic Loop is fully wired end-to-end with all six phases operational (Phase 10C consolidation, Jan 2026; 66 E2E tests passing). Autonomous cycles demonstrated in production dogfooding. Run 012 (March 2026) achieved composite scores of 8.38-9.39/10 following practicality scoring fixes (prompt restructuring, threshold alignment, verb scoring). **Goal: demonstrate autonomous improvement beyond internal dogfooding and validate 80%+ pass rate consistency across diverse tasks.**
+1. **"Self-improving platform"** -- Nomic Loop is fully wired end-to-end with all six phases operational (Phase 10C consolidation, Jan 2026; 66 E2E tests passing). Autonomous cycles demonstrated in production dogfooding. Run 012 (March 2026) achieved composite scores of 8.38-9.39/10 following practicality scoring fixes (prompt restructuring, threshold alignment, verb scoring). **Goal: demonstrate autonomous improvement beyond internal dogfooding, validate 80%+ pass rate consistency across diverse tasks, and make the operating cadence explicit: assessment -> backlog -> bounded shift -> refresh.**
 
 2. **"43-agent parallel coordination"** -- All 43 agent types exist and work individually. Practical debates use 2-6 agents due to provider rate limits. The value is heterogeneity (different models catching different issues), not raw parallelism. **Goal: demonstrate 10+ agent coordination (P4 #37).**
 
