@@ -772,6 +772,33 @@ Enhance Nomic Loop Phase 4 (Verify):
 
 3. Promote winning variants automatically (with approval gate)
 
+### 3D. Continuous Self-Assessment and Pause-Refresh Cadence
+
+**Rationale**: Long unattended autonomy fails when docs, issues, code, tests, and worktree state drift apart. Aragora already has most of the execution substrate; what is missing is a canonical assessment compiler and a runtime contract that forces re-grounding between autonomous shifts.
+
+**Implementation**:
+
+1. **Assessment compiler**
+   - Ingest canonical docs, open GitHub issues, milestone state, code/test signals, runtime metrics, and worktree/autopilot state
+   - Produce one evidence-backed assessment artifact that distinguishes shipped reality, partial scaffolding, stale claims, and open gaps
+   - Emit normalized backlog items that can feed the ideas -> goals -> workflow -> orchestration pipeline
+
+2. **Backlog normalization + issue sync**
+   - Convert the assessment artifact into pipeline-ready goals/specs
+   - Sync closures, regressions, and drift back into GitHub issue state instead of relying on operator memory
+   - Preserve provenance so the next refresh cycle can diff what changed
+
+3. **Shift controller**
+   - Run bounded unattended self-improvement shifts (target: 8 hours+) with explicit budget, receipt, lease, and quality-gate controls
+   - Emit periodic checkpoint receipts with current objective, accepted backlog slice, work completed, blocked reasons, and next actions
+   - Stop truthfully on stale runners, dirty/colliding worktrees, missing receipts, ambiguous ownership, or failing validation
+
+4. **Mandatory refresh**
+   - A completed shift always triggers a fresh ground-up assessment before the next shift starts
+   - Refresh compares the new state to the prior assessment and highlights closures, regressions, and newly surfaced work
+
+**Integration**: Build on `IdeaToExecutionPipeline.from_system_metrics()`, `SelfImprovePipeline`, `execute_to_github_issue()`, `plan_from_issue_list()`, Boss loop, and worktree autopilot instead of creating a separate planning silo.
+
 ---
 
 ## Phase 4: Decision Accountability (Week 8-10)
@@ -1062,7 +1089,7 @@ for proposal in proposals:
 | 0 | 1-2 | Obsidian bidirectional sync + extended thinking | "My Obsidian vault feeds debates, results flow back" |
 | 1 | 2-4 | Prompt-to-spec engine | "I type a vague idea, get a professional spec" |
 | 2 | 4-6 | Prover-Estimator protocol + cross-verification | "Debates actually find truth, not just consensus" |
-| 3 | 6-8 | STOP implementation + self-healing tests | "The system improves itself measurably" |
+| 3 | 6-8 | STOP implementation + self-healing tests + pause-refresh cadence | "The system improves itself measurably without drifting" |
 | 4 | 8-10 | Merkle receipt chain + GraphRAG explainability | "Every decision has a cryptographic audit trail" |
 | 5 | 10-14 | Canvas GUI | "Professional, intuitive, not a developer tool" |
 | 6 | 14-18 | Agent team orchestration hardening | "Enterprise-grade, handles day-long debates" |
@@ -1072,7 +1099,7 @@ for proposal in proposals:
 1. **Prompt to spec**: User types a sentence → gets a professional specification within 5 minutes
 2. **Obsidian flow**: Notes tagged `#aragora` appear in debates within 30 seconds
 3. **Truth-seeking**: Prover-Estimator debates produce measurably better calibrated decisions
-4. **Self-improvement**: System proposes and implements improvements to itself weekly
+4. **Self-improvement**: System can run bounded self-improvement shifts, then re-assess itself before the next shift
 5. **Accountability**: Every decision has a tamper-evident receipt chain
 6. **GUI**: Non-technical user can go from prompt to result without touching code
 7. **Agent orchestration**: 10+ agents coordinating on a single task without deadlock
