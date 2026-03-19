@@ -204,8 +204,10 @@ class ControlPlaneHandler(
     def can_handle(self, path: str) -> bool:
         """Check if this handler can process the given path."""
         normalized = self._normalize_path(path)
-        return normalized.startswith("/api/control-plane/") or path.startswith(
-            "/api/v1/coordination/"
+        return (
+            normalized.startswith("/api/control-plane/")
+            or path.startswith("/api/v1/coordination/")
+            or path.startswith("/api/v1/swarm/")
         )
 
     # =========================================================================
@@ -359,6 +361,10 @@ class ControlPlaneHandler(
         if path == "/api/v1/coordination/health":
             return self._handle_coordination_health(query_params)
 
+        # /api/v1/swarm/integrator
+        if path.startswith("/api/v1/swarm/integrator"):
+            return self._handle_integrator_view(query_params)
+
         return None
 
     # =========================================================================
@@ -504,6 +510,27 @@ class ControlPlaneHandler(
             if err:
                 return err
             return self._handle_approve_request(request_id, body)
+
+        # /api/v1/swarm/integrator/merge
+        if path == "/api/v1/swarm/integrator/merge":
+            body, err = self.read_json_body_validated(handler)
+            if err:
+                return err
+            return self._handle_integrator_merge(body)
+
+        # /api/v1/swarm/integrator/archive
+        if path == "/api/v1/swarm/integrator/archive":
+            body, err = self.read_json_body_validated(handler)
+            if err:
+                return err
+            return self._handle_integrator_archive(body)
+
+        # /api/v1/swarm/integrator/supersede
+        if path == "/api/v1/swarm/integrator/supersede":
+            body, err = self.read_json_body_validated(handler)
+            if err:
+                return err
+            return self._handle_integrator_supersede(body)
 
         return None
 

@@ -959,5 +959,157 @@ class CoordinationHandlerMixin:
         )
         return json_response(outcome.to_dict())
 
+    # =========================================================================
+    # Integrator View
+    # =========================================================================
+
+    @api_endpoint(
+        method="GET",
+        path="/api/v1/swarm/integrator",
+        summary="Unified integrator lane view",
+        tags=["Swarm"],
+    )
+    @require_permission("coordination:stats.read")
+    def _handle_integrator_view(self, query_params: dict[str, Any]) -> HandlerResult:
+        """GET /api/v1/swarm/integrator — unified lane view."""
+        try:
+            repo_root = self._fleet_repo_root()
+            store = self._fleet_store(repo_root)
+            worktrees = build_fleet_rows(repo_root, base_branch="main", tail=0)
+            claims = store.list_claims()
+            merge_queue = store.list_merge_queue()
+            view = build_integrator_view(
+                runs=[],
+                worktrees=worktrees,
+                claims=claims,
+                merge_queue=merge_queue,
+            )
+            readiness_filter = query_params.get("readiness")
+            if readiness_filter:
+                view["lanes"] = [
+                    lane
+                    for lane in view.get("lanes", [])
+                    if lane.get("merge_readiness") == readiness_filter
+                ]
+            return json_response({"data": view})
+        except (ImportError, RuntimeError, OSError) as exc:
+            logger.warning("Integrator view unavailable: %s", exc)
+            return error_response("Integrator view unavailable", 503)
+
+    @api_endpoint(
+        method="POST",
+        path="/api/v1/swarm/integrator/merge",
+        summary="Mark lane for merge",
+        tags=["Swarm"],
+    )
+    @handle_errors("swarm integrator merge")
+    @require_permission("coordination:workspaces.write")
+    def _handle_integrator_merge(self, body: dict[str, Any]) -> HandlerResult:
+        """POST /api/v1/swarm/integrator/merge — mark lane for merge."""
+        lane_id = body.get("lane_id")
+        decided_by = body.get("decided_by", "unknown")
+        rationale = body.get("rationale", "")
+        if not lane_id:
+            return error_response("lane_id is required", 400)
+        try:
+            from aragora.nomic.dev_coordination import (
+                DevCoordinationStore,
+                IntegrationDecisionType,
+            )
+
+            store = DevCoordinationStore()
+            decision = store.record_integration_decision(
+                receipt_id=lane_id,
+                lease_id=lane_id,
+                decided_by=decided_by,
+                decision=IntegrationDecisionType.MERGE,
+                rationale=rationale,
+            )
+            return json_response(
+                {"data": {"decision_id": decision.decision_id, "lane_id": lane_id}}
+            )
+        except (ImportError, RuntimeError, KeyError) as exc:
+            logger.warning("Merge decision failed: %s", exc)
+            return error_response("Merge decision failed", 500)
+
+    @api_endpoint(
+        method="POST",
+        path="/api/v1/swarm/integrator/archive",
+        summary="Archive/dismiss lane",
+        tags=["Swarm"],
+    )
+    @handle_errors("swarm integrator archive")
+    @require_permission("coordination:workspaces.write")
+    def _handle_integrator_archive(self, body: dict[str, Any]) -> HandlerResult:
+        """POST /api/v1/swarm/integrator/archive — archive/dismiss lane."""
+        lane_id = body.get("lane_id")
+        decided_by = body.get("decided_by", "unknown")
+        rationale = body.get("rationale", "")
+        if not lane_id:
+            return error_response("lane_id is required", 400)
+        try:
+            from aragora.nomic.dev_coordination import (
+                DevCoordinationStore,
+                IntegrationDecisionType,
+            )
+
+            store = DevCoordinationStore()
+            decision = store.record_integration_decision(
+                receipt_id=lane_id,
+                lease_id=lane_id,
+                decided_by=decided_by,
+                decision=IntegrationDecisionType.DISCARD,
+                rationale=rationale,
+            )
+            branch = body.get("branch")
+            if branch:
+                try:
+                    from aragora.swarm.pr_registry import PullRequestRegistry
+
+                    registry = PullRequestRegistry()
+                    registry.close(branch, outcome="archived")
+                except (ImportError, RuntimeError, KeyError):
+                    pass
+            return json_response(
+                {"data": {"decision_id": decision.decision_id, "lane_id": lane_id}}
+            )
+        except (ImportError, RuntimeError, KeyError) as exc:
+            logger.warning("Archive decision failed: %s", exc)
+            return error_response("Archive decision failed", 500)
+
+    @api_endpoint(
+        method="POST",
+        path="/api/v1/swarm/integrator/supersede",
+        summary="Replace one PR with another",
+        tags=["Swarm"],
+    )
+    @handle_errors("swarm integrator supersede")
+    @require_permission("coordination:workspaces.write")
+    def _handle_integrator_supersede(self, body: dict[str, Any]) -> HandlerResult:
+        """POST /api/v1/swarm/integrator/supersede — replace one PR with another."""
+        branch = body.get("branch")
+        new_pr_url = body.get("new_pr_url")
+        reason = body.get("reason", "")
+        if not branch or not new_pr_url:
+            return error_response("branch and new_pr_url are required", 400)
+        try:
+            from dataclasses import asdict
+
+            from aragora.swarm.pr_registry import PullRequestRegistry
+
+            registry = PullRequestRegistry()
+            entry = registry.supersede(branch, new_pr_url, reason=reason)
+            if entry is None:
+                return error_response(f"Branch not found: {branch}", 404)
+            return json_response(
+                {"data": {"branch": branch, "superseded": True, "entry": asdict(entry)}}
+            )
+        except (ImportError, KeyError) as exc:
+            logger.warning("Branch not found for supersede: %s", exc)
+            return error_response(f"Branch not found: {branch}", 404)
+        except (RuntimeError, OSError) as exc:
+            logger.warning("Supersede failed: %s", exc)
+            return error_response("Supersede failed", 500)
+
 
 __all__ = ["CoordinationHandlerMixin"]

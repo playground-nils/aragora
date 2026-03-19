@@ -26,7 +26,16 @@ from uuid import uuid4
 def _resolve_swarm_action_goal(args: argparse.Namespace) -> tuple[str, str | None]:
     first = getattr(args, "swarm_action_or_goal", None)
     second = getattr(args, "swarm_goal", None)
-    if first in {"run", "boss", "boss-loop", "runner", "status", "reconcile", "campaign"}:
+    if first in {
+        "run",
+        "boss",
+        "boss-loop",
+        "runner",
+        "status",
+        "reconcile",
+        "campaign",
+        "integrator",
+    }:
         return str(first), second
     return "run", first
 
@@ -114,6 +123,33 @@ def _blocked_boss_payload(
         "integrator_summary": {},
         "routing": routing,
     }
+
+
+def _render_integrator_table(view: dict) -> None:
+    """Render integrator view as a human-readable table."""
+    summary = view.get("summary", {})
+    print(f"Swarm Integrator View ({summary.get('total_lanes', 0)} lanes)")
+    print(
+        f"  ready={summary.get('ready_lanes', 0)} "
+        f"blocked={summary.get('blocked_lanes', 0)} "
+        f"review={summary.get('review_lanes', 0)}"
+    )
+    print()
+    icons = {"ready": "+", "blocked": "!", "review": "?", "merged": "="}
+    for lane in view.get("lanes", []):
+        readiness = lane.get("merge_readiness", "unknown")
+        icon = icons.get(readiness, " ")
+        print(f"  [{icon}] {lane.get('title', 'untitled')}")
+        print(
+            f"      branch={lane.get('branch')} readiness={readiness} status={lane.get('status')}"
+        )
+        if lane.get("blockers"):
+            print(f"      blockers: {', '.join(str(b) for b in lane['blockers'])}")
+        if lane.get("next_action"):
+            print(f"      next: {lane['next_action']}")
+        print()
+    for action_text in view.get("next_actions", [])[:5]:
+        print(f"next: {action_text}")
 
 
 def cmd_swarm(args: argparse.Namespace) -> None:
@@ -237,6 +273,31 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             print(json.dumps(payload, indent=2))
         else:
             print(render_runner_registration_text(payload))
+        return
+
+    if action == "integrator":
+        import sys
+
+        try:
+            repo_root = resolve_repo_root(Path.cwd())
+            base_branch = str(getattr(args, "target_branch", "main") or "main")
+            worktrees = build_fleet_rows(repo_root, base_branch=base_branch, tail=0)
+            store = FleetCoordinationStore(repo_root)
+            claims = store.list_claims()
+            merge_queue = store.list_merge_queue()
+            view = build_integrator_view(
+                runs=[],
+                worktrees=worktrees,
+                claims=claims,
+                merge_queue=merge_queue,
+            )
+            if as_json:
+                print(json.dumps(view, indent=2))
+            else:
+                _render_integrator_table(view)
+        except (ImportError, RuntimeError, OSError) as exc:
+            print(f"Integrator view unavailable: {exc}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if action == "boss-loop":
