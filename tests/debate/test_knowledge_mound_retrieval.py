@@ -51,7 +51,6 @@ class TestKnowledgeMoundRetriever:
             actor_workspace_id="ws-1",
             actor_org_id="org-1",
             limit=4,
-            workspace_id=None,
         )
         mound.query_semantic.assert_not_called()
 
