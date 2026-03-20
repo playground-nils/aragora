@@ -23,6 +23,7 @@ from aragora.swarm.boss_loop import (
     _classify_terminal_run_outcome,
     dispatch_bounded_spec,
 )
+from aragora.swarm.review_routing import ReviewRoutingError, generate_review_response
 from aragora.swarm.spec import SwarmSpec
 from aragora.swarm.supervisor import (
     CAMPAIGN_BLOCKERS_METADATA_KEY,
@@ -991,8 +992,13 @@ class CampaignReviewer:
             budget_context=budget_context,
         )
         try:
-            agent = create_agent(chosen_review_model, name="campaign-review", role="critic")
-            raw = await agent.generate(prompt)
+            routing = await generate_review_response(
+                prompt,
+                worker_model=worker_model,
+                preferred_review_model=chosen_review_model,
+                repo_root=(repo_root or Path.cwd()).resolve(),
+            )
+            raw = str(routing.get("response", "")).strip()
             parsed = _extract_first_json_object(raw)
             status = str(parsed.get("status", "")).strip().lower()
             findings = [str(item) for item in parsed.get("findings", []) if str(item).strip()]
@@ -1009,7 +1015,39 @@ class CampaignReviewer:
                 status=status,
                 findings=findings,
                 reviewed_at=_now_iso(),
-                raw_review={"response": raw},
+                raw_review={
+                    "response": raw,
+                    "routing": {
+                        "candidate": routing.get("candidate"),
+                        "attempts": routing.get("attempts", []),
+                    },
+                },
+            )
+        except ReviewRoutingError as exc:
+            logger.warning("review routing failed for project %s: %s", project.project_id, exc)
+            if exc.category == "billing_exhausted":
+                detail = (
+                    "CLI subscription usage exhausted. "
+                    "Run 'claude auth status' to check the active account, "
+                    "then 'claude auth logout && claude auth login' to switch "
+                    "to an account with available capacity."
+                )
+                findings = [f"Review blocked (billing): {detail}"]
+            else:
+                findings = [
+                    "Review blocked: no configured reviewer candidate succeeded. Check logs for detail."
+                ]
+            return CampaignReviewGate(
+                required=True,
+                review_model=chosen_review_model,
+                status=CampaignReviewStatus.BLOCKED_NONREVIEWABLE.value,
+                findings=findings,
+                reviewed_at=_now_iso(),
+                raw_review={
+                    "error": type(exc).__name__,
+                    "detail": exc.public_message,
+                    "attempts": exc.attempts,
+                },
             )
         except CLISubprocessError as exc:
             error_str = str(exc).lower()
