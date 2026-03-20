@@ -122,6 +122,7 @@ class TestApiKeyCommands:
 
     def test_list_provider_statuses_shows_environment_alias(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.setenv("GOOGLE_API_KEY", "google-test-key")
 
         statuses = {status.provider: status for status in list_provider_statuses()}
