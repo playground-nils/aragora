@@ -247,3 +247,48 @@ def test_submit_recommends_design_review_for_adaptive_writable_tranche(tmp_path)
     )
 
     assert result["recommended_action"] == "design-review"
+
+
+def test_normalize_lanes_respects_max_lanes_for_planner_output() -> None:
+    bundle = {
+        "objective": "Fix the user journey",
+        "max_lanes": 1,
+    }
+
+    class _FakePlanner:
+        worker_model = "codex"
+        review_model = "claude"
+
+        def plan_from_items(self, items, source_kind, source_ref):
+            assert items == ["Fix the user journey"]
+            assert source_kind == "intake_bundle"
+            assert source_ref == "Fix the user journey"
+            return SimpleNamespace(
+                projects=[
+                    SimpleNamespace(
+                        project_id="proj-001",
+                        title="Lane one",
+                        source_refs=[],
+                        spec=SimpleNamespace(raw_goal="First lane"),
+                        file_scope_hints=["aragora/cli/**"],
+                        dependencies=[],
+                        acceptance_criteria=[],
+                        constraints=[],
+                    ),
+                    SimpleNamespace(
+                        project_id="proj-002",
+                        title="Lane two",
+                        source_refs=[],
+                        spec=SimpleNamespace(raw_goal="Second lane"),
+                        file_scope_hints=["aragora/live/**"],
+                        dependencies=[],
+                        acceptance_criteria=[],
+                        constraints=[],
+                    ),
+                ]
+            )
+
+    lanes = normalize_lanes(bundle, planner=_FakePlanner())
+
+    assert len(lanes) == 1
+    assert lanes[0]["lane_id"] == "proj-001"

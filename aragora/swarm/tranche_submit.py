@@ -113,6 +113,9 @@ def normalize_lanes(
     normalized: list[dict[str, Any]] = []
     for index, lane in enumerate(lanes, start=1):
         normalized.append(_normalize_lane(lane, index=index))
+    max_lanes = _resolve_max_lanes(bundle.get("max_lanes"))
+    if len(normalized) > max_lanes:
+        normalized = _limit_normalized_lanes(normalized, max_lanes=max_lanes)
     return normalized
 
 
@@ -210,6 +213,30 @@ def _candidate_lanes(bundle: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(raw_lanes, list):
         return []
     return [dict(item) for item in raw_lanes if isinstance(item, dict)]
+
+
+def _resolve_max_lanes(value: Any) -> int:
+    return max(1, int(value or 1))
+
+
+def _limit_normalized_lanes(
+    lanes: list[dict[str, Any]],
+    *,
+    max_lanes: int,
+) -> list[dict[str, Any]]:
+    if len(lanes) <= max_lanes:
+        return [dict(lane) for lane in lanes]
+    retained = [dict(lane) for lane in lanes[:max_lanes]]
+    retained_ids = {
+        _optional_text(lane.get("lane_id")) or ""
+        for lane in retained
+        if _optional_text(lane.get("lane_id"))
+    }
+    for lane in retained:
+        lane["dependencies"] = [
+            dep for dep in _string_list(lane.get("dependencies")) if dep in retained_ids
+        ]
+    return retained
 
 
 def _planner_lanes(

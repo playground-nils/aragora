@@ -13,6 +13,7 @@ sources:
     url: https://github.com/synaptent/aragora/issues/1011
     priority: 10
     merge_class: low_risk
+    max_lanes: 1
     autonomy_mode: fire_and_forget
     objective: Refresh the design partner program materials with current V14 benchmark evidence, keeping the tranche bounded to documentation and supporting reference updates only.
     allowed_write_scope:
@@ -24,6 +25,7 @@ sources:
     url: https://github.com/synaptent/aragora/issues/1046
     priority: 20
     merge_class: manual
+    max_lanes: 1
     autonomy_mode: adaptive
     objective: Implement the smallest verifiable CLI slice that closes one missing path in the end-to-end user journey from API key setup to visible debate results. Focus on the CLI surface only and do not broaden into frontend or backend rewrites.
     allowed_write_scope:
@@ -37,6 +39,7 @@ sources:
     url: https://github.com/synaptent/aragora/issues/1047
     priority: 30
     merge_class: manual
+    max_lanes: 1
     autonomy_mode: adaptive
     objective: Make one already reachable core page functional with real data flow, empty-state handling, and tests, choosing the smallest verifiable page from the issue instead of broad page churn.
     allowed_write_scope:
@@ -51,6 +54,7 @@ sources:
     url: https://github.com/synaptent/aragora/issues/1048
     priority: 40
     merge_class: manual
+    max_lanes: 1
     autonomy_mode: adaptive
     objective: Wire one end-to-end Knowledge Mound retrieval path into debate context enrichment with focused tests and without broad retrieval-system redesign.
     allowed_write_scope:
@@ -67,6 +71,7 @@ sources:
     url: https://github.com/synaptent/aragora/issues/819
     priority: 50
     merge_class: manual
+    max_lanes: 1
     autonomy_mode: adaptive
     objective: Replace one non-trustworthy integrations UI path with live-state behavior and truthful status messaging, preferring a status or edit flow that already has backend state available.
     allowed_write_scope:
