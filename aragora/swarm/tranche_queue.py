@@ -180,6 +180,7 @@ class TrancheQueueItem:
     source: str
     objective_override: str | None = None
     merge_class: str = "manual"
+    max_lanes: int = 1
     allowed_write_scope: list[str] = field(default_factory=list)
     autonomy_mode: str | None = None
 
@@ -189,6 +190,7 @@ class TrancheQueueItem:
             "kind": self.kind,
             "source": self.source,
             "merge_class": self.merge_class,
+            "max_lanes": self.max_lanes,
         }
         if self.objective_override:
             payload["objective_override"] = self.objective_override
@@ -212,12 +214,14 @@ class TrancheQueueItem:
         merge_class = str(data.get("merge_class", "manual")).strip().lower() or "manual"
         if merge_class not in {"low_risk", "manual"}:
             raise ValueError(f"Queue item {item_id} has unsupported merge_class: {merge_class!r}")
+        max_lanes = max(1, int(data.get("max_lanes", 1) or 1))
         return cls(
             item_id=item_id,
             kind=kind,
             source=source,
             objective_override=_optional_text(data.get("objective_override")),
             merge_class=merge_class,
+            max_lanes=max_lanes,
             allowed_write_scope=_normalize_scope(_string_list(data.get("allowed_write_scope"))),
             autonomy_mode=_optional_text(data.get("autonomy_mode")),
         )
@@ -281,6 +285,7 @@ class TrancheQueueSource:
     repo: str | None = None
     limit: int = 10
     objective: str | None = None
+    max_lanes: int = 1
     allowed_write_scope: list[str] = field(default_factory=list)
     autonomy_mode: str | None = None
     verification_commands: list[str] = field(default_factory=list)
@@ -293,6 +298,7 @@ class TrancheQueueSource:
             "source": self.source,
             "merge_class": self.merge_class,
             "priority": self.priority,
+            "max_lanes": self.max_lanes,
         }
         if self.repo:
             payload["repo"] = self.repo
@@ -341,6 +347,7 @@ class TrancheQueueSource:
             repo=_optional_text(data.get("repo")),
             limit=max(1, int(data.get("limit", 10) or 10)),
             objective=_optional_text(data.get("objective")),
+            max_lanes=max(1, int(data.get("max_lanes", 1) or 1)),
             allowed_write_scope=_normalize_scope(_string_list(data.get("allowed_write_scope"))),
             autonomy_mode=_optional_text(data.get("autonomy_mode")),
             verification_commands=_string_list(data.get("verification_commands")),
@@ -754,6 +761,7 @@ def _compile_doc_source_to_bundle(
             kind="intake",
             source=relative_bundle,
             merge_class=source.merge_class,
+            max_lanes=source.max_lanes,
             allowed_write_scope=list(source.allowed_write_scope),
             autonomy_mode=source.autonomy_mode,
         ),
@@ -775,6 +783,7 @@ def _compile_issue_source(
                 source=source.source,
                 objective_override=source.objective,
                 merge_class=source.merge_class,
+                max_lanes=source.max_lanes,
                 allowed_write_scope=list(source.allowed_write_scope),
                 autonomy_mode=source.autonomy_mode,
             )
@@ -801,6 +810,7 @@ def _compile_issue_query_source(
                 source=issue_url,
                 objective_override=source.objective,
                 merge_class=source.merge_class,
+                max_lanes=source.max_lanes,
                 allowed_write_scope=list(source.allowed_write_scope),
                 autonomy_mode=source.autonomy_mode,
             )
@@ -838,6 +848,62 @@ def _fallback_issue_lane(item: TrancheQueueItem, *, objective: str, context: str
         "merge_policy": "manual",
         "queue_item_id": item.item_id,
     }
+
+
+def _queue_safe_issue_lanes(
+    item: TrancheQueueItem,
+    *,
+    objective: str,
+    context: str,
+    candidate_lanes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if item.max_lanes != 1:
+        return [dict(lane) for lane in candidate_lanes[: item.max_lanes]]
+    if len(candidate_lanes) == 1:
+        dependencies = [
+            str(dep).strip()
+            for dep in candidate_lanes[0].get("dependencies", [])
+            if str(dep).strip()
+        ]
+        if not dependencies:
+            return [dict(candidate_lanes[0])]
+        logger.info(
+            "queue issue %s planner produced a dependent lane; collapsing to single fallback lane",
+            item.item_id,
+        )
+    elif candidate_lanes:
+        logger.info(
+            "queue issue %s planner produced %d lanes; collapsing to single fallback lane",
+            item.item_id,
+            len(candidate_lanes),
+        )
+    return [_fallback_issue_lane(item, objective=objective, context=context)]
+
+
+def _limit_bundle_candidate_lanes(
+    *,
+    item: TrancheQueueItem,
+    candidate_lanes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if item.max_lanes < 1 or len(candidate_lanes) <= item.max_lanes:
+        return [dict(lane) for lane in candidate_lanes]
+    retained = [dict(lane) for lane in candidate_lanes[: item.max_lanes]]
+    retained_ids = {
+        str(lane.get("lane_id", "")).strip()
+        for lane in retained
+        if str(lane.get("lane_id", "")).strip()
+    }
+    for lane in retained:
+        lane["dependencies"] = [
+            dep for dep in _string_list(lane.get("dependencies")) if dep in retained_ids
+        ]
+    logger.info(
+        "queue item %s limited bundle candidate lanes from %d to %d",
+        item.item_id,
+        len(candidate_lanes),
+        len(retained),
+    )
+    return retained
 
 
 def _event_summary(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1335,6 +1401,7 @@ class TrancheQueueExecutor:
         if item.objective_override:
             bundle["objective"] = item.objective_override
         bundle.setdefault("autonomy_mode", effective_autonomy_mode)
+        bundle["max_lanes"] = item.max_lanes
         lanes = bundle.get("candidate_lanes")
         if isinstance(lanes, list):
             normalized_lanes: list[dict[str, Any]] = []
@@ -1349,7 +1416,10 @@ class TrancheQueueExecutor:
                 updated["queue_item_id"] = item.item_id
                 normalized_lanes.append(updated)
             if normalized_lanes:
-                bundle["candidate_lanes"] = normalized_lanes
+                bundle["candidate_lanes"] = _limit_bundle_candidate_lanes(
+                    item=item,
+                    candidate_lanes=normalized_lanes,
+                )
         return bundle
 
     def _bundle_from_issue_item(
@@ -1382,9 +1452,15 @@ class TrancheQueueExecutor:
             source_kind="queue_issue",
             source_ref=url or item.source,
         )
-        lanes = campaign_projects_to_candidate_lanes(campaign_manifest.projects, planner=planner)
-        if not lanes:
-            lanes = [_fallback_issue_lane(item, objective=objective, context=planning_text)]
+        lanes = _queue_safe_issue_lanes(
+            item,
+            objective=objective,
+            context=planning_text,
+            candidate_lanes=campaign_projects_to_candidate_lanes(
+                campaign_manifest.projects,
+                planner=planner,
+            ),
+        )
         normalized_lanes: list[dict[str, Any]] = []
         for lane in lanes:
             updated = dict(lane)
@@ -1397,6 +1473,7 @@ class TrancheQueueExecutor:
         return {
             "objective": objective,
             "autonomy_mode": effective_autonomy_mode,
+            "max_lanes": item.max_lanes,
             "source_refs": (
                 [{"url": url, "meaning": f"Canonical issue for queue item {item.item_id}"}]
                 if url
