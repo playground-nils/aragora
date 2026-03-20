@@ -71,7 +71,6 @@ class TestKnowledgeMoundRetriever:
             query="policy",
             sources=("all",),
             limit=3,
-            workspace_id=None,
         )
 
     @pytest.mark.asyncio
