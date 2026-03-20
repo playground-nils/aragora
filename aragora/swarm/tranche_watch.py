@@ -247,6 +247,12 @@ async def watch_tick(
                     lane_id=lane_id,
                     artifact=artifact,
                 )
+                _persist_review_payload(
+                    state.manifest_id,
+                    artifact=artifact,
+                    review_payload=review_payload,
+                    artifact_store=artifact_store,
+                )
                 review_status = str(
                     review_payload.get("status", "") if isinstance(review_payload, dict) else ""
                 ).strip()
@@ -568,6 +574,34 @@ def _watch_review_status(status: str) -> str:
     return LANE_STATUS_NEEDS_HUMAN
 
 
+def _persist_review_payload(
+    manifest_id: str,
+    *,
+    artifact: TrancheLaneArtifact | Any | None,
+    review_payload: Any,
+    artifact_store: TrancheArtifactStore | Any | None,
+) -> None:
+    if artifact is None or not isinstance(review_payload, dict):
+        return
+    metadata = getattr(artifact, "metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    artifact.metadata = {**metadata, "review": dict(review_payload)}
+    artifact.status = _review_artifact_status(review_payload.get("status"))
+    artifact.timestamp = _utcnow().isoformat()
+    if artifact_store is not None and hasattr(artifact_store, "save"):
+        artifact_store.save(manifest_id, artifact)
+
+
+def _review_artifact_status(status: Any) -> str:
+    lowered = str(status or "").strip().lower()
+    if lowered == "passed":
+        return "review_passed"
+    if lowered == "changes_requested":
+        return "changes_requested"
+    return "review_blocked"
+
+
 def _watch_integrate_status(current_status: str, payload: dict[str, Any]) -> str:
     recommendation = str(payload.get("recommendation", "") or "").strip().lower()
     executed = bool(payload.get("executed", False))
@@ -575,6 +609,12 @@ def _watch_integrate_status(current_status: str, payload: dict[str, Any]) -> str
         return LANE_STATUS_COMPLETED
     if recommendation == "merge":
         return LANE_STATUS_WAITING_FOR_MERGE
+    if recommendation == "awaiting_checks":
+        return (
+            LANE_STATUS_WAITING_FOR_MERGE
+            if _optional_text(payload.get("pr_url"))
+            else current_status
+        )
     if recommendation in {"request_changes", "blocked", "needs_human"}:
         return LANE_STATUS_NEEDS_HUMAN
     return current_status
