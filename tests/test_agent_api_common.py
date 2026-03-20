@@ -6,6 +6,7 @@ Tests connection pooling, retry logic, streaming utilities, and SSE parsing.
 
 import asyncio
 import json
+import ssl
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -53,10 +54,12 @@ class TestGetSharedConnector:
         """Reset global connector state before each test."""
         import aragora.agents.api_agents.common as common_module
 
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
         yield
         # Cleanup after test
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
 
@@ -81,6 +84,103 @@ class TestGetSharedConnector:
         assert connector.limit == DEFAULT_TOTAL_CONNECTIONS
         assert connector.limit_per_host == DEFAULT_CONNECTIONS_PER_HOST
 
+    @pytest.mark.asyncio
+    async def test_connector_prefers_configured_ca_bundle(self, tmp_path):
+        import aragora.agents.api_agents.common as common_module
+
+        bundle = tmp_path / "custom-ca.pem"
+        bundle.write_text("test bundle")
+        sentinel_context = ssl.create_default_context()
+
+        with (
+            patch.object(
+                common_module.ssl, "create_default_context", return_value=sentinel_context
+            ) as mock_context,
+            patch.object(common_module.aiohttp, "TCPConnector") as mock_connector,
+        ):
+            mock_connector.return_value = MagicMock(closed=False)
+            with patch.dict(common_module.os.environ, {"REQUESTS_CA_BUNDLE": str(bundle)}):
+                get_shared_connector()
+
+        mock_context.assert_called_once_with(cafile=str(bundle))
+        assert mock_connector.call_args.kwargs["ssl"] is sentinel_context
+
+    @pytest.mark.asyncio
+    async def test_connector_uses_certifi_bundle_only_when_opted_in(self, tmp_path):
+        import aragora.agents.api_agents.common as common_module
+
+        bundle = tmp_path / "certifi.pem"
+        bundle.write_text("test bundle")
+        sentinel_context = ssl.create_default_context()
+
+        with (
+            patch.object(
+                common_module.ssl, "create_default_context", return_value=sentinel_context
+            ) as mock_context,
+            patch.object(common_module.aiohttp, "TCPConnector") as mock_connector,
+            patch.object(common_module, "certifi") as mock_certifi,
+            patch.dict(
+                common_module.os.environ, {"ARAGORA_USE_CERTIFI_CA_BUNDLE": "1"}, clear=True
+            ),
+        ):
+            mock_certifi.where.return_value = str(bundle)
+            mock_connector.return_value = MagicMock(closed=False)
+            get_shared_connector()
+
+        mock_context.assert_called_once_with(cafile=str(bundle))
+        assert mock_connector.call_args.kwargs["ssl"] is sentinel_context
+
+    @pytest.mark.asyncio
+    async def test_connector_uses_system_context_without_bundle(self):
+        import aragora.agents.api_agents.common as common_module
+
+        sentinel_context = ssl.create_default_context()
+
+        with (
+            patch.object(
+                common_module.ssl, "create_default_context", return_value=sentinel_context
+            ) as mock_context,
+            patch.object(common_module.aiohttp, "TCPConnector") as mock_connector,
+            patch.object(common_module, "certifi", None),
+            patch.dict(common_module.os.environ, {}, clear=True),
+        ):
+            mock_connector.return_value = MagicMock(closed=False)
+            get_shared_connector()
+
+        mock_context.assert_called_once_with()
+        assert mock_connector.call_args.kwargs["ssl"] is sentinel_context
+
+    @pytest.mark.asyncio
+    async def test_connector_uses_system_context_when_configured_bundle_is_missing(self, tmp_path):
+        import aragora.agents.api_agents.common as common_module
+
+        missing_bundle = tmp_path / "missing-ca.pem"
+        fallback_bundle = tmp_path / "certifi.pem"
+        fallback_bundle.write_text("test bundle")
+        sentinel_context = ssl.create_default_context()
+
+        with (
+            patch.object(
+                common_module.ssl, "create_default_context", return_value=sentinel_context
+            ) as mock_context,
+            patch.object(common_module.aiohttp, "TCPConnector") as mock_connector,
+            patch.object(common_module, "certifi") as mock_certifi,
+            patch.dict(
+                common_module.os.environ,
+                {
+                    "REQUESTS_CA_BUNDLE": str(missing_bundle),
+                    "ARAGORA_USE_CERTIFI_CA_BUNDLE": "1",
+                },
+                clear=True,
+            ),
+        ):
+            mock_certifi.where.return_value = str(fallback_bundle)
+            mock_connector.return_value = MagicMock(closed=False)
+            get_shared_connector()
+
+        mock_context.assert_called_once_with()
+        assert mock_connector.call_args.kwargs["ssl"] is sentinel_context
+
 
 class TestCreateClientSession:
     """Test create_client_session factory."""
@@ -90,9 +190,11 @@ class TestCreateClientSession:
         """Reset global connector state."""
         import aragora.agents.api_agents.common as common_module
 
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
         yield
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
 
@@ -128,9 +230,11 @@ class TestCloseSharedConnector:
         """Reset global connector state."""
         import aragora.agents.api_agents.common as common_module
 
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
         yield
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
 
@@ -561,9 +665,11 @@ class TestConnectionPoolRobustness:
         """Reset global connector state."""
         import aragora.agents.api_agents.common as common_module
 
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
         yield
+        common_module._pool_state.reset()
         common_module._shared_connector = None
         common_module._connector_loop_id = None
 
