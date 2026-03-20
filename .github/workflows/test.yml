@@ -115,7 +115,6 @@ jobs:
 
       - name: Check Python SDK types are up to date
         run: |
-          python -m pip install datamodel-code-generator
           python scripts/generate_python_sdk_types.py --openapi docs/api/openapi_generated.json --check
 
       - name: Check capability matrix is up to date
@@ -270,7 +269,7 @@ jobs:
       - name: Install baseline test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,research,test]"
+          bash scripts/ci_install_project.sh --extras test,monitoring,observability
 
       - name: Verify deterministic baseline command
         run: python scripts/run_test_baseline.py
@@ -389,7 +388,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .
+          bash scripts/ci_install_project.sh
 
       - name: Run status reconciliation
         run: |
@@ -1677,10 +1676,14 @@ jobs:
       - name: Install bandit
         run: python -m pip install bandit[toml]
 
+      - name: Verify bandit baseline exists
+        run: test -f scripts/baselines/bandit_medium_high_confidence.json
+
       - name: Run bandit security scan
         run: |
-          bandit -c pyproject.toml -r aragora/ -ll -iii --format json --output bandit-report.json || true
-          bandit -c pyproject.toml -r aragora/ -ll -iii --format txt
+          BASELINE=scripts/baselines/bandit_medium_high_confidence.json
+          bandit -c pyproject.toml -r aragora/ -ll -iii -b "$BASELINE" --format json --output bandit-report.json
+          bandit -c pyproject.toml -r aragora/ -ll -iii -b "$BASELINE" --format txt
 
       - name: Upload security report
         uses: actions/upload-artifact@v4
