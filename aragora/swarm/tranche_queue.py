@@ -840,6 +840,34 @@ def _fallback_issue_lane(item: TrancheQueueItem, *, objective: str, context: str
     }
 
 
+def _queue_safe_issue_lanes(
+    item: TrancheQueueItem,
+    *,
+    objective: str,
+    context: str,
+    candidate_lanes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if len(candidate_lanes) == 1:
+        dependencies = [
+            str(dep).strip()
+            for dep in candidate_lanes[0].get("dependencies", [])
+            if str(dep).strip()
+        ]
+        if not dependencies:
+            return [dict(candidate_lanes[0])]
+        logger.info(
+            "queue issue %s planner produced a dependent lane; collapsing to single fallback lane",
+            item.item_id,
+        )
+    elif candidate_lanes:
+        logger.info(
+            "queue issue %s planner produced %d lanes; collapsing to single fallback lane",
+            item.item_id,
+            len(candidate_lanes),
+        )
+    return [_fallback_issue_lane(item, objective=objective, context=context)]
+
+
 def _event_summary(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     if event_type == "run":
         return {
@@ -1382,9 +1410,15 @@ class TrancheQueueExecutor:
             source_kind="queue_issue",
             source_ref=url or item.source,
         )
-        lanes = campaign_projects_to_candidate_lanes(campaign_manifest.projects, planner=planner)
-        if not lanes:
-            lanes = [_fallback_issue_lane(item, objective=objective, context=planning_text)]
+        lanes = _queue_safe_issue_lanes(
+            item,
+            objective=objective,
+            context=planning_text,
+            candidate_lanes=campaign_projects_to_candidate_lanes(
+                campaign_manifest.projects,
+                planner=planner,
+            ),
+        )
         normalized_lanes: list[dict[str, Any]] = []
         for lane in lanes:
             updated = dict(lane)

@@ -267,6 +267,76 @@ def test_manual_queue_item_downgrades_fire_and_forget_and_keeps_manual_policy(
     assert bundle["candidate_lanes"][0]["merge_policy"] == _queue_merge_policy(merge_class="manual")
 
 
+def test_issue_queue_item_collapses_multi_lane_planner_output_to_single_fallback_lane(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue_path = tmp_path / "overnight.yaml"
+    queue_path.write_text(
+        "queue_id: overnight\nitems:\n- id: issue-one\n  kind: issue\n  source: https://github.com/org/repo/issues/1046\n",
+        encoding="utf-8",
+    )
+    executor = TrancheQueueExecutor(queue_path=queue_path, repo_root=tmp_path)
+    item = TrancheQueueItem(
+        item_id="issue-one",
+        kind="issue",
+        source="https://github.com/org/repo/issues/1046",
+        merge_class="manual",
+        objective_override="Implement one CLI-only slice.",
+        allowed_write_scope=["aragora/cli/**", "tests/cli/**"],
+        autonomy_mode="adaptive",
+    )
+
+    class _FakePlanner:
+        def plan_from_items(self, items, source_kind, source_ref):
+            assert source_kind == "queue_issue"
+            assert source_ref == "https://github.com/org/repo/issues/1046"
+            return SimpleNamespace(projects=["proj-1", "proj-2"])
+
+    monkeypatch.setattr(executor, "_planner", lambda: _FakePlanner())
+    monkeypatch.setattr(
+        "aragora.swarm.tranche_queue._fetch_issue_payload",
+        lambda source: {
+            "number": 1046,
+            "title": "Close the product loop",
+            "body": "CLI-first bounded issue body.",
+            "url": "https://github.com/org/repo/issues/1046",
+        },
+    )
+    monkeypatch.setattr(
+        "aragora.swarm.tranche_queue.campaign_projects_to_candidate_lanes",
+        lambda projects, planner: [
+            {
+                "lane_id": "proj-001",
+                "title": "First planner lane",
+                "prompt": "planner lane 1",
+                "owner_role": "implementation_engineer",
+                "allowed_write_scope": ["aragora/cli/**"],
+                "dependencies": [],
+            },
+            {
+                "lane_id": "proj-002",
+                "title": "Second planner lane",
+                "prompt": "planner lane 2",
+                "owner_role": "implementation_engineer",
+                "allowed_write_scope": ["aragora/cli/**"],
+                "dependencies": [],
+            },
+        ],
+    )
+
+    bundle = executor._bundle_from_issue_item(item, effective_autonomy_mode="adaptive")
+
+    assert bundle["autonomy_mode"] == "adaptive"
+    assert len(bundle["candidate_lanes"]) == 1
+    lane = bundle["candidate_lanes"][0]
+    assert lane["lane_id"] == "issue-one"
+    assert lane["merge_policy"] == "manual"
+    assert lane["queue_item_id"] == "issue-one"
+    assert lane["allowed_write_scope"] == ["aragora/cli/**", "tests/cli/**"]
+    assert "Source issue context" in lane["prompt"]
+
+
 @pytest.mark.asyncio
 async def test_run_queue_processes_items_sequentially_and_continues_after_needs_human(
     tmp_path: Path,

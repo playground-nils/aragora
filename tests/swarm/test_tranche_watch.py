@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -446,6 +447,59 @@ async def test_watch_tick_skips_dispatch_when_lane_is_already_active() -> None:
 
     mock_run.assert_not_awaited()
     assert new_state.lane_states["b"].status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_watch_tick_collects_finished_supervisor_results_before_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aragora.swarm.tranche_watch import watch_tick
+
+    state = _make_state(lane_statuses={"a": "running"})
+    state.lane_states["a"].run_id = "run-1"
+    artifact_store = _FakeArtifactStore({"a": _make_artifact(lane_id="a", status="running")})
+    store = _FakeCoordinationStore(
+        runs={
+            "run-1": {
+                "status": "active",
+                "work_orders": [{"worktree_path": "/tmp/worktree-a", "lease_id": "lease-a"}],
+            }
+        }
+    )
+
+    class _FakeSupervisor:
+        def __init__(self, repo_root=None, store=None, **kwargs) -> None:
+            self.store = store
+
+        async def collect_finished_results(self, run_id: str):
+            self.store._runs[run_id] = {
+                "status": "needs_human",
+                "work_orders": [
+                    {
+                        "worktree_path": "/tmp/worktree-a",
+                        "lease_id": "lease-a",
+                    }
+                ],
+            }
+            return []
+
+        def refresh_run(self, run_id: str):
+            return SimpleNamespace(to_dict=lambda: dict(self.store._runs[run_id]))
+
+    monkeypatch.setattr("aragora.swarm.supervisor.SwarmSupervisor", _FakeSupervisor)
+
+    new_state = await watch_tick(
+        state,
+        manifest=SimpleNamespace(manifest_id="m1"),
+        autonomy_mode="adaptive",
+        artifact_store=artifact_store,
+        store=store,
+        repo_root=tmp_path,
+    )
+
+    assert new_state.lane_states["a"].status == "needs_human"
+    assert new_state.status == "needs_human"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,8 @@ from aragora.swarm.tranche_state import (
     TrancheRunState,
     _utcnow,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DriverAlreadyClaimedError(RuntimeError):
@@ -203,6 +206,11 @@ async def watch_tick(
     resolved_store = store
     if resolved_store is None and repo_root is not None:
         resolved_store = DevCoordinationStore(repo_root=Path(repo_root).resolve())
+    await _collect_and_refresh_supervisor_runs(
+        state,
+        store=resolved_store,
+        repo_root=repo_root,
+    )
     artifact_map = _resolve_artifacts(
         state.manifest_id,
         artifacts=artifacts,
@@ -380,6 +388,43 @@ def _resolve_artifacts(
     if store is None:
         return {}
     return {item.lane_id: item for item in store.list(manifest_id)}
+
+
+async def _collect_and_refresh_supervisor_runs(
+    state: TrancheRunState,
+    *,
+    store: Any | None,
+    repo_root: Path | None,
+) -> None:
+    if store is None or repo_root is None:
+        return
+    run_ids = {
+        run_id
+        for lane_state in state.lane_states.values()
+        if (run_id := _optional_text(lane_state.run_id))
+    }
+    if not run_ids:
+        return
+    from aragora.swarm.supervisor import SwarmSupervisor
+
+    supervisor = SwarmSupervisor(repo_root=Path(repo_root).resolve(), store=store)
+    for run_id in sorted(run_ids):
+        try:
+            await supervisor.collect_finished_results(run_id)
+        except KeyError:
+            continue
+        except Exception as exc:
+            logger.warning(
+                "watch_tick failed collecting finished results for run %s: %s",
+                run_id,
+                exc,
+            )
+        try:
+            supervisor.refresh_run(run_id)
+        except KeyError:
+            continue
+        except Exception as exc:
+            logger.warning("watch_tick failed refreshing run %s: %s", run_id, exc)
 
 
 def _apply_artifact_projection(lane_state: LaneRunState, artifact: TrancheLaneArtifact) -> None:
