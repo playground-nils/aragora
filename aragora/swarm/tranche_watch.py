@@ -36,6 +36,86 @@ from aragora.swarm.tranche_state import (
 )
 
 
+class DriverAlreadyClaimedError(RuntimeError):
+    """Raised when another session already holds the tranche driver lease."""
+
+
+def claim_driver(
+    state: TrancheRunState,
+    *,
+    session_id: str,
+    takeover_timeout_seconds: float = 300.0,
+) -> TrancheRunState:
+    refreshed = TrancheRunState.from_dict(state.to_dict())
+    session = _optional_text(session_id)
+    if not session:
+        raise ValueError("session_id is required")
+    now = _utcnow()
+
+    active_session = _optional_text(refreshed.driver_session)
+    active_heartbeat = refreshed.driver_heartbeat
+    if active_session and active_session != session and active_heartbeat is not None:
+        age = (now - active_heartbeat).total_seconds()
+        if age < float(takeover_timeout_seconds):
+            raise DriverAlreadyClaimedError(
+                f"driver already claimed by {active_session} ({age:.1f}s old heartbeat)"
+            )
+        _close_session_history(refreshed, active_session, now=now)
+
+    if active_session == session:
+        refreshed.driver_heartbeat = now
+        refreshed.updated_at = now
+        return refreshed
+
+    refreshed.driver_session = session
+    refreshed.driver_heartbeat = now
+    refreshed.updated_at = now
+    refreshed.session_history.append(
+        {
+            "session_id": session,
+            "attached_at": now.isoformat(),
+            "detached_at": None,
+            "mode": "driver",
+        }
+    )
+    return refreshed
+
+
+def release_driver(
+    state: TrancheRunState,
+    *,
+    session_id: str | None = None,
+) -> TrancheRunState:
+    refreshed = TrancheRunState.from_dict(state.to_dict())
+    session = _optional_text(session_id) or _optional_text(refreshed.driver_session)
+    now = _utcnow()
+    if session and _optional_text(refreshed.driver_session) == session:
+        refreshed.driver_session = None
+        refreshed.driver_heartbeat = None
+        refreshed.updated_at = now
+        _close_session_history(refreshed, session, now=now)
+    return refreshed
+
+
+def heartbeat_driver(
+    state: TrancheRunState,
+    *,
+    session_id: str,
+) -> TrancheRunState:
+    refreshed = TrancheRunState.from_dict(state.to_dict())
+    session = _optional_text(session_id)
+    if not session:
+        raise ValueError("session_id is required")
+    if _optional_text(refreshed.driver_session) != session:
+        raise DriverAlreadyClaimedError(
+            f"driver is held by {_optional_text(refreshed.driver_session) or 'no session'}"
+        )
+    now = _utcnow()
+    refreshed.driver_heartbeat = now
+    refreshed.updated_at = now
+    return refreshed
+
+
 def refresh_tranche_state(
     state: TrancheRunState,
     *,
@@ -56,6 +136,7 @@ def refresh_tranche_state(
         repo_root=repo_root,
     )
 
+    lease_map = _lease_map(resolved_store)
     for lane_id, lane_state in list(refreshed.lane_states.items()):
         artifact = artifact_map.get(lane_id)
         if artifact is not None:
@@ -65,15 +146,6 @@ def refresh_tranche_state(
         if run_dict is not None:
             _apply_run_projection(lane_state, run_dict)
 
-    lease_map = _lease_map(
-        resolved_store,
-        lease_ids={
-            lease_id
-            for lane_state in refreshed.lane_states.values()
-            if (lease_id := _optional_text(lane_state.lease_id)) is not None
-        },
-    )
-    for lane_state in refreshed.lane_states.values():
         lease = lease_map.get(str(lane_state.lease_id or "").strip())
         if lease is not None:
             _apply_lease_projection(lane_state, lease)
@@ -254,16 +326,13 @@ def _artifact_pr_url(artifact: TrancheLaneArtifact) -> str | None:
     return None
 
 
-def _lease_map(store: Any | None, *, lease_ids: set[str] | None = None) -> dict[str, Any]:
+def _lease_map(store: Any | None) -> dict[str, Any]:
     if store is None or not hasattr(store, "list_leases"):
-        return {}
-    relevant_lease_ids = {item for item in (lease_ids or set()) if _optional_text(item)}
-    if not relevant_lease_ids:
         return {}
     return {
         str(item.lease_id): item
         for item in store.list_leases(limit=None)
-        if getattr(item, "lease_id", None) and str(item.lease_id) in relevant_lease_ids
+        if getattr(item, "lease_id", None)
     }
 
 
@@ -297,3 +366,13 @@ def _prefer_text(current: Any, candidate: Any) -> str | None:
 def _optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _close_session_history(state: TrancheRunState, session_id: str, *, now: Any) -> None:
+    for item in reversed(state.session_history):
+        if str(item.get("session_id", "")).strip() != session_id:
+            continue
+        if item.get("detached_at"):
+            continue
+        item["detached_at"] = now.isoformat()
+        return
