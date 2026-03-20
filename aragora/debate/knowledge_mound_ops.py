@@ -13,6 +13,8 @@ import time
 from typing import TYPE_CHECKING, Any
 from collections.abc import Callable
 
+from aragora.knowledge.mound.retrieval import KnowledgeMoundRetriever
+
 if TYPE_CHECKING:
     from aragora.core import DebateResult, Environment
     from aragora.knowledge.mound.facade import KnowledgeMound
@@ -56,13 +58,12 @@ class KnowledgeMoundOperations:
         self._metrics = metrics
         self._last_km_item_ids: list[str] = []  # IDs of KM items used in last fetch
         self._warned_missing_query_capability = False
+        self._retriever = KnowledgeMoundRetriever(knowledge_mound)
 
     def _has_query_capability(self) -> bool:
         """Check whether the configured KM object supports retrieval operations."""
-        return bool(self.knowledge_mound) and any(
-            hasattr(self.knowledge_mound, method)
-            for method in ("query_semantic", "query_with_visibility")
-        )
+        self._retriever.knowledge_mound = self.knowledge_mound
+        return self._retriever.is_available()
 
     async def fetch_knowledge_context(
         self,
@@ -98,113 +99,21 @@ class KnowledgeMoundOperations:
         error_msg = None
 
         try:
-            # Query mound for semantically related knowledge
-            results: Any = None
-            try:
-                if auth_context and hasattr(self.knowledge_mound, "query_with_visibility"):
-                    actor_id = getattr(auth_context, "user_id", "") or ""
-                    workspace_id = getattr(auth_context, "workspace_id", "") or ""
-                    org_id = getattr(auth_context, "org_id", None)
-                    if actor_id and workspace_id:
-                        results = await self.knowledge_mound.query_with_visibility(
-                            task,
-                            actor_id=actor_id,
-                            actor_workspace_id=workspace_id,
-                            actor_org_id=org_id,
-                            limit=limit,
-                        )
-                    else:
-                        results = await self.knowledge_mound.query_semantic(
-                            text=task,
-                            limit=limit,
-                            min_confidence=0.5,
-                        )
-                else:
-                    results = await self.knowledge_mound.query_semantic(
-                        text=task,
-                        limit=limit,
-                        min_confidence=0.5,
-                    )
-            except RuntimeError as e:
-                if "not initialized" in str(e).lower() and hasattr(
-                    self.knowledge_mound, "initialize"
-                ):
-                    await self.knowledge_mound.initialize()
-                    if auth_context and hasattr(self.knowledge_mound, "query_with_visibility"):
-                        actor_id = getattr(auth_context, "user_id", "") or ""
-                        workspace_id = getattr(auth_context, "workspace_id", "") or ""
-                        org_id = getattr(auth_context, "org_id", None)
-                        if actor_id and workspace_id:
-                            results = await self.knowledge_mound.query_with_visibility(
-                                task,
-                                actor_id=actor_id,
-                                actor_workspace_id=workspace_id,
-                                actor_org_id=org_id,
-                                limit=limit,
-                            )
-                        else:
-                            results = await self.knowledge_mound.query_semantic(
-                                text=task,
-                                limit=limit,
-                                min_confidence=0.5,
-                            )
-                    else:
-                        results = await self.knowledge_mound.query_semantic(
-                            text=task,
-                            limit=limit,
-                            min_confidence=0.5,
-                        )
-                else:
-                    raise
+            self._retriever.knowledge_mound = self.knowledge_mound
+            retrieved = await self._retriever.retrieve(
+                task,
+                limit=limit,
+                auth_context=auth_context,
+            )
 
-            items = None
-            if isinstance(results, list):
-                items = results
-            elif hasattr(results, "items"):
-                items = results.items
-
-            if not items:
+            if not retrieved:
                 self._last_km_item_ids = []
                 return None
 
             # Track item IDs for outcome validation feedback loop
-            self._last_km_item_ids = [
-                getattr(item, "id", None) or getattr(item, "item_id", "")
-                for item in items[:limit]
-                if getattr(item, "id", None) or getattr(item, "item_id", "")
-            ]
-
-            # Format knowledge for agent context
-            lines = ["## KNOWLEDGE MOUND CONTEXT"]
-            lines.append("Relevant knowledge from organizational memory:\n")
-
-            confidence_map = {
-                "verified": 0.95,
-                "high": 0.8,
-                "medium": 0.6,
-                "low": 0.3,
-                "unverified": 0.2,
-            }
-
-            def _confidence_to_float(value: Any) -> float:
-                if isinstance(value, (int, float)):
-                    return float(value)
-                if hasattr(value, "value"):
-                    value = value.value
-                if isinstance(value, str):
-                    return confidence_map.get(value.lower(), 0.5)
-                return 0.5
-
-            for item in items[:limit]:
-                source = getattr(item, "source", "unknown")
-                confidence = _confidence_to_float(getattr(item, "confidence", 0.0))
-                content = getattr(item, "content", str(item))[:300]
-                lines.append(f"**[{source}]** (confidence: {confidence:.0%})")
-                lines.append(f"{content}")
-                lines.append("")
-
-            logger.info("  [knowledge_mound] Retrieved %s items for context", len(items))
-            return "\n".join(lines)
+            self._last_km_item_ids = list(retrieved.item_ids[:limit])
+            logger.info("  [knowledge_mound] Retrieved %s items for context", len(retrieved.items))
+            return retrieved.formatted_context
 
         except (
             RuntimeError,
