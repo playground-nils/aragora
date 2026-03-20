@@ -157,29 +157,37 @@ class KnowledgeMoundRetriever:
             actor_workspace_id = getattr(auth_context, "workspace_id", "") or ""
             actor_org_id = getattr(auth_context, "org_id", None)
             if actor_id and actor_workspace_id:
+                kwargs: dict[str, Any] = {
+                    "actor_id": actor_id,
+                    "actor_workspace_id": actor_workspace_id,
+                    "actor_org_id": actor_org_id,
+                    "limit": limit,
+                }
+                if workspace_id is not None:
+                    kwargs["workspace_id"] = workspace_id
                 return await self.knowledge_mound.query_with_visibility(
                     query,
-                    actor_id=actor_id,
-                    actor_workspace_id=actor_workspace_id,
-                    actor_org_id=actor_org_id,
-                    limit=limit,
-                    workspace_id=workspace_id,
+                    **kwargs,
                 )
 
         if _supports_method(self.knowledge_mound, "query_semantic"):
-            return await self.knowledge_mound.query_semantic(
-                text=query,
-                limit=limit,
-                min_confidence=self.min_confidence,
-                workspace_id=workspace_id,
-            )
+            kwargs = {
+                "text": query,
+                "limit": limit,
+                "min_confidence": self.min_confidence,
+            }
+            if workspace_id is not None:
+                kwargs["workspace_id"] = workspace_id
+            return await self.knowledge_mound.query_semantic(**kwargs)
 
-        return await self.knowledge_mound.query(
-            query=query,
-            sources=("all",),
-            limit=limit,
-            workspace_id=workspace_id,
-        )
+        kwargs = {
+            "query": query,
+            "sources": ("all",),
+            "limit": limit,
+        }
+        if workspace_id is not None:
+            kwargs["workspace_id"] = workspace_id
+        return await self.knowledge_mound.query(**kwargs)
 
     @staticmethod
     def _normalize_items(result: Any) -> list[Any]:

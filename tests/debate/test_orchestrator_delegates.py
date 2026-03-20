@@ -613,6 +613,7 @@ class TestContextDelegates:
         arena.prompt_builder.get_knowledge_mound_context.return_value = (
             "## KNOWLEDGE MOUND CONTEXT\nExisting baseline context"
         )
+        mock_context._prompt_builder = arena.prompt_builder
         mock_context._km_item_ids_used = ["km-0"]
 
         result = await arena._refresh_evidence_for_round("combined text", mock_context, round_num=3)
