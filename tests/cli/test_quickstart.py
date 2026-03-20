@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import builtins
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ from aragora.cli.commands.quickstart import (
     _detect_agents,
     _get_question,
     _load_dotenv,
+    _open_receipt_in_browser,
     _save_receipt,
     add_quickstart_parser,
     cmd_quickstart,
@@ -201,21 +203,52 @@ class TestReceiptFormatting:
 
     def test_save_json(self, tmp_path):
         path = str(tmp_path / "receipt.json")
-        _save_receipt(self.SAMPLE, path, "json")
-        loaded = json.loads(Path(path).read_text())
+        saved_path = _save_receipt(self.SAMPLE, path, "json")
+        loaded = json.loads(saved_path.read_text())
         assert loaded["verdict"] == "Yes"
+        assert saved_path == Path(path).resolve()
 
     def test_save_md(self, tmp_path):
         path = str(tmp_path / "receipt.md")
-        _save_receipt(self.SAMPLE, path, "md")
-        content = Path(path).read_text()
+        saved_path = _save_receipt(self.SAMPLE, path, "md")
+        content = saved_path.read_text()
         assert "# Decision Receipt" in content
 
     def test_save_html(self, tmp_path):
         path = str(tmp_path / "receipt.html")
-        _save_receipt(self.SAMPLE, path, "html")
-        content = Path(path).read_text()
+        saved_path = _save_receipt(self.SAMPLE, path, "html")
+        content = saved_path.read_text()
         assert "<!DOCTYPE html>" in content
+
+    def test_save_html_falls_back_to_json_when_formatter_import_fails(self, tmp_path):
+        path = tmp_path / "receipt.html"
+        real_import = builtins.__import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "aragora.cli.receipt_formatter":
+                raise ImportError("formatter unavailable")
+            return real_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            saved_path = _save_receipt(self.SAMPLE, path, "html")
+
+        assert json.loads(saved_path.read_text())["verdict"] == "Yes"
+
+    def test_save_creates_parent_directories(self, tmp_path):
+        path = tmp_path / "nested" / "deep" / "receipt.json"
+        saved_path = _save_receipt(self.SAMPLE, path, "json")
+        assert saved_path.exists()
+
+    def test_open_browser_returns_none_when_formatter_import_fails(self):
+        real_import = builtins.__import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "aragora.cli.receipt_formatter":
+                raise ImportError("formatter unavailable")
+            return real_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            assert _open_receipt_in_browser(self.SAMPLE) is None
 
 
 # =============================================================================
@@ -297,3 +330,94 @@ class TestCmdQuickstart:
         assert Path(output_path).exists()
         data = json.loads(Path(output_path).read_text())
         assert data["verdict"] == "yes"
+
+    def test_live_mode_saves_default_receipt_artifact(self, tmp_path, monkeypatch, capsys):
+        """Test live quickstart saves a deterministic default artifact."""
+        monkeypatch.chdir(tmp_path)
+        args = argparse.Namespace(
+            question="Should we ship the CLI quickstart?",
+            demo=False,
+            output=None,
+            format="json",
+            rounds=2,
+            no_browser=True,
+        )
+        live_result = {
+            "question": "Should we ship the CLI quickstart?",
+            "verdict": "approve",
+            "confidence": 0.91,
+            "rounds": 2,
+            "agents": ["openai-api"],
+            "summary": "Ship the truthful quickstart flow.",
+            "dissent": [],
+            "mode": "live",
+        }
+
+        with (
+            patch(
+                "aragora.cli.commands.quickstart._detect_agents",
+                return_value=[("openai-api", "gpt-4o")],
+            ),
+            patch(
+                "aragora.cli.commands.quickstart._run_live_debate",
+                return_value=live_result,
+            ),
+        ):
+            cmd_quickstart(args)
+
+        artifact_path = tmp_path / ".aragora" / "receipts" / "quickstart-live-receipt.json"
+        assert artifact_path.exists()
+        saved = json.loads(artifact_path.read_text())
+        assert saved["mode"] == "live"
+
+        output = capsys.readouterr().out
+        assert "Run mode: live" in output
+        assert "Mode:       Live" in output
+        assert str(artifact_path.resolve()) in output
+
+    def test_no_keys_fall_back_to_demo_and_report_demo_artifact(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Test quickstart is explicit when it falls back to demo mode."""
+        monkeypatch.chdir(tmp_path)
+        args = argparse.Namespace(
+            question="Should we use the fallback?",
+            demo=False,
+            output=None,
+            format="json",
+            rounds=2,
+            no_browser=True,
+        )
+        demo_result = {
+            "question": "Should we use the fallback?",
+            "verdict": "consensus",
+            "confidence": 0.84,
+            "rounds": 2,
+            "agents": ["analyst", "critic", "synthesizer"],
+            "summary": "Fallback stayed honest about using mock agents.",
+            "dissent": [],
+            "mode": "demo",
+        }
+
+        with (
+            patch(
+                "aragora.cli.commands.quickstart._detect_agents",
+                return_value=[],
+            ),
+            patch(
+                "aragora.cli.commands.quickstart._run_demo_debate",
+                return_value=demo_result,
+            ),
+        ):
+            cmd_quickstart(args)
+
+        artifact_path = tmp_path / ".aragora" / "receipts" / "quickstart-demo-receipt.json"
+        assert artifact_path.exists()
+        saved = json.loads(artifact_path.read_text())
+        assert saved["mode"] == "demo"
+
+        output = capsys.readouterr().out
+        assert "Falling back to demo mode" in output
+        assert "local mock agents, not live model calls" in output
+        assert "Mode:       Demo" in output
+        assert str(artifact_path.resolve()) in output
