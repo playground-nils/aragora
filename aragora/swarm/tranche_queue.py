@@ -1679,9 +1679,9 @@ class TrancheQueueExecutor:
         item_state.events = _truncate_events(events)
 
         pr_urls = [
-            str(lane_state.pr_url).strip()
+            url
             for lane_state in current.lane_states.values()
-            if str(getattr(lane_state, "pr_url", "")).strip()
+            if (url := _optional_text(getattr(lane_state, "pr_url", None)))
         ]
         item_state.pr_urls = list(dict.fromkeys(pr_urls))
         for finding in self._findings_from_events(events):
