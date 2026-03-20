@@ -119,6 +119,13 @@ def __getattr__(name: str) -> object:
 
 
 def main() -> None:
+    try:
+        from aragora.cli.api_keys import hydrate_env_from_secure_store
+
+        hydrate_env_from_secure_store()
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        logger.warning("Could not hydrate stored API keys: %s", exc)
+
     # Register built-in modes here (not at module level) to avoid import-time cost
     from aragora.modes import register_all_builtins
 
