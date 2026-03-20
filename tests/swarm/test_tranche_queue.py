@@ -146,6 +146,40 @@ sources:
     assert output_path.exists() is False
 
 
+def test_compile_queue_propagates_verification_commands_to_items(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verification commands from sources must flow through to compiled queue items."""
+    sources_path = tmp_path / "sources.yaml"
+    output_path = tmp_path / "overnight.yaml"
+    sources_path.write_text(
+        """
+queue_id: overnight
+sources:
+  - id: test-issue
+    kind: issue
+    mode: execute
+    url: https://github.com/org/repo/issues/42
+    verification_commands:
+      - python3 -m pytest tests/cli/test_setup.py -q
+    merge_class: manual
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = compile_tranche_queue(
+        sources_path=sources_path,
+        output_path=output_path,
+        repo_root=tmp_path,
+    )
+
+    assert payload["item_count"] == 1
+    manifest = TrancheQueueManifest.load(output_path)
+    item = manifest.items[0]
+    assert item.verification_commands == ["python3 -m pytest tests/cli/test_setup.py -q"]
+
+
 def test_compile_queue_expands_issue_query_sources(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

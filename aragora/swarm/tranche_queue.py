@@ -183,6 +183,7 @@ class TrancheQueueItem:
     max_lanes: int = 1
     allowed_write_scope: list[str] = field(default_factory=list)
     autonomy_mode: str | None = None
+    verification_commands: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -198,6 +199,8 @@ class TrancheQueueItem:
             payload["allowed_write_scope"] = list(self.allowed_write_scope)
         if self.autonomy_mode:
             payload["autonomy_mode"] = self.autonomy_mode
+        if self.verification_commands:
+            payload["verification_commands"] = list(self.verification_commands)
         return payload
 
     @classmethod
@@ -224,6 +227,7 @@ class TrancheQueueItem:
             max_lanes=max_lanes,
             allowed_write_scope=_normalize_scope(_string_list(data.get("allowed_write_scope"))),
             autonomy_mode=_optional_text(data.get("autonomy_mode")),
+            verification_commands=_string_list(data.get("verification_commands")),
         )
 
 
@@ -786,6 +790,7 @@ def _compile_issue_source(
                 max_lanes=source.max_lanes,
                 allowed_write_scope=list(source.allowed_write_scope),
                 autonomy_mode=source.autonomy_mode,
+                verification_commands=list(source.verification_commands),
             )
         ],
         [],
@@ -813,6 +818,7 @@ def _compile_issue_query_source(
                 max_lanes=source.max_lanes,
                 allowed_write_scope=list(source.allowed_write_scope),
                 autonomy_mode=source.autonomy_mode,
+                verification_commands=list(source.verification_commands),
             )
         )
     if items:
@@ -843,7 +849,9 @@ def _fallback_issue_lane(item: TrancheQueueItem, *, objective: str, context: str
         "prompt": context,
         "owner_role": "implementation_engineer",
         "allowed_write_scope": list(scope),
-        "verification_commands": [],
+        "verification_commands": list(item.verification_commands)
+        if item.verification_commands
+        else [],
         "merge_class": item.merge_class,
         "merge_policy": "manual",
         "queue_item_id": item.item_id,
@@ -1469,6 +1477,8 @@ class TrancheQueueExecutor:
             updated["merge_class"] = item.merge_class
             updated["merge_policy"] = _queue_merge_policy(merge_class=item.merge_class)
             updated["queue_item_id"] = item.item_id
+            if item.verification_commands and not updated.get("verification_commands"):
+                updated["verification_commands"] = list(item.verification_commands)
             normalized_lanes.append(updated)
         return {
             "objective": objective,
