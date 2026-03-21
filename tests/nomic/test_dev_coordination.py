@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -46,6 +48,15 @@ def _run(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=True,
     )
+
+
+def _backdate_fleet_claims(store: DevCoordinationStore, *, hours: int = 2) -> None:
+    state = json.loads(store.fleet_store.path.read_text(encoding="utf-8"))
+    old_ts = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    for claim in state.get("claims", []):
+        claim["claimed_at"] = old_ts
+        claim["updated_at"] = old_ts
+    store.fleet_store.path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
 def test_claim_lease_detects_conflicting_scope(store: DevCoordinationStore) -> None:
@@ -96,6 +107,30 @@ def test_claim_lease_detects_existing_fleet_claim(store: DevCoordinationStore) -
         )
 
     assert exc_info.value.conflicts[0]["source"] == "fleet_claim"
+
+
+def test_claim_lease_reaps_stale_fleet_claim_conflicts(store: DevCoordinationStore) -> None:
+    store.fleet_store.claim_paths(
+        session_id="external-session",
+        paths=["aragora/server/auth_checks.py"],
+        branch="codex/external",
+    )
+    _backdate_fleet_claims(store)
+
+    lease = store.claim_lease(
+        task_id="clb-fleet-stale",
+        title="Auth checks hardening",
+        owner_agent="codex",
+        owner_session_id="sess-local",
+        branch="codex/local",
+        worktree_path="/tmp/wt-local",
+        claimed_paths=["aragora/server/auth_checks.py"],
+    )
+
+    assert lease.is_active is True
+    claims = store.fleet_store.list_claims()
+    assert len(claims) == 1
+    assert claims[0]["session_id"] == "sess-local"
 
 
 def test_claim_lease_allows_disjoint_scopes(store: DevCoordinationStore) -> None:

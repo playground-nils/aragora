@@ -1145,6 +1145,7 @@ class DevCoordinationStore:
         owner_session_id: str | None = None,
         exclude_lease_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        self.fleet_store.reap_stale_claims()
         normalized_globs = [_normalize_claim(item) for item in allowed_globs if str(item).strip()]
         normalized_paths = [_normalize_claim(item) for item in claimed_paths if str(item).strip()]
         conflicts: list[dict[str, Any]] = []
@@ -1214,6 +1215,7 @@ class DevCoordinationStore:
         ]
         self.reap_expired_leases()
         self.reap_stale_leases()
+        self.fleet_store.reap_stale_claims()
         now = _utcnow()
         conn = self._connect()
         try:
