@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Scanlines, CRTVignette } from '@/components/MatrixRain';
 import { useBackend } from '@/components/BackendSelector';
@@ -8,20 +9,29 @@ import { DeliveryModal } from '@/components/receipts';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { useSWRFetch } from '@/hooks/useSWRFetch';
 
-interface GauntletResult {
+type ReceiptVerdict = 'PASS' | 'CONDITIONAL' | 'FAIL';
+type TabType = 'list' | 'detail';
+type ReceiptSource = 'gauntlet-receipts' | 'v2-receipts' | 'gauntlet-results';
+
+interface RiskSummary {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+interface ReceiptListItem {
   id: string;
+  source: ReceiptSource;
   status: 'pending' | 'running' | 'completed' | 'failed';
-  verdict?: 'PASS' | 'CONDITIONAL' | 'FAIL';
+  receiptId?: string;
+  gauntletId?: string;
+  verdict?: ReceiptVerdict;
   confidence?: number;
   created_at: string;
-  completed_at?: string;
   input_summary?: string;
-  risk_summary?: {
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-  };
+  risk_summary?: RiskSummary;
+  risk_level?: string;
   vulnerabilities_found?: number;
 }
 
@@ -48,17 +58,13 @@ interface DecisionReceipt {
   timestamp: string;
   input_summary: string;
   input_hash: string;
-  risk_summary: {
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-  };
+  risk_level?: string;
+  risk_summary: RiskSummary;
   attacks_attempted: number;
   attacks_successful: number;
   probes_run: number;
   vulnerabilities_found: number;
-  verdict: 'PASS' | 'CONDITIONAL' | 'FAIL';
+  verdict: ReceiptVerdict | 'UNKNOWN';
   confidence: number;
   robustness_score: number;
   vulnerability_details: Array<{
@@ -74,174 +80,656 @@ interface DecisionReceipt {
   artifact_hash: string;
 }
 
-type TabType = 'list' | 'detail';
+interface ApiListResponse {
+  results?: Array<Record<string, unknown>>;
+  receipts?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+}
 
-// Backend response shapes for receipts
-interface ReceiptsListResponse {
-  results?: GauntletResult[];
-  receipts?: GauntletResult[];
-  data?: GauntletResult[];
+const EMPTY_RISK_SUMMARY: RiskSummary = {
+  critical: 0,
+  high: 0,
+  medium: 0,
+  low: 0,
+};
+
+function safeString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function safeNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function normalizeTimestamp(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+  }
+
+  const numeric = safeNumber(value);
+  if (numeric === undefined) return '';
+
+  const millis = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+  const parsed = new Date(millis);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
+}
+
+function normalizeVerdict(value: unknown): ReceiptVerdict | undefined {
+  const verdict = safeString(value)?.toUpperCase();
+  switch (verdict) {
+    case 'PASS':
+    case 'APPROVED':
+      return 'PASS';
+    case 'CONDITIONAL':
+    case 'WARN':
+    case 'WARNING':
+    case 'NEEDS_REVIEW':
+    case 'APPROVED_WITH_CONDITIONS':
+      return 'CONDITIONAL';
+    case 'FAIL':
+    case 'FAILED':
+    case 'REJECTED':
+      return 'FAIL';
+    default:
+      return undefined;
+  }
+}
+
+function normalizeStatus(value: unknown): ReceiptListItem['status'] {
+  const status = safeString(value)?.toLowerCase();
+  if (status === 'pending' || status === 'running' || status === 'failed') {
+    return status;
+  }
+  return 'completed';
+}
+
+function normalizeRiskSummary(data: Record<string, unknown>): RiskSummary | undefined {
+  const riskSummaryRecord = asRecord(data.risk_summary);
+  if (riskSummaryRecord) {
+    return {
+      critical: safeNumber(riskSummaryRecord.critical) ?? 0,
+      high: safeNumber(riskSummaryRecord.high) ?? 0,
+      medium: safeNumber(riskSummaryRecord.medium) ?? 0,
+      low: safeNumber(riskSummaryRecord.low) ?? 0,
+    };
+  }
+
+  const countSummary = {
+    critical: safeNumber(data.critical_count) ?? 0,
+    high: safeNumber(data.high_count) ?? 0,
+    medium: safeNumber(data.medium_count) ?? 0,
+    low: safeNumber(data.low_count) ?? 0,
+  };
+  if (Object.values(countSummary).some((count) => count > 0)) {
+    return countSummary;
+  }
+
+  if (Array.isArray(data.findings)) {
+    const summary = { ...EMPTY_RISK_SUMMARY };
+    data.findings.forEach((finding) => {
+      const record = asRecord(finding);
+      const severity = safeString(record?.severity)?.toLowerCase();
+      switch (severity) {
+        case 'critical':
+          summary.critical += 1;
+          break;
+        case 'high':
+          summary.high += 1;
+          break;
+        case 'medium':
+          summary.medium += 1;
+          break;
+        case 'low':
+          summary.low += 1;
+          break;
+        default:
+          break;
+      }
+    });
+    if (Object.values(summary).some((count) => count > 0)) {
+      return summary;
+    }
+  }
+
+  return undefined;
+}
+
+function totalFindings(summary?: RiskSummary): number {
+  if (!summary) return 0;
+  return summary.critical + summary.high + summary.medium + summary.low;
+}
+
+function truncateId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 12)}...` : value;
+}
+
+function formatDate(value: string): string {
+  if (!value) return 'Unavailable';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'Unavailable' : parsed.toLocaleDateString();
+}
+
+function normalizeListItem(
+  raw: Record<string, unknown>,
+  source: ReceiptSource
+): ReceiptListItem | null {
+  const receiptId = safeString(raw.receipt_id) ?? safeString(raw.id);
+  const gauntletId = safeString(raw.gauntlet_id) ?? safeString(raw.run_id);
+  const fallbackId = safeString(raw.id);
+  const id = gauntletId ?? receiptId ?? fallbackId;
+
+  if (!id) return null;
+
+  const riskSummary = normalizeRiskSummary(raw);
+  const metadata = asRecord(raw.metadata);
+
+  return {
+    id,
+    source,
+    status: normalizeStatus(raw.status),
+    receiptId,
+    gauntletId,
+    verdict: normalizeVerdict(raw.verdict),
+    confidence: safeNumber(raw.confidence),
+    created_at: normalizeTimestamp(raw.created_at ?? raw.timestamp ?? raw.completed_at),
+    input_summary: safeString(raw.input_summary) ?? safeString(raw.decision_summary),
+    risk_summary: riskSummary,
+    risk_level: safeString(raw.risk_level) ?? safeString(metadata?.risk_level),
+    vulnerabilities_found:
+      safeNumber(raw.vulnerabilities_found) ??
+      safeNumber(raw.findings_count) ??
+      totalFindings(riskSummary),
+  };
+}
+
+function normalizeListResponse(
+  response: ApiListResponse | null,
+  source: ReceiptSource
+): ReceiptListItem[] {
+  const rawItems = response?.receipts ?? response?.results ?? response?.data ?? [];
+  return rawItems
+    .map((item) => normalizeListItem(item, source))
+    .filter((item): item is ReceiptListItem => item !== null);
+}
+
+function normalizeProvenanceChain(value: unknown): ProvenanceRecord[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      if (!record) return null;
+
+      return {
+        timestamp: normalizeTimestamp(record.timestamp ?? record.created_at),
+        event_type: safeString(record.event_type) ?? safeString(record.type) ?? 'event',
+        agent: safeString(record.agent) ?? safeString(record.actor),
+        description:
+          safeString(record.description) ??
+          safeString(record.message) ??
+          'No provenance details provided.',
+        evidence_hash:
+          safeString(record.evidence_hash) ??
+          safeString(record.hash) ??
+          safeString(record.checksum) ??
+          '',
+      };
+    })
+    .filter((entry): entry is ProvenanceRecord => entry !== null);
+}
+
+function normalizeConsensusProof(value: unknown): ConsensusProof | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+
+  const supportingAgents = Array.isArray(record.supporting_agents)
+    ? record.supporting_agents
+        .map((agent) => safeString(agent))
+        .filter((agent): agent is string => Boolean(agent))
+    : [];
+  const dissentingAgents = Array.isArray(record.dissenting_agents)
+    ? record.dissenting_agents
+        .map((agent) => safeString(agent))
+        .filter((agent): agent is string => Boolean(agent))
+    : [];
+
+  return {
+    reached: Boolean(record.reached),
+    confidence: safeNumber(record.confidence) ?? 0,
+    supporting_agents: supportingAgents,
+    dissenting_agents: dissentingAgents,
+    method: safeString(record.method) ?? 'unknown',
+    evidence_hash: safeString(record.evidence_hash) ?? '',
+  };
+}
+
+function normalizeVulnerabilityDetails(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((finding, index) => {
+      const record = asRecord(finding);
+      if (!record) return null;
+
+      return {
+        id: safeString(record.id) ?? safeString(record.title) ?? `finding-${index + 1}`,
+        category: safeString(record.category) ?? safeString(record.title) ?? 'Finding',
+        severity: safeString(record.severity) ?? 'medium',
+        description:
+          safeString(record.description) ??
+          safeString(record.mitigation) ??
+          safeString(record.title) ??
+          'No details provided.',
+      };
+    })
+    .filter(
+      (
+        finding
+      ): finding is {
+        id: string;
+        category: string;
+        severity: string;
+        description: string;
+      } => finding !== null
+    );
+}
+
+function normalizeDissentingViews(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => {
+      if (typeof entry === 'string') return entry;
+      const record = asRecord(entry);
+      if (!record) return undefined;
+
+      return (
+        safeString(record.reason) ??
+        safeString(record.summary) ??
+        safeString(record.agent) ??
+        safeString(record.view)
+      );
+    })
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+function normalizeReceiptDetail(
+  raw: Record<string, unknown>,
+  sourceItem: ReceiptListItem
+): DecisionReceipt {
+  const riskSummary = normalizeRiskSummary(raw) ?? EMPTY_RISK_SUMMARY;
+  const findings = normalizeVulnerabilityDetails(raw.vulnerability_details ?? raw.findings);
+
+  return {
+    receipt_id:
+      safeString(raw.receipt_id) ??
+      sourceItem.receiptId ??
+      sourceItem.id,
+    gauntlet_id:
+      safeString(raw.gauntlet_id) ??
+      sourceItem.gauntletId ??
+      sourceItem.id,
+    timestamp: normalizeTimestamp(raw.timestamp ?? raw.created_at ?? sourceItem.created_at),
+    input_summary:
+      safeString(raw.input_summary) ??
+      sourceItem.input_summary ??
+      'Decision receipt',
+    input_hash:
+      safeString(raw.input_hash) ??
+      safeString(raw.checksum) ??
+      '',
+    risk_level:
+      safeString(raw.risk_level) ??
+      sourceItem.risk_level,
+    risk_summary: riskSummary,
+    attacks_attempted: safeNumber(raw.attacks_attempted) ?? 0,
+    attacks_successful: safeNumber(raw.attacks_successful) ?? 0,
+    probes_run: safeNumber(raw.probes_run) ?? 0,
+    vulnerabilities_found:
+      safeNumber(raw.vulnerabilities_found) ??
+      totalFindings(riskSummary) ??
+      findings.length,
+    verdict: normalizeVerdict(raw.verdict) ?? 'UNKNOWN',
+    confidence: safeNumber(raw.confidence) ?? sourceItem.confidence ?? 0,
+    robustness_score:
+      safeNumber(raw.robustness_score) ??
+      safeNumber(raw.coverage_score) ??
+      safeNumber(raw.verification_coverage) ??
+      0,
+    vulnerability_details: findings,
+    verdict_reasoning:
+      safeString(raw.verdict_reasoning) ??
+      safeString(raw.decision_summary) ??
+      safeString(raw.summary) ??
+      '',
+    dissenting_views: normalizeDissentingViews(raw.dissenting_views),
+    consensus_proof: normalizeConsensusProof(raw.consensus_proof),
+    provenance_chain: normalizeProvenanceChain(raw.provenance_chain),
+    artifact_hash:
+      safeString(raw.artifact_hash) ??
+      safeString(raw.checksum) ??
+      '',
+  };
+}
+
+function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
+  if (typeof AbortSignal === 'undefined') return undefined;
+  const timeout = (
+    AbortSignal as typeof AbortSignal & {
+      timeout?: (ms: number) => AbortSignal;
+    }
+  ).timeout;
+  return typeof timeout === 'function' ? timeout(timeoutMs) : undefined;
+}
+
+function buildDetailUrls(item: ReceiptListItem, backendUrl: string): string[] {
+  const urls = new Set<string>();
+
+  if (item.gauntletId) {
+    urls.add(`${backendUrl}/api/v1/gauntlet/${item.gauntletId}/receipt`);
+    urls.add(`${backendUrl}/api/gauntlet/${item.gauntletId}/receipt`);
+  }
+
+  if (item.receiptId) {
+    urls.add(`${backendUrl}/api/v2/receipts/${item.receiptId}`);
+  }
+
+  if (!item.receiptId && item.id) {
+    urls.add(`${backendUrl}/api/v2/receipts/${item.id}`);
+  }
+
+  return Array.from(urls);
+}
+
+function buildExportUrls(
+  item: ReceiptListItem,
+  backendUrl: string,
+  format: 'json' | 'html' | 'markdown'
+): string[] {
+  const exportFormat = format === 'markdown' ? 'md' : format;
+  const urls = new Set<string>();
+
+  if (item.gauntletId) {
+    urls.add(`${backendUrl}/api/v1/gauntlet/${item.gauntletId}/receipt?format=${exportFormat}`);
+    urls.add(`${backendUrl}/api/gauntlet/${item.gauntletId}/receipt?format=${exportFormat}`);
+  }
+
+  if (item.receiptId) {
+    urls.add(`${backendUrl}/api/v2/receipts/${item.receiptId}/export?format=${exportFormat}`);
+  }
+
+  if (!item.receiptId && item.id) {
+    urls.add(`${backendUrl}/api/v2/receipts/${item.id}/export?format=${exportFormat}`);
+  }
+
+  return Array.from(urls);
 }
 
 export default function ReceiptsPage() {
   const { config } = useBackend();
   const backendUrl = config.api;
   const [activeTab, setActiveTab] = useState<TabType>('list');
-  const [results, setResults] = useState<GauntletResult[]>([]);
+  const [results, setResults] = useState<ReceiptListItem[]>([]);
+  const [selectedItem, setSelectedItem] = useState<ReceiptListItem | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<DecisionReceipt | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'PASS' | 'CONDITIONAL' | 'FAIL'>('all');
+  const [filter, setFilter] = useState<'all' | ReceiptVerdict>('all');
   const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
 
-  // Fetch receipts from the v2 receipts endpoint via SWR (caching + revalidation)
+  const {
+    data: gauntletReceiptsData,
+    error: gauntletReceiptsError,
+    isLoading: gauntletReceiptsLoading,
+    mutate: mutateGauntletReceipts,
+  } = useSWRFetch<ApiListResponse>(
+    '/api/v1/gauntlet/receipts?limit=50',
+    {
+      refreshInterval: 30000,
+      baseUrl: backendUrl,
+    }
+  );
+
+  const gauntletReceiptItems = normalizeListResponse(
+    gauntletReceiptsData,
+    'gauntlet-receipts'
+  );
+
+  const shouldFetchV2Receipts =
+    !gauntletReceiptsLoading && gauntletReceiptItems.length === 0;
+
   const {
     data: receiptsData,
     error: receiptsError,
     isLoading: receiptsLoading,
     mutate: mutateReceipts,
-  } = useSWRFetch<ReceiptsListResponse>(
-    '/api/v2/receipts?limit=50',
+  } = useSWRFetch<ApiListResponse>(
+    shouldFetchV2Receipts ? '/api/v2/receipts?limit=50' : null,
     {
       refreshInterval: 30000,
       baseUrl: backendUrl,
     }
   );
 
-  // Fallback: try gauntlet endpoint if v2 receipts returns nothing
+  const v2ReceiptItems = normalizeListResponse(receiptsData, 'v2-receipts');
+
+  const shouldFetchGauntletResults =
+    shouldFetchV2Receipts &&
+    !receiptsLoading &&
+    v2ReceiptItems.length === 0;
+
   const {
-    data: gauntletData,
-    error: gauntletError,
-    isLoading: gauntletLoading,
-  } = useSWRFetch<ReceiptsListResponse>(
-    // Only fetch gauntlet if v2 receipts failed or returned empty
-    (!receiptsLoading && !receiptsData) ? '/api/gauntlet/results?limit=50' : null,
+    data: gauntletResultsData,
+    error: gauntletResultsError,
+    isLoading: gauntletResultsLoading,
+    mutate: mutateGauntletResults,
+  } = useSWRFetch<ApiListResponse>(
+    shouldFetchGauntletResults ? '/api/gauntlet/results?limit=50' : null,
     {
       refreshInterval: 30000,
       baseUrl: backendUrl,
     }
   );
 
-  // Consolidate data from either endpoint
-  const loading = receiptsLoading || (gauntletLoading && !receiptsData);
+  const gauntletResultItems = normalizeListResponse(
+    gauntletResultsData,
+    'gauntlet-results'
+  );
+
+  const loading =
+    results.length === 0 &&
+    (gauntletReceiptsLoading || receiptsLoading || gauntletResultsLoading);
 
   useEffect(() => {
-    const receiptsList = receiptsData?.receipts || receiptsData?.results || receiptsData?.data;
-    if (receiptsList) {
-      setResults(receiptsList);
+    if (gauntletReceiptItems.length > 0) {
+      setResults(gauntletReceiptItems);
       setError(null);
       return;
     }
 
-    const gauntletList = gauntletData?.results || gauntletData?.receipts || gauntletData?.data;
-    if (gauntletList) {
-      setResults(gauntletList);
+    if (v2ReceiptItems.length > 0) {
+      setResults(v2ReceiptItems);
       setError(null);
       return;
     }
 
-    if (receiptsError && gauntletError) {
-      setError(receiptsError.message || 'Failed to load receipts');
+    if (gauntletResultItems.length > 0) {
+      setResults(gauntletResultItems);
+      setError(null);
+      return;
     }
-  }, [receiptsData, gauntletData, receiptsError, gauntletError]);
+
+    const allLoaded =
+      !gauntletReceiptsLoading &&
+      !receiptsLoading &&
+      !gauntletResultsLoading;
+
+    if (!allLoaded) return;
+
+    setResults([]);
+    if (gauntletReceiptsError && receiptsError && gauntletResultsError) {
+      setError(
+        gauntletReceiptsError.message ||
+          receiptsError.message ||
+          gauntletResultsError.message ||
+          'Failed to load receipts'
+      );
+      return;
+    }
+
+    setError(null);
+  }, [
+    gauntletReceiptItems,
+    v2ReceiptItems,
+    gauntletResultItems,
+    gauntletReceiptsLoading,
+    receiptsLoading,
+    gauntletResultsLoading,
+    gauntletReceiptsError,
+    receiptsError,
+    gauntletResultsError,
+  ]);
 
   const loadData = useCallback(async () => {
     setError(null);
-    mutateReceipts();
-  }, [mutateReceipts]);
+    await Promise.allSettled([
+      mutateGauntletReceipts(),
+      mutateReceipts(),
+      mutateGauntletResults(),
+    ]);
+  }, [mutateGauntletReceipts, mutateReceipts, mutateGauntletResults]);
 
-  const fetchReceipt = useCallback(async (gauntletId: string) => {
-    setReceiptLoading(true);
-    try {
-      // Try v2 receipts endpoint first, then fall back to gauntlet
-      let response = await fetch(`${backendUrl}/api/v2/receipts/${gauntletId}`, {
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!response.ok) {
-        // Fallback to gauntlet endpoint
-        response = await fetch(`${backendUrl}/api/gauntlet/${gauntletId}/receipt`, {
-          signal: AbortSignal.timeout(10000),
-        });
+  const fetchReceipt = useCallback(
+    async (item: ReceiptListItem) => {
+      setReceiptLoading(true);
+      setError(null);
+
+      try {
+        let lastStatus: number | null = null;
+
+        for (const url of buildDetailUrls(item, backendUrl)) {
+          const response = await fetch(url, {
+            signal: createTimeoutSignal(10000),
+          });
+
+          if (!response.ok) {
+            lastStatus = response.status;
+            continue;
+          }
+
+          const data = (await response.json()) as Record<string, unknown>;
+          setSelectedItem(item);
+          setSelectedReceipt(normalizeReceiptDetail(data, item));
+          setActiveTab('detail');
+          return;
+        }
+
+        throw new Error(lastStatus ? `HTTP ${lastStatus}` : 'Receipt not found');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load receipt');
+      } finally {
+        setReceiptLoading(false);
       }
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      setSelectedReceipt(data);
-      setSelectedId(gauntletId);
-      setActiveTab('detail');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load receipt');
-    } finally {
-      setReceiptLoading(false);
-    }
-  }, [backendUrl]);
+    },
+    [backendUrl]
+  );
 
   const downloadReceipt = async (format: 'json' | 'html' | 'markdown') => {
-    if (!selectedId) return;
+    if (!selectedItem) return;
 
     try {
-      // Try v2 endpoint first, then fall back to gauntlet
-      let response = await fetch(`${backendUrl}/api/v2/receipts/${selectedId}?format=${format}`);
-      if (!response.ok) {
-        response = await fetch(`${backendUrl}/api/gauntlet/${selectedId}/receipt?format=${format}`);
+      let lastStatus: number | null = null;
+
+      for (const url of buildExportUrls(selectedItem, backendUrl, format)) {
+        const response = await fetch(url, {
+          signal: createTimeoutSignal(10000),
+        });
+
+        if (!response.ok) {
+          lastStatus = response.status;
+          continue;
+        }
+
+        const blob = await response.blob();
+        const extension = format === 'markdown' ? 'md' : format;
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+
+        anchor.href = objectUrl;
+        anchor.download = `receipt-${selectedItem.receiptId ?? selectedItem.id}.${extension}`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(objectUrl);
+        return;
       }
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const blob = await response.blob();
-
-      const ext = format === 'markdown' ? 'md' : format;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipt-${selectedId}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      throw new Error(lastStatus ? `HTTP ${lastStatus}` : 'Download failed');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed');
     }
   };
 
   const getVerdictColor = (verdict?: string) => {
-    switch (verdict) {
-      case 'PASS': return 'text-acid-green bg-acid-green/20 border-acid-green/30';
-      case 'CONDITIONAL': return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
-      case 'FAIL': return 'text-red-400 bg-red-500/20 border-red-500/30';
-      default: return 'text-text-muted bg-surface border-border';
+    switch (normalizeVerdict(verdict)) {
+      case 'PASS':
+        return 'text-acid-green bg-acid-green/20 border-acid-green/30';
+      case 'CONDITIONAL':
+        return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
+      case 'FAIL':
+        return 'text-red-400 bg-red-500/20 border-red-500/30';
+      default:
+        return 'text-text-muted bg-surface border-border';
     }
   };
 
   const getSeverityColor = (severity: string) => {
     switch (severity.toLowerCase()) {
-      case 'critical': return 'text-red-500 bg-red-500/20';
-      case 'high': return 'text-orange-400 bg-orange-500/20';
-      case 'medium': return 'text-yellow-400 bg-yellow-500/20';
-      case 'low': return 'text-blue-400 bg-blue-500/20';
-      default: return 'text-text-muted bg-surface';
+      case 'critical':
+        return 'text-red-500 bg-red-500/20';
+      case 'high':
+        return 'text-orange-400 bg-orange-500/20';
+      case 'medium':
+        return 'text-yellow-400 bg-yellow-500/20';
+      case 'low':
+        return 'text-blue-400 bg-blue-500/20';
+      default:
+        return 'text-text-muted bg-surface';
     }
   };
 
-  const filteredResults = filter === 'all'
-    ? results
-    : results.filter(r => r.verdict === filter);
+  const filteredResults =
+    filter === 'all' ? results : results.filter((result) => result.verdict === filter);
 
   const renderResultsList = () => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-mono font-bold text-acid-green">Decision Receipts</h2>
         <div className="flex gap-2">
-          {(['all', 'PASS', 'CONDITIONAL', 'FAIL'] as const).map((f) => (
+          {(['all', 'PASS', 'CONDITIONAL', 'FAIL'] as const).map((value) => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
+              key={value}
+              onClick={() => setFilter(value)}
               className={`px-3 py-1 text-xs font-mono rounded border transition-colors ${
-                filter === f
+                filter === value
                   ? 'bg-acid-green/20 border-acid-green text-acid-green'
                   : 'border-border text-text-muted hover:border-acid-green/50'
               }`}
             >
-              {f}
+              {value}
             </button>
           ))}
         </div>
@@ -256,65 +744,90 @@ export default function ReceiptsPage() {
             risk analysis, consensus proof, and a tamper-proof audit trail.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-            <Link href="/oracle" className="px-4 py-2 bg-acid-green/20 border border-acid-green text-acid-green font-mono text-sm rounded hover:bg-acid-green/30 transition-colors">
+            <Link
+              href="/oracle"
+              className="px-4 py-2 bg-acid-green/20 border border-acid-green text-acid-green font-mono text-sm rounded hover:bg-acid-green/30 transition-colors"
+            >
               Ask the Oracle
             </Link>
-            <Link href="/debate" className="px-4 py-2 border border-border text-text-muted font-mono text-sm rounded hover:border-acid-green/50 hover:text-acid-green transition-colors">
+            <Link
+              href="/debate"
+              className="px-4 py-2 border border-border text-text-muted font-mono text-sm rounded hover:border-acid-green/50 hover:text-acid-green transition-colors"
+            >
               Start a debate
             </Link>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredResults.map((result) => (
-            <button
-              key={result.id}
-              onClick={() => result.status === 'completed' && fetchReceipt(result.id)}
-              disabled={result.status !== 'completed'}
-              className={`w-full p-4 bg-surface border border-border rounded-lg text-left transition-all ${
-                result.status === 'completed'
-                  ? 'hover:border-acid-green/50 cursor-pointer'
-                  : 'opacity-50 cursor-not-allowed'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm text-text-muted">
-                    {result.id.substring(0, 12)}...
-                  </span>
-                  {result.verdict && (
-                    <span className={`px-2 py-0.5 text-xs font-mono rounded border ${getVerdictColor(result.verdict)}`}>
-                      {result.verdict}
+          {filteredResults.map((result) => {
+            const displayId = result.receiptId ?? result.gauntletId ?? result.id;
+            const dateLabel = formatDate(result.created_at);
+            const isClickable = result.status === 'completed';
+
+            return (
+              <button
+                key={`${result.source}:${result.id}`}
+                onClick={() => isClickable && fetchReceipt(result)}
+                disabled={!isClickable}
+                className={`w-full p-4 bg-surface border border-border rounded-lg text-left transition-all ${
+                  isClickable
+                    ? 'hover:border-acid-green/50 cursor-pointer'
+                    : 'opacity-50 cursor-not-allowed'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm text-text-muted">
+                      {truncateId(displayId)}
                     </span>
-                  )}
+                    {result.verdict && (
+                      <span
+                        className={`px-2 py-0.5 text-xs font-mono rounded border ${getVerdictColor(result.verdict)}`}
+                      >
+                        {result.verdict}
+                      </span>
+                    )}
+                    {typeof result.confidence === 'number' && (
+                      <span className="text-xs font-mono text-text-muted">
+                        {(result.confidence * 100).toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-text-muted">{dateLabel}</span>
                 </div>
-                <span className="text-xs text-text-muted">
-                  {new Date(result.created_at).toLocaleDateString()}
-                </span>
-              </div>
 
-              {result.input_summary && (
-                <p className="text-sm text-text mb-2 line-clamp-1">{result.input_summary}</p>
-              )}
+                {result.input_summary ? (
+                  <p className="text-sm text-text mb-2 line-clamp-1">{result.input_summary}</p>
+                ) : (
+                  <p className="text-sm text-text-muted mb-2">
+                    Receipt {displayId} is ready for audit review.
+                  </p>
+                )}
 
-              {result.risk_summary && (
-                <div className="flex gap-3 text-xs font-mono">
-                  {result.risk_summary.critical > 0 && (
-                    <span className="text-red-400">C:{result.risk_summary.critical}</span>
-                  )}
-                  {result.risk_summary.high > 0 && (
-                    <span className="text-orange-400">H:{result.risk_summary.high}</span>
-                  )}
-                  {result.risk_summary.medium > 0 && (
-                    <span className="text-yellow-400">M:{result.risk_summary.medium}</span>
-                  )}
-                  {result.risk_summary.low > 0 && (
-                    <span className="text-blue-400">L:{result.risk_summary.low}</span>
-                  )}
-                </div>
-              )}
-            </button>
-          ))}
+                {result.risk_summary && totalFindings(result.risk_summary) > 0 ? (
+                  <div className="flex gap-3 text-xs font-mono">
+                    {result.risk_summary.critical > 0 && (
+                      <span className="text-red-400">C:{result.risk_summary.critical}</span>
+                    )}
+                    {result.risk_summary.high > 0 && (
+                      <span className="text-orange-400">H:{result.risk_summary.high}</span>
+                    )}
+                    {result.risk_summary.medium > 0 && (
+                      <span className="text-yellow-400">M:{result.risk_summary.medium}</span>
+                    )}
+                    {result.risk_summary.low > 0 && (
+                      <span className="text-blue-400">L:{result.risk_summary.low}</span>
+                    )}
+                  </div>
+                ) : result.risk_level ? (
+                  <div className="text-xs font-mono text-text-muted">
+                    Risk: {result.risk_level}
+                  </div>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -333,21 +846,26 @@ export default function ReceiptsPage() {
       return <p className="text-text-muted">No receipt selected</p>;
     }
 
-    const r = selectedReceipt;
+    const receipt = selectedReceipt;
+    const findingCount = totalFindings(receipt.risk_summary);
 
     return (
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-mono font-bold text-acid-green">Decision Receipt</h2>
             <div className="text-xs text-text-muted font-mono mt-1">
-              ID: {r.receipt_id} | Artifact: {r.artifact_hash?.substring(0, 16)}...
+              ID: {receipt.receipt_id}
+              {receipt.artifact_hash ? ` | Artifact: ${truncateId(receipt.artifact_hash)}` : ''}
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setActiveTab('list'); setSelectedReceipt(null); }}
+              onClick={() => {
+                setActiveTab('list');
+                setSelectedItem(null);
+                setSelectedReceipt(null);
+              }}
               className="px-3 py-1 text-sm font-mono border border-border rounded hover:border-acid-green/50"
             >
               Back
@@ -363,97 +881,148 @@ export default function ReceiptsPage() {
                 Export
               </button>
               <div className="absolute right-0 mt-1 w-32 bg-surface border border-border rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-                <button onClick={() => downloadReceipt('json')} className="w-full px-3 py-2 text-left text-sm hover:bg-bg">JSON</button>
-                <button onClick={() => downloadReceipt('html')} className="w-full px-3 py-2 text-left text-sm hover:bg-bg">HTML</button>
-                <button onClick={() => downloadReceipt('markdown')} className="w-full px-3 py-2 text-left text-sm hover:bg-bg">Markdown</button>
+                <button
+                  onClick={() => downloadReceipt('json')}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-bg"
+                >
+                  JSON
+                </button>
+                <button
+                  onClick={() => downloadReceipt('html')}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-bg"
+                >
+                  HTML
+                </button>
+                <button
+                  onClick={() => downloadReceipt('markdown')}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-bg"
+                >
+                  Markdown
+                </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Verdict Card */}
-        <div className={`p-4 rounded-lg border-2 ${getVerdictColor(r.verdict)}`}>
+        <div className={`p-4 rounded-lg border-2 ${getVerdictColor(receipt.verdict)}`}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-2xl font-mono font-bold">{r.verdict}</div>
-              <div className="text-sm opacity-80">Confidence: {(r.confidence * 100).toFixed(1)}%</div>
+              <div className="text-2xl font-mono font-bold">{receipt.verdict}</div>
+              <div className="text-sm opacity-80">
+                Confidence: {(receipt.confidence * 100).toFixed(1)}%
+              </div>
             </div>
             <div className="text-right">
               <div className="text-sm">Robustness Score</div>
-              <div className="text-2xl font-mono font-bold">{(r.robustness_score * 100).toFixed(0)}%</div>
+              <div className="text-2xl font-mono font-bold">
+                {(receipt.robustness_score * 100).toFixed(0)}%
+              </div>
             </div>
           </div>
-          {r.verdict_reasoning && (
-            <p className="mt-3 text-sm opacity-90">{r.verdict_reasoning}</p>
+          {receipt.verdict_reasoning && (
+            <p className="mt-3 text-sm opacity-90">{receipt.verdict_reasoning}</p>
           )}
         </div>
 
-        {/* Risk Summary */}
         <div className="p-4 bg-surface border border-border rounded-lg">
-          <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">Risk Summary</h3>
+          <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">
+            Risk Summary
+          </h3>
+          {receipt.risk_level && (
+            <div className="text-xs font-mono text-text-muted mb-3">
+              Overall risk level: {receipt.risk_level}
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center">
-              <div className="text-3xl font-mono font-bold text-red-500">{r.risk_summary.critical}</div>
+              <div className="text-3xl font-mono font-bold text-red-500">
+                {receipt.risk_summary.critical}
+              </div>
               <div className="text-xs text-text-muted">Critical</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-mono font-bold text-orange-400">{r.risk_summary.high}</div>
+              <div className="text-3xl font-mono font-bold text-orange-400">
+                {receipt.risk_summary.high}
+              </div>
               <div className="text-xs text-text-muted">High</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-mono font-bold text-yellow-400">{r.risk_summary.medium}</div>
+              <div className="text-3xl font-mono font-bold text-yellow-400">
+                {receipt.risk_summary.medium}
+              </div>
               <div className="text-xs text-text-muted">Medium</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-mono font-bold text-blue-400">{r.risk_summary.low}</div>
+              <div className="text-3xl font-mono font-bold text-blue-400">
+                {receipt.risk_summary.low}
+              </div>
               <div className="text-xs text-text-muted">Low</div>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center border-t border-border pt-4">
             <div>
-              <div className="text-xl font-mono">{r.attacks_attempted}</div>
+              <div className="text-xl font-mono">{receipt.attacks_attempted}</div>
               <div className="text-xs text-text-muted">Attacks Attempted</div>
             </div>
             <div>
-              <div className="text-xl font-mono">{r.attacks_successful}</div>
+              <div className="text-xl font-mono">{receipt.attacks_successful}</div>
               <div className="text-xs text-text-muted">Successful</div>
             </div>
             <div>
-              <div className="text-xl font-mono">{r.probes_run}</div>
+              <div className="text-xl font-mono">{receipt.probes_run}</div>
               <div className="text-xs text-text-muted">Probes Run</div>
             </div>
           </div>
+          {findingCount === 0 && receipt.vulnerabilities_found === 0 && (
+            <p className="mt-4 text-sm text-text-muted">
+              This receipt does not include per-severity finding counts.
+            </p>
+          )}
         </div>
 
-        {/* Consensus Proof */}
-        {r.consensus_proof && (
+        {receipt.consensus_proof && (
           <div className="p-4 bg-surface border border-border rounded-lg">
-            <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">Consensus Proof</h3>
+            <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">
+              Consensus Proof
+            </h3>
             <div className="flex items-center gap-4 mb-3">
-              <span className={`px-2 py-1 text-xs font-mono rounded ${r.consensus_proof.reached ? 'bg-acid-green/20 text-acid-green' : 'bg-red-500/20 text-red-400'}`}>
-                {r.consensus_proof.reached ? 'Consensus Reached' : 'No Consensus'}
+              <span
+                className={`px-2 py-1 text-xs font-mono rounded ${
+                  receipt.consensus_proof.reached
+                    ? 'bg-acid-green/20 text-acid-green'
+                    : 'bg-red-500/20 text-red-400'
+                }`}
+              >
+                {receipt.consensus_proof.reached ? 'Consensus Reached' : 'No Consensus'}
               </span>
               <span className="text-sm text-text-muted">
-                Method: {r.consensus_proof.method} | Confidence: {(r.consensus_proof.confidence * 100).toFixed(0)}%
+                Method: {receipt.consensus_proof.method} | Confidence:{' '}
+                {(receipt.consensus_proof.confidence * 100).toFixed(0)}%
               </span>
             </div>
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <div className="text-xs text-text-muted mb-1">Supporting Agents</div>
                 <div className="flex flex-wrap gap-1">
-                  {r.consensus_proof.supporting_agents.map((agent, i) => (
-                    <span key={i} className="px-2 py-0.5 text-xs font-mono bg-acid-green/10 text-acid-green rounded">
+                  {receipt.consensus_proof.supporting_agents.map((agent) => (
+                    <span
+                      key={agent}
+                      className="px-2 py-0.5 text-xs font-mono bg-acid-green/10 text-acid-green rounded"
+                    >
                       {agent}
                     </span>
                   ))}
                 </div>
               </div>
-              {r.consensus_proof.dissenting_agents.length > 0 && (
+              {receipt.consensus_proof.dissenting_agents.length > 0 && (
                 <div>
                   <div className="text-xs text-text-muted mb-1">Dissenting Agents</div>
                   <div className="flex flex-wrap gap-1">
-                    {r.consensus_proof.dissenting_agents.map((agent, i) => (
-                      <span key={i} className="px-2 py-0.5 text-xs font-mono bg-red-500/10 text-red-400 rounded">
+                    {receipt.consensus_proof.dissenting_agents.map((agent) => (
+                      <span
+                        key={agent}
+                        className="px-2 py-0.5 text-xs font-mono bg-red-500/10 text-red-400 rounded"
+                      >
                         {agent}
                       </span>
                     ))}
@@ -464,38 +1033,55 @@ export default function ReceiptsPage() {
           </div>
         )}
 
-        {/* Vulnerability Details */}
-        {r.vulnerability_details && r.vulnerability_details.length > 0 && (
+        {receipt.vulnerability_details.length > 0 && (
           <div className="p-4 bg-surface border border-border rounded-lg">
             <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">
-              Vulnerabilities ({r.vulnerability_details.length})
+              Vulnerabilities ({receipt.vulnerability_details.length})
             </h3>
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {r.vulnerability_details.map((vuln, i) => (
-                <div key={i} className="p-2 bg-bg rounded">
+              {receipt.vulnerability_details.map((vulnerability) => (
+                <div key={vulnerability.id} className="p-2 bg-bg rounded">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`px-1.5 py-0.5 text-xs font-mono rounded ${getSeverityColor(vuln.severity)}`}>
-                      {vuln.severity.toUpperCase()}
+                    <span
+                      className={`px-1.5 py-0.5 text-xs font-mono rounded ${getSeverityColor(vulnerability.severity)}`}
+                    >
+                      {vulnerability.severity.toUpperCase()}
                     </span>
-                    <span className="text-xs text-text-muted">{vuln.category}</span>
-                    <span className="text-xs text-text-muted font-mono">{vuln.id}</span>
+                    <span className="text-xs text-text-muted">{vulnerability.category}</span>
+                    <span className="text-xs text-text-muted font-mono">{vulnerability.id}</span>
                   </div>
-                  <p className="text-sm text-text">{vuln.description}</p>
+                  <p className="text-sm text-text">{vulnerability.description}</p>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Provenance Chain */}
-        {r.provenance_chain && r.provenance_chain.length > 0 && (
+        {receipt.dissenting_views.length > 0 && (
           <div className="p-4 bg-surface border border-border rounded-lg">
-            <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">Provenance Chain</h3>
+            <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">
+              Dissenting Views
+            </h3>
+            <div className="space-y-2">
+              {receipt.dissenting_views.map((view) => (
+                <p key={view} className="text-sm text-text">
+                  {view}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {receipt.provenance_chain.length > 0 && (
+          <div className="p-4 bg-surface border border-border rounded-lg">
+            <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">
+              Provenance Chain
+            </h3>
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {r.provenance_chain.map((record, i) => (
-                <div key={i} className="flex items-start gap-3 text-xs">
-                  <div className="w-16 text-text-muted shrink-0">
-                    {new Date(record.timestamp).toLocaleTimeString()}
+              {receipt.provenance_chain.map((record, index) => (
+                <div key={`${record.event_type}-${index}`} className="flex items-start gap-3 text-xs">
+                  <div className="w-20 text-text-muted shrink-0">
+                    {record.timestamp ? new Date(record.timestamp).toLocaleTimeString() : '--:--'}
                   </div>
                   <div className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded font-mono shrink-0">
                     {record.event_type}
@@ -506,7 +1092,7 @@ export default function ReceiptsPage() {
                   <div className="text-text flex-1">{record.description}</div>
                   {record.evidence_hash && (
                     <div className="text-text-muted font-mono shrink-0" title={record.evidence_hash}>
-                      #{record.evidence_hash.substring(0, 8)}
+                      #{record.evidence_hash.slice(0, 8)}
                     </div>
                   )}
                 </div>
@@ -515,25 +1101,26 @@ export default function ReceiptsPage() {
           </div>
         )}
 
-        {/* Input & Integrity */}
         <div className="p-4 bg-surface border border-border rounded-lg">
-          <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">Input & Integrity</h3>
+          <h3 className="text-sm font-mono font-bold text-text-muted uppercase mb-3">
+            Input & Integrity
+          </h3>
           <div className="space-y-2 text-sm">
             <div>
               <span className="text-text-muted">Input Summary: </span>
-              <span className="text-text">{r.input_summary}</span>
+              <span className="text-text">{receipt.input_summary}</span>
             </div>
             <div className="font-mono text-xs">
               <span className="text-text-muted">Input Hash: </span>
-              <span className="text-text">{r.input_hash}</span>
+              <span className="text-text">{receipt.input_hash || 'Unavailable'}</span>
             </div>
             <div className="font-mono text-xs">
               <span className="text-text-muted">Artifact Hash: </span>
-              <span className="text-text">{r.artifact_hash}</span>
+              <span className="text-text">{receipt.artifact_hash || 'Unavailable'}</span>
             </div>
             <div className="font-mono text-xs">
               <span className="text-text-muted">Timestamp: </span>
-              <span className="text-text">{r.timestamp}</span>
+              <span className="text-text">{receipt.timestamp || 'Unavailable'}</span>
             </div>
           </div>
         </div>
@@ -547,7 +1134,6 @@ export default function ReceiptsPage() {
       <CRTVignette />
 
       <div className="max-w-6xl mx-auto px-4 py-8 relative z-10">
-        {/* Title */}
         <div className="mb-8">
           <h1 className="text-xl font-mono font-bold text-acid-green mb-2">Decision Receipts</h1>
           <p className="text-text-muted font-mono text-sm">
@@ -555,14 +1141,12 @@ export default function ReceiptsPage() {
           </p>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="mb-6">
             <ErrorWithRetry error={error} onRetry={loadData} />
           </div>
         )}
 
-        {/* Content */}
         <PanelErrorBoundary panelName="Decision Receipts">
           {loading ? (
             <div className="flex items-center justify-center py-12">
@@ -577,7 +1161,6 @@ export default function ReceiptsPage() {
         </PanelErrorBoundary>
       </div>
 
-      {/* Delivery Modal */}
       {selectedReceipt && (
         <DeliveryModal
           isOpen={deliveryModalOpen}
@@ -586,7 +1169,7 @@ export default function ReceiptsPage() {
           receiptSummary={selectedReceipt.input_summary}
           apiUrl={backendUrl}
           onDeliverySuccess={() => {
-            // Could refresh history or show notification
+            // Delivery history remains server-backed; no local mutation needed here.
           }}
         />
       )}
