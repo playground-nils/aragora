@@ -144,6 +144,7 @@ Examples:
     _add_backup_parser(subparsers)
     _add_repl_parser(subparsers)
     _add_config_parser(subparsers)
+    _add_api_key_parser(subparsers)
     _add_replay_parser(subparsers)
     _add_bench_parser(subparsers)
     _add_review_parser(subparsers)
@@ -1035,6 +1036,33 @@ def _add_config_parser(subparsers) -> None:
     config_parser.add_argument("key", nargs="?", help="Config key (for get/set)")
     config_parser.add_argument("value", nargs="?", help="Config value (for set)")
     config_parser.set_defaults(func=_lazy("aragora.cli.commands.delegated", "cmd_config"))
+
+
+def _add_api_key_parser(subparsers) -> None:
+    """Add the `api-key` subcommand parser."""
+    api_key_parser = subparsers.add_parser(
+        "api-key",
+        help="Manage LLM API keys",
+        description="Securely store, inspect, and validate LLM API keys.",
+    )
+    api_key_parser.set_defaults(func=_lazy("aragora.cli.commands.api_key", "cmd_api_key"))
+
+    api_key_subparsers = api_key_parser.add_subparsers(dest="api_key_command")
+
+    set_parser = api_key_subparsers.add_parser("set", help="Store an LLM API key securely")
+    set_parser.add_argument("provider", help="Provider name (for example: openai, anthropic)")
+    set_parser.add_argument(
+        "key",
+        nargs="?",
+        help="API key value (omit to enter it securely via a hidden prompt)",
+    )
+
+    api_key_subparsers.add_parser("list", help="List configured LLM API keys")
+
+    validate_parser = api_key_subparsers.add_parser(
+        "validate", help="Validate a configured provider key"
+    )
+    validate_parser.add_argument("provider", help="Provider name to validate")
 
 
 def _add_replay_parser(subparsers) -> None:

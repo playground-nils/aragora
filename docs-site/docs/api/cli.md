@@ -11,8 +11,8 @@ description: Generated Aragora CLI command catalog from live parser
 
 This reference documents the command surface as implemented in code. It includes all top-level commands and known aliases.
 
-- Canonical top-level commands: **82**
-- Total top-level invocations (including aliases): **83**
+- Canonical top-level commands: **83**
+- Total top-level invocations (including aliases): **84**
 
 ## Installation
 
@@ -43,6 +43,7 @@ For full runtime configuration, see [ENVIRONMENT](../getting-started/environment
 | `agent` | - | Run autonomous agents (DevOps, review, triage) | `run` |
 | `agents` | - | List available agents and their configuration | - |
 | `analytics` | - | View debate analytics and platform usage | `agents`, `costs`, `summary`, `trends` |
+| `api-key` | - | Manage LLM API keys | `list`, `set`, `validate` |
 | `ask` | - | Run a decision stress-test (debate engine) | - |
 | `assess` | - | Run canonical repository assessment | - |
 | `audit` | - | Document compliance and audit commands | `create`, `export`, `findings`, `preset`, `presets`, `report`, `start`, `status`, `types` |
