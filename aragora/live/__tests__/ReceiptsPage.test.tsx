@@ -74,10 +74,12 @@ function hookResult(overrides: Partial<HookResult> = {}): HookResult {
 }
 
 function queueHookResponses(responses: [HookResult, HookResult, HookResult]) {
-  mockUseSWRFetch
-    .mockReturnValueOnce(responses[0])
-    .mockReturnValueOnce(responses[1])
-    .mockReturnValueOnce(responses[2]);
+  let callIndex = 0;
+  mockUseSWRFetch.mockImplementation(() => {
+    const response = responses[callIndex % responses.length] ?? hookResult();
+    callIndex += 1;
+    return response;
+  });
 }
 
 describe('ReceiptsPage', () => {

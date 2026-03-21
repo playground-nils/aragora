@@ -265,6 +265,38 @@ function normalizeListResponse(
     .filter((item): item is ReceiptListItem => item !== null);
 }
 
+function sameRiskSummary(a?: RiskSummary, b?: RiskSummary): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.critical === b.critical &&
+    a.high === b.high &&
+    a.medium === b.medium &&
+    a.low === b.low
+  );
+}
+
+function sameReceiptItem(a: ReceiptListItem, b: ReceiptListItem): boolean {
+  return (
+    a.id === b.id &&
+    a.source === b.source &&
+    a.status === b.status &&
+    a.receiptId === b.receiptId &&
+    a.gauntletId === b.gauntletId &&
+    a.verdict === b.verdict &&
+    a.confidence === b.confidence &&
+    a.created_at === b.created_at &&
+    a.input_summary === b.input_summary &&
+    a.risk_level === b.risk_level &&
+    a.vulnerabilities_found === b.vulnerabilities_found &&
+    sameRiskSummary(a.risk_summary, b.risk_summary)
+  );
+}
+
+function sameReceiptList(a: ReceiptListItem[], b: ReceiptListItem[]): boolean {
+  return a.length === b.length && a.every((item, index) => sameReceiptItem(item, b[index]!));
+}
+
 function normalizeProvenanceChain(value: unknown): ProvenanceRecord[] {
   if (!Array.isArray(value)) return [];
 
@@ -554,43 +586,34 @@ export default function ReceiptsPage() {
     (gauntletReceiptsLoading || receiptsLoading || gauntletResultsLoading);
 
   useEffect(() => {
+    let nextResults: ReceiptListItem[] = [];
+    let nextError: string | null = null;
+
     if (gauntletReceiptItems.length > 0) {
-      setResults(gauntletReceiptItems);
-      setError(null);
-      return;
-    }
+      nextResults = gauntletReceiptItems;
+    } else if (v2ReceiptItems.length > 0) {
+      nextResults = v2ReceiptItems;
+    } else if (gauntletResultItems.length > 0) {
+      nextResults = gauntletResultItems;
+    } else {
+      const allLoaded =
+        !gauntletReceiptsLoading &&
+        !receiptsLoading &&
+        !gauntletResultsLoading;
 
-    if (v2ReceiptItems.length > 0) {
-      setResults(v2ReceiptItems);
-      setError(null);
-      return;
-    }
+      if (!allLoaded) return;
 
-    if (gauntletResultItems.length > 0) {
-      setResults(gauntletResultItems);
-      setError(null);
-      return;
-    }
-
-    const allLoaded =
-      !gauntletReceiptsLoading &&
-      !receiptsLoading &&
-      !gauntletResultsLoading;
-
-    if (!allLoaded) return;
-
-    setResults([]);
-    if (gauntletReceiptsError && receiptsError && gauntletResultsError) {
-      setError(
-        gauntletReceiptsError.message ||
+      if (gauntletReceiptsError && receiptsError && gauntletResultsError) {
+        nextError =
+          gauntletReceiptsError.message ||
           receiptsError.message ||
           gauntletResultsError.message ||
-          'Failed to load receipts'
-      );
-      return;
+          'Failed to load receipts';
+      }
     }
 
-    setError(null);
+    setResults((current) => (sameReceiptList(current, nextResults) ? current : nextResults));
+    setError((current) => (current === nextError ? current : nextError));
   }, [
     gauntletReceiptItems,
     v2ReceiptItems,
