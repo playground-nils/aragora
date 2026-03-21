@@ -33,6 +33,13 @@ class TestApiKeyParser:
         assert args.provider == "openai"
         assert args.key == "sk-test-1234"
 
+    def test_set_allows_hidden_prompt_without_cli_key(self):
+        args = build_parser().parse_args(["api-key", "set", "openai"])
+        assert args.command == "api-key"
+        assert args.api_key_command == "set"
+        assert args.provider == "openai"
+        assert args.key is None
+
     def test_list_parses(self):
         args = build_parser().parse_args(["api-key", "list"])
         assert args.command == "api-key"
@@ -65,6 +72,19 @@ class TestApiKeyCommands:
         output = capsys.readouterr().out
         assert "Stored OpenAI API key" in output
         assert "Backend:  file" in output
+
+    def test_set_prompts_securely_when_key_argument_missing(self, tmp_path, monkeypatch, capsys):
+        for key, value in _file_store_env(tmp_path).items():
+            monkeypatch.setenv(key, value)
+
+        with patch("aragora.cli.commands.api_key.getpass.getpass", return_value="sk-prompt-5678"):
+            cmd_api_key(SimpleNamespace(api_key_command="set", provider="openai", key=None))
+
+        resolved_key, source = get_provider_key("openai")
+        assert resolved_key == "sk-prompt-5678"
+        assert source == "secure-store"
+        output = capsys.readouterr().out
+        assert "Stored OpenAI API key" in output
 
     def test_list_includes_secure_store_and_env_override(self, tmp_path, monkeypatch, capsys):
         for key, value in _file_store_env(tmp_path).items():
@@ -112,6 +132,7 @@ class TestApiKeyCommands:
     def test_validate_fails_for_missing_key(self, tmp_path, monkeypatch, capsys):
         for key, value in _file_store_env(tmp_path).items():
             monkeypatch.setenv(key, value)
+        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_api_key(SimpleNamespace(api_key_command="validate", provider="mistral"))

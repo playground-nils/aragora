@@ -1051,7 +1051,11 @@ def _add_api_key_parser(subparsers) -> None:
 
     set_parser = api_key_subparsers.add_parser("set", help="Store an LLM API key securely")
     set_parser.add_argument("provider", help="Provider name (for example: openai, anthropic)")
-    set_parser.add_argument("key", help="API key value")
+    set_parser.add_argument(
+        "key",
+        nargs="?",
+        help="API key value (omit to enter it securely via a hidden prompt)",
+    )
 
     api_key_subparsers.add_parser("list", help="List configured LLM API keys")
 

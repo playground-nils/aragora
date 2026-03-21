@@ -5,6 +5,7 @@ CLI commands for secure LLM API key management.
 from __future__ import annotations
 
 import argparse
+import getpass
 
 from aragora.cli.api_keys import (
     get_supported_provider_names,
@@ -41,7 +42,10 @@ def _cmd_set(args: argparse.Namespace) -> None:
     """Store an LLM API key for a provider."""
     try:
         spec = resolve_provider(args.provider)
-        stored = set_provider_key(spec.name, args.key)
+        key = getattr(args, "key", None)
+        if not key:
+            key = getpass.getpass(f"{spec.display_name} API key: ")
+        stored = set_provider_key(spec.name, key)
     except (RuntimeError, ValueError) as exc:
         print(f"Error: {exc}")
         raise SystemExit(1) from exc
