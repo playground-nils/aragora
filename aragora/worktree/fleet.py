@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import sqlite3
 import subprocess
 from collections import deque
 from datetime import datetime, timezone
@@ -130,7 +131,21 @@ def _parse_lock_file(lock_path: Path) -> dict[str, str]:
         return {}
     parsed: dict[str, str] = {}
     try:
-        for raw in lock_path.read_text(encoding="utf-8").splitlines():
+        raw_text = lock_path.read_text(encoding="utf-8")
+        stripped = raw_text.strip()
+        if not stripped:
+            return {}
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if value is None:
+                    continue
+                parsed[str(key).strip()] = str(value).strip()
+            return parsed
+        for raw in stripped.splitlines():
             if "=" not in raw:
                 continue
             key, value = raw.split("=", 1)
@@ -169,6 +184,72 @@ def _pid_alive(raw_pid: str | None) -> bool:
     except OSError:
         return False
     return True
+
+
+def _parse_iso_dt(raw_value: Any) -> datetime | None:
+    if raw_value is None:
+        return None
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _git_common_dir(repo_root: Path) -> Path | None:
+    proc = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    return Path(proc.stdout.strip()).resolve()
+
+
+def _active_lease_session_ids(repo_root: Path) -> set[str]:
+    git_common_dir = _git_common_dir(repo_root)
+    if git_common_dir is None:
+        return set()
+    db_path = git_common_dir / "aragora-agent-state" / "dev_coordination.db"
+    if not db_path.exists():
+        return set()
+
+    now = datetime.now(timezone.utc)
+    active_session_ids: set[str] = set()
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT owner_session_id, expires_at FROM leases WHERE status = ?",
+                ("active",),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return set()
+
+    for owner_session_id, expires_at in rows:
+        session_id = str(owner_session_id or "").strip()
+        if not session_id:
+            continue
+        parsed_expiry = _parse_iso_dt(expires_at)
+        if parsed_expiry is None or parsed_expiry > now:
+            active_session_ids.add(session_id)
+    return active_session_ids
 
 
 def _count_dirty(worktree_path: Path) -> int:
@@ -278,7 +359,7 @@ def build_fleet_rows(repo_root: Path, *, base_branch: str, tail: int) -> list[di
             except (OSError, json.JSONDecodeError):
                 meta = {}
 
-        pid_raw = lock.get("pid")
+        pid_raw = str(lock.get("pid") or meta.get("pid") or "").strip() or None
         ahead, behind = _ahead_behind(worktree_path, base_branch)
         session_id = str(meta.get("session_id") or worktree_path.name)
         rows.append(
@@ -375,6 +456,111 @@ class FleetCoordinationStore:
             ),
         )
 
+    def reap_stale_claims(
+        self,
+        *,
+        stale_threshold_seconds: float = 1800.0,
+    ) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        threshold_seconds = max(0.0, float(stale_threshold_seconds))
+        live_session_ids = {
+            str(row.get("session_id", "")).strip()
+            for row in build_fleet_rows(self.repo_root, base_branch="main", tail=0)
+            if str(row.get("session_id", "")).strip() and bool(row.get("pid_alive"))
+        }
+        active_lease_sessions = _active_lease_session_ids(self.repo_root)
+
+        def mutate(state: dict[str, Any]) -> dict[str, Any]:
+            claims = [c for c in state["claims"] if isinstance(c, dict)]
+            claims_by_session: dict[str, list[dict[str, Any]]] = {}
+            for claim in claims:
+                session_id = str(claim.get("session_id", "")).strip()
+                claims_by_session.setdefault(session_id, []).append(claim)
+
+            stale_sessions: set[str] = set()
+            kept_sessions: list[dict[str, Any]] = []
+            reaped_sessions: list[dict[str, Any]] = []
+            for session_id, session_claims in claims_by_session.items():
+                last_updated: datetime | None = None
+                for claim in session_claims:
+                    claim_ts = _parse_iso_dt(claim.get("updated_at")) or _parse_iso_dt(
+                        claim.get("claimed_at")
+                    )
+                    if claim_ts is None:
+                        continue
+                    if last_updated is None or claim_ts > last_updated:
+                        last_updated = claim_ts
+
+                if session_id in live_session_ids:
+                    kept_sessions.append(
+                        {
+                            "session_id": session_id,
+                            "claim_count": len(session_claims),
+                            "reason": "live_session",
+                        }
+                    )
+                    continue
+
+                if session_id in active_lease_sessions:
+                    kept_sessions.append(
+                        {
+                            "session_id": session_id,
+                            "claim_count": len(session_claims),
+                            "reason": "active_lease",
+                        }
+                    )
+                    continue
+
+                if last_updated is not None:
+                    age_seconds = max(0.0, (now - last_updated).total_seconds())
+                    if age_seconds < threshold_seconds:
+                        kept_sessions.append(
+                            {
+                                "session_id": session_id,
+                                "claim_count": len(session_claims),
+                                "reason": "within_grace_window",
+                                "age_seconds": age_seconds,
+                            }
+                        )
+                        continue
+                else:
+                    age_seconds = None
+
+                stale_sessions.add(session_id)
+                reaped_sessions.append(
+                    {
+                        "session_id": session_id,
+                        "claim_count": len(session_claims),
+                        "reason": "stale_claims",
+                        "last_updated_at": last_updated.isoformat() if last_updated else None,
+                        "age_seconds": age_seconds,
+                    }
+                )
+
+            if not stale_sessions:
+                return {
+                    "released": 0,
+                    "reaped_sessions": [],
+                    "kept_sessions": kept_sessions,
+                    "stale_threshold_seconds": threshold_seconds,
+                }
+
+            kept_claims = [
+                claim
+                for claim in claims
+                if str(claim.get("session_id", "")).strip() not in stale_sessions
+            ]
+            released = len(claims) - len(kept_claims)
+            state["claims"] = kept_claims
+            return {
+                "released": released,
+                "reaped_sessions": reaped_sessions,
+                "kept_sessions": kept_sessions,
+                "stale_threshold_seconds": threshold_seconds,
+            }
+
+        return self._mutate_state(mutate)
+
     def claim_paths(
         self,
         *,
@@ -385,6 +571,7 @@ class FleetCoordinationStore:
     ) -> dict[str, Any]:
         if mode not in {"exclusive", "shared"}:
             raise ValueError("mode must be one of: exclusive, shared")
+        self.reap_stale_claims()
 
         def mutate(state: dict[str, Any]) -> dict[str, Any]:
             claims = [c for c in state["claims"] if isinstance(c, dict)]
