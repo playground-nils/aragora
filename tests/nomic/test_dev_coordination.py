@@ -375,7 +375,7 @@ def test_supervisor_run_tracks_lease_completion_and_decision(store: DevCoordinat
     assert refreshed is not None
     assert refreshed["work_orders"][0]["status"] == "completed"
     assert refreshed["work_orders"][0]["receipt_id"] == receipt.receipt_id
-    assert refreshed["status"] == "active"
+    assert refreshed["status"] == "completed"
 
     store.record_integration_decision(
         receipt_id=receipt.receipt_id,
@@ -478,6 +478,23 @@ def test_record_integration_decision_updates_queue(store: DevCoordinationStore) 
     merge_queue = store.fleet_store.list_merge_queue()
     assert merge_queue[0]["status"] == "integrating"
     assert merge_queue[0]["metadata"]["integration_decision"] == "cherry_pick"
+
+
+def test_scope_violation_is_terminal_for_supervisor_run_status() -> None:
+    assert (
+        DevCoordinationStore._derive_supervisor_run_status([{"status": "scope_violation"}])
+        == "completed"
+    )
+    assert (
+        DevCoordinationStore._derive_supervisor_run_status(
+            [{"status": "scope_violation"}, {"status": "dispatched"}]
+        )
+        == "active"
+    )
+    assert (
+        DevCoordinationStore._derive_supervisor_run_status([{"status": "waiting_conflict"}])
+        == "needs_human"
+    )
 
 
 def test_heartbeat_lease_refreshes_expiry_and_fleet_claim(store: DevCoordinationStore) -> None:

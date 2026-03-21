@@ -448,10 +448,12 @@ def _apply_artifact_projection(lane_state: LaneRunState, artifact: TrancheLaneAr
 def _apply_run_projection(lane_state: LaneRunState, run_dict: dict[str, Any]) -> None:
     run_status = str(run_dict.get("status", "")).strip().lower()
     has_deliverable = False
+    has_scope_violation = False
     for work_order in run_dict.get("work_orders", []):
         if not isinstance(work_order, dict):
             continue
         has_deliverable = has_deliverable or _work_order_has_deliverable(work_order)
+        has_scope_violation = has_scope_violation or _work_order_has_scope_violation(work_order)
         lane_state.worktree_path = _prefer_text(
             lane_state.worktree_path, work_order.get("worktree_path")
         )
@@ -463,6 +465,10 @@ def _apply_run_projection(lane_state: LaneRunState, run_dict: dict[str, Any]) ->
         )
         if lane_state.run_id:
             break
+
+    if has_scope_violation:
+        lane_state.status = LANE_STATUS_NEEDS_HUMAN
+        return
 
     mapped = {
         "planned": LANE_STATUS_PENDING,
@@ -634,6 +640,12 @@ def _work_order_has_deliverable(work_order: dict[str, Any]) -> bool:
     return bool(branch and commit_shas)
 
 
+def _work_order_has_scope_violation(work_order: dict[str, Any]) -> bool:
+    if str(work_order.get("status", "")).strip().lower() == "scope_violation":
+        return True
+    return isinstance(work_order.get("scope_violation"), dict)
+
+
 def _sync_artifacts_from_supervisor_run(
     state: TrancheRunState,
     *,
@@ -681,6 +693,14 @@ def _sync_artifacts_from_supervisor_run(
             metadata["lease_id"] = lease_id
         if deliverable:
             metadata["deliverable"] = deliverable
+        scope_violation = work_order.get("scope_violation")
+        if isinstance(scope_violation, dict):
+            metadata["scope_violation"] = dict(scope_violation)
+        blockers = [
+            str(item).strip() for item in work_order.get("blockers", []) if str(item).strip()
+        ]
+        if blockers:
+            metadata["blockers"] = blockers
         artifact.metadata = metadata
         artifact.run_id = _prefer_text(artifact.run_id, run_dict.get("run_id"))
         artifact.worktree_path = _prefer_text(
@@ -692,6 +712,10 @@ def _sync_artifacts_from_supervisor_run(
                 "Lane delivered a concrete branch/commit and is ready for review."
             )
             artifact.next_actions = ["Run tranche review/integrate for this lane."]
+        elif _work_order_has_scope_violation(work_order):
+            artifact.status = "needs_human"
+            artifact.residual_risk = "Worker edited files outside the permitted scope."
+            artifact.next_actions = ["Inspect scope violation details before any manual recovery."]
         elif str(work_order.get("status", "")).strip().lower() == "needs_human":
             artifact.status = "needs_human"
             artifact.residual_risk = "Worker reached needs_human state."

@@ -2425,12 +2425,27 @@ class DevCoordinationStore:
         statuses = {str(item.get("status", "")).strip() for item in work_orders if item}
         if not statuses:
             return "planned"
-        if statuses <= {"merged", "discarded", "salvage"}:
+        terminal = {
+            "merged",
+            "discarded",
+            "salvage",
+            "completed",
+            "failed",
+            "timed_out",
+            "scope_violation",
+        }
+        if statuses <= terminal:
             return "completed"
-        if "changes_requested" in statuses or "needs_human" in statuses:
+        if (
+            "changes_requested" in statuses
+            or "needs_human" in statuses
+            or "dispatch_failed" in statuses
+        ):
             return "needs_human"
-        if "queued" in statuses or "leased" in statuses or "completed" in statuses:
-            return "active"
+        forward_progress = {"queued", "leased", "dispatched"}
+        non_terminal = statuses - terminal
+        if non_terminal and not (non_terminal & forward_progress):
+            return "needs_human"
         return "active"
 
     def _persist_supervisor_run(
