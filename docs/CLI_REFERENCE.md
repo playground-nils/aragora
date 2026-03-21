@@ -10,6 +10,7 @@ Aragora provides a unified CLI for running multi-agent debates, managing the dec
 | `decide` | Full gold-path pipeline: debate → plan → approve → execute |
 | `serve` | Start the HTTP/WebSocket API server |
 | `analytics` | View debate statistics, agent performance, costs, trends |
+| `api-key` | Securely store, inspect, and validate LLM API keys |
 | `autopilot` | Autonomous GTM task orchestration (publish, outreach, etc.) |
 | `compliance` | EU AI Act compliance tools: audit, classify, export bundles |
 | `consensus` | Detect and inspect consensus across agent proposals |
@@ -119,6 +120,28 @@ aragora serve --demo
 ```bash
 aragora analytics summary
 aragora analytics agents
+```
+
+---
+
+### `aragora api-key`
+
+**Purpose:** Securely store provider API keys for CLI use, list configured providers, and validate stored credentials.
+
+**Usage:** `aragora api-key <set|list|validate> [options]`
+
+**Subcommands:**
+- `set <provider> <key>` — store a provider key in the secure CLI store
+- `list` — show configured status for supported providers
+- `validate <provider>` — run a lightweight validation probe for a configured provider
+
+**Supported providers:** `anthropic`, `openai`, `gemini`, `grok`, `openrouter`, `mistral`, `deepseek`, `kimi`
+
+**Examples:**
+```bash
+aragora api-key set openai sk-...
+aragora api-key list
+aragora api-key validate anthropic
 ```
 
 ---
