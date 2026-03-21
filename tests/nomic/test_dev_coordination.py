@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -46,6 +48,15 @@ def _run(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=True,
     )
+
+
+def _backdate_fleet_claims(store: DevCoordinationStore, *, hours: int = 2) -> None:
+    state = json.loads(store.fleet_store.path.read_text(encoding="utf-8"))
+    old_ts = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    for claim in state.get("claims", []):
+        claim["claimed_at"] = old_ts
+        claim["updated_at"] = old_ts
+    store.fleet_store.path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
 def test_claim_lease_detects_conflicting_scope(store: DevCoordinationStore) -> None:
@@ -96,6 +107,30 @@ def test_claim_lease_detects_existing_fleet_claim(store: DevCoordinationStore) -
         )
 
     assert exc_info.value.conflicts[0]["source"] == "fleet_claim"
+
+
+def test_claim_lease_reaps_stale_fleet_claim_conflicts(store: DevCoordinationStore) -> None:
+    store.fleet_store.claim_paths(
+        session_id="external-session",
+        paths=["aragora/server/auth_checks.py"],
+        branch="codex/external",
+    )
+    _backdate_fleet_claims(store)
+
+    lease = store.claim_lease(
+        task_id="clb-fleet-stale",
+        title="Auth checks hardening",
+        owner_agent="codex",
+        owner_session_id="sess-local",
+        branch="codex/local",
+        worktree_path="/tmp/wt-local",
+        claimed_paths=["aragora/server/auth_checks.py"],
+    )
+
+    assert lease.is_active is True
+    claims = store.fleet_store.list_claims()
+    assert len(claims) == 1
+    assert claims[0]["session_id"] == "sess-local"
 
 
 def test_claim_lease_allows_disjoint_scopes(store: DevCoordinationStore) -> None:
@@ -340,7 +375,7 @@ def test_supervisor_run_tracks_lease_completion_and_decision(store: DevCoordinat
     assert refreshed is not None
     assert refreshed["work_orders"][0]["status"] == "completed"
     assert refreshed["work_orders"][0]["receipt_id"] == receipt.receipt_id
-    assert refreshed["status"] == "active"
+    assert refreshed["status"] == "completed"
 
     store.record_integration_decision(
         receipt_id=receipt.receipt_id,
@@ -443,6 +478,23 @@ def test_record_integration_decision_updates_queue(store: DevCoordinationStore) 
     merge_queue = store.fleet_store.list_merge_queue()
     assert merge_queue[0]["status"] == "integrating"
     assert merge_queue[0]["metadata"]["integration_decision"] == "cherry_pick"
+
+
+def test_scope_violation_is_terminal_for_supervisor_run_status() -> None:
+    assert (
+        DevCoordinationStore._derive_supervisor_run_status([{"status": "scope_violation"}])
+        == "completed"
+    )
+    assert (
+        DevCoordinationStore._derive_supervisor_run_status(
+            [{"status": "scope_violation"}, {"status": "dispatched"}]
+        )
+        == "active"
+    )
+    assert (
+        DevCoordinationStore._derive_supervisor_run_status([{"status": "waiting_conflict"}])
+        == "needs_human"
+    )
 
 
 def test_heartbeat_lease_refreshes_expiry_and_fleet_claim(store: DevCoordinationStore) -> None:

@@ -2,14 +2,52 @@
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
+from aragora.nomic.dev_coordination import DevCoordinationStore
 from aragora.worktree.fleet import (
     FleetCoordinationStore,
     infer_orchestration_pattern,
 )
+
+
+def _run(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(args),
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+
+def _make_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run(repo, "git", "init", "-b", "main")
+    _run(repo, "git", "config", "user.email", "test@example.com")
+    _run(repo, "git", "config", "user.name", "Test User")
+    (repo / "README.md").write_text("hello\n", encoding="utf-8")
+    _run(repo, "git", "add", "README.md")
+    _run(repo, "git", "commit", "-m", "initial")
+    _run(repo, "git", "remote", "add", "origin", str(repo))
+    _run(repo, "git", "update-ref", "refs/remotes/origin/main", "HEAD")
+    return repo
+
+
+def _backdate_all_claims(store: FleetCoordinationStore, *, hours: int = 2) -> None:
+    state = json.loads(store.path.read_text(encoding="utf-8"))
+    old_ts = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    for claim in state.get("claims", []):
+        claim["claimed_at"] = old_ts
+        claim["updated_at"] = old_ts
+    store.path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
 def test_infer_orchestration_pattern_from_framework() -> None:
@@ -151,3 +189,87 @@ def test_update_merge_queue_item_enforces_expected_status(tmp_path: Path) -> Non
             expected_status="queued",
             metadata={"worker_session_id": "integrator-2"},
         )
+
+
+def test_reap_stale_claims_removes_orphaned_sessions(tmp_path: Path) -> None:
+    store = FleetCoordinationStore(tmp_path)
+    store.claim_paths(session_id="stale-session", paths=["aragora/live/**"])
+    _backdate_all_claims(store)
+
+    result = store.reap_stale_claims()
+
+    assert result["released"] == 1
+    assert result["reaped_sessions"][0]["session_id"] == "stale-session"
+    assert store.list_claims() == []
+
+
+def test_reap_stale_claims_keeps_recent_claims_inside_grace_window(tmp_path: Path) -> None:
+    store = FleetCoordinationStore(tmp_path)
+    store.claim_paths(session_id="recent-session", paths=["aragora/live/**"])
+
+    result = store.reap_stale_claims()
+
+    assert result["released"] == 0
+    assert result["kept_sessions"][0]["session_id"] == "recent-session"
+    assert store.list_claims()[0]["session_id"] == "recent-session"
+
+
+def test_reap_stale_claims_keeps_live_worktree_sessions(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path)
+    worktree_path = tmp_path / "session-live"
+    _run(repo, "git", "worktree", "add", "-b", "codex/session-live", str(worktree_path), "HEAD")
+    (worktree_path / ".codex_session_active").write_text(
+        f"pid={os.getpid()}\nsession_id=session-live\n",
+        encoding="utf-8",
+    )
+
+    store = FleetCoordinationStore(repo)
+    store.claim_paths(session_id="session-live", paths=["aragora/live/**"])
+    _backdate_all_claims(store)
+
+    result = store.reap_stale_claims()
+
+    assert result["released"] == 0
+    assert result["kept_sessions"][0]["reason"] == "live_session"
+    assert store.list_claims()[0]["session_id"] == "session-live"
+
+
+def test_reap_stale_claims_keeps_sessions_with_active_leases(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path)
+    store = DevCoordinationStore(repo_root=repo)
+    store.fleet_store.claim_paths(session_id="lease-backed", paths=["aragora/live/**"])
+    _backdate_all_claims(store.fleet_store)
+    lease = store.claim_lease(
+        task_id="lease-backed-task",
+        title="Lease backed lane",
+        owner_agent="codex",
+        owner_session_id="lease-backed",
+        branch="codex/lease-backed",
+        worktree_path="/tmp/wt-lease-backed",
+        claimed_paths=["aragora/server/auth_checks.py"],
+    )
+
+    result = store.fleet_store.reap_stale_claims()
+
+    assert result["released"] == 0
+    assert result["kept_sessions"][0]["reason"] == "active_lease"
+    assert any(claim["session_id"] == "lease-backed" for claim in store.fleet_store.list_claims())
+    store.release_lease(lease.lease_id)
+
+
+def test_claim_paths_reaps_stale_conflicts_before_reporting_conflict(tmp_path: Path) -> None:
+    store = FleetCoordinationStore(tmp_path)
+    store.claim_paths(session_id="stale-session", paths=["aragora/live/**"], mode="exclusive")
+    _backdate_all_claims(store)
+
+    result = store.claim_paths(
+        session_id="fresh-session",
+        paths=["aragora/live/src/app/page.tsx"],
+        mode="exclusive",
+    )
+
+    assert result["conflicts"] == []
+    assert result["claimed"] == ["aragora/live/src/app/page.tsx"]
+    claims = store.list_claims()
+    assert len(claims) == 1
+    assert claims[0]["session_id"] == "fresh-session"
