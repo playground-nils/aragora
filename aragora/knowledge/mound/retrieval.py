@@ -9,6 +9,7 @@ generic query APIs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 from typing import Any
 
 
@@ -34,15 +35,25 @@ def _supports_method(obj: Any, method_name: str) -> bool:
 
 def build_debate_knowledge_query(task: str, supplemental_text: str = "") -> str:
     """Build a bounded KM query from the task and recent debate developments."""
-    task_text = (task or "").strip()
+    task_text = " ".join((task or "").split())
     supplemental = " ".join((supplemental_text or "").split())
     if not supplemental:
-        return task_text
-    if len(supplemental) > MAX_DEBATE_QUERY_CHARS:
-        supplemental = supplemental[:MAX_DEBATE_QUERY_CHARS].rstrip()
+        return task_text[:MAX_DEBATE_QUERY_CHARS].rstrip()
+    prefix = "\n\nRecent debate developments:\n"
     if not task_text:
-        return supplemental
-    return f"{task_text}\n\nRecent debate developments:\n{supplemental}"
+        return supplemental[:MAX_DEBATE_QUERY_CHARS].rstrip()
+
+    query = f"{task_text}{prefix}{supplemental}"
+    if len(query) <= MAX_DEBATE_QUERY_CHARS:
+        return query
+
+    overflow = len(query) - MAX_DEBATE_QUERY_CHARS
+    if overflow > 0 and supplemental:
+        supplemental = supplemental[:-overflow].rstrip() if overflow < len(supplemental) else ""
+        query = f"{task_text}{prefix}{supplemental}" if supplemental else task_text
+    if len(query) <= MAX_DEBATE_QUERY_CHARS:
+        return query
+    return query[:MAX_DEBATE_QUERY_CHARS].rstrip()
 
 
 @dataclass(slots=True)
@@ -75,6 +86,21 @@ class KnowledgeMoundRetriever:
             _supports_method(self.knowledge_mound, method_name)
             for method_name in ("query_with_visibility", "query_semantic", "query")
         )
+
+    def _semantic_query_argument_name(self) -> str:
+        """Resolve whether this KM expects `text=` or legacy `query=`."""
+        method = getattr(self.knowledge_mound, "query_semantic", None)
+        if not callable(method):
+            return "text"
+        try:
+            parameters = inspect.signature(method).parameters
+        except (TypeError, ValueError):
+            return "text"
+        if "text" in parameters:
+            return "text"
+        if "query" in parameters:
+            return "query"
+        return "text"
 
     async def retrieve(
         self,
@@ -152,6 +178,11 @@ class KnowledgeMoundRetriever:
         auth_context: Any | None,
         workspace_id: str | None,
     ) -> Any:
+        effective_workspace_id = workspace_id
+        if effective_workspace_id is None and auth_context is not None:
+            auth_workspace_id = getattr(auth_context, "workspace_id", "") or ""
+            effective_workspace_id = str(auth_workspace_id).strip() or None
+
         if auth_context and _supports_method(self.knowledge_mound, "query_with_visibility"):
             actor_id = getattr(auth_context, "user_id", "") or ""
             actor_workspace_id = getattr(auth_context, "workspace_id", "") or ""
@@ -171,13 +202,14 @@ class KnowledgeMoundRetriever:
                 )
 
         if _supports_method(self.knowledge_mound, "query_semantic"):
+            semantic_query_arg = self._semantic_query_argument_name()
             kwargs = {
-                "text": query,
+                semantic_query_arg: query,
                 "limit": limit,
                 "min_confidence": self.min_confidence,
             }
-            if workspace_id is not None:
-                kwargs["workspace_id"] = workspace_id
+            if effective_workspace_id is not None:
+                kwargs["workspace_id"] = effective_workspace_id
             return await self.knowledge_mound.query_semantic(**kwargs)
 
         kwargs = {
@@ -185,8 +217,8 @@ class KnowledgeMoundRetriever:
             "sources": ("all",),
             "limit": limit,
         }
-        if workspace_id is not None:
-            kwargs["workspace_id"] = workspace_id
+        if effective_workspace_id is not None:
+            kwargs["workspace_id"] = effective_workspace_id
         return await self.knowledge_mound.query(**kwargs)
 
     @staticmethod

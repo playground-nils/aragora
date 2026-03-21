@@ -74,6 +74,64 @@ class TestKnowledgeMoundRetriever:
         )
 
     @pytest.mark.asyncio
+    async def test_semantic_fallback_uses_auth_workspace_when_visibility_unavailable(self):
+        item = _make_item()
+        mound = SimpleNamespace(
+            query_semantic=AsyncMock(return_value=[item]),
+        )
+        retriever = KnowledgeMoundRetriever(mound)
+        auth_context = SimpleNamespace(user_id="user-1", workspace_id="ws-9", org_id="org-1")
+
+        result = await retriever.retrieve("rate limiting", auth_context=auth_context, limit=2)
+
+        assert result is not None
+        mound.query_semantic.assert_awaited_once_with(
+            text="rate limiting",
+            limit=2,
+            min_confidence=0.5,
+            workspace_id="ws-9",
+        )
+
+    @pytest.mark.asyncio
+    async def test_supports_legacy_query_semantic_signature(self):
+        class LegacyMound:
+            def __init__(self):
+                self.calls: list[dict[str, object]] = []
+
+            async def query_semantic(
+                self,
+                query: str,
+                limit: int = 10,
+                min_confidence: float = 0.0,
+                workspace_id: str | None = None,
+            ):
+                self.calls.append(
+                    {
+                        "query": query,
+                        "limit": limit,
+                        "min_confidence": min_confidence,
+                        "workspace_id": workspace_id,
+                    }
+                )
+                return [_make_item(item_id="legacy-1")]
+
+        mound = LegacyMound()
+        retriever = KnowledgeMoundRetriever(mound)
+
+        result = await retriever.retrieve("policy", workspace_id="ws-legacy", limit=3)
+
+        assert result is not None
+        assert result.item_ids == ["legacy-1"]
+        assert mound.calls == [
+            {
+                "query": "policy",
+                "limit": 3,
+                "min_confidence": 0.5,
+                "workspace_id": "ws-legacy",
+            }
+        ]
+
+    @pytest.mark.asyncio
     async def test_retries_after_initialize_when_query_reports_uninitialized(self):
         item = _make_item()
         mound = SimpleNamespace(
@@ -101,3 +159,13 @@ def test_build_debate_knowledge_query_includes_recent_developments():
     assert query.startswith("Design a rate limiter")
     assert "Recent debate developments:" in query
     assert "fairness concerns" in query
+
+
+def test_build_debate_knowledge_query_stays_bounded_when_inputs_are_large():
+    query = build_debate_knowledge_query(
+        "Task " * 500,
+        "Supplemental " * 500,
+    )
+
+    assert len(query) <= 1600
+    assert query.startswith("Task Task")
