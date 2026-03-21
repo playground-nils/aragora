@@ -210,6 +210,7 @@ async def watch_tick(
         state,
         store=resolved_store,
         repo_root=repo_root,
+        artifact_store=artifact_store,
     )
     artifact_map = _resolve_artifacts(
         state.manifest_id,
@@ -395,6 +396,7 @@ async def _collect_and_refresh_supervisor_runs(
     *,
     store: Any | None,
     repo_root: Path | None,
+    artifact_store: TrancheArtifactStore | Any | None = None,
 ) -> None:
     if store is None or repo_root is None:
         return
@@ -420,11 +422,17 @@ async def _collect_and_refresh_supervisor_runs(
                 exc,
             )
         try:
-            supervisor.refresh_run(run_id)
+            refreshed = supervisor.refresh_run(run_id)
         except KeyError:
             continue
         except Exception as exc:
             logger.warning("watch_tick failed refreshing run %s: %s", run_id, exc)
+            continue
+        _sync_artifacts_from_supervisor_run(
+            state,
+            run_dict=refreshed.to_dict() if hasattr(refreshed, "to_dict") else {},
+            artifact_store=artifact_store,
+        )
 
 
 def _apply_artifact_projection(lane_state: LaneRunState, artifact: TrancheLaneArtifact) -> None:
@@ -439,11 +447,34 @@ def _apply_artifact_projection(lane_state: LaneRunState, artifact: TrancheLaneAr
 
 def _apply_run_projection(lane_state: LaneRunState, run_dict: dict[str, Any]) -> None:
     run_status = str(run_dict.get("status", "")).strip().lower()
+    has_deliverable = False
+    has_scope_violation = False
+    for work_order in run_dict.get("work_orders", []):
+        if not isinstance(work_order, dict):
+            continue
+        has_deliverable = has_deliverable or _work_order_has_deliverable(work_order)
+        has_scope_violation = has_scope_violation or _work_order_has_scope_violation(work_order)
+        lane_state.worktree_path = _prefer_text(
+            lane_state.worktree_path, work_order.get("worktree_path")
+        )
+        lane_state.receipt_id = _prefer_text(lane_state.receipt_id, work_order.get("receipt_id"))
+        lane_state.lease_id = _prefer_text(lane_state.lease_id, work_order.get("lease_id"))
+        lane_state.pr_url = _prefer_text(
+            lane_state.pr_url,
+            work_order.get("pr_url") or work_order.get("adopted_pr"),
+        )
+        if lane_state.run_id:
+            break
+
+    if has_scope_violation:
+        lane_state.status = LANE_STATUS_NEEDS_HUMAN
+        return
+
     mapped = {
         "planned": LANE_STATUS_PENDING,
         "active": LANE_STATUS_RUNNING,
         "completed": lane_state.status,
-        "needs_human": LANE_STATUS_NEEDS_HUMAN,
+        "needs_human": (LANE_STATUS_COMPLETED if has_deliverable else LANE_STATUS_NEEDS_HUMAN),
     }.get(run_status)
     if mapped and lane_state.status in {
         LANE_STATUS_PENDING,
@@ -451,17 +482,6 @@ def _apply_run_projection(lane_state: LaneRunState, run_dict: dict[str, Any]) ->
         LANE_STATUS_RUNNING,
     }:
         lane_state.status = mapped
-
-    for work_order in run_dict.get("work_orders", []):
-        if not isinstance(work_order, dict):
-            continue
-        lane_state.worktree_path = _prefer_text(
-            lane_state.worktree_path, work_order.get("worktree_path")
-        )
-        lane_state.receipt_id = _prefer_text(lane_state.receipt_id, work_order.get("receipt_id"))
-        lane_state.lease_id = _prefer_text(lane_state.lease_id, work_order.get("lease_id"))
-        if lane_state.run_id:
-            break
 
 
 def _apply_lease_projection(lane_state: LaneRunState, lease: Any) -> None:
@@ -608,6 +628,125 @@ def _prefer_text(current: Any, candidate: Any) -> str | None:
 def _optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _work_order_has_deliverable(work_order: dict[str, Any]) -> bool:
+    if _optional_text(work_order.get("pr_url")) or _optional_text(work_order.get("adopted_pr")):
+        return True
+    branch = _optional_text(work_order.get("branch"))
+    commit_shas = [
+        str(item).strip() for item in work_order.get("commit_shas", []) if str(item).strip()
+    ]
+    return bool(branch and commit_shas)
+
+
+def _work_order_has_scope_violation(work_order: dict[str, Any]) -> bool:
+    if str(work_order.get("status", "")).strip().lower() == "scope_violation":
+        return True
+    return isinstance(work_order.get("scope_violation"), dict)
+
+
+def _sync_artifacts_from_supervisor_run(
+    state: TrancheRunState,
+    *,
+    run_dict: dict[str, Any],
+    artifact_store: TrancheArtifactStore | Any | None,
+) -> None:
+    if artifact_store is None or not isinstance(run_dict, dict):
+        return
+    work_orders = [item for item in run_dict.get("work_orders", []) if isinstance(item, dict)]
+    if not work_orders:
+        return
+    for work_order in work_orders:
+        lane_id = _work_order_lane_id(state, work_order)
+        if not lane_id:
+            continue
+        artifact = _load_artifact_for_lane(artifact_store, state.manifest_id, lane_id)
+        if artifact is None:
+            continue
+        metadata = artifact.metadata if isinstance(artifact.metadata, dict) else {}
+        deliverable = metadata.get("deliverable", {})
+        if not isinstance(deliverable, dict):
+            deliverable = {}
+        branch = _optional_text(work_order.get("branch"))
+        pr_url = _optional_text(work_order.get("pr_url")) or _optional_text(
+            work_order.get("adopted_pr")
+        )
+        commit_shas = [
+            str(item).strip() for item in work_order.get("commit_shas", []) if str(item).strip()
+        ]
+        if branch:
+            metadata["branch"] = branch
+            deliverable["branch"] = branch
+        if pr_url:
+            metadata["pr_url"] = pr_url
+            deliverable["pr_url"] = pr_url
+            if pr_url not in artifact.urls:
+                artifact.urls = [*artifact.urls, pr_url]
+        if commit_shas:
+            deliverable["commit_shas"] = list(commit_shas)
+        receipt_id = _optional_text(work_order.get("receipt_id"))
+        if receipt_id:
+            metadata["receipt_id"] = receipt_id
+        lease_id = _optional_text(work_order.get("lease_id"))
+        if lease_id:
+            metadata["lease_id"] = lease_id
+        if deliverable:
+            metadata["deliverable"] = deliverable
+        scope_violation = work_order.get("scope_violation")
+        if isinstance(scope_violation, dict):
+            metadata["scope_violation"] = dict(scope_violation)
+        blockers = [
+            str(item).strip() for item in work_order.get("blockers", []) if str(item).strip()
+        ]
+        if blockers:
+            metadata["blockers"] = blockers
+        artifact.metadata = metadata
+        artifact.run_id = _prefer_text(artifact.run_id, run_dict.get("run_id"))
+        artifact.worktree_path = _prefer_text(
+            artifact.worktree_path, work_order.get("worktree_path")
+        )
+        if _work_order_has_deliverable(work_order):
+            artifact.status = "completed"
+            artifact.residual_risk = (
+                "Lane delivered a concrete branch/commit and is ready for review."
+            )
+            artifact.next_actions = ["Run tranche review/integrate for this lane."]
+        elif _work_order_has_scope_violation(work_order):
+            artifact.status = "needs_human"
+            artifact.residual_risk = "Worker edited files outside the permitted scope."
+            artifact.next_actions = ["Inspect scope violation details before any manual recovery."]
+        elif str(work_order.get("status", "")).strip().lower() == "needs_human":
+            artifact.status = "needs_human"
+            artifact.residual_risk = "Worker reached needs_human state."
+            artifact.next_actions = ["Worker reached needs_human state."]
+        artifact.timestamp = _utcnow().isoformat()
+        artifact_store.save(state.manifest_id, artifact)
+
+
+def _work_order_lane_id(state: TrancheRunState, work_order: dict[str, Any]) -> str | None:
+    work_order_id = _optional_text(work_order.get("work_order_id"))
+    if work_order_id and work_order_id in state.lane_states:
+        return work_order_id
+    if len(state.lane_states) == 1:
+        return next(iter(state.lane_states))
+    return None
+
+
+def _load_artifact_for_lane(
+    artifact_store: TrancheArtifactStore | Any,
+    manifest_id: str,
+    lane_id: str,
+) -> TrancheLaneArtifact | None:
+    if hasattr(artifact_store, "load"):
+        artifact = artifact_store.load(manifest_id, lane_id)
+        if artifact is not None:
+            return artifact
+    if hasattr(artifact_store, "list"):
+        for artifact in artifact_store.list(manifest_id):
+            if getattr(artifact, "lane_id", None) == lane_id:
+                return artifact
+    return None
 
 
 def _watch_review_status(status: str) -> str:

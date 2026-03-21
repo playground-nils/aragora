@@ -1145,6 +1145,7 @@ class DevCoordinationStore:
         owner_session_id: str | None = None,
         exclude_lease_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        self.fleet_store.reap_stale_claims()
         normalized_globs = [_normalize_claim(item) for item in allowed_globs if str(item).strip()]
         normalized_paths = [_normalize_claim(item) for item in claimed_paths if str(item).strip()]
         conflicts: list[dict[str, Any]] = []
@@ -1214,6 +1215,7 @@ class DevCoordinationStore:
         ]
         self.reap_expired_leases()
         self.reap_stale_leases()
+        self.fleet_store.reap_stale_claims()
         now = _utcnow()
         conn = self._connect()
         try:
@@ -2423,12 +2425,27 @@ class DevCoordinationStore:
         statuses = {str(item.get("status", "")).strip() for item in work_orders if item}
         if not statuses:
             return "planned"
-        if statuses <= {"merged", "discarded", "salvage"}:
+        terminal = {
+            "merged",
+            "discarded",
+            "salvage",
+            "completed",
+            "failed",
+            "timed_out",
+            "scope_violation",
+        }
+        if statuses <= terminal:
             return "completed"
-        if "changes_requested" in statuses or "needs_human" in statuses:
+        if (
+            "changes_requested" in statuses
+            or "needs_human" in statuses
+            or "dispatch_failed" in statuses
+        ):
             return "needs_human"
-        if "queued" in statuses or "leased" in statuses or "completed" in statuses:
-            return "active"
+        forward_progress = {"queued", "leased", "dispatched"}
+        non_terminal = statuses - terminal
+        if non_terminal and not (non_terminal & forward_progress):
+            return "needs_human"
         return "active"
 
     def _persist_supervisor_run(

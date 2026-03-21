@@ -1435,6 +1435,8 @@ def _lane_spec_from_manifest(manifest: TrancheManifest, lane: TrancheLane) -> An
     prompt = _optional_text(lane.metadata.get("prompt"))
     if not prompt:
         raise ValueError(f"Lane {lane.lane_id} is missing prompt metadata.")
+    target_agent = _lane_target_agent(lane, fallback="codex")
+    review_model = _lane_review_model(lane, target_agent=target_agent)
     acceptance = _metadata_string_list(lane, "acceptance_criteria") or [
         f"Run and satisfy: {item}" for item in lane.verification_commands
     ]
@@ -1443,6 +1445,26 @@ def _lane_spec_from_manifest(manifest: TrancheManifest, lane: TrancheLane) -> An
     file_scope_hints = _metadata_string_list(lane, "file_scope_hints") or list(
         lane.allowed_write_scope
     )
+    explicit_work_order = {
+        "work_order_id": lane.lane_id,
+        "title": _lane_title(lane),
+        "description": prompt,
+        "file_scope": list(dict.fromkeys(file_scope_hints)),
+        "target_agent": target_agent,
+        "reviewer_agent": review_model,
+        "expected_tests": list(lane.verification_commands),
+        "success_criteria": {
+            "acceptance_criteria": list(dict.fromkeys(acceptance)),
+            "tests": list(lane.verification_commands),
+        },
+        "estimated_complexity": str(lane.metadata.get("estimated_complexity", "medium")).strip()
+        or "medium",
+        "approval_required": bool(lane.metadata.get("requires_approval", True)),
+        "metadata": {
+            "tranche_manifest_id": manifest.manifest_id,
+            "tranche_lane_id": lane.lane_id,
+        },
+    }
     return SwarmSpec(
         raw_goal=_lane_execution_prompt(manifest, lane, prompt=prompt),
         refined_goal=_lane_execution_prompt(manifest, lane, prompt=prompt),
@@ -1450,6 +1472,7 @@ def _lane_spec_from_manifest(manifest: TrancheManifest, lane: TrancheLane) -> An
         constraints=list(dict.fromkeys(constraints)),
         budget_limit_usd=_lane_budget_limit_usd(lane),
         file_scope_hints=list(dict.fromkeys(file_scope_hints)),
+        work_orders=[explicit_work_order],
         requires_approval=bool(lane.metadata.get("requires_approval", True)),
         user_expertise="developer",
         estimated_complexity=str(lane.metadata.get("estimated_complexity", "medium")).strip()

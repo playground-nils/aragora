@@ -65,6 +65,10 @@ class _FakeArtifactStore:
         assert manifest_id == "m1"
         return list(self._artifacts.values())
 
+    def load(self, manifest_id: str, lane_id: str) -> TrancheLaneArtifact | None:
+        assert manifest_id == "m1"
+        return self._artifacts.get(lane_id)
+
     def save(self, manifest_id: str, artifact: TrancheLaneArtifact) -> None:
         assert manifest_id == "m1"
         self._artifacts[artifact.lane_id] = artifact
@@ -267,6 +271,38 @@ def test_refresh_marks_needs_human_for_request_changes_decision():
     refreshed = refresh_tranche_state(state, artifacts={"a": artifact}, store=store)
 
     assert refreshed.lane_states["a"].status == "needs_human"
+    assert refreshed.status == "needs_human"
+
+
+def test_refresh_marks_scope_violation_run_needs_human() -> None:
+    state = _make_state(lane_statuses={"a": "running"})
+    state.lane_states["a"].run_id = "run-1"
+    store = _FakeCoordinationStore(
+        runs={
+            "run-1": {
+                "run_id": "run-1",
+                "status": "completed",
+                "work_orders": [
+                    {
+                        "work_order_id": "a",
+                        "status": "scope_violation",
+                        "worktree_path": "/tmp/worktree-a",
+                        "lease_id": "lease-a",
+                        "scope_violation": {
+                            "violations": [{"path": "aragora/server/handlers/receipts.py"}]
+                        },
+                    }
+                ],
+            }
+        }
+    )
+
+    refreshed = refresh_tranche_state(state, store=store)
+
+    lane = refreshed.lane_states["a"]
+    assert lane.status == "needs_human"
+    assert lane.worktree_path == "/tmp/worktree-a"
+    assert lane.lease_id == "lease-a"
     assert refreshed.status == "needs_human"
 
 
@@ -500,6 +536,161 @@ async def test_watch_tick_collects_finished_supervisor_results_before_projection
 
     assert new_state.lane_states["a"].status == "needs_human"
     assert new_state.status == "needs_human"
+
+
+@pytest.mark.asyncio
+async def test_watch_tick_promotes_deliverable_from_needs_human_run_and_syncs_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aragora.swarm.tranche_watch import watch_tick
+
+    state = _make_state(lane_statuses={"a": "running"})
+    state.lane_states["a"].run_id = "run-1"
+    artifact_store = _FakeArtifactStore(
+        {
+            "a": _make_artifact(
+                lane_id="a",
+                status="running",
+                run_id="run-1",
+                metadata={"branch": "codex/tranche-old"},
+            )
+        }
+    )
+    store = _FakeCoordinationStore(
+        runs={
+            "run-1": {
+                "run_id": "run-1",
+                "status": "active",
+                "work_orders": [{"work_order_id": "a"}],
+            }
+        }
+    )
+
+    class _FakeSupervisor:
+        def __init__(self, repo_root=None, store=None, **kwargs) -> None:
+            self.store = store
+
+        async def collect_finished_results(self, run_id: str):
+            self.store._runs[run_id] = {
+                "run_id": run_id,
+                "status": "needs_human",
+                "work_orders": [
+                    {
+                        "work_order_id": "a",
+                        "status": "needs_human",
+                        "branch": "codex/swarm-a",
+                        "commit_shas": ["abc123"],
+                        "worktree_path": "/tmp/worker-a",
+                        "lease_id": "lease-a",
+                    }
+                ],
+            }
+            return []
+
+        def refresh_run(self, run_id: str):
+            return SimpleNamespace(to_dict=lambda: dict(self.store._runs[run_id]))
+
+    review_fn = AsyncMock(return_value={"status": "passed"})
+    integrate_fn = AsyncMock(
+        return_value={
+            "recommendation": "awaiting_checks",
+            "pr_url": "https://github.com/org/repo/pull/42",
+        }
+    )
+
+    monkeypatch.setattr("aragora.swarm.supervisor.SwarmSupervisor", _FakeSupervisor)
+
+    new_state = await watch_tick(
+        state,
+        manifest=SimpleNamespace(manifest_id="m1"),
+        autonomy_mode="adaptive",
+        artifact_store=artifact_store,
+        store=store,
+        repo_root=tmp_path,
+        review_fn=review_fn,
+        integrate_fn=integrate_fn,
+    )
+
+    assert new_state.lane_states["a"].status == "waiting_for_merge"
+    saved_artifact = artifact_store.load("m1", "a")
+    assert saved_artifact is not None
+    assert saved_artifact.status == "review_passed"
+    assert saved_artifact.metadata["branch"] == "codex/swarm-a"
+    assert saved_artifact.metadata["deliverable"]["branch"] == "codex/swarm-a"
+    assert saved_artifact.metadata["deliverable"]["commit_shas"] == ["abc123"]
+    assert review_fn.await_count == 1
+    assert integrate_fn.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_watch_tick_marks_scope_violation_needs_human_and_syncs_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aragora.swarm.tranche_watch import watch_tick
+
+    state = _make_state(lane_statuses={"a": "running"})
+    state.lane_states["a"].run_id = "run-1"
+    artifact_store = _FakeArtifactStore({"a": _make_artifact(lane_id="a", status="running")})
+    store = _FakeCoordinationStore(
+        runs={
+            "run-1": {
+                "run_id": "run-1",
+                "status": "active",
+                "work_orders": [{"work_order_id": "a", "status": "leased"}],
+            }
+        }
+    )
+
+    class _FakeSupervisor:
+        def __init__(self, repo_root=None, store=None, **kwargs) -> None:
+            self.store = store
+
+        async def collect_finished_results(self, run_id: str):
+            self.store._runs[run_id] = {
+                "run_id": run_id,
+                "status": "completed",
+                "work_orders": [
+                    {
+                        "work_order_id": "a",
+                        "status": "scope_violation",
+                        "branch": "codex/swarm-a",
+                        "worktree_path": "/tmp/worker-a",
+                        "lease_id": "lease-a",
+                        "scope_violation": {
+                            "violations": [{"path": "aragora/server/handlers/receipts.py"}]
+                        },
+                        "blockers": ["worker edited files outside permitted scope"],
+                    }
+                ],
+            }
+            return []
+
+        def refresh_run(self, run_id: str):
+            return SimpleNamespace(to_dict=lambda: dict(self.store._runs[run_id]))
+
+    monkeypatch.setattr("aragora.swarm.supervisor.SwarmSupervisor", _FakeSupervisor)
+
+    new_state = await watch_tick(
+        state,
+        manifest=SimpleNamespace(manifest_id="m1"),
+        autonomy_mode="adaptive",
+        artifact_store=artifact_store,
+        store=store,
+        repo_root=tmp_path,
+    )
+
+    assert new_state.lane_states["a"].status == "needs_human"
+    assert new_state.status == "needs_human"
+    saved_artifact = artifact_store.load("m1", "a")
+    assert saved_artifact is not None
+    assert saved_artifact.status == "needs_human"
+    assert saved_artifact.metadata["branch"] == "codex/swarm-a"
+    assert saved_artifact.metadata["scope_violation"]["violations"][0]["path"].endswith(
+        "receipts.py"
+    )
+    assert saved_artifact.metadata["blockers"] == ["worker edited files outside permitted scope"]
 
 
 @pytest.mark.asyncio

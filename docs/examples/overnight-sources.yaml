@@ -18,6 +18,8 @@ sources:
     objective: Refresh the design partner program materials with current V14 benchmark evidence, keeping the tranche bounded to documentation and supporting reference updates only.
     allowed_write_scope:
       - docs/**
+    verification_commands:
+      - python3 -m pytest tests/swarm/test_tranche_queue.py -q
 
   - id: product-loop-cli-slice
     kind: issue
@@ -32,6 +34,8 @@ sources:
       - aragora/cli/**
       - tests/cli/**
       - docs/**
+    verification_commands:
+      - python3 -m pytest tests/cli/test_setup.py -q
 
   - id: core-pages-functional-slice
     kind: issue
@@ -47,6 +51,8 @@ sources:
       - tests/e2e/**
       - tests/handlers/**
       - docs/**
+    verification_commands:
+      - python3 -m pytest tests/swarm/test_tranche_e2e.py -q
 
   - id: knowledge-mound-enrichment-slice
     kind: issue
@@ -64,6 +70,8 @@ sources:
       - tests/debate/**
       - tests/handlers/**
       - docs/**
+    verification_commands:
+      - python3 -m pytest tests/rlm/test_knowledge_mound_adapter.py -q
 
   - id: integrations-ui-truthful-status-slice
     kind: issue
@@ -80,3 +88,5 @@ sources:
       - tests/e2e/**
       - tests/handlers/**
       - docs/**
+    verification_commands:
+      - python3 -m pytest tests/handlers/features/test_integrations.py -q

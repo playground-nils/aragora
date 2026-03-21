@@ -804,6 +804,49 @@ async def test_artifact_from_run_result_persists_receipt_and_lease_ids(tmp_path:
     assert artifact.metadata["lease_id"] == "lease-abc"
 
 
+def test_lane_spec_from_manifest_emits_explicit_single_work_order() -> None:
+    from aragora.swarm.tranche import TrancheManifest, _lane_spec_from_manifest
+
+    manifest = TrancheManifest.from_dict(
+        {
+            "manifest_id": "overnight",
+            "repo": {
+                "name": "synaptent/aragora",
+                "root": "/tmp/repo",
+                "base_ref": "origin/main",
+            },
+            "objective": "Ship one bounded overnight slice.",
+            "lanes": [
+                {
+                    "lane_id": "product-loop-cli-slice",
+                    "owner_role": "implementation_engineer",
+                    "allowed_write_scope": ["aragora/cli/**", "tests/cli/**"],
+                    "verification_commands": [
+                        "python3 -m pytest tests/cli/test_api_key_command.py -q"
+                    ],
+                    "prompt": "Implement one bounded CLI slice.",
+                    "title": "Product loop CLI slice",
+                    "target_agent": "codex",
+                    "review_model": "claude",
+                }
+            ],
+            "terminal_outcomes": {"success": {"definition": "done"}},
+        }
+    )
+
+    spec = _lane_spec_from_manifest(manifest, manifest.lane("product-loop-cli-slice"))
+
+    assert len(spec.work_orders) == 1
+    work_order = spec.work_orders[0]
+    assert work_order["work_order_id"] == "product-loop-cli-slice"
+    assert work_order["file_scope"] == ["aragora/cli/**", "tests/cli/**"]
+    assert work_order["expected_tests"] == [
+        "python3 -m pytest tests/cli/test_api_key_command.py -q"
+    ]
+    assert work_order["target_agent"] == "codex"
+    assert work_order["reviewer_agent"] == "claude"
+
+
 @pytest.mark.asyncio
 async def test_run_reprepares_failed_artifact_before_dispatch(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
