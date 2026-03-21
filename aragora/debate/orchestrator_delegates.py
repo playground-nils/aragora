@@ -13,11 +13,15 @@ from typing import TYPE_CHECKING, Any
 
 from aragora.core import Agent, Critique, DebateResult, Message, Vote
 from aragora.debate.config.defaults import DEBATE_DEFAULTS
+from aragora.knowledge.mound.retrieval import build_debate_knowledge_query
 
 if TYPE_CHECKING:
     from aragora.debate.context import DebateContext
     from aragora.reasoning.belief import BeliefNetwork
     from aragora.events.security_events import SecurityEvent
+
+
+logger = logging.getLogger(__name__)
 
 
 class ArenaDelegatesMixin:
@@ -323,13 +327,77 @@ class ArenaDelegatesMixin:
         self, combined_text: str, ctx: DebateContext, round_num: int
     ) -> int:
         """Refresh evidence based on claims made during a debate round."""
-        return await self._context_delegator.refresh_evidence_for_round(
+        evidence_count = await self._context_delegator.refresh_evidence_for_round(
             combined_text=combined_text,
             evidence_collector=self.evidence_collector,
             task=self.env.task if self.env else "",
             evidence_store_callback=self._store_evidence_in_memory,
             prompt_builder=self.prompt_builder,
         )
+        await self._refresh_knowledge_context_for_round(combined_text, ctx, round_num)
+        return evidence_count
+
+    async def _refresh_knowledge_context_for_round(
+        self,
+        combined_text: str,
+        ctx: DebateContext,
+        round_num: int,
+    ) -> int:
+        """Refresh KM-backed background evidence before the revision phase."""
+        km_manager = getattr(self, "_km_manager", None)
+        if not km_manager or not getattr(self, "enable_knowledge_retrieval", False):
+            return 0
+
+        query = build_debate_knowledge_query(self.env.task if self.env else "", combined_text)
+        if not query:
+            return 0
+
+        try:
+            knowledge_context = await km_manager.fetch_context(
+                query,
+                limit=5,
+                auth_context=getattr(self, "auth_context", None),
+            )
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logger.debug("[knowledge_mound] Round refresh failed: %s", exc)
+            return 0
+
+        if not knowledge_context:
+            return 0
+
+        knowledge_ops = getattr(self, "_knowledge_ops", None)
+        item_ids = list(getattr(knowledge_ops, "_last_km_item_ids", []) or [])
+        tracked_item_ids = list(getattr(ctx, "_km_item_ids_used", []) or [])
+        merged_item_ids = tracked_item_ids + [
+            item_id for item_id in item_ids if item_id not in tracked_item_ids
+        ]
+        ctx._km_item_ids_used = merged_item_ids  # type: ignore[attr-defined]
+
+        prompt_builder = getattr(ctx, "_prompt_builder", None) or getattr(
+            self, "prompt_builder", None
+        )
+        round_context = f"### Round {round_num} Background Evidence\n{knowledge_context}"
+        if prompt_builder and hasattr(prompt_builder, "set_knowledge_context"):
+            existing_context = ""
+            if hasattr(prompt_builder, "get_knowledge_mound_context"):
+                existing_context = prompt_builder.get_knowledge_mound_context() or ""
+            if round_context not in existing_context:
+                merged_context = (
+                    f"{existing_context}\n\n{round_context}".strip()
+                    if existing_context
+                    else round_context
+                )
+            else:
+                merged_context = existing_context
+            prompt_builder.set_knowledge_context(merged_context, merged_item_ids)
+        else:
+            if round_context not in (ctx.env.context or ""):
+                if ctx.env.context:
+                    ctx.env.context += "\n\n" + round_context
+                else:
+                    ctx.env.context = round_context
+
+        return len(item_ids)
 
     # ------------------------------------------------------------------
     # Roles Manager Delegates

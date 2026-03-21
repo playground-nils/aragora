@@ -148,6 +148,13 @@ from aragora.knowledge.mound.websocket_bridge import (
     create_km_bridge,
 )
 
+# Debate/context retrieval helpers
+from aragora.knowledge.mound.retrieval import (
+    KnowledgeMoundRetriever,
+    RetrievedKnowledgeContext,
+    build_debate_knowledge_query,
+)
+
 # Federated queries across adapters
 from aragora.knowledge.mound.federated_query import (
     FederatedQueryAggregator,
@@ -395,6 +402,10 @@ __all__ = [
     "get_km_bridge",
     "set_km_bridge",
     "create_km_bridge",
+    # Debate retrieval helpers
+    "KnowledgeMoundRetriever",
+    "RetrievedKnowledgeContext",
+    "build_debate_knowledge_query",
     # Federated queries
     "FederatedQueryAggregator",
     "FederatedQueryResult",

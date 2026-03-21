@@ -1,0 +1,171 @@
+"""Tests for the reusable Knowledge Mound retrieval interface."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from aragora.knowledge.mound.retrieval import (
+    KnowledgeMoundRetriever,
+    build_debate_knowledge_query,
+)
+
+
+def _make_item(
+    *,
+    item_id: str = "km-1",
+    source: str = "debate",
+    confidence: float | str = 0.9,
+    content: str = "Use shared rate-limit buckets.",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=item_id,
+        source=source,
+        confidence=confidence,
+        content=content,
+    )
+
+
+class TestKnowledgeMoundRetriever:
+    @pytest.mark.asyncio
+    async def test_prefers_visibility_query_with_auth_context(self):
+        item = _make_item()
+        mound = SimpleNamespace(
+            query_with_visibility=AsyncMock(return_value=SimpleNamespace(items=[item])),
+            query_semantic=AsyncMock(),
+            query=AsyncMock(),
+        )
+        retriever = KnowledgeMoundRetriever(mound)
+        auth_context = SimpleNamespace(user_id="user-1", workspace_id="ws-1", org_id="org-1")
+
+        result = await retriever.retrieve("rate limiting", auth_context=auth_context, limit=4)
+
+        assert result is not None
+        assert result.item_ids == ["km-1"]
+        assert "KNOWLEDGE MOUND CONTEXT" in result.formatted_context
+        mound.query_with_visibility.assert_awaited_once_with(
+            "rate limiting",
+            actor_id="user-1",
+            actor_workspace_id="ws-1",
+            actor_org_id="org-1",
+            limit=4,
+        )
+        mound.query_semantic.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_generic_query(self):
+        item = _make_item(source="fact", confidence="verified")
+        mound = SimpleNamespace(
+            query=AsyncMock(return_value=SimpleNamespace(items=[item])),
+        )
+        retriever = KnowledgeMoundRetriever(mound)
+
+        result = await retriever.retrieve("policy", limit=3)
+
+        assert result is not None
+        assert result.item_ids == ["km-1"]
+        assert "**[fact]** (confidence: 95%)" in result.formatted_context
+        mound.query.assert_awaited_once_with(
+            query="policy",
+            sources=("all",),
+            limit=3,
+        )
+
+    @pytest.mark.asyncio
+    async def test_semantic_fallback_uses_auth_workspace_when_visibility_unavailable(self):
+        item = _make_item()
+        mound = SimpleNamespace(
+            query_semantic=AsyncMock(return_value=[item]),
+        )
+        retriever = KnowledgeMoundRetriever(mound)
+        auth_context = SimpleNamespace(user_id="user-1", workspace_id="ws-9", org_id="org-1")
+
+        result = await retriever.retrieve("rate limiting", auth_context=auth_context, limit=2)
+
+        assert result is not None
+        mound.query_semantic.assert_awaited_once_with(
+            text="rate limiting",
+            limit=2,
+            min_confidence=0.5,
+            workspace_id="ws-9",
+        )
+
+    @pytest.mark.asyncio
+    async def test_supports_legacy_query_semantic_signature(self):
+        class LegacyMound:
+            def __init__(self):
+                self.calls: list[dict[str, object]] = []
+
+            async def query_semantic(
+                self,
+                query: str,
+                limit: int = 10,
+                min_confidence: float = 0.0,
+                workspace_id: str | None = None,
+            ):
+                self.calls.append(
+                    {
+                        "query": query,
+                        "limit": limit,
+                        "min_confidence": min_confidence,
+                        "workspace_id": workspace_id,
+                    }
+                )
+                return [_make_item(item_id="legacy-1")]
+
+        mound = LegacyMound()
+        retriever = KnowledgeMoundRetriever(mound)
+
+        result = await retriever.retrieve("policy", workspace_id="ws-legacy", limit=3)
+
+        assert result is not None
+        assert result.item_ids == ["legacy-1"]
+        assert mound.calls == [
+            {
+                "query": "policy",
+                "limit": 3,
+                "min_confidence": 0.5,
+                "workspace_id": "ws-legacy",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_retries_after_initialize_when_query_reports_uninitialized(self):
+        item = _make_item()
+        mound = SimpleNamespace(
+            query_semantic=AsyncMock(
+                side_effect=[RuntimeError("KnowledgeMound not initialized"), [item]]
+            ),
+            initialize=AsyncMock(),
+        )
+        retriever = KnowledgeMoundRetriever(mound)
+
+        result = await retriever.retrieve("rate limiting")
+
+        assert result is not None
+        assert result.item_ids == ["km-1"]
+        mound.initialize.assert_awaited_once()
+        assert mound.query_semantic.await_count == 2
+
+
+def test_build_debate_knowledge_query_includes_recent_developments():
+    query = build_debate_knowledge_query(
+        "Design a rate limiter",
+        "Agent A proposed token buckets. Agent B raised fairness concerns.",
+    )
+
+    assert query.startswith("Design a rate limiter")
+    assert "Recent debate developments:" in query
+    assert "fairness concerns" in query
+
+
+def test_build_debate_knowledge_query_stays_bounded_when_inputs_are_large():
+    query = build_debate_knowledge_query(
+        "Task " * 500,
+        "Supplemental " * 500,
+    )
+
+    assert len(query) <= 1600
+    assert query.startswith("Task Task")

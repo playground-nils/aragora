@@ -42,6 +42,7 @@ class MockArenaWithDelegates(ArenaDelegatesMixin):
     def __init__(self):
         # Initialize all the sub-objects that delegates depend on
         self._km_manager = MagicMock()
+        self._knowledge_ops = MagicMock()
         self._checkpoint_ops = MagicMock()
         self._context_delegator = MagicMock()
         self._event_emitter = MagicMock()
@@ -60,6 +61,7 @@ class MockArenaWithDelegates(ArenaDelegatesMixin):
         self.roles_manager = MagicMock()
         self.termination_checker = MagicMock()
         self.use_rlm_limiter = False
+        self.enable_knowledge_retrieval = False
         self.voting_phase = MagicMock()
         self.current_role_assignments = {}
 
@@ -597,6 +599,32 @@ class TestContextDelegates:
         assert call_kwargs["evidence_collector"] == arena.evidence_collector
         assert call_kwargs["task"] == "test task"
         assert result == 5
+
+    @pytest.mark.asyncio
+    async def test_refresh_evidence_for_round_updates_km_prompt_context(self, arena, mock_context):
+        """Round refresh appends KM background evidence for revision prompts."""
+        arena._context_delegator.refresh_evidence_for_round = AsyncMock(return_value=2)
+        arena.enable_knowledge_retrieval = True
+        arena.env.task = "Design a rate limiter"
+        arena._km_manager.fetch_context = AsyncMock(
+            return_value="## KNOWLEDGE MOUND CONTEXT\nRelevant knowledge from organizational memory:\n\n**[debate]** (confidence: 90%)\nPrefer shared token buckets.\n"
+        )
+        arena._knowledge_ops._last_km_item_ids = ["km-1", "km-2"]
+        arena.prompt_builder.get_knowledge_mound_context.return_value = (
+            "## KNOWLEDGE MOUND CONTEXT\nExisting baseline context"
+        )
+        mock_context._prompt_builder = arena.prompt_builder
+        mock_context._km_item_ids_used = ["km-0"]
+
+        result = await arena._refresh_evidence_for_round("combined text", mock_context, round_num=3)
+
+        assert result == 2
+        arena._km_manager.fetch_context.assert_awaited_once()
+        set_args = arena.prompt_builder.set_knowledge_context.call_args.args
+        assert "Round 3 Background Evidence" in set_args[0]
+        assert "Prefer shared token buckets." in set_args[0]
+        assert set_args[1] == ["km-0", "km-1", "km-2"]
+        assert mock_context._km_item_ids_used == ["km-0", "km-1", "km-2"]
 
 
 # =============================================================================
