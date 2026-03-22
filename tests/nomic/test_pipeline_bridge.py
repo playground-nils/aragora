@@ -148,6 +148,12 @@ class TestBoundedWorkOrders:
         assert metadata["work_order_protocol"] == "bounded-work-order/v1"
         assert metadata["subtask_count"] == 1
         assert metadata["bounded_work_orders"][0]["work_order_id"] == "sub-1"
+        assert metadata["dispatch_handoff"]["target"] == "ralph"
+        assert metadata["dispatch_handoff"]["receipt_metadata"]["handoff_status"] == "compiled"
+        assert (
+            metadata["dispatch_handoff"]["receipt_metadata"]["truth"]["manifest_written"] is False
+        )
+        assert metadata["dispatch_handoff"]["manifest"]["projects"][0]["project_id"] == "task-1"
 
     def test_build_plan_metadata_includes_assessment_refresh_scope(self):
         bridge = NomicPipelineBridge()
@@ -209,6 +215,62 @@ class TestBoundedWorkOrders:
         assert work_order.expected_tests == ["python -m pytest tests/scripts -q"]
         assert work_order.risk_level == "critical"
         assert work_order.approval_required is True
+
+    def test_write_ralph_handoff_persists_manifest_with_truthful_receipt_metadata(self, tmp_path):
+        bridge = NomicPipelineBridge(repo_path=tmp_path)
+        subtasks = [
+            SubTask(
+                id="sub-1",
+                title="Bridge one spec",
+                description="Connect a generated pipeline spec to Ralph",
+                file_scope=[
+                    "aragora/nomic/pipeline_bridge.py",
+                    "tests/nomic/test_pipeline_bridge.py",
+                ],
+                success_criteria={
+                    "tests": ["python3 -m pytest tests/nomic/test_pipeline_bridge.py -q"]
+                },
+            ),
+            SubTask(
+                id="sub-2",
+                title="Dependent follow-up",
+                description="Do the second phase after the first",
+                dependencies=["sub-1"],
+                file_scope=["docs/guides/PIPELINE_GUIDE.md"],
+            ),
+        ]
+
+        handoff = bridge.write_ralph_handoff(
+            "Dogfood the Nomic bridge",
+            subtasks,
+            output_dir=tmp_path / "ralph-handoff",
+        )
+
+        manifest_path = tmp_path / "ralph-handoff" / "campaign_manifest.yaml"
+        assert manifest_path.exists()
+        assert handoff["selection"]["reason"] == "first_dependency_free_work_order"
+        assert handoff["manifest_path"] == str(manifest_path)
+        assert handoff["receipt_metadata"]["handoff_status"] == "ready"
+        assert handoff["receipt_metadata"]["selected_work_order_id"] == "sub-1"
+        assert handoff["receipt_metadata"]["truth"]["handoff_compiled"] is True
+        assert handoff["receipt_metadata"]["truth"]["manifest_written"] is True
+        assert handoff["receipt_metadata"]["truth"]["dispatch_started"] is False
+        assert handoff["receipt_metadata"]["worker_receipt_ids"] == []
+        assert handoff["receipt_metadata"]["campaign_receipt_id"] is None
+        assert handoff["receipt_metadata"]["expected_project_receipts"] == [
+            f"docs/receipts/{handoff['manifest']['campaign_id']}/task-1.yaml"
+        ]
+
+        from aragora.swarm.campaign import CampaignManifest
+
+        manifest = CampaignManifest.from_text(manifest_path.read_text(encoding="utf-8"))
+        assert manifest.worker_model == "codex"
+        assert manifest.review_model == "claude"
+        assert manifest.projects[0].project_id == "task-1"
+        assert manifest.projects[0].spec.work_orders[0]["work_order_id"] == "sub-1"
+        assert manifest.projects[0].spec.acceptance_criteria == [
+            "Run and satisfy: python3 -m pytest tests/nomic/test_pipeline_bridge.py -q"
+        ]
 
 
 class TestCreatePipelineFromCycle:

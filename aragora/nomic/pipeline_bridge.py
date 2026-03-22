@@ -34,6 +34,7 @@ import hashlib
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -125,16 +126,8 @@ def _target_pair_for_index(index: int) -> tuple[str, str]:
 
 
 def _dedupe_nonempty(values: list[str]) -> list[str]:
-    """Preserve order while removing empty and duplicate strings."""
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for value in values:
-        normalized = str(value).strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        deduped.append(normalized)
-    return deduped
+    """Keep non-empty strings in insertion order."""
+    return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))
 
 
 def _build_assessment_refresh_context(
@@ -159,6 +152,81 @@ def _build_assessment_refresh_context(
         "work_order_ids": work_order_ids,
         "approval_required": any(work_order.approval_required for work_order in work_orders),
     }
+
+
+def _stringify_success_target(key: str, value: Any) -> list[str]:
+    """Flatten success-criteria values into human-readable lines."""
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        lines: list[str] = []
+        for nested_key, nested_value in value.items():
+            nested_label = f"{key}.{nested_key}".strip(".")
+            lines.extend(_stringify_success_target(nested_label, nested_value))
+        return lines
+    if isinstance(value, list):
+        return [f"{key}: {text}" for text in [str(item).strip() for item in value] if text]
+    text = str(value).strip()
+    if not text:
+        return []
+    return [f"{key}: {text}"]
+
+
+def _acceptance_criteria_for_work_order(work_order: BoundedWorkOrder) -> list[str]:
+    """Translate bounded success criteria into SwarmSpec acceptance criteria."""
+    criteria: list[str] = []
+    for key, value in work_order.success_criteria.items():
+        if str(key).strip().lower() == "tests":
+            continue
+        criteria.extend(_stringify_success_target(str(key).strip(), value))
+    criteria.extend(f"Run and satisfy: {command}" for command in work_order.expected_tests)
+    return _dedupe_nonempty(criteria)
+
+
+def _constraints_for_work_order(work_order: BoundedWorkOrder) -> list[str]:
+    """Translate a bounded work order into explicit dispatch constraints."""
+    constraints: list[str] = []
+    if work_order.file_scope:
+        constraints.append(f"Stay within file scope: {', '.join(work_order.file_scope)}")
+    if work_order.dependency_ids:
+        constraints.append(
+            f"Respect upstream dependencies before dispatch: {', '.join(work_order.dependency_ids)}"
+        )
+    if work_order.approval_required:
+        constraints.append("Requires approval before risky execution or merge.")
+    return _dedupe_nonempty(constraints)
+
+
+def _estimated_cost_for_complexity(complexity: str) -> float:
+    """Budget hint used for handoff manifests."""
+    lowered = str(complexity or "").strip().lower()
+    return {"low": 0.5, "medium": 1.0, "high": 2.0}.get(lowered, 1.0)
+
+
+def _campaign_id_for_work_order(goal: str, work_order: BoundedWorkOrder) -> str:
+    """Build a stable campaign id for a single dispatched work order."""
+    seed = "|".join(
+        [
+            goal.strip(),
+            work_order.work_order_id,
+            work_order.pipeline_task_id,
+            work_order.target_agent,
+            work_order.reviewer_agent,
+        ]
+    )
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
+    return f"nomic-ralph-{digest}"
+
+
+def _text_or_none(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _path_text(value: Path | str | None) -> str | None:
+    if value is None:
+        return None
+    return _text_or_none(value)
 
 
 def _subtask_to_implement_task(
@@ -341,7 +409,298 @@ class NomicPipelineBridge:
             "work_order_protocol": "bounded-work-order/v1",
             "bounded_work_orders": [item.to_dict() for item in work_orders],
             "assessment_refresh": _build_assessment_refresh_context(work_orders),
+            "dispatch_handoff": self.build_ralph_handoff(goal, subtasks),
         }
+
+    @staticmethod
+    def _select_ralph_work_order(
+        work_orders: list[BoundedWorkOrder],
+        preferred_work_order_id: str | None = None,
+    ) -> tuple[BoundedWorkOrder | None, str]:
+        """Choose one work order to route through the single-project Ralph path."""
+        preferred = _text_or_none(preferred_work_order_id)
+        if preferred:
+            for work_order in work_orders:
+                if preferred in {work_order.work_order_id, work_order.pipeline_task_id}:
+                    return work_order, "preferred_work_order"
+        for work_order in work_orders:
+            if not work_order.dependency_ids:
+                return work_order, "first_dependency_free_work_order"
+        if work_orders:
+            return work_orders[0], "first_work_order"
+        return None, "no_work_orders"
+
+    def _build_ralph_manifest_for_work_order(
+        self,
+        goal: str,
+        work_order: BoundedWorkOrder,
+        *,
+        source_ref: str | None = None,
+    ) -> Any:
+        """Build a real CampaignManifest for one bounded work order.
+
+        Imports are intentionally delayed because campaign planning also imports
+        this bridge module.
+        """
+        from aragora.swarm.campaign import (
+            CampaignDependency,
+            CampaignManifest,
+            CampaignProject,
+            CampaignReviewGate,
+        )
+        from aragora.swarm.spec import SwarmSpec
+
+        source_label = _text_or_none(source_ref) or goal
+        project_id = work_order.pipeline_task_id
+        spec = SwarmSpec(
+            raw_goal=goal,
+            refined_goal=work_order.title or goal,
+            acceptance_criteria=_acceptance_criteria_for_work_order(work_order),
+            constraints=_constraints_for_work_order(work_order),
+            budget_limit_usd=self._budget_limit_usd,
+            file_scope_hints=list(work_order.file_scope),
+            work_orders=[work_order.to_dict()],
+            estimated_complexity=work_order.estimated_complexity,
+            requires_approval=work_order.approval_required,
+            research_context={
+                "dispatch_target": "ralph",
+                "work_order_id": work_order.work_order_id,
+                "pipeline_task_id": work_order.pipeline_task_id,
+                "goal": goal,
+            },
+            pipeline_stage="orchestration",
+            user_expertise="system",
+        )
+        project = CampaignProject(
+            project_id=project_id,
+            title=work_order.title or project_id,
+            source_refs=_dedupe_nonempty(
+                [
+                    source_label,
+                    f"work_order:{work_order.work_order_id}",
+                    f"pipeline_task:{work_order.pipeline_task_id}",
+                ]
+            ),
+            spec=spec,
+            file_scope_hints=list(work_order.file_scope),
+            acceptance_criteria=list(spec.acceptance_criteria),
+            constraints=list(spec.constraints),
+            dependencies=[
+                CampaignDependency(project_id=dep_id, reason="Pipeline work-order dependency")
+                for dep_id in work_order.dependency_ids
+            ],
+            estimated_cost_usd=_estimated_cost_for_complexity(work_order.estimated_complexity),
+            review=CampaignReviewGate(
+                required=True,
+                review_model=work_order.reviewer_agent,
+            ),
+        )
+        return CampaignManifest(
+            campaign_id=_campaign_id_for_work_order(goal, work_order),
+            created_at=datetime.now(timezone.utc).isoformat(),
+            source_kind="nomic_pipeline_spec",
+            source_ref=source_label,
+            planner_model=work_order.reviewer_agent,
+            planner_strategy="heuristic",
+            worker_model=work_order.target_agent,
+            review_model=work_order.reviewer_agent,
+            enforce_cross_model_review=work_order.target_agent != work_order.reviewer_agent,
+            max_parallel_ready_projects=1,
+            max_retries_per_project=2,
+            budget_limit_usd=float(self._budget_limit_usd or 5.0),
+            time_limit_hours=4.0,
+            projects=[project],
+            planning_findings=[
+                "dispatch_target=ralph",
+                "handoff_protocol=nomic-ralph-handoff/v1",
+                "work_order_protocol=bounded-work-order/v1",
+                f"selected_work_order_id={work_order.work_order_id}",
+                f"selected_pipeline_task_id={work_order.pipeline_task_id}",
+            ],
+        )
+
+    def _ralph_receipt_metadata(
+        self,
+        *,
+        work_order: BoundedWorkOrder | None,
+        selection_reason: str,
+        manifest: Any | None,
+        manifest_path: Path | str | None = None,
+        state_path: Path | str | None = None,
+        supervisor_state: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Truthful receipt metadata for a compiled, written, or dispatched handoff."""
+        manifest_text = _path_text(manifest_path)
+        state_text = _path_text(state_path)
+        supervisor_id = _text_or_none((supervisor_state or {}).get("supervisor_id"))
+        ralph_status = _text_or_none((supervisor_state or {}).get("status"))
+        manifest_dict = manifest.to_dict() if manifest is not None else {}
+        project_ids = [
+            str(item.get("project_id", "")).strip()
+            for item in manifest_dict.get("projects", [])
+            if str(item.get("project_id", "")).strip()
+        ]
+        project_receipt_paths = (
+            [
+                f"docs/receipts/{manifest_dict['campaign_id']}/{project_id}.yaml"
+                for project_id in project_ids
+            ]
+            if manifest_dict.get("campaign_id")
+            else []
+        )
+        if work_order is None:
+            handoff_status = "not_dispatchable"
+        elif supervisor_id or ralph_status:
+            handoff_status = "dispatched"
+        elif manifest_text:
+            handoff_status = "blocked_on_dependencies" if work_order.dependency_ids else "ready"
+        else:
+            handoff_status = "compiled"
+        return {
+            "receipt_metadata_version": "dispatch-handoff/v1",
+            "dispatch_target": "ralph",
+            "handoff_status": handoff_status,
+            "selection_reason": selection_reason,
+            "selected_work_order_id": work_order.work_order_id if work_order is not None else None,
+            "selected_pipeline_task_id": (
+                work_order.pipeline_task_id if work_order is not None else None
+            ),
+            "blocked_dependency_ids": (
+                list(work_order.dependency_ids) if work_order is not None else []
+            ),
+            "campaign_id": manifest_dict.get("campaign_id"),
+            "manifest_path": manifest_text,
+            "state_path": state_text,
+            "supervisor_id": supervisor_id,
+            "ralph_status": ralph_status,
+            "project_ids": project_ids,
+            "expected_project_receipts": project_receipt_paths,
+            "worker_receipt_ids": [],
+            "campaign_receipt_id": None,
+            "truth": {
+                "handoff_compiled": work_order is not None,
+                "manifest_written": bool(manifest_text),
+                "dispatch_started": bool(supervisor_id or ralph_status),
+                "worker_receipts_recorded": False,
+                "campaign_receipt_recorded": False,
+            },
+        }
+
+    def build_ralph_handoff(
+        self,
+        goal: str,
+        subtasks: list[SubTask],
+        *,
+        source_ref: str | None = None,
+        preferred_work_order_id: str | None = None,
+        manifest_path: Path | str | None = None,
+        state_path: Path | str | None = None,
+        supervisor_state: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build a Ralph-ready single-project handoff for one generated pipeline spec."""
+        work_orders = self.build_work_orders(subtasks)
+        selected_work_order, selection_reason = self._select_ralph_work_order(
+            work_orders,
+            preferred_work_order_id=preferred_work_order_id,
+        )
+        manifest = None
+        manifest_payload: dict[str, Any] | None = None
+        if selected_work_order is not None:
+            manifest = self._build_ralph_manifest_for_work_order(
+                goal,
+                selected_work_order,
+                source_ref=source_ref,
+            )
+            manifest_payload = manifest.to_dict()
+        return {
+            "target": "ralph",
+            "protocol": "nomic-ralph-handoff/v1",
+            "selection": {
+                "reason": selection_reason,
+                "work_order_id": (
+                    selected_work_order.work_order_id if selected_work_order is not None else None
+                ),
+                "pipeline_task_id": (
+                    selected_work_order.pipeline_task_id
+                    if selected_work_order is not None
+                    else None
+                ),
+            },
+            "manifest": manifest_payload,
+            "receipt_metadata": self._ralph_receipt_metadata(
+                work_order=selected_work_order,
+                selection_reason=selection_reason,
+                manifest=manifest,
+                manifest_path=manifest_path,
+                state_path=state_path,
+                supervisor_state=supervisor_state,
+            ),
+        }
+
+    def write_ralph_handoff(
+        self,
+        goal: str,
+        subtasks: list[SubTask],
+        *,
+        output_dir: Path,
+        source_ref: str | None = None,
+        preferred_work_order_id: str | None = None,
+        start_supervisor: bool = False,
+        merge_policy: str = "manual_review_required",
+        max_repair_attempts: int = 2,
+    ) -> dict[str, Any]:
+        """Persist a Ralph-ready handoff and optionally start the supervisor."""
+        handoff = self.build_ralph_handoff(
+            goal,
+            subtasks,
+            source_ref=source_ref,
+            preferred_work_order_id=preferred_work_order_id,
+        )
+        manifest_payload = handoff.get("manifest")
+        if not isinstance(manifest_payload, dict):
+            return handoff
+
+        from aragora.swarm.campaign import CampaignManifest, save_campaign_manifest
+
+        output_dir = output_dir.resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "campaign_manifest.yaml"
+        save_campaign_manifest(manifest_path, CampaignManifest.from_dict(manifest_payload))
+
+        supervisor_state: dict[str, Any] | None = None
+        state_path: Path | None = None
+        if start_supervisor:
+            from aragora.ralph.supervisor import RalphSupervisor
+
+            state_path = output_dir / "supervisor_state.yaml"
+            supervisor = RalphSupervisor.start(
+                manifest_path=manifest_path,
+                state_path=state_path,
+                repo_root=self._repo_path,
+                merge_policy=merge_policy,
+                max_repair_attempts=max(0, int(max_repair_attempts)),
+            )
+            supervisor_state = supervisor.status()
+
+        handoff["manifest_path"] = str(manifest_path)
+        if state_path is not None:
+            handoff["state_path"] = str(state_path)
+        handoff["receipt_metadata"] = self._ralph_receipt_metadata(
+            work_order=next(
+                (
+                    work_order
+                    for work_order in self.build_work_orders(subtasks)
+                    if work_order.work_order_id == handoff["selection"].get("work_order_id")
+                ),
+                None,
+            ),
+            selection_reason=str(handoff["selection"].get("reason", "")).strip() or "unknown",
+            manifest=CampaignManifest.from_dict(manifest_payload),
+            manifest_path=manifest_path,
+            state_path=state_path,
+            supervisor_state=supervisor_state,
+        )
+        return handoff
 
     def build_decision_plan(
         self,
