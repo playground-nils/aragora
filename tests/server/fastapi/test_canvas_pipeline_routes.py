@@ -13,12 +13,16 @@ Covers all 31 canvas pipeline v2 endpoints including:
 
 from __future__ import annotations
 
+import asyncio
+import sys
+import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from aragora.server.fastapi import create_app
+from aragora.server.fastapi.routes.canvas_pipeline import ExecuteRequest, execute_pipeline
 
 
 @pytest.fixture
@@ -289,6 +293,82 @@ class TestPipelineQuerying:
         data = resp.json()
         assert data["pipeline_id"] == "pipe-test"
 
+    def test_get_pipeline_includes_unified_live_state(self, client, mock_pipeline_store):
+        """Get pipeline normalizes orchestration, review, repair, and merge-gate state."""
+        mock_pipeline_store["pipe-live"] = {
+            "pipeline_id": "pipe-live",
+            "stage_status": {"orchestration": "running"},
+            "orchestration": {
+                "nodes": [
+                    {
+                        "id": "orch-1",
+                        "type": "orchestrationNode",
+                        "data": {
+                            "label": "Apply patch",
+                            "orch_type": "agent_task",
+                            "status": "pending",
+                            "executionStatus": "running",
+                        },
+                    },
+                    {
+                        "id": "orch-2",
+                        "type": "orchestrationNode",
+                        "data": {
+                            "label": "Verify rollout",
+                            "orch_type": "verification",
+                            "status": "completed",
+                        },
+                    },
+                ],
+                "edges": [],
+            },
+            "transitions": [
+                {
+                    "id": "trans-actions-orch",
+                    "from_stage": "actions",
+                    "to_stage": "orchestration",
+                    "status": "pending",
+                    "confidence": 0.83,
+                },
+            ],
+            "agents": [
+                {"id": "agent-1", "name": "Claude", "role": "reviewer", "status": "pending"},
+            ],
+            "repair": {
+                "status": "in_progress",
+                "attempts": 2,
+                "items": [{"title": "Retry flaky verification"}],
+            },
+            "merge_gate": {
+                "checks_passed": False,
+                "merge_eligible": False,
+                "expected_checks": ["pytest"],
+            },
+            "execution": {
+                "status": "running",
+                "runtime": "decision_plan",
+                "agent_tasks": 1,
+                "total_orchestration_nodes": 2,
+            },
+        }
+
+        resp = client.get("/api/v2/canvas/pipeline/pipe-live")
+        assert resp.status_code == 200
+        result = resp.json()["result"]
+        assert result["live_state"]["orchestration"]["status"] == "running"
+        assert result["live_state"]["orchestration"]["active_nodes"][0]["label"] == "Apply patch"
+        assert result["live_state"]["orchestration"]["counts"]["in_progress"] == 1
+        assert result["live_state"]["orchestration"]["counts"]["succeeded"] == 1
+        assert result["live_state"]["review"]["transition_counts"]["pending"] == 1
+        assert result["live_state"]["review"]["reviewer_agents"] == 1
+        assert result["live_state"]["review"]["human_gates"] == 1
+        assert result["live_state"]["repair"]["status"] == "in_progress"
+        assert (
+            result["live_state"]["repair"]["active_items"][0]["title"] == "Retry flaky verification"
+        )
+        assert result["live_state"]["merge_gate"]["blocked_reasons"] == []
+        assert result["live_state"]["merge_gate"]["enabled"] is False
+
     def test_get_pipeline_status(self, client, mock_pipeline_store):
         """Status endpoint returns stage breakdown."""
         mock_pipeline_store["pipe-s1"] = {
@@ -306,6 +386,97 @@ class TestPipelineQuerying:
         assert data["completed_stages"] == 2
         assert data["total_stages"] == 4
         assert data["current_stage"] == "workflow"
+
+
+class TestPipelineExecution:
+    @pytest.mark.asyncio
+    async def test_execute_pipeline_background_task_updates_store(self, monkeypatch):
+        pipeline = {
+            "pipeline_id": "pipe-fastapi",
+            "name": "Pipeline FastAPI",
+            "stage_status": {
+                "ideas": "complete",
+                "goals": "complete",
+                "actions": "complete",
+                "orchestration": "complete",
+            },
+            "orchestration": {
+                "nodes": [
+                    {"id": "t1", "data": {"orch_type": "agent_task", "label": "Ship feature"}},
+                ],
+                "edges": [],
+            },
+        }
+        store = MagicMock()
+        monkeypatch.setattr(
+            "aragora.server.fastapi.routes.canvas_pipeline._get_result_or_404",
+            lambda _: pipeline,
+        )
+        monkeypatch.setattr(
+            "aragora.server.fastapi.routes.canvas_pipeline._get_store",
+            lambda: store,
+        )
+
+        fake_execution = types.ModuleType("aragora.pipeline.canonical_execution")
+        fake_execution.build_decision_plan_from_orchestration = lambda **_: (
+            types.SimpleNamespace(id="plan-fastapi"),
+            [{"id": "t1"}],
+        )
+        fake_execution.queue_plan_execution = lambda *_, **__: {
+            "execution_id": "exec-fastapi",
+            "correlation_id": "corr-fastapi",
+            "execution_mode": "workflow",
+            "scheduled_at": "2026-03-21T00:00:00Z",
+        }
+
+        outcome = MagicMock(success=True, receipt_id="receipt-fastapi")
+        outcome.to_dict.return_value = {"success": True}
+
+        async def _execute_plan(*_, **__):
+            return outcome, {"record_id": "record-fastapi"}, {"receipt_id": "decision-fastapi"}
+
+        fake_execution.execute_queued_plan = _execute_plan
+
+        original_create_task = asyncio.create_task
+        created_tasks: list[asyncio.Task] = []
+
+        def _capture_task(coro):
+            task = original_create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        with (
+            patch.dict(sys.modules, {"aragora.pipeline.canonical_execution": fake_execution}),
+            patch(
+                "aragora.server.fastapi.routes.canvas_pipeline.asyncio.create_task",
+                new=_capture_task,
+            ),
+        ):
+            response = await execute_pipeline(
+                "pipe-fastapi",
+                ExecuteRequest(),
+                auth=MagicMock(),
+            )
+
+        assert response.result is not None
+        assert response.result["status"] == "executing"
+        assert len(created_tasks) == 1
+        await created_tasks[0]
+        assert created_tasks[0].exception() is None
+        assert "execution" not in pipeline
+        assert "receipt" not in pipeline
+
+        assert "live_state" not in store.save.call_args_list[0].args[1]
+        assert "live_state" not in store.save.call_args_list[1].args[1]
+
+        saved_pipeline = store.save.call_args_list[-1].args[1]
+        assert saved_pipeline["execution"]["status"] == "completed"
+        assert saved_pipeline["execution"]["receipt_id"] == "receipt-fastapi"
+        assert saved_pipeline["live_state"]["orchestration"]["status"] == "completed"
+        assert (
+            saved_pipeline["live_state"]["orchestration"]["active_nodes"][0]["label"]
+            == "Ship feature"
+        )
 
     def test_get_pipeline_stage_invalid(self, client, mock_pipeline_store):
         """Stage endpoint rejects invalid stage name."""
