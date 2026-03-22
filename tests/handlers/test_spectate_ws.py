@@ -6,6 +6,8 @@ SpectateWebSocketBridge over the /api/v1/spectate/* endpoints.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -219,6 +221,9 @@ class TestStatus:
         assert body["active"] is False
         assert body["subscribers"] == 0
         assert body["buffer_size"] == 0
+        assert body["bridge_state"] == "inactive"
+        assert body["live_debate_count"] == 0
+        assert body["recent_event_count"] == 0
 
     def test_status_when_active(self, handler: SpectateStreamHandler, mock_handler: MagicMock):
         from aragora.spectate.ws_bridge import get_spectate_bridge
@@ -232,6 +237,124 @@ class TestStatus:
             body = result[0]
             assert body["active"] is True
             assert body["subscribers"] == 1
+            assert body["bridge_state"] == "idle"
+        finally:
+            bridge.stop()
+
+    def test_status_reports_discoverable_live_debates(
+        self, handler: SpectateStreamHandler, mock_handler: MagicMock
+    ):
+        from aragora.spectate.ws_bridge import get_spectate_bridge
+
+        bridge = get_spectate_bridge()
+        bridge.start()
+        bridge._event_buffer.append(
+            SpectateEvent(
+                event_type="proposal",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                debate_id="d-111",
+                agent_name="claude",
+            )
+        )
+
+        try:
+            result = handler.handle("/api/v1/spectate/status", {}, mock_handler)
+            body = result[0]
+            assert body["bridge_state"] == "live_debates_available"
+            assert body["live_debate_count"] == 1
+            assert body["live_debate_ids"] == ["d-111"]
+            assert body["live_debates"][0]["debate_id"] == "d-111"
+            assert body["live_debates"][0]["recent_event_count"] == 1
+            assert body["unattributed_recent_event_count"] == 0
+        finally:
+            bridge.stop()
+
+    def test_status_redacts_live_debate_details_for_unauthenticated_callers(
+        self, handler: SpectateStreamHandler, mock_handler: MagicMock
+    ):
+        from aragora.spectate.ws_bridge import get_spectate_bridge
+
+        bridge = get_spectate_bridge()
+        bridge.start()
+        bridge._event_buffer.append(
+            SpectateEvent(
+                event_type="proposal",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                debate_id="d-111",
+                agent_name="claude",
+            )
+        )
+
+        with patch.object(handler, "get_current_user", return_value=None):
+            try:
+                result = handler.handle("/api/v1/spectate/status", {}, mock_handler)
+                body = result[0]
+                assert body["bridge_state"] == "activity_unattributed"
+                assert body["live_debate_count"] == 0
+                assert body["live_debate_ids"] == []
+                assert body["live_debates"] == []
+                assert body["recent_event_count"] == 1
+                assert body["unattributed_recent_event_count"] == 1
+            finally:
+                bridge.stop()
+
+    def test_status_exposes_live_debate_details_to_authenticated_readers(
+        self, handler: SpectateStreamHandler, mock_handler: MagicMock
+    ):
+        from aragora.spectate.ws_bridge import get_spectate_bridge
+
+        bridge = get_spectate_bridge()
+        bridge.start()
+        bridge._event_buffer.append(
+            SpectateEvent(
+                event_type="proposal",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                debate_id="d-111",
+                agent_name="claude",
+            )
+        )
+
+        with patch.object(
+            handler,
+            "get_current_user",
+            return_value=SimpleNamespace(
+                permissions=["debates:read"],
+                roles=[],
+                role="member",
+            ),
+        ):
+            try:
+                result = handler.handle("/api/v1/spectate/status", {}, mock_handler)
+                body = result[0]
+                assert body["bridge_state"] == "live_debates_available"
+                assert body["live_debate_count"] == 1
+                assert body["live_debate_ids"] == ["d-111"]
+                assert body["live_debates"][0]["debate_id"] == "d-111"
+            finally:
+                bridge.stop()
+
+    def test_status_flags_recent_unattributed_activity(
+        self, handler: SpectateStreamHandler, mock_handler: MagicMock
+    ):
+        from aragora.spectate.ws_bridge import get_spectate_bridge
+
+        bridge = get_spectate_bridge()
+        bridge.start()
+        bridge._event_buffer.append(
+            SpectateEvent(
+                event_type="proposal",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                agent_name="claude",
+            )
+        )
+
+        try:
+            result = handler.handle("/api/v1/spectate/status", {}, mock_handler)
+            body = result[0]
+            assert body["bridge_state"] == "activity_unattributed"
+            assert body["recent_event_count"] == 1
+            assert body["live_debate_count"] == 0
+            assert body["unattributed_recent_event_count"] == 1
         finally:
             bridge.stop()
 
