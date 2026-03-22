@@ -578,9 +578,11 @@ class TestExecuteAction:
         body = _body(result)
         assert body["action_type"] == "code.execute"
         assert body["session_id"] == active_session.id
-        # Action should be RUNNING (handler updates from PENDING to RUNNING)
+        assert body["status"] == "completed"
         action = store.get_action(body["id"])
-        assert action.status == ActionStatus.RUNNING
+        assert action.status == ActionStatus.COMPLETED
+        assert action.started_at is not None
+        assert action.completed_at is not None
 
     def test_execute_action_missing_session_id(self, handler, mock_http):
         http = mock_http(
@@ -720,14 +722,14 @@ class TestExecuteAction:
             body={
                 "session_id": active_session.id,
                 "action_type": "code.execute",
-                "input": {},
+                "input": {"code": "print('ok')"},
             },
             method="POST",
         )
         handler.handle_post("/api/v1/openclaw/actions", {}, http)
         entries, total = store.get_audit_log(action="action.execute")
         assert total >= 1
-        assert entries[0].result == "pending"
+        assert entries[0].result == "success"
         assert entries[0].details["action_type"] == "code.execute"
 
     def test_execute_action_store_error(self, handler, mock_http, active_session):
@@ -945,21 +947,14 @@ class TestSessionLifecycle:
         # 4. Get action status
         result = handler.handle(f"/api/v1/openclaw/actions/{action_id}", {}, mock_http())
         assert _status(result) == 200
-        assert _body(result)["status"] == "running"
+        assert _body(result)["status"] == "completed"
 
-        # 5. Create another action and cancel it
-        http = mock_http(
-            body={
-                "session_id": session_id,
-                "action_type": "code.lint",
-                "input": {},
-            },
-            method="POST",
-        )
-        result = handler.handle_post("/api/v1/openclaw/actions", {}, http)
-        assert _status(result) == 202
-        action_id_2 = _body(result)["id"]
-
+        # 5. Create another pending action and cancel it
+        action_id_2 = store.create_action(
+            session_id=session_id,
+            action_type="code.pending",
+            input_data={},
+        ).id
         http = mock_http(body={}, method="POST")
         result = handler.handle_post(f"/api/v1/openclaw/actions/{action_id_2}/cancel", {}, http)
         assert _status(result) == 200
