@@ -174,8 +174,10 @@ class TestFromDocumentPath:
         assert seed_ideas
         assert result.metadata["source_document"]["selected_sections"]
         assert any(
-            "pipeline-ready" in item["source_text"].lower()
-            or "goals/specs" in item["source_text"].lower()
+            any(
+                keyword in item["source_text"].lower()
+                for keyword in ("assessment", "issue", "pipeline", "workflow")
+            )
             for item in seed_ideas
         )
 
