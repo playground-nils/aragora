@@ -31,10 +31,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aragora.canvas.converters import (
@@ -96,6 +98,369 @@ def _initial_stage_status(enable_principles: bool = False) -> dict[str, str]:
     """Build the initial stage_status dict, including PRINCIPLES only when enabled."""
     stages = list(PipelineStage) if enable_principles else _DEFAULT_STAGES
     return {s.value: "pending" for s in stages}
+
+
+_DOCUMENT_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*$")
+_DOCUMENT_LIST_RE = re.compile(r"^\s{0,3}(?:[-*+]|\d+[.)])\s+(.*\S)\s*$")
+_DOCUMENT_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_DOCUMENT_ACTION_KEYWORDS = frozenset(
+    {
+        "add",
+        "align",
+        "automate",
+        "benchmark",
+        "build",
+        "close",
+        "convert",
+        "coordinate",
+        "create",
+        "dispatch",
+        "document",
+        "emit",
+        "execute",
+        "finish",
+        "generate",
+        "harden",
+        "implement",
+        "improve",
+        "issue",
+        "normalize",
+        "preserve",
+        "refresh",
+        "run",
+        "ship",
+        "sync",
+        "track",
+        "turn",
+        "unify",
+        "update",
+        "validate",
+        "workflow",
+    }
+)
+_DOCUMENT_SECTION_KEYWORDS = frozenset(
+    {
+        "acceptance",
+        "backlog",
+        "best next",
+        "cadence",
+        "dispatch",
+        "gap",
+        "immediate",
+        "implementation",
+        "integrate",
+        "issue",
+        "medium term",
+        "next step",
+        "near term",
+        "phase",
+        "pipeline",
+        "priority",
+        "roadmap",
+        "ship",
+        "status",
+        "strategy",
+        "workflow",
+    }
+)
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            output.append(normalized)
+    return output
+
+
+def _clean_document_markdown(text: str) -> str:
+    text = _DOCUMENT_LINK_RE.sub(r"\1", text)
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"__([^_]+)__", r"\1", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" -*_`:")
+
+
+def _score_document_candidate(section: str, text: str) -> int:
+    section_lower = section.lower()
+    text_lower = text.lower()
+    combined = f"{section_lower} {text_lower}"
+
+    score = 0
+    if any(keyword in section_lower for keyword in _DOCUMENT_SECTION_KEYWORDS):
+        score += 4
+    if any(keyword in text_lower for keyword in _DOCUMENT_ACTION_KEYWORDS):
+        score += 4
+    if any(
+        keyword in combined
+        for keyword in (
+            "acceptance",
+            "assessment",
+            "backlog",
+            "dispatch",
+            "goal",
+            "issue",
+            "pipeline",
+            "receipt",
+            "spec",
+            "truth",
+            "workflow",
+        )
+    ):
+        score += 2
+    word_count = len(text.split())
+    if word_count < 4:
+        score -= 3
+    elif word_count <= 28:
+        score += 1
+    if section_lower.startswith("rationale") or section_lower.startswith("why "):
+        score -= 2
+    return score
+
+
+def _infer_document_priority(section: str, text: str) -> str:
+    combined = f"{section} {text}".lower()
+    if any(
+        keyword in combined
+        for keyword in ("blocker", "critical", "immediate", "must", "p0", "required")
+    ):
+        return "critical"
+    if any(keyword in combined for keyword in ("high priority", "near term", "next", "phase 1")):
+        return "high"
+    if any(keyword in combined for keyword in ("future", "later", "optional")):
+        return "low"
+    return "medium"
+
+
+def _infer_document_goal_type(section: str, text: str) -> str:
+    combined = f"{section} {text}".lower()
+    if "risk" in combined or "blocker" in combined or "gate" in combined:
+        return "risk"
+    if any(keyword in combined for keyword in ("benchmark", "measure", "metric", "score")):
+        return "metric"
+    if any(keyword in combined for keyword in ("principle", "policy", "guardrail")):
+        return "principle"
+    if any(keyword in combined for keyword in ("milestone", "phase", "release")):
+        return "milestone"
+    if any(keyword in combined for keyword in ("architecture", "plan", "roadmap", "strategy")):
+        return "strategy"
+    return "goal"
+
+
+def _extract_document_seed_ideas(
+    document_text: str,
+    *,
+    max_ideas: int = 12,
+) -> list[dict[str, Any]]:
+    section_stack: list[str] = []
+    candidates: list[dict[str, Any]] = []
+    seen_text: set[str] = set()
+    in_code_block = False
+
+    for line_number, raw_line in enumerate(document_text.splitlines(), start=1):
+        stripped = raw_line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block or not stripped:
+            continue
+
+        heading_match = _DOCUMENT_HEADING_RE.match(raw_line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            heading = _clean_document_markdown(heading_match.group(2))
+            if not heading:
+                continue
+            while len(section_stack) >= level:
+                section_stack.pop()
+            section_stack.append(heading)
+            continue
+
+        list_match = _DOCUMENT_LIST_RE.match(raw_line)
+        if not list_match:
+            continue
+
+        source_text = _clean_document_markdown(list_match.group(1))
+        if not source_text:
+            continue
+
+        section = " / ".join(section_stack[-2:]) if section_stack else "Document"
+        score = _score_document_candidate(section, source_text)
+        if score <= 0:
+            continue
+
+        normalized_text = source_text.lower()
+        if normalized_text in seen_text:
+            continue
+        seen_text.add(normalized_text)
+
+        priority_hint = _infer_document_priority(section, source_text)
+        idea = f"[{priority_hint}] {section}: {source_text}"
+        candidates.append(
+            {
+                "idea": idea,
+                "source_text": source_text,
+                "section": section,
+                "line_number": line_number,
+                "priority_hint": priority_hint,
+                "goal_type_hint": _infer_document_goal_type(section, source_text),
+                "score": score,
+            }
+        )
+
+    candidates.sort(key=lambda item: (-int(item["score"]), int(item["line_number"])))
+    return candidates[:max_ideas]
+
+
+def _priority_rank(priority: str) -> int:
+    return {
+        "critical": 4,
+        "high": 3,
+        "medium": 2,
+        "low": 1,
+    }.get(str(priority).strip().lower(), 0)
+
+
+def _related_action_nodes(result: PipelineResult, goal_id: str) -> list[Any]:
+    if not result.actions_canvas:
+        return []
+
+    related = [
+        node
+        for node in result.actions_canvas.nodes.values()
+        if node.data.get("source_goal_id") == goal_id
+    ]
+    return sorted(
+        related,
+        key=lambda node: (
+            float(getattr(getattr(node, "position", None), "x", 0.0)),
+            float(getattr(getattr(node, "position", None), "y", 0.0)),
+            str(getattr(node, "label", "")),
+        ),
+    )
+
+
+def _build_document_artifacts(
+    result: PipelineResult,
+    *,
+    source_document: dict[str, Any],
+    seed_entries: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    seed_index = {f"raw-idea-{index}": dict(entry) for index, entry in enumerate(seed_entries)}
+
+    goal_artifacts: list[dict[str, Any]] = []
+    for goal in result.goal_graph.goals if result.goal_graph else []:
+        source_entries = [
+            seed_index[source_id] for source_id in goal.source_idea_ids if source_id in seed_index
+        ]
+        related_actions = _related_action_nodes(result, goal.id)
+        task_outline = _dedupe_preserve_order(
+            [
+                str(getattr(node, "label", "")).strip()
+                for node in related_actions
+                if str(getattr(node, "label", "")).strip()
+            ]
+        )
+        verification_plan = _dedupe_preserve_order(
+            [
+                str(getattr(node, "label", "")).strip()
+                for node in related_actions
+                if str(getattr(node, "label", "")).strip()
+                and (
+                    node.data.get("step_type") in {"human_checkpoint", "verification"}
+                    or node.data.get("phase") in {"baseline", "monitor", "review", "test", "verify"}
+                )
+            ]
+        )
+
+        acceptance_criteria = []
+        if goal.measurable:
+            acceptance_criteria.append(goal.measurable)
+        acceptance_criteria.extend(verification_plan)
+        if not acceptance_criteria:
+            acceptance_criteria.extend([f"Complete {step}" for step in task_outline[:3]])
+        acceptance_criteria = _dedupe_preserve_order(acceptance_criteria)
+
+        source_sections = _dedupe_preserve_order([entry["section"] for entry in source_entries])
+        source_line_numbers = [
+            int(entry["line_number"])
+            for entry in source_entries
+            if isinstance(entry.get("line_number"), int)
+        ]
+        source_priority = "medium"
+        if source_entries:
+            source_priority = max(
+                (entry["priority_hint"] for entry in source_entries),
+                key=_priority_rank,
+            )
+
+        goal_artifacts.append(
+            {
+                "goal_id": goal.id,
+                "title": goal.title,
+                "description": goal.description,
+                "goal_type": goal.goal_type.value,
+                "priority": goal.priority,
+                "source_priority": source_priority,
+                "measurable": goal.measurable,
+                "confidence": goal.confidence,
+                "source_sections": source_sections,
+                "source_line_numbers": source_line_numbers,
+                "source_text": [entry["source_text"] for entry in source_entries],
+                "source_idea_ids": list(goal.source_idea_ids),
+                "task_outline": task_outline,
+                "acceptance_criteria": acceptance_criteria,
+                "verification_plan": verification_plan or list(acceptance_criteria),
+            }
+        )
+
+    goal_artifacts.sort(
+        key=lambda item: (
+            -_priority_rank(item.get("source_priority", "")),
+            -_priority_rank(item.get("priority", "")),
+            -len(item.get("acceptance_criteria", [])),
+            -len(item.get("task_outline", [])),
+            -float(item.get("confidence", 0.0)),
+            min(item.get("source_line_numbers") or [10**9]),
+        )
+    )
+
+    spec_artifact: dict[str, Any] = {}
+    if goal_artifacts:
+        primary = goal_artifacts[0]
+        acceptance_criteria = list(primary.get("acceptance_criteria", []))
+        verification_plan = list(primary.get("verification_plan", []))
+        task_outline = list(primary.get("task_outline", []))
+        section_context = ", ".join(primary.get("source_sections", [])) or source_document["path"]
+        objective = (
+            primary.get("description") or primary.get("title") or "Execute the roadmap slice"
+        )
+
+        spec_artifact = {
+            "title": primary.get("title", ""),
+            "goal_id": primary.get("goal_id", ""),
+            "goal_type": primary.get("goal_type", ""),
+            "priority": primary.get("priority", ""),
+            "problem_statement": objective,
+            "source_document_path": source_document["path"],
+            "source_document_hash": source_document["content_hash"],
+            "source_sections": list(primary.get("source_sections", [])),
+            "source_line_numbers": list(primary.get("source_line_numbers", [])),
+            "acceptance_criteria": acceptance_criteria,
+            "verification_plan": verification_plan,
+            "task_outline": task_outline,
+            "dispatch_prompt": (
+                f"Execute the next roadmap item from {source_document['path']}. "
+                f"Focus on {section_context}. Objective: {objective}. "
+                f"Acceptance criteria: {'; '.join(acceptance_criteria[:3])}."
+            ),
+        }
+
+    return goal_artifacts, spec_artifact
 
 
 @dataclass
@@ -319,6 +684,90 @@ class IdeaToExecutionPipeline:
             auto_advance=auto_advance,
             pipeline_id=pipeline_id,
         )
+
+    @classmethod
+    def from_document_path(
+        cls,
+        document_path: os.PathLike[str] | str,
+        *,
+        auto_advance: bool = True,
+        pipeline_id: str | None = None,
+        max_ideas: int = 12,
+        event_callback: Any | None = None,
+    ) -> PipelineResult:
+        """Create a pipeline from a roadmap or strategy document path.
+
+        This is the document-oriented ingress for the pipeline: callers pass a
+        durable roadmap/strategy path instead of restating the same intent in a
+        new prompt. The method extracts actionable markdown bullets into seed
+        ideas, runs the existing idea-to-execution stages, then emits structured
+        goal/spec artifacts in ``result.metadata`` for downstream dispatch.
+        """
+        path = Path(document_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Document path does not exist: {path}")
+        if not path.is_file():
+            raise ValueError(f"Document path is not a file: {path}")
+
+        document_text = path.read_text(encoding="utf-8", errors="ignore")
+        seed_entries = _extract_document_seed_ideas(document_text, max_ideas=max_ideas)
+        if not seed_entries:
+            raise ValueError(f"No pipeline-ready roadmap items found in document: {path}")
+
+        ideas = [entry["idea"] for entry in seed_entries]
+        pipeline = cls()
+        result = pipeline.from_ideas(
+            ideas,
+            auto_advance=auto_advance,
+            pipeline_id=pipeline_id,
+            event_callback=event_callback,
+        )
+
+        source_document = {
+            "path": str(path),
+            "resolved_path": str(path.resolve()),
+            "content_hash": content_hash(document_text),
+            "selected_sections": _dedupe_preserve_order(
+                [entry["section"] for entry in seed_entries]
+            ),
+            "idea_count": len(seed_entries),
+        }
+        goal_artifacts, spec_artifact = _build_document_artifacts(
+            result,
+            source_document=source_document,
+            seed_entries=seed_entries,
+        )
+
+        result.metadata["source_document"] = source_document
+        result.metadata["document_seed_ideas"] = [
+            {
+                "idea": entry["idea"],
+                "source_text": entry["source_text"],
+                "section": entry["section"],
+                "line_number": entry["line_number"],
+                "priority_hint": entry["priority_hint"],
+                "goal_type_hint": entry["goal_type_hint"],
+            }
+            for entry in seed_entries
+        ]
+        result.metadata["goal_artifacts"] = goal_artifacts
+        result.metadata["spec_artifact"] = spec_artifact
+
+        if result.goal_graph is not None:
+            result.goal_graph.metadata["source_document"] = source_document
+            result.goal_graph.metadata["document_seed_ideas"] = list(
+                result.metadata["document_seed_ideas"]
+            )
+            result.goal_graph.metadata["goal_artifacts"] = list(goal_artifacts)
+            if spec_artifact:
+                result.goal_graph.metadata["spec_artifact"] = dict(spec_artifact)
+
+        if result.actions_canvas is not None:
+            result.actions_canvas.metadata["source_document_path"] = str(path)
+        if result.orchestration_canvas is not None:
+            result.orchestration_canvas.metadata["source_document_path"] = str(path)
+
+        return result
 
     @classmethod
     def from_demo(cls) -> tuple[PipelineResult, PipelineConfig]:

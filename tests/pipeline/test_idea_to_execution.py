@@ -7,6 +7,7 @@ Including provenance chain integrity, stage transitions, and demo mode.
 """
 
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from aragora.pipeline.idea_to_execution import (
@@ -141,6 +142,46 @@ class TestFromIdeas:
 
         assert result.ideas_canvas is not None
         assert len(result.ideas_canvas.nodes) == 1
+
+
+class TestFromDocumentPath:
+    """Test pipeline creation from a durable roadmap/strategy document path."""
+
+    def test_from_document_path_creates_pipeline_and_artifacts(self):
+        doc_path = Path("docs/plans/ARAGORA_EVOLUTION_ROADMAP.md")
+
+        result = IdeaToExecutionPipeline.from_document_path(doc_path, auto_advance=True)
+
+        assert result.ideas_canvas is not None
+        assert result.goal_graph is not None
+        assert result.actions_canvas is not None
+        assert result.orchestration_canvas is not None
+        assert result.metadata["source_document"]["path"] == str(doc_path)
+        assert result.metadata["goal_artifacts"]
+        assert result.metadata["spec_artifact"]["title"]
+        assert result.metadata["spec_artifact"]["source_document_path"] == str(doc_path)
+
+    def test_from_document_path_preserves_seed_idea_provenance(self):
+        doc_path = Path("docs/plans/ARAGORA_EVOLUTION_ROADMAP.md")
+
+        result = IdeaToExecutionPipeline.from_document_path(
+            doc_path,
+            auto_advance=False,
+            max_ideas=8,
+        )
+
+        seed_ideas = result.metadata["document_seed_ideas"]
+        assert seed_ideas
+        assert result.metadata["source_document"]["selected_sections"]
+        assert any(
+            "pipeline-ready" in item["source_text"].lower()
+            or "goals/specs" in item["source_text"].lower()
+            for item in seed_ideas
+        )
+
+    def test_from_document_path_missing_file_raises(self):
+        with pytest.raises(FileNotFoundError):
+            IdeaToExecutionPipeline.from_document_path("docs/plans/does-not-exist.md")
 
 
 # =============================================================================
