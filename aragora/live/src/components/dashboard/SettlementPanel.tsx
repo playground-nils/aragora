@@ -190,6 +190,19 @@ export function SettlementPanel({ refreshInterval }: SettlementPanelProps) {
                     </span>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
+                    {record.anchor_hash && (
+                      <span
+                        className={`text-[9px] font-mono px-1 py-0 border ${
+                          record.anchor_local_only
+                            ? 'text-gray-400 border-gray-600'
+                            : 'text-purple-400 border-purple-500/30'
+                        }`}
+                        title={`Anchor: ${record.anchor_hash}${record.anchor_chain_id ? ` (chain ${record.anchor_chain_id})` : ' (local)'}`}
+                        data-testid="anchor-badge"
+                      >
+                        {record.anchor_local_only ? 'LOCAL' : `CH:${record.anchor_chain_id}`}
+                      </span>
+                    )}
                     <span className="text-[10px] font-mono text-[var(--text-muted)]">
                       {(record.confidence * 100).toFixed(0)}%
                     </span>

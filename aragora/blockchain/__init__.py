@@ -41,6 +41,7 @@ __all__ = [
     "ValidationRecord",
     "get_chain_config",
     "get_default_chain_config",
+    "get_receipt_settlement_service",
 ]
 
 # Lazy imports for optional web3 dependency
@@ -66,3 +67,14 @@ def get_wallet_signer(**kwargs: Any) -> WalletSigner:
 
         _wallet_cls = _WalletSigner
     return _wallet_cls(**kwargs)
+
+
+def get_receipt_settlement_service(**kwargs: Any) -> Any:
+    """Get a ReceiptSettlementService instance (lazy import).
+
+    Returns a service that can anchor decision receipts on-chain
+    or locally, and manage settlement status.
+    """
+    from aragora.blockchain.receipt_settlement import ReceiptSettlementService
+
+    return ReceiptSettlementService(**kwargs)
