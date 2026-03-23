@@ -5,13 +5,14 @@
 > See [README](../README.md) for the five pillars framework. See [Documentation Index](../INDEX.md) for the curated technical reference map.
 > For roadmap extraction, doc drift, and partial-feature tracking, see [DOCUMENTATION_HYGIENE_AND_GAP_REGISTER.md](DOCUMENTATION_HYGIENE_AND_GAP_REGISTER.md).
 
-## March 23, 2026 — Current State
+## March 23, 2026 — Execution Program Complete
 
 ### Canonical Current Reality
 
-- The default product loop is **structurally closed** on `main` as of March 23. Nine PRs merged in one day to wire the remaining gaps.
-- The system has moved beyond "candidate PMF PRs are open" into "the loop works end-to-end." The complete path is: onboarding wizard -> API key management -> ProviderRouter-backed debate -> KM-enriched context -> receipt -> KM writeback -> live dashboard -> real demo surface.
-- The merge-order discipline problem around overlapping PMF PRs ([#1166](https://github.com/synaptent/aragora/pull/1166) vs [#1167](https://github.com/synaptent/aragora/pull/1167)-[#1170](https://github.com/synaptent/aragora/pull/1170)) is resolved: the narrow slices won and are all merged.
+- **The execution program is complete.** All 6 program epics are resolved and closed on GitHub: #804 (truthfulness), #806 (surface productization), #836 (swarm control plane), #989 (workbench), #990 (dogfood pipeline), #1036 (self-assessment cadence).
+- The product loop is not just structurally closed — it is **operational**. The complete path works end-to-end: onboarding wizard -> API key management -> ProviderRouter-backed debate -> KM-enriched context -> receipt -> KM writeback -> live dashboard -> real demo surface.
+- Only 5 issues remain open: 2 medium-priority execution items (#820 Wave 2 surfaces, #1011 design partner refresh) and 3 P3 enterprise assurance items (#273, #274, #509) parked until the product loop is proven with real users.
+- The system has moved from "build and wire" to "operate and prove."
 
 ### What Recently Landed On `main`
 
@@ -39,21 +40,21 @@ Earlier March 21-23 work that these build on:
 
 ### Current Frontier
 
-The frontier is no longer "close the product loop." It is:
+The frontier is no longer building or wiring. It is:
 
-- **prove the closed loop end-to-end** with a real user (not just merged code)
-- **harden the live surfaces** that are now exposed (dashboard, demo, onboarding, API key management)
-- **run the boss loop unattended** with label-scoped dispatch on the fresh queue v5
-- **extend the workbench** now that it sits on top of a running product loop instead of bridging disconnected shells
+- **continuous operation** — run the product loop with real users, collect feedback, fix what breaks
+- **Wave 2 polish** — productize SME onboarding, spectate, and conditional public endpoints ([#820](https://github.com/synaptent/aragora/issues/820))
+- **design partner refresh** — prove repeatable external usage ([#1011](https://github.com/synaptent/aragora/issues/1011))
+- **enterprise assurance when ready** — pentest, SOC 2, and certification are parked at P3 ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 ### Strategic Direction
 
-The strategy document is now [ARAGORA_IDEA_TO_EXECUTION_STRATEGY](../plans/ARAGORA_IDEA_TO_EXECUTION_STRATEGY.md). The short version:
+The strategy document is [ARAGORA_IDEA_TO_EXECUTION_STRATEGY](../plans/ARAGORA_IDEA_TO_EXECUTION_STRATEGY.md). The short version:
 
-- the default product loop is structurally closed,
-- make the existing proof surfaces operator-grade and partner-repeatable,
-- then invest in the unified idea-to-execution GUI and stage-transition UX.
-- near-term execution discipline is hardening discipline: prove the loop works with real users before widening it.
+- the execution program is complete — all 6 program epics are closed,
+- the product loop is operational, not just structurally closed,
+- the obligation is to run the system with real users and prove the value prop,
+- enterprise certification follows a proven product loop, not precedes it.
 
 ## March 2026 Sprint — Closed-Loop Backbone, Trust Wedge & Infrastructure
 
