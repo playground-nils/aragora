@@ -119,6 +119,8 @@ class StatusPageHandler(BaseHandler):
         "/api/v1/status/components",
         "/api/v1/status/incidents",
         "/api/v1/status/uptime",
+        # Public surface discovery
+        "/api/v1/public/surfaces",
     ]
 
     # Component definitions with health check functions
@@ -151,6 +153,7 @@ class StatusPageHandler(BaseHandler):
         "/api/v1/status/components",
         "/api/v1/status/incidents",
         "/api/v1/status/uptime",
+        "/api/v1/public/surfaces",
     }
 
     def can_handle(self, path: str) -> bool:
@@ -159,6 +162,7 @@ class StatusPageHandler(BaseHandler):
             path in self.ROUTES
             or path.startswith("/api/status/")
             or path.startswith("/api/v1/status")
+            or path == "/api/v1/public/surfaces"
         )
 
     def handle(self, path: str, query_params: dict[str, Any], handler: Any) -> HandlerResult | None:
@@ -176,6 +180,8 @@ class StatusPageHandler(BaseHandler):
             "/api/v1/status/components": self._v1_components,
             "/api/v1/status/incidents": self._v1_incidents,
             "/api/v1/status/uptime": self._v1_uptime,
+            # Public surface discovery
+            "/api/v1/public/surfaces": self._v1_public_surfaces,
         }
 
         endpoint_handler = handlers.get(path)
@@ -306,6 +312,18 @@ class StatusPageHandler(BaseHandler):
                     },
                     "periods": sla_uptime,
                     "timestamp": now.isoformat(),
+                }
+            }
+        )
+
+    def _v1_public_surfaces(self) -> HandlerResult:
+        """GET /api/v1/public/surfaces - List available public surfaces."""
+        surfaces = self._get_public_surface_readiness()
+        return json_response(
+            {
+                "data": {
+                    "surfaces": [self._serialize_public_surface(s) for s in surfaces],
+                    "summary": self._summarize_public_surfaces(surfaces),
                 }
             }
         )
@@ -863,9 +881,120 @@ class StatusPageHandler(BaseHandler):
                 ],
                 message="Public health and uptime endpoints are backed by this handler.",
             ),
+            PublicSurfaceReadiness(
+                id="health",
+                name="Health checks",
+                readiness="live",
+                paths=[
+                    "/api/health",
+                    "/api/healthz",
+                    "/api/readyz",
+                    "/api/health/detailed",
+                ],
+                message="Health endpoints are public for load balancers and onboarding connection checks.",
+            ),
+            self._get_spectate_surface_readiness(),
+            self._get_onboarding_surface_readiness(),
             self._get_openapi_surface_readiness(),
             self._get_memory_surface_readiness(),
         ]
+
+    def _get_spectate_surface_readiness(self) -> PublicSurfaceReadiness:
+        """Assess whether the spectate bridge is wired and serving events."""
+        try:
+            from aragora.spectate.ws_bridge import get_spectate_bridge
+
+            bridge = get_spectate_bridge()
+            if bridge.running:
+                return PublicSurfaceReadiness(
+                    id="spectate",
+                    name="Spectate (live debate observation)",
+                    readiness="live",
+                    paths=[
+                        "/api/v1/spectate/recent",
+                        "/api/v1/spectate/status",
+                        "/api/v1/spectate/stream",
+                    ],
+                    message=(
+                        "Spectate bridge is running. Live debate events are "
+                        "available via polling and WebSocket. Unauthenticated "
+                        "callers receive redacted status (debate IDs hidden)."
+                    ),
+                    backend_conditional=True,
+                    details={
+                        "bridge_running": True,
+                        "subscribers": bridge.subscriber_count,
+                        "buffer_size": bridge.buffer_size,
+                    },
+                )
+            return PublicSurfaceReadiness(
+                id="spectate",
+                name="Spectate (live debate observation)",
+                readiness="partial",
+                paths=[
+                    "/api/v1/spectate/recent",
+                    "/api/v1/spectate/status",
+                    "/api/v1/spectate/stream",
+                ],
+                message=(
+                    "Spectate bridge is initialized but not running. "
+                    "Endpoints return empty results until a debate starts."
+                ),
+                backend_conditional=True,
+                details={"bridge_running": False},
+            )
+        except ImportError:
+            return PublicSurfaceReadiness(
+                id="spectate",
+                name="Spectate (live debate observation)",
+                readiness="partial",
+                paths=[
+                    "/api/v1/spectate/recent",
+                    "/api/v1/spectate/status",
+                    "/api/v1/spectate/stream",
+                ],
+                message=(
+                    "Spectate module not available. Endpoints return empty fallback responses."
+                ),
+                backend_conditional=True,
+                details={"bridge_running": False},
+            )
+
+    def _get_onboarding_surface_readiness(self) -> PublicSurfaceReadiness:
+        """Assess whether the onboarding wizard endpoints are wired."""
+        try:
+            from aragora.onboarding import OnboardingWizard  # noqa: F401
+
+            return PublicSurfaceReadiness(
+                id="onboarding",
+                name="SME onboarding wizard",
+                readiness="live",
+                paths=[
+                    "/api/v1/onboarding/flow",
+                    "/api/v1/onboarding/templates",
+                    "/api/v1/onboarding/first-debate",
+                    "/api/v1/onboarding/quick-start",
+                ],
+                message=(
+                    "Onboarding wizard is wired: 3-step get-started flow, "
+                    "SME-specific templates, and quick-start profiles are "
+                    "served by the backend handler."
+                ),
+            )
+        except ImportError:
+            return PublicSurfaceReadiness(
+                id="onboarding",
+                name="SME onboarding wizard",
+                readiness="partial",
+                paths=[
+                    "/api/v1/onboarding/flow",
+                    "/api/v1/onboarding/templates",
+                    "/api/v1/onboarding/first-debate",
+                    "/api/v1/onboarding/quick-start",
+                ],
+                message="Onboarding module not importable. Endpoints may return 500.",
+                backend_conditional=True,
+            )
 
     def _get_openapi_surface_readiness(self) -> PublicSurfaceReadiness:
         """Assess whether the documented OpenAPI surface is fully hardened."""

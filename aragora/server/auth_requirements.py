@@ -114,6 +114,33 @@ PUBLIC_ENDPOINTS = [
         AuthLevel.PUBLIC,
         description="Playground health check",
     ),
+    # Spectate - public read-only live observation (debate IDs redacted for unauthenticated)
+    EndpointAuth(
+        "/api/v1/spectate/recent",
+        "get",
+        AuthLevel.PUBLIC,
+        description="Recent spectate events",
+    ),
+    EndpointAuth(
+        "/api/v1/spectate/status",
+        "get",
+        AuthLevel.PUBLIC,
+        description="Spectate bridge status (redacted for unauthenticated)",
+    ),
+    # Onboarding - public for first-time users
+    EndpointAuth(
+        "/api/v1/onboarding/templates",
+        "get",
+        AuthLevel.PUBLIC,
+        description="Onboarding starter templates",
+    ),
+    # Public surface discovery
+    EndpointAuth(
+        "/api/v1/public/surfaces",
+        "get",
+        AuthLevel.PUBLIC,
+        description="List available public API surfaces",
+    ),
 ]
 
 # =============================================================================
