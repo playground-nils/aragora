@@ -245,6 +245,9 @@ class ArenaBuilder:
         self._use_performance_selection: bool = False
         self._enable_position_ledger: bool = False
 
+        # Provider routing hints (from ProviderRouter)
+        self._provider_hints: dict[str, float] | None = None
+
         # Extensions: Billing
         self._org_id: str = ""
         self._user_id: str = ""
@@ -791,6 +794,17 @@ class ArenaBuilder:
         self._enable_position_ledger = enabled
         return self
 
+    def with_provider_hints(self, hints: dict[str, float]) -> ArenaBuilder:
+        """Set provider routing hints from ProviderRouter.
+
+        Args:
+            hints: Mapping of provider/model name to quality score (0-1).
+                Passed through to ArenaConfig and used by TeamSelector
+                during agent selection to bias toward higher-quality providers.
+        """
+        self._provider_hints = hints
+        return self
+
     # =========================================================================
     # Pulse / Trending
     # =========================================================================
@@ -1219,7 +1233,13 @@ class ArenaBuilder:
         if self._enable_auto_execution is not None:
             arena_kwargs["enable_auto_execution"] = self._enable_auto_execution
 
-        return Arena(**arena_kwargs)
+        arena = Arena(**arena_kwargs)
+
+        # Set provider routing hints on the arena (used by team selection)
+        if self._provider_hints is not None:
+            arena._provider_hints = self._provider_hints  # type: ignore[attr-defined]
+
+        return arena
 
 
 # Convenience function for minimal Arena creation

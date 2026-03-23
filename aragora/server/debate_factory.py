@@ -662,6 +662,20 @@ class DebateFactory:
                 enable_auto_execution=config.enable_auto_execution,
             )
 
+        # Consult ProviderRouter for provider quality hints (graceful fallback)
+        try:
+            from aragora.routing.provider_router import get_provider_router
+
+            router = get_provider_router()
+            hints = router.get_provider_hints()
+            if hints:
+                builder = builder.with_provider_hints(hints)
+                logger.info("ProviderRouter supplied hints for %d providers", len(hints))
+        except ImportError:
+            logger.debug("ProviderRouter not available; skipping provider hints")
+        except (RuntimeError, TypeError, ValueError, OSError) as e:
+            logger.warning("ProviderRouter failed, proceeding without hints: %s", e)
+
         arena = builder.build()
 
         # Apply per-debate budget cap if specified
