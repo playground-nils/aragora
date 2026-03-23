@@ -536,7 +536,7 @@ class DebateDefaults:
     min_agents_per_debate: int = 2
     """Minimum agents required for a standard debate."""
 
-    max_agents_per_debate: int = 10
+    max_agents_per_debate: int = 20
     """Maximum agents allowed in a single debate."""
 
     byzantine_min_agents: int = 4

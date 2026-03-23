@@ -135,7 +135,7 @@ class TestGovernorConstraints:
         assert constraints.max_context_tokens == 8000
         assert constraints.max_history_messages == 20
         assert constraints.max_prompt_length == 4000
-        assert constraints.max_agents_per_round == 5
+        assert constraints.max_agents_per_round == 12
         assert constraints.max_critique_length == 1000
         assert constraints.max_proposal_length == 2000
         assert constraints.enable_deep_analysis is True

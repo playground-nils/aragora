@@ -445,6 +445,9 @@ class ArenaConfig:
         provider_budget: float | None = None,
         # Provider hints: provider_name -> quality_score from ProviderRouter
         provider_hints: dict[str, float] | None = None,
+        # Maximum agents allowed in a single debate (default 20).
+        # A warning is logged when >10 agents are used due to O(N^2) critique overhead.
+        max_agents: int = 20,
         # ---- Sub-config objects (optional, for grouped construction) ----
         hook_config: HookConfig | None = None,
         tracking_config: TrackingConfig | None = None,
@@ -566,6 +569,9 @@ class ArenaConfig:
         self.provider_budget = provider_budget
         # Provider hints from ProviderRouter (provider_name -> quality_score)
         self.provider_hints = provider_hints
+
+        # Maximum agents allowed
+        self.max_agents = max_agents
 
         # Post-debate coordinator pipeline (default-on, opt-out via disable_post_debate_pipeline)
         self.post_debate_config = kwargs.pop("post_debate_config", None)

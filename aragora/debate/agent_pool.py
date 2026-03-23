@@ -45,7 +45,7 @@ class AgentPoolConfig:
     use_performance_selection: bool = False
     performance_weight: float = 0.7  # Weight for ELO vs calibration
     min_team_size: int = 2
-    max_team_size: int = 10
+    max_team_size: int = 20
 
     # Topology for critic selection
     topology: str = "full_mesh"  # full_mesh, ring, star

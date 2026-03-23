@@ -189,17 +189,16 @@ class DebateRoundsPhase:
         self._performance_router_bridge = performance_router_bridge
 
         # Speed policy and per-debate parallelism bounds (all optional protocol fields).
+        # No hard maximum cap -- protocol values are respected to support 10+ agent debates.
         self._max_parallel_critiques = self._coerce_int(
             getattr(protocol, "max_parallel_critiques", MAX_CONCURRENT_CRITIQUES),
             default=MAX_CONCURRENT_CRITIQUES,
             minimum=1,
-            maximum=MAX_CONCURRENT_CRITIQUES,
         )
         self._max_parallel_revisions = self._coerce_int(
             getattr(protocol, "max_parallel_revisions", MAX_CONCURRENT_REVISIONS),
             default=MAX_CONCURRENT_REVISIONS,
             minimum=1,
-            maximum=MAX_CONCURRENT_REVISIONS,
         )
         self._fast_first_routing = bool(getattr(protocol, "fast_first_routing", False))
         self._fast_first_low_contention_agent_threshold = self._coerce_int(

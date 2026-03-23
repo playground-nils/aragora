@@ -57,7 +57,7 @@ class TestTenantConfig:
 
         # Limits
         assert config.max_debates_per_day == 100
-        assert config.max_agents_per_debate == 10
+        assert config.max_agents_per_debate == 20
         assert config.max_rounds_per_debate == 20
         assert config.max_concurrent_debates == 5
         assert config.max_users == 10
