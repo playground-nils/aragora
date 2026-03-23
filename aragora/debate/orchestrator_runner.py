@@ -1143,6 +1143,7 @@ async def handle_debate_completion(
             coordinator = PostDebateCoordinator(
                 config=effective_config,
                 settlement_tracker=settlement_tracker,
+                knowledge_mound=getattr(arena, "knowledge_mound", None),
             )
             task = getattr(ctx.env, "task", "") if ctx.env else ""
             confidence = getattr(ctx.result, "confidence", 0.0)
