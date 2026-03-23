@@ -198,6 +198,7 @@ class ArenaBuilder:
         self._trending_topic: TrendingTopic | None = None
         self._consensus_memory: Any = None
         self._tier_analytics_tracker: Any = None
+        self._knowledge_mound: Any | None = None
         self._enable_knowledge_retrieval: bool | None = None
         self._enable_knowledge_ingestion: bool | None = None
         self._enable_cross_debate_memory: bool | None = None
@@ -423,6 +424,18 @@ class ArenaBuilder:
             self._supermemory_max_context_items = supermemory_max_context_items
         if enable_belief_guidance is not None:
             self._enable_belief_guidance = enable_belief_guidance
+        return self
+
+    def with_knowledge_mound(self, knowledge_mound: Any) -> ArenaBuilder:
+        """Set the Knowledge Mound instance for debate context enrichment.
+
+        When provided, the Arena will use this KM for retrieving relevant
+        organizational knowledge during debates and ingesting outcomes afterward.
+
+        Args:
+            knowledge_mound: A KnowledgeMound instance (or compatible object)
+        """
+        self._knowledge_mound = knowledge_mound
         return self
 
     def with_feature_flags(
@@ -1196,6 +1209,8 @@ class ArenaBuilder:
             "mode_sequence": self._mode_sequence,
         }
 
+        if self._knowledge_mound is not None:
+            arena_kwargs["knowledge_mound"] = self._knowledge_mound
         if self._enable_knowledge_retrieval is not None:
             arena_kwargs["enable_knowledge_retrieval"] = self._enable_knowledge_retrieval
         if self._enable_knowledge_ingestion is not None:
