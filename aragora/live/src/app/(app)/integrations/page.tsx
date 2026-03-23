@@ -23,22 +23,37 @@ interface BotStatus {
   errorMessage?: string;
 }
 
-interface SystemIntegration {
+interface SystemIntegrationConfig {
   title: string;
   description: string;
   href: string;
   icon: string;
-  status: 'stable' | 'beta' | 'alpha';
+  /** API endpoint to probe for availability (GET request, 2xx = available) */
+  probeEndpoint: string;
   features: string[];
 }
 
-const systemIntegrations: SystemIntegration[] = [
+interface SystemIntegrationStatus extends SystemIntegrationConfig {
+  status: 'available' | 'unavailable' | 'checking';
+}
+
+/** Health data for each connector from /api/v1/integrations/health */
+interface ConnectorHealth {
+  name: string;
+  configured: boolean;
+  module_available: boolean;
+  healthy: boolean;
+  last_check: string | null;
+  circuit_breakers: { name: string; state: string; failures: number }[];
+}
+
+const SYSTEM_INTEGRATION_CONFIGS: SystemIntegrationConfig[] = [
   {
     title: 'Webhooks',
     description: 'Receive real-time HTTP callbacks for debate events. Integrate with any system.',
     href: '/webhooks',
     icon: '>>',
-    status: 'stable',
+    probeEndpoint: '/api/v1/webhooks',
     features: ['Lifecycle events', 'Consensus alerts', 'HMAC signatures', 'Retry logic'],
   },
   {
@@ -46,7 +61,7 @@ const systemIntegrations: SystemIntegration[] = [
     description: 'Extend Aragora with custom plugins for selection, scoring, and behaviors.',
     href: '/plugins',
     icon: '+>',
-    status: 'stable',
+    probeEndpoint: '/api/v1/plugins',
     features: ['Agent scorers', 'Team selectors', 'Custom behaviors'],
   },
   {
@@ -54,7 +69,7 @@ const systemIntegrations: SystemIntegration[] = [
     description: 'Export debate data for fine-tuning language models.',
     href: '/training',
     icon: '[]',
-    status: 'stable',
+    probeEndpoint: '/api/v1/training/export',
     features: ['SFT format', 'DPO pairs', 'JSONL export'],
   },
   {
@@ -62,7 +77,7 @@ const systemIntegrations: SystemIntegration[] = [
     description: 'Connect external knowledge sources for fact-grounded debates.',
     href: '/evidence',
     icon: '??',
-    status: 'beta',
+    probeEndpoint: '/api/v1/evidence',
     features: ['Web search', 'Document upload', 'Citations'],
   },
   {
@@ -70,7 +85,7 @@ const systemIntegrations: SystemIntegration[] = [
     description: 'Interactive documentation and testing for all API endpoints.',
     href: '/api-explorer',
     icon: '{}',
-    status: 'stable',
+    probeEndpoint: '/api/v1/openapi.json',
     features: ['OpenAPI spec', 'Try requests', 'Authentication'],
   },
   {
@@ -78,8 +93,8 @@ const systemIntegrations: SystemIntegration[] = [
     description: 'Model Context Protocol server for AI assistant integrations.',
     href: '/developer',
     icon: '<>',
-    status: 'beta',
-    features: ['Claude integration', '17 MCP tools', 'Context streaming'],
+    probeEndpoint: '/api/v1/mcp/tools',
+    features: ['Claude integration', 'MCP tools', 'Context streaming'],
   },
 ];
 
@@ -118,15 +133,38 @@ const BOT_CONFIGS: Omit<BotStatus, 'status' | 'lastPing' | 'errorMessage'>[] = [
   },
 ];
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    stable: 'bg-acid-green/20 text-acid-green border-acid-green/30',
-    beta: 'bg-acid-cyan/20 text-acid-cyan border-acid-cyan/30',
-    alpha: 'bg-warning/20 text-warning border-warning/30',
+function SystemStatusBadge({ status }: { status: SystemIntegrationStatus['status'] }) {
+  const styles: Record<SystemIntegrationStatus['status'], { classes: string; label: string }> = {
+    available: { classes: 'bg-acid-green/20 text-acid-green border-acid-green/30', label: 'AVAILABLE' },
+    unavailable: { classes: 'bg-text-muted/20 text-text-muted border-text-muted/30', label: 'UNAVAILABLE' },
+    checking: { classes: 'bg-acid-cyan/20 text-acid-cyan border-acid-cyan/30 animate-pulse', label: 'CHECKING' },
   };
+  const style = styles[status];
   return (
-    <span className={`px-2 py-0.5 text-xs font-mono rounded border ${colors[status]}`}>
-      {status.toUpperCase()}
+    <span className={`px-2 py-0.5 text-xs font-mono rounded border ${style.classes}`}>
+      {style.label}
+    </span>
+  );
+}
+
+function HealthBadge({ configured, healthy }: { configured: boolean; healthy: boolean }) {
+  if (!configured) {
+    return (
+      <span className="px-2 py-0.5 text-xs font-mono rounded bg-text-muted/20 text-text-muted">
+        NOT CONFIGURED
+      </span>
+    );
+  }
+  if (healthy) {
+    return (
+      <span className="px-2 py-0.5 text-xs font-mono rounded bg-acid-green/20 text-acid-green">
+        HEALTHY
+      </span>
+    );
+  }
+  return (
+    <span className="px-2 py-0.5 text-xs font-mono rounded bg-warning/20 text-warning">
+      UNHEALTHY
     </span>
   );
 }
@@ -155,6 +193,74 @@ export default function IntegrationsPage() {
     BOT_CONFIGS.map(cfg => ({ ...cfg, status: 'loading' as const }))
   );
   const [botsLoading, setBotsLoading] = useState(false);
+  const [systemStatuses, setSystemStatuses] = useState<SystemIntegrationStatus[]>(
+    SYSTEM_INTEGRATION_CONFIGS.map(cfg => ({ ...cfg, status: 'checking' as const }))
+  );
+  const [systemLoading, setSystemLoading] = useState(false);
+  const [connectorHealth, setConnectorHealth] = useState<ConnectorHealth[]>([]);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  // Probe system integration endpoints for real availability
+  const fetchSystemStatuses = useCallback(async () => {
+    setSystemLoading(true);
+    const results = await Promise.all(
+      SYSTEM_INTEGRATION_CONFIGS.map(async (cfg) => {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          const res = await fetch(`${backendConfig.api}${cfg.probeEndpoint}`, {
+            method: 'GET',
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          // 2xx or 401/403 means the endpoint exists (auth required = still available)
+          const isAvailable = res.ok || res.status === 401 || res.status === 403;
+          return { ...cfg, status: (isAvailable ? 'available' : 'unavailable') as SystemIntegrationStatus['status'] };
+        } catch {
+          return { ...cfg, status: 'unavailable' as const };
+        }
+      })
+    );
+    setSystemStatuses(results);
+    setSystemLoading(false);
+  }, [backendConfig.api]);
+
+  // Fetch connector health from /api/v1/integrations/health
+  const fetchConnectorHealth = useCallback(async () => {
+    setHealthLoading(true);
+    setHealthError(null);
+    try {
+      const headers: HeadersInit = {};
+      if (tokens?.access_token) {
+        headers['Authorization'] = `Bearer ${tokens.access_token}`;
+      }
+      const res = await fetch(`${backendConfig.api}/api/v1/integrations/health`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setConnectorHealth(data.integrations || []);
+      } else if (res.status === 401 || res.status === 403) {
+        setConnectorHealth([]);
+        setHealthError('Sign in to view connector health.');
+      } else {
+        setConnectorHealth([]);
+        setHealthError('Could not load connector health from server.');
+      }
+    } catch {
+      setConnectorHealth([]);
+      setHealthError('Could not reach the backend to check connector health.');
+    } finally {
+      setHealthLoading(false);
+    }
+  }, [backendConfig.api, tokens?.access_token]);
+
+  // Load system statuses and connector health when system tab is active
+  useEffect(() => {
+    if (activeTab === 'system') {
+      fetchSystemStatuses();
+      fetchConnectorHealth();
+    }
+  }, [activeTab, fetchSystemStatuses, fetchConnectorHealth]);
 
   // Fetch bot statuses
   const fetchBotStatuses = useCallback(async () => {
@@ -483,44 +589,125 @@ ZOOM_WEBHOOK_SECRET=...`}
           )}
 
           {activeTab === 'system' && (
-            <div className="space-y-4">
-              <h2 className="font-mono text-text mb-4">System Integrations</h2>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="font-mono text-text">System Integrations</h2>
+                <button
+                  onClick={() => { fetchSystemStatuses(); fetchConnectorHealth(); }}
+                  disabled={systemLoading || healthLoading}
+                  className="px-3 py-1 text-xs font-mono border border-acid-green/30 text-text-muted hover:text-acid-green transition-colors disabled:opacity-50"
+                >
+                  {systemLoading || healthLoading ? '[CHECKING...]' : '[REFRESH STATUS]'}
+                </button>
+              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {systemIntegrations.map((integration) => (
-                  <Link
-                    key={integration.href}
-                    href={integration.href}
-                    className="group p-4 border border-acid-green/20 hover:border-acid-green/50 bg-surface/30 hover:bg-surface/50 rounded transition-all"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-acid-cyan text-lg">{integration.icon}</span>
-                        <h3 className="font-mono text-text group-hover:text-acid-green transition-colors">
-                          {integration.title}
-                        </h3>
+              {/* Connector Health from /api/v1/integrations/health */}
+              <div>
+                <h3 className="font-mono text-text text-sm mb-3">Connector Health (Environment)</h3>
+                {healthError && (
+                  <div className="mb-3 p-3 border border-warning/30 bg-warning/10 rounded">
+                    <p className="text-warning font-mono text-sm">{healthError}</p>
+                  </div>
+                )}
+                {healthLoading && connectorHealth.length === 0 && !healthError && (
+                  <div className="p-4 border border-acid-green/20 rounded bg-surface/30">
+                    <p className="font-mono text-text-muted text-center text-sm">Checking connector health...</p>
+                  </div>
+                )}
+                {connectorHealth.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {connectorHealth.map((connector) => (
+                      <div
+                        key={connector.name}
+                        className={`p-3 border rounded bg-surface/30 ${
+                          connector.configured && connector.healthy ? 'border-acid-green/40' :
+                          connector.configured && !connector.healthy ? 'border-warning/40' :
+                          'border-acid-green/15'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-mono text-text text-sm capitalize">{connector.name}</h4>
+                          <HealthBadge configured={connector.configured} healthy={connector.healthy} />
+                        </div>
+                        <div className="space-y-1 text-xs font-mono text-text-muted">
+                          <div>Module: <span className={connector.module_available ? 'text-acid-green' : 'text-text-muted'}>{connector.module_available ? 'loaded' : 'not loaded'}</span></div>
+                          {connector.last_check && (
+                            <div>Last check: {new Date(connector.last_check).toLocaleString()}</div>
+                          )}
+                          {connector.circuit_breakers.length > 0 && (
+                            <div className="flex gap-2 mt-1">
+                              {connector.circuit_breakers.map((cb) => (
+                                <span
+                                  key={cb.name}
+                                  className={`px-1.5 py-0.5 rounded ${
+                                    cb.state === 'closed' ? 'bg-acid-green/10 text-acid-green' :
+                                    cb.state === 'half-open' ? 'bg-warning/10 text-warning' :
+                                    'bg-crimson/10 text-crimson'
+                                  }`}
+                                >
+                                  {cb.name}: {cb.state}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <StatusBadge status={integration.status} />
-                    </div>
-                    <p className="text-text-muted font-mono text-xs mb-3 line-clamp-2">
-                      {integration.description}
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {integration.features.map((feature) => (
-                        <span
-                          key={feature}
-                          className="px-2 py-0.5 text-xs font-mono bg-acid-green/10 text-acid-green/70 rounded"
-                        >
-                          {feature}
-                        </span>
-                      ))}
-                    </div>
-                  </Link>
-                ))}
+                    ))}
+                  </div>
+                )}
+                {!healthLoading && connectorHealth.length === 0 && !healthError && (
+                  <div className="p-4 border border-acid-green/20 rounded bg-surface/20 text-center">
+                    <p className="font-mono text-sm text-text-muted">No connector health data available.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* System Feature Endpoints */}
+              <div>
+                <h3 className="font-mono text-text text-sm mb-3">Feature Endpoints</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {systemStatuses.map((integration) => (
+                    <Link
+                      key={integration.href}
+                      href={integration.href}
+                      className={`group p-4 border rounded bg-surface/30 hover:bg-surface/50 transition-all ${
+                        integration.status === 'available' ? 'border-acid-green/30 hover:border-acid-green/50' :
+                        integration.status === 'checking' ? 'border-acid-cyan/20' :
+                        'border-acid-green/10 hover:border-acid-green/30'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-acid-cyan text-lg">{integration.icon}</span>
+                          <h3 className="font-mono text-text group-hover:text-acid-green transition-colors">
+                            {integration.title}
+                          </h3>
+                        </div>
+                        <SystemStatusBadge status={integration.status} />
+                      </div>
+                      <p className="text-text-muted font-mono text-xs mb-2 line-clamp-2">
+                        {integration.description}
+                      </p>
+                      <div className="text-xs font-mono text-text-muted mb-3">
+                        Endpoint: <code className="text-acid-cyan/70">{integration.probeEndpoint}</code>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {integration.features.map((feature) => (
+                          <span
+                            key={feature}
+                            className="px-2 py-0.5 text-xs font-mono bg-acid-green/10 text-acid-green/70 rounded"
+                          >
+                            {feature}
+                          </span>
+                        ))}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
               </div>
 
               {/* Quick Links */}
-              <div className="mt-6 p-4 border border-acid-green/20 rounded bg-surface/20">
+              <div className="p-4 border border-acid-green/20 rounded bg-surface/20">
                 <h3 className="font-mono text-text mb-3 text-sm">Quick Actions</h3>
                 <div className="flex flex-wrap gap-2">
                   <Link
