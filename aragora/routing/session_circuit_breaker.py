@@ -140,7 +140,7 @@ class SessionCircuitBreaker:
 
             if category in (FailureCategory.AUTH, FailureCategory.QUOTA):
                 self._pinned[provider] = failure
-                logger.warning(
+                logger.debug(
                     "Provider %s permanently failed for session (%s): %s",
                     provider,
                     category.value,
@@ -158,7 +158,7 @@ class SessionCircuitBreaker:
 
             if len(window) >= TRANSIENT_FAILURE_THRESHOLD:
                 self._pinned[provider] = failure
-                logger.warning(
+                logger.debug(
                     "Provider %s pinned after %d transient failures in %.0fs: %s",
                     provider,
                     len(window),

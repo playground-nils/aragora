@@ -335,7 +335,7 @@ class ErrorAction:
     error: "AgentError"
     should_retry: bool
     delay_seconds: float = 0.0
-    log_level: str = "warning"
+    log_level: str = "debug"
 
 
 # =============================================================================

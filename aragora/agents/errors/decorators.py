@@ -391,7 +391,7 @@ def handle_agent_errors(
                     raise action.error from e
 
                 # Log the error at appropriate level
-                log_method = getattr(logger, action.log_level, logger.warning)
+                log_method = getattr(logger, action.log_level, logger.debug)
                 log_method(
                     f"[{agent_name}] {type(action.error).__name__} (attempt {attempt}): {action.error}"
                 )
@@ -402,7 +402,7 @@ def handle_agent_errors(
 
                 # Retry if appropriate
                 if action.should_retry and action.error.recoverable:
-                    logger.info(
+                    logger.debug(
                         f"[{agent_name}] Retrying in {action.delay_seconds:.1f}s "
                         f"(attempt {attempt}/{max_retries + 1})"
                     )

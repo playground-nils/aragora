@@ -138,6 +138,13 @@ def main() -> None:
         parser.print_help()
         return
 
+    # Configure logging level based on --verbose flag.
+    # Without --verbose, only ERROR+ messages reach stderr so that
+    # transient rate-limit retries, circuit-breaker state changes, and
+    # fallback routing messages stay hidden during normal operation.
+    log_level = logging.DEBUG if getattr(args, "verbose", False) else logging.WARNING
+    logging.basicConfig(level=log_level, format="%(levelname)s %(name)s: %(message)s")
+
     args.func(args)
 
 

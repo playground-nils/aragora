@@ -154,7 +154,7 @@ class QuotaFallbackMixin:
             self._fallback_agent = self._get_openrouter_fallback()
             if self._fallback_agent:
                 name = getattr(self, "name", "unknown")
-                logger.info(
+                logger.debug(
                     "[%s] Created OpenRouter fallback agent with model %s",
                     name,
                     self._fallback_agent.model,
@@ -193,7 +193,7 @@ class QuotaFallbackMixin:
             return
         provider = self._derive_provider_name()
         reason = f"HTTP {status_code}"
-        logger.info(
+        logger.debug(
             "Notifying session circuit breaker: provider=%s status=%d",
             provider,
             status_code,
@@ -357,15 +357,13 @@ class QuotaFallbackMixin:
         fallback = self._get_cached_fallback_agent()
         if not fallback:
             name = getattr(self, "name", "unknown")
-            logger.warning(
-                "%s quota exceeded but OPENROUTER_API_KEY not set - cannot fallback", name
-            )
+            logger.debug("%s quota exceeded but OPENROUTER_API_KEY not set - cannot fallback", name)
             return None
 
         name = getattr(self, "name", "unknown")
         status_info = f" (status {status_code})" if status_code else ""
         error_type = "rate_limit" if status_code == 429 else "quota"
-        logger.warning(
+        logger.debug(
             "API quota/rate limit error%s for %s, falling back to OpenRouter", status_info, name
         )
 
@@ -413,15 +411,13 @@ class QuotaFallbackMixin:
         fallback = self._get_cached_fallback_agent()
         if not fallback:
             name = getattr(self, "name", "unknown")
-            logger.warning(
-                "%s quota exceeded but OPENROUTER_API_KEY not set - cannot fallback", name
-            )
+            logger.debug("%s quota exceeded but OPENROUTER_API_KEY not set - cannot fallback", name)
             return
 
         name = getattr(self, "name", "unknown")
         status_info = f" (status {status_code})" if status_code else ""
         error_type = "rate_limit" if status_code == 429 else "quota"
-        logger.warning(
+        logger.debug(
             "API quota/rate limit error%s for %s, falling back to OpenRouter streaming",
             status_info,
             name,
@@ -717,7 +713,7 @@ class AgentFallbackChain:
                     record_fallback_success(
                         provider_key, success=True, latency_seconds=call_latency
                     )
-                    logger.info(
+                    logger.debug(
                         f"fallback_success provider={provider_key} "
                         f"fallback_rate={self.metrics.fallback_rate:.1%}"
                     )
@@ -734,7 +730,7 @@ class AgentFallbackChain:
 
                 if is_primary:
                     self.metrics.record_primary_attempt(success=False)
-                    logger.warning(
+                    logger.debug(
                         "Primary provider '%s' failed: %s, trying fallback", provider_key, e
                     )
                     # Record activation of fallback chain (next provider will be fallback)
@@ -751,11 +747,11 @@ class AgentFallbackChain:
                     record_fallback_success(
                         provider_key, success=False, latency_seconds=call_latency
                     )
-                    logger.warning("Fallback provider '%s' failed: %s", provider_key, e)
+                    logger.debug("Fallback provider '%s' failed: %s", provider_key, e)
 
                 # Check if this looks like a rate limit error
                 if error_type == "rate_limit":
-                    logger.info("Rate limit detected for %s, moving to next", provider_key)
+                    logger.debug("Rate limit detected for %s, moving to next", provider_key)
 
                 continue
 
@@ -791,7 +787,7 @@ class AgentFallbackChain:
             provider_key = self._provider_key(provider)
             # Check retry limit
             if retry_count >= self.max_retries:
-                logger.warning("Max retries (%s) reached for stream, stopping", self.max_retries)
+                logger.debug("Max retries (%s) reached for stream, stopping", self.max_retries)
                 break
 
             # Check time limit
@@ -834,7 +830,7 @@ class AgentFallbackChain:
                             record_fallback_success(
                                 provider_key, success=True, latency_seconds=call_latency
                             )
-                            logger.info("fallback_stream_success provider=%s", provider_key)
+                            logger.debug("fallback_stream_success provider=%s", provider_key)
                     yield token
 
                 # If we got here, stream completed successfully
@@ -850,7 +846,7 @@ class AgentFallbackChain:
 
                 if is_primary:
                     self.metrics.record_primary_attempt(success=False)
-                    logger.warning("Primary provider '%s' stream failed: %s", provider_key, e)
+                    logger.debug("Primary provider '%s' stream failed: %s", provider_key, e)
                     # Record activation of fallback chain
                     if len(self.providers) > 1:
                         next_provider = self._provider_key(self.providers[1])
@@ -865,7 +861,7 @@ class AgentFallbackChain:
                     record_fallback_success(
                         provider_key, success=False, latency_seconds=call_latency
                     )
-                    logger.warning("Fallback provider '%s' stream failed: %s", provider_key, e)
+                    logger.debug("Fallback provider '%s' stream failed: %s", provider_key, e)
 
                 continue
 
