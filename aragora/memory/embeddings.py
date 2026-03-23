@@ -102,9 +102,7 @@ async def _retry_with_backoff(coro_fn: Any, max_retries: int = 3, base_delay: fl
             if attempt == max_retries - 1:
                 raise
             delay = base_delay * (2**attempt)
-            logger.warning(
-                "API call failed (attempt %s), retrying in %ss: %s", attempt + 1, delay, e
-            )
+            logger.debug("API call failed (attempt %s), retrying in %ss: %s", attempt + 1, delay, e)
             await asyncio.sleep(delay)
 
 

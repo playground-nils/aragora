@@ -130,11 +130,9 @@ class OpenRouterRateLimiter:
             backoff_delay = self._backoff.get_delay()
             remaining = deadline - time.monotonic()
             if backoff_delay > remaining:
-                logger.warning(
-                    f"Backoff delay {backoff_delay:.1f}s exceeds timeout {remaining:.1f}s"
-                )
+                logger.debug(f"Backoff delay {backoff_delay:.1f}s exceeds timeout {remaining:.1f}s")
                 return False
-            logger.info(f"rate_limiter_backoff_wait delay={backoff_delay:.1f}s")
+            logger.debug(f"rate_limiter_backoff_wait delay={backoff_delay:.1f}s")
             await asyncio.sleep(backoff_delay)
 
         # Adjust timeout for time spent in backoff
@@ -144,7 +142,7 @@ class OpenRouterRateLimiter:
         acquired = await self._bucket.acquire_async(timeout=remaining_timeout)
 
         if not acquired:
-            logger.warning("OpenRouter rate limit timeout")
+            logger.debug("OpenRouter rate limit timeout")
             return False
 
         # Stagger delay to allow parallel token acquisition
@@ -183,7 +181,7 @@ class OpenRouterRateLimiter:
         Returns:
             The recommended delay before retrying (in seconds)
         """
-        logger.warning("rate_limit_error status=%s", status_code)
+        logger.debug("rate_limit_error status=%s", status_code)
         delay = self._backoff.record_failure()
         # Also release the token back since request failed
         self.release_on_error()
@@ -392,12 +390,12 @@ class ProviderRateLimiter:
             backoff_delay = self._backoff.get_delay()
             remaining = deadline - time.monotonic()
             if backoff_delay > remaining:
-                logger.warning(
+                logger.debug(
                     f"[{self.provider}] Backoff delay {backoff_delay:.1f}s "
                     f"exceeds timeout {remaining:.1f}s"
                 )
                 return False
-            logger.info(f"[{self.provider}] rate_limiter_backoff_wait delay={backoff_delay:.1f}s")
+            logger.debug(f"[{self.provider}] rate_limiter_backoff_wait delay={backoff_delay:.1f}s")
             await asyncio.sleep(backoff_delay)
 
         # Adjust timeout for time spent in backoff
@@ -407,7 +405,7 @@ class ProviderRateLimiter:
         acquired = await self._bucket.acquire_async(timeout=remaining_timeout)
 
         if not acquired:
-            logger.warning("[%s] rate limit timeout", self.provider)
+            logger.debug("[%s] rate limit timeout", self.provider)
             return False
 
         # Stagger delay to allow parallel token acquisition
@@ -431,7 +429,7 @@ class ProviderRateLimiter:
 
     def record_rate_limit_error(self, status_code: int = 429) -> float:
         """Record a rate limit error (429/403) and return backoff delay."""
-        logger.warning("[%s] rate_limit_error status=%s", self.provider, status_code)
+        logger.debug("[%s] rate_limit_error status=%s", self.provider, status_code)
         delay = self._backoff.record_failure()
         self.release_on_error()
         return delay

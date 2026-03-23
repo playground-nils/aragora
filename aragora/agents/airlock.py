@@ -268,7 +268,7 @@ class AirlockProxy:
 
             except asyncio.TimeoutError:
                 self._metrics.timeout_errors += 1
-                logger.warning(
+                logger.debug(
                     "airlock_timeout agent=%s op=%s timeout=%ss attempt=%s",
                     self._agent.name,
                     operation,
@@ -282,7 +282,7 @@ class AirlockProxy:
 
                 if self._config.fallback_on_timeout:
                     self._metrics.fallback_responses += 1
-                    logger.info(
+                    logger.debug(
                         "airlock_fallback agent=%s op=%s reason=timeout",
                         self._agent.name,
                         operation,
@@ -293,7 +293,7 @@ class AirlockProxy:
 
             except (ConnectionError, OSError, RuntimeError) as e:
                 # Retryable errors - network/connection issues
-                logger.warning(
+                logger.debug(
                     "airlock_retryable agent=%s op=%s error=%s: %s",
                     self._agent.name,
                     operation,
@@ -307,7 +307,7 @@ class AirlockProxy:
 
                 if self._config.fallback_on_error:
                     self._metrics.fallback_responses += 1
-                    logger.info(
+                    logger.debug(
                         "airlock_fallback agent=%s op=%s reason=retryable_error",
                         self._agent.name,
                         operation,
@@ -347,7 +347,7 @@ class AirlockProxy:
 
                 if self._config.fallback_on_error:
                     self._metrics.fallback_responses += 1
-                    logger.info(
+                    logger.debug(
                         "airlock_fallback agent=%s op=%s reason=error", self._agent.name, operation
                     )
                     return fallback
