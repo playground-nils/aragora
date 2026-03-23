@@ -391,12 +391,14 @@ class CanvasPipelineHandler:
     """HTTP handler for the idea-to-execution canvas pipeline."""
 
     ROUTES = [
+        "GET /api/v1/canvas/pipeline",
         "POST /api/v1/canvas/pipeline/from-debate",
         "POST /api/v1/canvas/pipeline/from-ideas",
         "POST /api/v1/canvas/pipeline/from-braindump",
         "POST /api/v1/canvas/pipeline/from-template",
         "POST /api/v1/canvas/pipeline/demo",
         "POST /api/v1/canvas/pipeline/advance",
+        "POST /api/v1/canvas/pipeline/approve-transition",
         "POST /api/v1/canvas/pipeline/run",
         "POST /api/v1/canvas/pipeline/{id}/approve-transition",
         "POST /api/v1/canvas/pipeline/{id}/execute",
@@ -578,6 +580,10 @@ class CanvasPipelineHandler:
         """Dispatch GET requests to the appropriate handler method."""
         self._get_request_body(handler)
 
+        # GET /api/v1/canvas/pipeline — list pipelines or return latest
+        if path in ("/api/v1/canvas/pipeline", "/api/v1/canvas/pipeline/"):
+            return self.handle_list_or_latest(query_params)
+
         # GET /api/v1/canvas/pipeline/templates
         if path.endswith("/pipeline/templates"):
             return self.handle_list_templates(query_params)
@@ -723,6 +729,7 @@ class CanvasPipelineHandler:
             return self.handle_execute(m.group(1), body)
 
         # Check for transition approval: /api/v1/canvas/pipeline/{id}/approve-transition
+        # Also supports root path with pipeline_id in body (frontend pattern)
         if "/approve-transition" in path:
             auth_error = self._check_permission(handler, "pipeline:write")
             if auth_error:
@@ -731,6 +738,12 @@ class CanvasPipelineHandler:
             m = re.match(r".*/pipeline/([a-zA-Z0-9_-]+)/approve-transition$", path)
             if m:
                 return self.handle_approve_transition(m.group(1), body)
+            # Fallback: root-path approve-transition with pipeline_id in body
+            if path.endswith("/pipeline/approve-transition"):
+                pipeline_id = body.get("pipeline_id")
+                if not pipeline_id:
+                    return error_response("Missing pipeline_id in request body", 400)
+                return self.handle_approve_transition(str(pipeline_id), body)
             return None
 
         target = None
@@ -1130,6 +1143,40 @@ class CanvasPipelineHandler:
         except (ImportError, ValueError, TypeError) as e:
             logger.warning("Pipeline advance failed: %s", e)
             return error_response("Pipeline advance failed", 500)
+
+    async def handle_list_or_latest(self, query_params: dict[str, Any]) -> HandlerResult:
+        """GET /api/v1/canvas/pipeline
+
+        Returns the most recent pipeline result (for SWR auto-load on the
+        pipeline page).  Pass ``?list=true`` to get a list of pipeline summaries
+        instead.
+        """
+        store = _get_store()
+
+        # List mode
+        list_mode = query_params.get("list")
+        if list_mode and str(list_mode).lower() in ("1", "true", "yes"):
+            status_filter = query_params.get("status")
+            limit = 50
+            try:
+                limit = int(query_params.get("limit", 50))
+            except (ValueError, TypeError):
+                pass
+            pipelines = store.list_pipelines(status=status_filter, limit=limit)
+            return json_response({"pipelines": pipelines, "count": len(pipelines)})
+
+        # Default: return the latest pipeline
+        pipelines = store.list_pipelines(limit=1)
+        if not pipelines:
+            # No pipelines exist -- return empty so the frontend shows the
+            # empty state (brain dump input) rather than an error.
+            return json_response(None)
+
+        latest_id = pipelines[0]["id"]
+        result = store.get(latest_id)
+        if not result:
+            return json_response(None)
+        return json_response(attach_unified_live_state(result))
 
     async def handle_get_pipeline(self, pipeline_id: str) -> HandlerResult:
         """GET /api/v1/canvas/pipeline/{id}"""
@@ -1989,7 +2036,10 @@ class CanvasPipelineHandler:
 
         from_stage = request_data.get("from_stage", "")
         to_stage = request_data.get("to_stage", "")
-        approved = request_data.get("approved", False)
+        # Default to True when "approved" is not explicitly provided --
+        # the frontend calls approve-transition without this field to
+        # approve, and sets approved=false to reject.
+        approved = request_data.get("approved", True)
         comment = request_data.get("comment", "")
 
         if not from_stage or not to_stage:
@@ -2039,6 +2089,7 @@ class CanvasPipelineHandler:
                 "to_stage": to_stage,
                 "status": "approved" if approved else "rejected",
                 "comment": comment,
+                "result": existing,
             }
         )
 

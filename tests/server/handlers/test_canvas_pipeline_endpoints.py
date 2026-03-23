@@ -483,3 +483,150 @@ class TestHandleConvertWorkflow:
         body = _body(result)
         assert "nodes" in body
         assert "edges" in body
+
+
+# =========================================================================
+# Route registration for new endpoints
+# =========================================================================
+
+
+class TestNewRouteRegistration:
+    def test_list_pipelines_route(self, handler):
+        assert "GET /api/v1/canvas/pipeline" in handler.ROUTES
+
+    def test_approve_transition_root_route(self, handler):
+        assert "POST /api/v1/canvas/pipeline/approve-transition" in handler.ROUTES
+
+
+# =========================================================================
+# handle_list_or_latest
+# =========================================================================
+
+
+class TestHandleListOrLatest:
+    @pytest.fixture(autouse=True)
+    def _fresh_db(self):
+        """Delete all pipelines from the store for a clean slate."""
+        store = _get_store()
+        for p in store.list_pipelines(limit=1000):
+            store.delete(p["id"])
+        yield
+        for p in store.list_pipelines(limit=1000):
+            store.delete(p["id"])
+
+    @pytest.mark.asyncio
+    async def test_empty_store_returns_null(self, handler):
+        """When no pipelines exist, returns null so frontend shows empty state."""
+        result = await handler.handle_list_or_latest({})
+        body = _body(result)
+        assert body is None
+
+    @pytest.mark.asyncio
+    async def test_returns_latest_pipeline(self, handler, sample_cartographer_data):
+        """After creating a pipeline, list_or_latest returns it."""
+        create_result = await handler.handle_from_debate(
+            {"cartographer_data": sample_cartographer_data, "auto_advance": True}
+        )
+        pipeline_id = _body(create_result)["pipeline_id"]
+
+        result = await handler.handle_list_or_latest({})
+        body = _body(result)
+        assert body is not None
+        assert body["pipeline_id"] == pipeline_id
+
+    @pytest.mark.asyncio
+    async def test_list_mode(self, handler, sample_cartographer_data):
+        """?list=true returns a list of pipeline summaries."""
+        await handler.handle_from_debate(
+            {"cartographer_data": sample_cartographer_data, "auto_advance": True}
+        )
+        result = await handler.handle_list_or_latest({"list": "true"})
+        body = _body(result)
+        assert "pipelines" in body
+        assert "count" in body
+        assert body["count"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_latest_has_live_state(self, handler, sample_cartographer_data):
+        """Latest pipeline includes unified live state."""
+        await handler.handle_from_debate(
+            {"cartographer_data": sample_cartographer_data, "auto_advance": True}
+        )
+        result = await handler.handle_list_or_latest({})
+        body = _body(result)
+        assert body is not None
+        assert "live_state" in body
+
+
+# =========================================================================
+# handle_approve_transition — root path with pipeline_id in body
+# =========================================================================
+
+
+class TestHandleApproveTransitionRootPath:
+    @pytest.mark.asyncio
+    async def test_approve_transition_defaults_to_approved(self, handler, sample_cartographer_data):
+        """Calling approve-transition without 'approved' field should default to True."""
+        create_result = await handler.handle_from_debate(
+            {"cartographer_data": sample_cartographer_data, "auto_advance": True}
+        )
+        pipeline_id = _body(create_result)["pipeline_id"]
+
+        result = await handler.handle_approve_transition(
+            pipeline_id,
+            {
+                "from_stage": "ideas",
+                "to_stage": "goals",
+            },
+        )
+        body = _body(result)
+        assert body["status"] == "approved"
+
+    @pytest.mark.asyncio
+    async def test_reject_transition(self, handler, sample_cartographer_data):
+        """Calling approve-transition with approved=false should reject."""
+        create_result = await handler.handle_from_debate(
+            {"cartographer_data": sample_cartographer_data, "auto_advance": True}
+        )
+        pipeline_id = _body(create_result)["pipeline_id"]
+
+        result = await handler.handle_approve_transition(
+            pipeline_id,
+            {
+                "from_stage": "ideas",
+                "to_stage": "goals",
+                "approved": False,
+                "comment": "Not ready",
+            },
+        )
+        body = _body(result)
+        assert body["status"] == "rejected"
+        assert body["comment"] == "Not ready"
+
+    @pytest.mark.asyncio
+    async def test_approve_transition_returns_updated_pipeline(
+        self, handler, sample_cartographer_data
+    ):
+        """Approve-transition should include the updated pipeline data in result."""
+        create_result = await handler.handle_from_debate(
+            {"cartographer_data": sample_cartographer_data, "auto_advance": True}
+        )
+        pipeline_id = _body(create_result)["pipeline_id"]
+
+        result = await handler.handle_approve_transition(
+            pipeline_id,
+            {"from_stage": "ideas", "to_stage": "goals"},
+        )
+        body = _body(result)
+        assert "result" in body
+        assert body["result"]["pipeline_id"] == pipeline_id
+
+    @pytest.mark.asyncio
+    async def test_approve_transition_missing_pipeline(self, handler):
+        """Approving a non-existent pipeline returns 404."""
+        result = await handler.handle_approve_transition(
+            "nonexistent-pipe",
+            {"from_stage": "ideas", "to_stage": "goals"},
+        )
+        body = _body(result)
+        assert "error" in body
