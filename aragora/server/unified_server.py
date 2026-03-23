@@ -1067,6 +1067,7 @@ class UnifiedServer:
                 logger.info(
                     "%s server listening on %s:%s", protocol, self.http_host, self.http_port
                 )
+                mark_http_server_started()
                 server.serve_forever()
                 break  # Normal exit
             except ssl.SSLError as e:
