@@ -4,10 +4,11 @@ OpenClaw Compatibility Layer.
 Provides migration utilities for converting between OpenClaw and Aragora formats:
 - SKILL.md parsing and conversion
 - Capability mapping between OpenClaw and Aragora
-- Computer-use action bridging
+- Computer-use action bridging and dispatch
 - Migration workflows
 """
 
+from .action_dispatcher import DispatchResult, OpenClawActionDispatcher
 from .capability_mapper import CapabilityMapper
 from .next_steps_runner import NextStepsRunner, ScanResult as NextStepsScanResult
 from .pr_review_runner import PRReviewRunner, ReviewResult, load_policy
@@ -18,8 +19,10 @@ from .skill_scanner import DangerousSkillError, ScanResult, SkillScanner, Verdic
 __all__ = [
     "CapabilityMapper",
     "DangerousSkillError",
+    "DispatchResult",
     "NextStepsRunner",
     "NextStepsScanResult",
+    "OpenClawActionDispatcher",
     "OpenClawSkillConverter",
     "OpenClawSkillParser",
     "PRReviewRunner",
