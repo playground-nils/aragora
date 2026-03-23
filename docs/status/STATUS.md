@@ -37,6 +37,16 @@ Earlier March 21-23 work that these build on:
 6. continuity/path-truthfulness improved via [#1146](https://github.com/synaptent/aragora/pull/1146), [#1147](https://github.com/synaptent/aragora/pull/1147), [#1148](https://github.com/synaptent/aragora/pull/1148), [#1150](https://github.com/synaptent/aragora/pull/1150), and [#1151](https://github.com/synaptent/aragora/pull/1151)
 7. queue throughput/harvest support improved via [#1141](https://github.com/synaptent/aragora/pull/1141) and [#1164](https://github.com/synaptent/aragora/pull/1164)
 
+### Wave 2 Surface Productization
+
+Three surfaces productized and inventoried:
+
+| Surface | Status | Notes |
+|---------|--------|-------|
+| **Spectate** | productized | Frontend wired to `useSpectate` hook (polls `/api/v1/spectate/recent` + `/api/v1/spectate/status`). Per-debate WebSocket stream at `/spectate/{debateId}` with feed/timeline/summary views. Conditional auth: unauthenticated callers get redacted status (debate IDs hidden). |
+| **SME Onboarding** | productized | 3-step get-started page (check connection, run debate, view results) wired to backend. Onboarding handler serves flow management, 9 starter templates (including SME-specific), quick-start profiles, and funnel analytics. |
+| **Conditional Public Endpoints** | productized | `GET /api/v1/public/surfaces` lists all public surfaces with readiness (live/partial), paths, and backend-conditional flags. Auth requirements manifest declares spectate and onboarding templates as public. Spectate status auto-redacts debate IDs for unauthenticated callers. |
+
 ### Current Frontier
 
 The frontier is no longer "close the product loop." It is:

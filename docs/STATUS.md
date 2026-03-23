@@ -38,6 +38,14 @@ These build on earlier March 21-22 work:
 - **Dashboard shows live state** (was: historical only).
 - **Boss loop can run unattended** with label-scoped dispatch.
 
+### Wave 2 Surface Productization
+
+| Surface | Status | Notes |
+|---------|--------|-------|
+| **Spectate** | productized | Frontend wired to real WebSocket + polling. Conditional auth redacts debate IDs for unauthenticated callers. |
+| **SME Onboarding** | productized | 3-step wizard wired to backend. 9 starter templates including SME-specific profiles. |
+| **Conditional Public Endpoints** | productized | `GET /api/v1/public/surfaces` lists all public surfaces with readiness. Auth manifest declares spectate + onboarding as public. |
+
 ### Current Frontier
 
 The frontier has shifted from "close the product loop" to:
