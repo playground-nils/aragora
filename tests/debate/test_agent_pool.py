@@ -116,7 +116,7 @@ class TestAgentPoolConfig:
         assert config.use_performance_selection is False
         assert config.performance_weight == 0.7
         assert config.min_team_size == 2
-        assert config.max_team_size == 10
+        assert config.max_team_size == 20
         assert config.topology == "full_mesh"
         assert config.critic_count == 2
 

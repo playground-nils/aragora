@@ -654,6 +654,21 @@ class Arena(ArenaDelegatesMixin):
         if not agents:
             raise ValueError("Must specify either 'agents' or both 'fabric' and 'fabric_config'")
 
+        # Enforce max_agents limit from ArenaConfig (default 20)
+        max_agents = getattr(cfg, "max_agents", 20)
+        if len(agents) > max_agents:
+            raise ValueError(
+                f"Too many agents ({len(agents)}) for debate. "
+                f"max_agents={max_agents}. Increase ArenaConfig.max_agents to allow more."
+            )
+        if len(agents) > 10:
+            logger.warning(
+                "large_agent_count agents=%d - debates with >10 agents incur O(N^2) "
+                "critique overhead and may run slowly. Consider increasing "
+                "protocol.max_parallel_critiques and protocol.max_parallel_revisions.",
+                len(agents),
+            )
+
         # Initialize core configuration via ArenaInitializer
         initializer = ArenaInitializer(broadcast_callback=self._broadcast_health_event)
         core = initializer.init_core(

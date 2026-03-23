@@ -19,6 +19,7 @@ from aragora.config import (
     DEBATE_TIMEOUT_SECONDS,
     DEFAULT_ROUNDS,
     MAX_CONCURRENT_CRITIQUES,
+    MAX_CONCURRENT_PROPOSALS,
     MAX_CONCURRENT_REVISIONS,
 )
 from aragora.debate.role_matcher import RoleMatchingConfig
@@ -354,7 +355,8 @@ class DebateProtocol:
     # If convergence probe similarity exceeds this in low-contention mode, exit early.
     fast_first_convergence_threshold: float = 0.9
     fast_first_early_exit: bool = True
-    # Per-debate parallelism bounds (hard-capped by global config in execution layer).
+    # Per-debate parallelism bounds.
+    max_parallel_proposals: int = MAX_CONCURRENT_PROPOSALS
     max_parallel_critiques: int = MAX_CONCURRENT_CRITIQUES
     max_parallel_revisions: int = MAX_CONCURRENT_REVISIONS
 

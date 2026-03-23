@@ -40,7 +40,7 @@ class TenantConfig:
 
     # Limits
     max_debates_per_day: int = 100
-    max_agents_per_debate: int = 10
+    max_agents_per_debate: int = 20
     max_rounds_per_debate: int = 20
     max_concurrent_debates: int = 5
     max_users: int = 10

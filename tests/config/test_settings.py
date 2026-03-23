@@ -134,7 +134,7 @@ class TestDebateSettings:
         assert s.max_rounds == 12
         assert s.default_consensus == "judge"
         assert s.timeout_seconds == 600
-        assert s.max_agents_per_debate == 10
+        assert s.max_agents_per_debate == 20
         assert s.max_concurrent_debates == 10
         assert s.user_event_queue_size == 10000
 
@@ -565,9 +565,9 @@ class TestConcurrencySettings:
     def test_defaults(self):
         with patch.dict(os.environ, _clean_env(), clear=True):
             s = ConcurrencySettings()
-        assert s.max_concurrent_proposals == 5
-        assert s.max_concurrent_critiques == 15
-        assert s.max_concurrent_revisions == 5
+        assert s.max_concurrent_proposals == 10
+        assert s.max_concurrent_critiques == 20
+        assert s.max_concurrent_revisions == 10
         assert s.max_concurrent_streaming == 3
         assert s.agent_timeout_seconds == 240
         assert s.heartbeat_interval_seconds == 15

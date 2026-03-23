@@ -113,11 +113,14 @@ class TestCalculatePhaseTimeout:
 
     def test_scales_with_agent_count(self):
         """Timeout should scale with number of agents."""
-        timeout_5 = calculate_phase_timeout(5, 60.0)
-        timeout_10 = calculate_phase_timeout(10, 60.0)
+        from aragora.config import MAX_CONCURRENT_REVISIONS
+
+        # Need enough agents to exceed one batch to see scaling
+        timeout_small = calculate_phase_timeout(MAX_CONCURRENT_REVISIONS, 60.0)
+        timeout_large = calculate_phase_timeout(MAX_CONCURRENT_REVISIONS * 2, 60.0)
 
         # More agents should mean longer timeout
-        assert timeout_10 > timeout_5
+        assert timeout_large > timeout_small
 
     def test_includes_buffer_time(self):
         """Timeout should include 60s buffer."""
@@ -134,10 +137,11 @@ class TestCalculatePhaseTimeout:
 
     def test_large_agent_count(self):
         """Should handle large agent counts correctly."""
-        # 20 agents, 120s timeout: (20/5) * 120 + 60 = 540s
+        from aragora.config import MAX_CONCURRENT_REVISIONS
+
         timeout = calculate_phase_timeout(20, 120.0)
 
-        expected = (20 / 5) * 120 + 60
+        expected = (20 / MAX_CONCURRENT_REVISIONS) * 120 + 60
         assert timeout == expected
 
     def test_zero_agents(self):
@@ -156,9 +160,11 @@ class TestCalculatePhaseTimeout:
 
     def test_very_large_agent_timeout(self):
         """Very large per-agent timeout produces larger phase timeout."""
+        from aragora.config import MAX_CONCURRENT_REVISIONS
+
         timeout = calculate_phase_timeout(10, 600.0)
 
-        expected = (10 / 5) * 600 + 60
+        expected = (10 / MAX_CONCURRENT_REVISIONS) * 600 + 60
         assert timeout == expected
         assert timeout > REVISION_PHASE_BASE_TIMEOUT
 

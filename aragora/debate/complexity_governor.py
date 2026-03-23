@@ -126,7 +126,7 @@ class GovernorConstraints:
     round_timeout_seconds: float | None = None
 
     # Complexity constraints
-    max_agents_per_round: int = 5
+    max_agents_per_round: int = 12
     max_critique_length: int = 1000
     max_proposal_length: int = 2000
 
@@ -232,7 +232,7 @@ class AdaptiveComplexityGovernor:
             max_context_tokens=8000,
             max_history_messages=20,
             agent_timeout_seconds=180.0,
-            max_agents_per_round=5,
+            max_agents_per_round=12,
             enable_deep_analysis=True,
             enable_cross_references=True,
             enable_formal_verification=True,
@@ -241,7 +241,7 @@ class AdaptiveComplexityGovernor:
             max_context_tokens=6000,
             max_history_messages=15,
             agent_timeout_seconds=150.0,
-            max_agents_per_round=4,
+            max_agents_per_round=8,
             enable_deep_analysis=True,
             enable_cross_references=True,
             enable_formal_verification=False,
@@ -250,7 +250,7 @@ class AdaptiveComplexityGovernor:
             max_context_tokens=4000,
             max_history_messages=10,
             agent_timeout_seconds=120.0,
-            max_agents_per_round=3,
+            max_agents_per_round=5,
             enable_deep_analysis=False,
             enable_cross_references=False,
             enable_formal_verification=False,
@@ -259,7 +259,7 @@ class AdaptiveComplexityGovernor:
             max_context_tokens=2000,
             max_history_messages=5,
             agent_timeout_seconds=90.0,
-            max_agents_per_round=2,
+            max_agents_per_round=3,
             enable_deep_analysis=False,
             enable_cross_references=False,
             enable_formal_verification=False,

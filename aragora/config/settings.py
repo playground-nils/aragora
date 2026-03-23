@@ -97,7 +97,7 @@ class DebateSettings(BaseSettings):
     default_consensus: str = Field(default="judge", alias="ARAGORA_DEFAULT_CONSENSUS")
     timeout_seconds: int = Field(default=600, ge=30, le=7200, alias="ARAGORA_DEBATE_TIMEOUT")
     max_agents_per_debate: int = Field(
-        default=10, ge=2, le=50, alias="ARAGORA_MAX_AGENTS_PER_DEBATE"
+        default=20, ge=2, le=50, alias="ARAGORA_MAX_AGENTS_PER_DEBATE"
     )
     max_concurrent_debates: int = Field(
         default=10, ge=1, le=100, alias="ARAGORA_MAX_CONCURRENT_DEBATES"
@@ -974,21 +974,21 @@ class ConcurrencySettings(BaseSettings):
 
     # Phase concurrency limits
     max_concurrent_proposals: int = Field(
-        default=5,
+        default=10,
         ge=1,
         le=50,
         alias="ARAGORA_MAX_CONCURRENT_PROPOSALS",
         description="Maximum parallel proposal generations",
     )
     max_concurrent_critiques: int = Field(
-        default=15,
+        default=20,
         ge=1,
         le=100,
         alias="ARAGORA_MAX_CONCURRENT_CRITIQUES",
         description="Maximum parallel critique generations",
     )
     max_concurrent_revisions: int = Field(
-        default=5,
+        default=10,
         ge=1,
         le=50,
         alias="ARAGORA_MAX_CONCURRENT_REVISIONS",
