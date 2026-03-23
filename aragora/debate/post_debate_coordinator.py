@@ -61,6 +61,8 @@ class PostDebateConfig:
     enable_staking: bool = False
     staking_reward_scale: float = 1.0  # Multiplier for staking rewards
     staking_slash_on_hollow_consensus: bool = True  # Slash when Trickster detects hollow consensus
+    # Receipt blockchain anchoring: anchor receipt hash on-chain via ERC-8004
+    auto_anchor_receipt: bool = False
     # ELO-to-ReputationRegistry sync: push ELO adjustments as on-chain feedback
     auto_sync_elo_reputation: bool = False
     # Outcome feedback: feed systematic errors back to Nomic Loop
@@ -129,6 +131,7 @@ class PostDebateResult:
     llm_judge_scores: dict[str, Any] | None = None
     settlement_batch: dict[str, Any] | None = None
     staking_result: dict[str, Any] | None = None
+    receipt_settlement: dict[str, Any] | None = None
     cost_breakdown: dict[str, Any] | None = None
     outcome_ingested: bool = False
     errors: list[str] = field(default_factory=list)
@@ -349,6 +352,10 @@ class PostDebateCoordinator:
             result.staking_result = self._step_staking_rewards(
                 debate_id, debate_result, agents, confidence
             )
+
+        # Step 7.6a: Anchor receipt hash on blockchain (ERC-8004)
+        if self.config.auto_anchor_receipt:
+            result.receipt_settlement = self._step_anchor_receipt(debate_id, debate_result)
 
         # Step 7.6b: Sync ELO rating changes to ERC-8004 ReputationRegistry
         if self.config.auto_sync_elo_reputation:
@@ -1573,6 +1580,66 @@ class PostDebateCoordinator:
         except (ImportError, RuntimeError, ValueError, OSError, TypeError) as e:
             logger.debug("Evidence anchoring unavailable: %s", e)
             return None
+
+    def _step_anchor_receipt(
+        self,
+        debate_id: str,
+        debate_result: Any,
+    ) -> dict[str, Any] | None:
+        """Step 7.6a: Anchor receipt hash on blockchain via ERC-8004.
+
+        Creates a DecisionReceipt from the debate result (if one exists in
+        metadata), then anchors its content hash on-chain. Falls back to
+        local anchoring when no chain is configured.
+
+        Returns a settlement status dict or None on failure.
+        """
+        try:
+            from aragora.blockchain.receipt_settlement import ReceiptSettlementService
+
+            # Try to find or build a receipt from the debate result
+            receipt = self._extract_receipt_from_result(debate_result)
+            if receipt is None:
+                logger.debug("No receipt available for anchoring in debate %s", debate_id)
+                return None
+
+            service = ReceiptSettlementService()
+            anchored = self._run_async_callable(service.anchor_receipt, receipt)
+            status = getattr(anchored, "settlement_status", None)
+            if status:
+                logger.info(
+                    "Receipt anchored for debate %s: local=%s",
+                    debate_id,
+                    status.get("local_only", True),
+                )
+            return status
+        except (ImportError, RuntimeError, ValueError, OSError, TypeError) as e:
+            logger.debug("Receipt anchoring unavailable: %s", e)
+            return None
+
+    def _extract_receipt_from_result(self, debate_result: Any) -> Any:
+        """Extract or build a DecisionReceipt from a debate result.
+
+        Looks for a receipt in the result's metadata, or builds a minimal one
+        from the result's fields.
+        """
+        # Check if the result already has a receipt attached
+        receipt = getattr(debate_result, "receipt", None)
+        if receipt is not None:
+            return receipt
+
+        # Check metadata for a receipt dict
+        metadata = getattr(debate_result, "metadata", {}) or {}
+        receipt_data = metadata.get("receipt")
+        if isinstance(receipt_data, dict):
+            try:
+                from aragora.gauntlet.receipt_models import DecisionReceipt
+
+                return DecisionReceipt.from_dict(receipt_data)
+            except (ValueError, TypeError, KeyError):
+                pass
+
+        return None
 
     def _step_outcome_feedback(
         self,

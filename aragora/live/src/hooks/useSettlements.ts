@@ -17,6 +17,10 @@ export interface SettlementRecord {
   review_notes: string[];
   reviewed_at: string | null;
   reviewed_by: string | null;
+  /** Blockchain anchoring status (populated when ERC-8004 integration is active) */
+  anchor_hash?: string | null;
+  anchor_chain_id?: number | null;
+  anchor_local_only?: boolean;
 }
 
 /**

@@ -126,6 +126,10 @@ class DecisionReceipt:
     # Epistemic settlement metadata (optional, for quality feedback loop)
     settlement_metadata: dict[str, Any] | None = None
 
+    # Blockchain settlement status (ERC-8004 receipt anchoring)
+    # Populated when the receipt is anchored on-chain or locally
+    settlement_status: dict[str, Any] | None = None
+
     # Taint analysis (G2 — populated when tainted context influenced any proposal)
     taint_analysis: dict[str, Any] | None = None
 
@@ -1269,6 +1273,7 @@ class DecisionReceipt:
             "provenance_chain": [p.to_dict() for p in self.provenance_chain],
             "cost_summary": self.cost_summary,
             "settlement_metadata": self.settlement_metadata,
+            "settlement_status": self.settlement_status,
             "explainability": self.explainability,
             "schema_version": self.schema_version,
             "artifact_hash": self.artifact_hash,
@@ -1316,6 +1321,7 @@ class DecisionReceipt:
             artifact_hash=data.get("artifact_hash", ""),
             cost_summary=data.get("cost_summary"),
             settlement_metadata=data.get("settlement_metadata"),
+            settlement_status=data.get("settlement_status"),
             config_used=data.get("config_used", {}) or {},
             # Signature fields
             signature=data.get("signature"),
