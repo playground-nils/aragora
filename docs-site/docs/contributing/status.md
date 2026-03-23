@@ -5,56 +5,44 @@ description: Aragora Project Status
 
 # Aragora Project Status
 
-*Last updated: March 20, 2026*
+*Last updated: March 23, 2026*
 
 > Compatibility mirror for older links. The canonical current-status document is [status/STATUS.md](./status).
 > See [README](../analysis/adr) for the five pillars framework. See [Documentation Index](./documentation-index) for the curated technical reference map.
 
-## March 19-20, 2026 — Tranche Queue And Overnight Autonomy Hardening
+## March 23, 2026 — Execution Program Complete
 
-### What Landed On `main`
+**All 6 program epics are closed.** The product loop is operational. The system has moved from "build and wire" to "operate and prove."
 
-- **Sequential tranche queue** and **curated queue compiler** landed, making it possible to turn issue/source manifests into a real ordered overnight run.
-- **Low-risk auto-merge policy** landed for suitable single-lane, clean review outcomes.
-- Hardening fixes landed across `main` through [#1109](https://github.com/synaptent/aragora/pull/1109), [#1112](https://github.com/synaptent/aragora/pull/1112), [#1115](https://github.com/synaptent/aragora/pull/1115), [#1116](https://github.com/synaptent/aragora/pull/1116), and [#1117](https://github.com/synaptent/aragora/pull/1117):
-  - dead-worker reconciliation and deliverable recovery
-  - single-lane queue behavior for broad issue sources
-  - verification-command propagation through queue compilation
-  - stale fleet-claim reaping before conflicts
-  - truthful queue-item persistence before long watch loops
+### Closed Program Epics
 
-### What The Overnight Runs Produced
+- **#804** — Truthfulness and documentation hygiene
+- **#806** — Sequential surface productization and value prop
+- **#836** — Developer swarm control plane
+- **#989** — Idea-to-execution workbench
+- **#990** — Dogfood the pipeline to build more of Aragora
+- **#1036** — Continuous self-assessment and autonomous improvement cadence
 
-- **PR #1108 merged**: design partner program refresh, recovered and published from the first queue run.
-- **PRs #1110 and #1111 open**: canonical candidate outputs from later overnight runs.
-- **PRs #1113 and #1114 open**: alternate implementations for the same issue pair from a later run.
+### What Is Operational
 
-### What The Overnight Runs Exposed
+- **Product loop end-to-end**: onboarding -> credentials -> ProviderRouter-backed debate -> KM-enriched context -> receipt -> KM writeback -> live dashboard -> real demo surface.
+- **Swarm control plane**: queue-backed execution, label-scoped unattended dispatch, preserved verification evidence, terminal tranche reconciliation.
+- **Boss loop**: runs unattended with label-scoped dispatch on queue v5.
+- **KM bidirectional flow**: debates read org knowledge, outcomes write back.
 
-The March 19-20 dogfood loop found and fixed a chain of real control-plane bugs:
+### What Remains (5 Open Issues)
 
-1. queue items were over-expanding into overlapping multi-lane tranches
-2. dead workers could leave watch loops polling forever
-3. single-lane tranche specs were being re-decomposed inside the supervisor
-4. verification commands were dropped before the merge gate
-5. stale fleet claims could permanently block `aragora/live`
-6. queue resume could lose `manifest_path` and create duplicate tranches
+- **[#820](https://github.com/synaptent/aragora/issues/820)** (medium): Wave 2 surfaces — SME onboarding, spectate, conditional public endpoints
+- **[#1011](https://github.com/synaptent/aragora/issues/1011)** (medium): Design partner refresh and repeatable external usage
+- **[#273](https://github.com/synaptent/aragora/issues/273)**, **[#274](https://github.com/synaptent/aragora/issues/274)**, **[#509](https://github.com/synaptent/aragora/issues/509)** (P3): Enterprise assurance — pentest, SOC 2, certification (parked)
 
-### Current Runtime Frontier
+### Current Frontier
 
-The active reduced proof run is `queue-v4b` for [#1047](https://github.com/synaptent/aragora/issues/1047) and [#819](https://github.com/synaptent/aragora/issues/819).
+The frontier is continuous operation, not construction:
 
-- `#1047` has already reached a truthful `needs_human` / review-blocked state in the queue.
-- `#819` is still pending behind it.
-- The current autonomy frontier is no longer preflight decomposition. It is truthful finalization, publish edge cases, and preserving blocker reasons without operator guesswork.
-
-### Strategy Reality
-
-The older March narrative of "finish the clean Ralph rerun, then pivot" is no longer current. The backend has moved forward into queue-backed unattended execution. The next strategic leverage is:
-
-- finish truthful unattended execution,
-- harvest the real PMF outputs already generated,
-- and package the whole system behind a unified idea-to-execution interface.
+- run the product loop with real users, collect feedback, fix what breaks
+- productize Wave 2 surfaces when ready
+- enterprise certification follows a proven product loop
 
 ## March 12-18, 2026 — Ralph Autonomous Loop Validation
 

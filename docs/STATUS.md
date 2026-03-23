@@ -5,7 +5,9 @@
 > Compatibility mirror for older links. The canonical current-status document is [status/STATUS.md](status/STATUS.md).
 > See [README](../README.md) for the five pillars framework. See [Documentation Index](INDEX.md) for the curated technical reference map.
 
-## March 23, 2026 — Product Loop Structurally Closed
+## March 23, 2026 — Execution Program Complete
+
+All 6 program epics closed: #804 (truthfulness), #806 (surface productization), #836 (swarm control plane), #989 (workbench), #990 (dogfood pipeline), #1036 (self-assessment cadence). Only 5 issues remain open: 2 medium-priority execution items (#820, #1011) and 3 P3 enterprise assurance items (#273, #274, #509).
 
 ### What Landed On `main`
 
@@ -30,13 +32,15 @@ These build on earlier March 21-22 work:
 
 ### What The Proof Set Now Shows
 
-- **The default product loop is structurally closed**: onboarding -> credentials -> routed debate -> KM context -> receipt -> KM writeback -> live dashboard.
-- **ProviderRouter is WIRED** (was: exists but disconnected from debate factory).
-- **KnowledgeMound has bidirectional flow** (was: write-only; now reads into debates and writes outcomes back).
-- **API key management is REAL** (was: client-side fakes).
-- **Demo works against real backend** (was: static).
-- **Dashboard shows live state** (was: historical only).
-- **Boss loop can run unattended** with label-scoped dispatch.
+- **The product loop is operational**: onboarding -> credentials -> routed debate -> KM context -> receipt -> KM writeback -> live dashboard.
+- **All 6 program epics are CLOSED** — the execution program is complete.
+- **ProviderRouter is WIRED** into the debate factory with cost/quality/latency routing.
+- **KnowledgeMound has bidirectional flow** — reads into debates, writes outcomes back.
+- **API key management is REAL** — versioned backend endpoints, no client-side fakes.
+- **Demo works against real backend** — no longer static.
+- **Dashboard shows live state** — active debates, not just historical.
+- **Boss loop runs unattended** with label-scoped dispatch on queue v5.
+- **Swarm control plane is truthful** — queue-backed execution, preserved verification evidence, terminal tranche reconciliation.
 
 ### Wave 2 Surface Productization
 
@@ -48,12 +52,12 @@ These build on earlier March 21-22 work:
 
 ### Current Frontier
 
-The frontier has shifted from "close the product loop" to:
+The frontier is no longer building or wiring. It is:
 
-- **prove the closed loop end-to-end** with a real user
-- **harden the live surfaces** (dashboard, demo, onboarding, API key management)
-- **run the boss loop unattended** on queue v5
-- **extend the workbench** on top of the running product loop
+- **continuous operation** — run the product loop with real users, collect feedback, fix what breaks
+- **Wave 2 polish** — SME onboarding, spectate, conditional public endpoints ([#820](https://github.com/synaptent/aragora/issues/820))
+- **design partner refresh** — repeatable external usage ([#1011](https://github.com/synaptent/aragora/issues/1011))
+- **enterprise assurance when ready** — pentest, SOC 2, certification parked at P3
 
 ## March 12-18, 2026 — Ralph Autonomous Loop Validation
 
