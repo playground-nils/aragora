@@ -130,7 +130,8 @@ class TestBuildPrompt:
 
 
 class TestBuildCommand:
-    def test_claude_command(self):
+    def test_claude_command(self, monkeypatch):
+        monkeypatch.setattr("aragora.swarm.worker_launcher.os.geteuid", lambda: 501)
         launcher = WorkerLauncher(LaunchConfig(claude_model="claude-opus-4-6"))
         cmd = launcher._build_command("claude", "fix bug", "/tmp/wt")
         assert cmd[0] == "bash"
@@ -145,6 +146,18 @@ class TestBuildCommand:
         assert "--model" in cmd
         assert "claude-opus-4-6" in cmd
 
+    def test_claude_command_omits_dangerous_flag_as_root(self, monkeypatch):
+        monkeypatch.setattr("aragora.swarm.worker_launcher.os.geteuid", lambda: 0)
+        launcher = WorkerLauncher(LaunchConfig(claude_model="claude-opus-4-6"))
+        cmd = launcher._build_command("claude", "fix bug", "/tmp/wt")
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_claude_command_fails_closed_when_geteuid_is_unavailable(self, monkeypatch):
+        monkeypatch.delattr("aragora.swarm.worker_launcher.os.geteuid", raising=False)
+        launcher = WorkerLauncher(LaunchConfig(claude_model="claude-opus-4-6"))
+        cmd = launcher._build_command("claude", "fix bug", "/tmp/wt")
+        assert "--dangerously-skip-permissions" not in cmd
+
     def test_codex_command(self):
         launcher = WorkerLauncher(LaunchConfig(codex_model="o3"))
         cmd = launcher._build_command("codex", "fix bug", "/tmp/wt")
@@ -155,7 +168,8 @@ class TestBuildCommand:
         assert "--model" in cmd
         assert "o3" in cmd
 
-    def test_unknown_agent_falls_back_to_claude(self):
+    def test_unknown_agent_falls_back_to_claude(self, monkeypatch):
+        monkeypatch.setattr("aragora.swarm.worker_launcher.os.geteuid", lambda: 501)
         launcher = WorkerLauncher()
         cmd = launcher._build_command("gpt5", "do thing", "/tmp/wt")
         assert cmd[0] == "bash"
