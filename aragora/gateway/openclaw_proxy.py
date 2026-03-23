@@ -442,8 +442,8 @@ class OpenClawSecureProxy:
     ) -> dict[str, Any]:
         """Execute action on the OpenClaw backend."""
         if not self._openclaw_client:
-            # No backend - simulate success for testing
-            return {"success": True, "result": {"simulated": True}}
+            # Dispatch browser/UI actions via the real action dispatcher
+            return await self._dispatch_via_computer_use(action_type, url=url, metadata=metadata)
 
         try:
             # Map to OpenClaw API calls
@@ -677,6 +677,63 @@ class OpenClawSecureProxy:
                 self._audit_callback(event)
             except (RuntimeError, ValueError, TypeError) as e:  # noqa: BLE001 - user-provided audit callback
                 logger.warning("Audit callback failed: %s", e)
+
+    async def _dispatch_via_computer_use(
+        self,
+        action_type: ActionType,
+        url: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Dispatch browser/UI action types through OpenClawActionDispatcher.
+
+        Maps the gateway ActionType enum to OpenClaw action names that the
+        ComputerUseBridge understands, then dispatches through the real
+        Playwright-backed executor.
+
+        Falls back to simulated success for action types that have no
+        computer-use equivalent (shell, file ops, API).
+        """
+        # Map gateway ActionType to OpenClaw action name + params
+        openclaw_action: str | None = None
+        params: dict[str, Any] = {}
+
+        if action_type == ActionType.BROWSER:
+            openclaw_action = "navigate"
+            params = {"url": url or ""}
+        elif action_type == ActionType.SCREENSHOT:
+            openclaw_action = "screenshot"
+        elif action_type == ActionType.KEYBOARD:
+            openclaw_action = "type"
+            params = {"text": (metadata or {}).get("text", "")}
+        elif action_type == ActionType.MOUSE:
+            openclaw_action = "click"
+            x = (metadata or {}).get("x", 0)
+            y = (metadata or {}).get("y", 0)
+            params = {"coordinate": [x, y]}
+        else:
+            # Shell, file ops, API -- no computer-use mapping; return simulated
+            return {"success": True, "result": {"simulated": True}}
+
+        try:
+            from aragora.compat.openclaw.action_dispatcher import OpenClawActionDispatcher
+
+            dispatcher = OpenClawActionDispatcher()
+            await dispatcher.start()
+            try:
+                result = await dispatcher.dispatch(openclaw_action, params, skip_policy=True)
+                return {
+                    "success": result.success,
+                    "result": result.to_dict(),
+                    "error": result.error,
+                }
+            finally:
+                await dispatcher.stop()
+        except ImportError:
+            logger.debug("Action dispatcher unavailable, returning simulated result")
+            return {"success": True, "result": {"simulated": True}}
+        except (RuntimeError, OSError, TimeoutError) as e:
+            logger.error("Dispatch via computer-use failed: %s", e)
+            return {"success": False, "error": str(e)}
 
     def set_policy(self, policy: OpenClawPolicy) -> None:
         """Replace the current policy."""
