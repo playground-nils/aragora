@@ -126,3 +126,67 @@ class TestStorePostTrackerConfig:
             not hasattr(arena.agent_selector, "enable_staking")
             or not arena.agent_selector.enable_staking
         )
+
+
+class TestArenaAcceptsEnableRlm:
+    """Regression tests: Arena.__init__ must accept enable_rlm, rlm_mode, enable_staking."""
+
+    def test_arena_init_accepts_enable_rlm(self):
+        """Arena(enable_rlm=True) must not raise TypeError."""
+        from aragora.debate.orchestrator import Arena
+
+        env = MagicMock()
+        env.task = "test"
+        env.context = ""
+        agents = [MagicMock(), MagicMock()]
+        for a in agents:
+            a.name = "test-agent"
+
+        # This used to raise: TypeError: Arena.__init__() got an unexpected keyword argument 'enable_rlm'
+        arena = Arena(environment=env, agents=agents, enable_rlm=True)
+        assert arena.enable_rlm is True
+
+    def test_arena_init_accepts_rlm_mode(self):
+        """Arena(rlm_mode='true_rlm') must not raise TypeError."""
+        from aragora.debate.orchestrator import Arena
+
+        env = MagicMock()
+        env.task = "test"
+        env.context = ""
+        agents = [MagicMock(), MagicMock()]
+        for a in agents:
+            a.name = "test-agent"
+
+        arena = Arena(environment=env, agents=agents, rlm_mode="true_rlm")
+        assert arena.rlm_mode == "true_rlm"
+
+    def test_arena_init_accepts_enable_staking(self):
+        """Arena(enable_staking=True) must not raise TypeError."""
+        from aragora.debate.orchestrator import Arena
+
+        env = MagicMock()
+        env.task = "test"
+        env.context = ""
+        agents = [MagicMock(), MagicMock()]
+        for a in agents:
+            a.name = "test-agent"
+
+        arena = Arena(environment=env, agents=agents, enable_staking=True)
+        assert arena.enable_staking is True
+
+    def test_arena_from_config_with_enable_rlm(self):
+        """Arena.from_config with ArenaConfig(enable_rlm=True) must not raise."""
+        from aragora.debate.orchestrator import Arena
+
+        config = ArenaConfig(enable_rlm=True, rlm_mode="compression", enable_staking=True)
+        env = MagicMock()
+        env.task = "test"
+        env.context = ""
+        agents = [MagicMock(), MagicMock()]
+        for a in agents:
+            a.name = "test-agent"
+
+        arena = Arena.from_config(environment=env, agents=agents, config=config)
+        assert arena.enable_rlm is True
+        assert arena.rlm_mode == "compression"
+        assert arena.enable_staking is True
