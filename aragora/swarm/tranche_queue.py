@@ -2232,6 +2232,47 @@ def reconcile_tranche_queue(
     return executor.reconcile()
 
 
+def _harvest_item_outcome(item: dict[str, Any]) -> str:
+    pr_records = [entry for entry in item.get("prs", []) if isinstance(entry, dict)]
+    dispositions = {
+        str(entry.get("disposition", "")).strip()
+        for entry in pr_records
+        if str(entry.get("disposition", "")).strip()
+    }
+    if "merged" in dispositions:
+        return "merged"
+    if dispositions.intersection({"error", "merge_failed"}):
+        return "failed"
+    status = _optional_text(item.get("status")) or QUEUE_ITEM_STATUS_PENDING
+    if status == QUEUE_ITEM_STATUS_NEEDS_HUMAN:
+        return "needs_human"
+    if status == QUEUE_ITEM_STATUS_STOPPED:
+        return "failed"
+    return status
+
+
+def _harvest_summary(items: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {
+        "total_items": len(items),
+        "prs_created": 0,
+        "merged": 0,
+        "needs_human": 0,
+        "failed": 0,
+    }
+    for item in items:
+        pr_records = [entry for entry in item.get("prs", []) if isinstance(entry, dict)]
+        summary["prs_created"] += len(pr_records)
+        summary["merged"] += sum(
+            1 for entry in pr_records if str(entry.get("disposition", "")).strip() == "merged"
+        )
+        outcome = _harvest_item_outcome(item)
+        if outcome == "needs_human":
+            summary["needs_human"] += 1
+        elif outcome == "failed":
+            summary["failed"] += 1
+    return summary
+
+
 def harvest_tranche_queue(
     *,
     queue_path: str | Path,
@@ -2295,20 +2336,22 @@ def harvest_tranche_queue(
                 pr_counts["error"] = pr_counts.get("error", 0) + 1
             pr_records.append(pr_record)
 
-        items.append(
-            {
-                "item_id": item.item_id,
-                "kind": item.kind,
-                "source": item.source,
-                "status": item_state.status,
-                "merge_class": item.merge_class,
-                "tranche_status": item_state.tranche_status,
-                "pr_urls": list(item_state.pr_urls),
-                "findings": list(item_state.findings),
-                "stop_reason": item_state.stop_reason,
-                "prs": pr_records,
-            }
-        )
+        item_record = {
+            "item_id": item.item_id,
+            "kind": item.kind,
+            "source": item.source,
+            "status": item_state.status,
+            "merge_class": item.merge_class,
+            "tranche_status": item_state.tranche_status,
+            "pr_urls": list(item_state.pr_urls),
+            "findings": list(item_state.findings),
+            "stop_reason": item_state.stop_reason,
+            "prs": pr_records,
+        }
+        item_record["summary_outcome"] = _harvest_item_outcome(item_record)
+        items.append(item_record)
+
+    summary = _harvest_summary(items)
 
     return {
         "mode": "tranche-queue-harvest",
@@ -2320,6 +2363,7 @@ def harvest_tranche_queue(
         "current_item_id": state.current_item_id,
         "counts": dict(reconciled.get("counts") or {}),
         "pr_counts": pr_counts,
+        "summary": summary,
         "execute_merge": bool(execute_merge),
         "allow_admin": bool(allow_admin),
         "executed_merges": executed_merges,
