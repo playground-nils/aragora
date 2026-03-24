@@ -725,14 +725,18 @@ async def _filter_reachable_live_agents(
     if reachable:
         return reachable
 
+    # All providers failed TLS — return empty list instead of crashing.
+    # The caller falls back to demo mode when no live agents are available.
     if certificate_failure:
         providers = ", ".join(provider for provider, _ in limited_agents)
-        raise RuntimeError(
-            f"Provider TLS verification failed for {providers}. Check the local CA trust store."
+        logger.warning(
+            "Provider TLS verification failed for %s. Check the local CA trust store.", providers
         )
+    else:
+        failure_summary = "; ".join(failures) if failures else "no providers available"
+        logger.warning("No live providers passed connectivity preflight: %s", failure_summary)
 
-    failure_summary = "; ".join(failures) if failures else "no providers available"
-    raise RuntimeError(f"No live providers passed connectivity preflight: {failure_summary}")
+    return []
 
 
 def cmd_quickstart(args: argparse.Namespace) -> None:
@@ -819,12 +823,23 @@ def cmd_quickstart(args: argparse.Namespace) -> None:
                 )
             )
     except (OSError, ConnectionError, RuntimeError, ValueError, TypeError) as e:
-        logger.debug("Debate failed: %s", e)
-        print(f"\n[!] Debate failed: {e}")
-        if "CERTIFICATE_VERIFY_FAILED" in str(e):
-            print("    Provider TLS verification failed. Check the local CA trust store.")
-        print("    Try: aragora quickstart --demo")
-        sys.exit(1)
+        logger.debug("Live debate failed, falling back to demo: %s", e)
+        error_str = str(e)
+        if "TLS" in error_str or "CERTIFICATE" in error_str:
+            print("\n[!] Provider TLS check failed. Falling back to demo mode.")
+            print("    Check the local CA trust store for live debates.")
+        elif "No live" in error_str or "no live" in error_str:
+            print("\n[!] No live providers available. Falling back to demo mode.")
+        else:
+            print(f"\n[!] Live debate failed: {e}")
+            print("    Falling back to demo mode.")
+        # Fall back to demo — the user should always get a result
+        try:
+            result = asyncio.run(_run_demo_debate(question, rounds))
+        except (OSError, RuntimeError, ValueError) as demo_err:
+            logger.debug("Demo debate also failed: %s", demo_err)
+            print(f"\n[!] Demo debate also failed: {demo_err}")
+            sys.exit(1)
 
     elapsed = time.monotonic() - start_time
     result["elapsed_seconds"] = elapsed
