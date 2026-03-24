@@ -11,6 +11,7 @@ Verifies the full flow programmatically:
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, AsyncMock
 from typing import Any
 
@@ -220,11 +221,17 @@ class TestOrchestrationExecution:
         with patch.object(handler, "_get_canvas_manager"):
             with patch.object(handler, "_run_async") as mock_run:
                 canvas_mock = MagicMock()
-                canvas_mock.nodes = {}
+                task_node = MagicMock()
+                task_node.to_dict.return_value = {
+                    "id": "task-1",
+                    "type": "agent_task",
+                    "data": {"label": "Implement unified DAG workbench"},
+                }
+                canvas_mock.nodes = {"task-1": task_node}
                 canvas_mock.edges = {}
                 mock_run.return_value = canvas_mock
 
-                ctx = MagicMock()
+                ctx = SimpleNamespace(user_id="u1")
                 result = handler._execute_pipeline(ctx, "orch-1", {}, "u1")
                 assert result is not None
 
