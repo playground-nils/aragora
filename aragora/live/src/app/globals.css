@@ -866,12 +866,12 @@ select:focus-visible {
 }
 
 /* Link styling */
-a {
-  color: var(--acid-cyan);
+a:not([class*="text-"]) {
+  color: var(--link-color, var(--acid-cyan));
   text-decoration: none;
 }
 
-a:hover {
+a:not([class*="text-"]):hover {
   text-shadow: 0 0 10px var(--acid-cyan);
 }
 
