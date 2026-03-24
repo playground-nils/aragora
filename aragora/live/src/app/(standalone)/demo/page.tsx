@@ -518,11 +518,17 @@ function DetailRow({
   mono?: boolean;
 }) {
   return (
-    <div className="grid gap-1 sm:grid-cols-[88px_1fr] sm:gap-3">
+    <div className="rounded-[14px] bg-[var(--surface)] px-4 py-3 shadow-[var(--shadow-panel)]">
       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
         {label}
       </dt>
-      <dd className={mono ? "break-all font-mono text-xs text-[var(--text)]" : "text-sm font-medium text-[var(--text)]"}>
+      <dd
+        className={
+          mono
+            ? "mt-2 break-all font-mono text-[12px] leading-6 text-[var(--text)]"
+            : "mt-2 text-sm font-medium leading-6 text-[var(--text)]"
+        }
+      >
         {value}
       </dd>
     </div>
@@ -614,7 +620,7 @@ function LiveResultCard({
       style={{ padding: "40px" }}
     >
       <div
-        className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_300px] xl:grid-cols-[minmax(0,1.55fr)_340px]"
+        className="grid gap-8 lg:grid-cols-[minmax(0,1.42fr)_320px] xl:grid-cols-[minmax(0,1.52fr)_360px]"
         style={{ gap: "40px" }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
@@ -720,11 +726,11 @@ function LiveResultCard({
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Run details
             </h3>
-            <dl className="mt-5 space-y-4">
+            <dl className="mt-5 space-y-3">
               <DetailRow
                 label="Runtime"
                 value={`${result.duration_seconds.toFixed(1)}s`}
@@ -747,10 +753,10 @@ function LiveResultCard({
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "28px",
+              padding: "32px",
               display: "flex",
               flexDirection: "column",
-              gap: "16px",
+              gap: "18px",
             }}
           >
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
@@ -762,16 +768,16 @@ function LiveResultCard({
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "28px",
+              padding: "32px",
               display: "flex",
               flexDirection: "column",
-              gap: "12px",
+              gap: "14px",
             }}
           >
             <ConsensusBar confidence={result.confidence} />
           </div>
 
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Next action
             </h3>
@@ -779,17 +785,17 @@ function LiveResultCard({
               Open the shareable result, or take the same prompt into /try for
               a deeper run.
             </p>
-            <div className="mt-5 flex flex-col gap-3">
+            <div className="mt-6 flex flex-col gap-4">
             <Link
               href={shareHref}
-              className="rounded-full bg-[var(--acid-green)] px-5 py-2.5 text-center text-sm font-semibold transition-opacity hover:opacity-90"
+              className="rounded-full bg-[var(--acid-green)] px-6 py-3 text-center text-[15px] font-semibold transition-opacity hover:opacity-90"
               style={{ color: "#ffffff" }}
             >
               View Shareable Result
             </Link>
             <Link
               href={`/try?topic=${encodeURIComponent(result.topic)}`}
-              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-2.5 text-center text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-6 py-3 text-center text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
             >
               Ask This in /try
             </Link>
@@ -804,7 +810,7 @@ function LiveResultCard({
 function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
   return (
     <section className="rounded-[20px] border border-sky-500/18 bg-[var(--surface)] p-10 shadow-[var(--shadow-elevated)]">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_300px] xl:grid-cols-[minmax(0,1.55fr)_340px]">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.42fr)_320px] xl:grid-cols-[minmax(0,1.52fr)_360px]">
         <div className="space-y-6">
           <div className="space-y-2 border-b border-[var(--border)] pb-6">
             <StatusBadge label="Recorded sample" tone="sample" />
@@ -893,11 +899,11 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Sample details
             </h3>
-            <dl className="mt-5 space-y-4">
+            <dl className="mt-5 space-y-3">
               <DetailRow
                 label="Rounds"
                 value={`${sample.rounds} recorded round${sample.rounds === 1 ? "" : "s"}`}
@@ -907,14 +913,14 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             </dl>
           </div>
 
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Sample agents
             </h3>
             <AgentRoster agents={sample.agents} />
           </div>
 
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <ConsensusBar confidence={sample.confidence} />
           </div>
         </aside>
