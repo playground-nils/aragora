@@ -1463,6 +1463,10 @@ Examples:
     )
     decide_parser.add_argument("task", help="The task/question to decide on")
     decide_parser.add_argument(
+        "--spec",
+        help="Specification file (JSON from 'aragora spec') to use as debate context",
+    )
+    decide_parser.add_argument(
         "--agents",
         "-a",
         default=DEFAULT_AGENTS,
