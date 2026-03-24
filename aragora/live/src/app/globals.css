@@ -217,25 +217,25 @@
   --surface: #ffffff;
   --surface-elevated: #f4f6f8;
   --border: #d8dde4;
-  --border-glow: #3b6ce740;
+  --border-glow: #3be77640;
   --text: #111827;
   --text-muted: #5b6574;
 
-  --acid-green: #3b6ce7;
-  --acid-cyan: #2563eb;
+  --acid-green: #3be776;
+  --acid-cyan: #25eb68;
   --acid-magenta: #7c3aed;
   --acid-yellow: #d97706;
-  --matrix-green: #3b6ce7;
-  --terminal-green: #3b6ce7;
+  --matrix-green: #3be776;
+  --terminal-green: #3be776;
 
-  --accent: #3b6ce7;
-  --accent-glow: rgba(59, 108, 231, 0.12);
+  --accent: #3be776;
+  --accent-glow: rgba(59, 231, 118, 0.12);
   --success: #059669;
   --warning: #d97706;
   --purple: #7c3aed;
   --gold: #d97706;
   --crimson: #dc2626;
-  --cyan: #2563eb;
+  --cyan: #25eb68;
 
   --terminal-glow: none;
   --scanline: none;
@@ -249,9 +249,9 @@
   --radius-button: 6px;
   --radius-input: 6px;
   --shadow-card: 0 1px 2px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.03);
-  --shadow-card-hover: 0 2px 8px rgba(59,108,231,0.1), 0 0 0 1px rgba(59,108,231,0.15);
+  --shadow-card-hover: 0 2px 8px rgba(59,231,118,0.1), 0 0 0 1px rgba(59,231,118,0.15);
   --section-padding: 80px;
-  --link-color: #3b6ce7;
+  --link-color: #3be776;
 }
 
 /* Theme transition animation - smooth color changes */
