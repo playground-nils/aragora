@@ -71,18 +71,22 @@ _PROVIDER_TLS_HOSTS: dict[str, str] = {
 _PROVIDER_SPECS: dict[str, dict[str, Any]] = {
     "anthropic": {
         "agent_type": "anthropic-api",
-        "model": "claude-haiku-4-5-20251001",
+        "model": "claude-opus-4-6",
         "env_vars": ("ANTHROPIC_API_KEY",),
+        # Falls back to OpenRouter when credits exhausted
+        "openrouter_fallback": "anthropic/claude-opus-4-6",
     },
     "openai": {
         "agent_type": "openai-api",
-        "model": "gpt-4o-mini",
+        "model": "gpt-5.4",
         "env_vars": ("OPENAI_API_KEY",),
+        "openrouter_fallback": "openai/gpt-5.4",
     },
     "gemini": {
         "agent_type": "gemini",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-3.1-pro",
         "env_vars": ("GEMINI_API_KEY",),
+        "openrouter_fallback": "google/gemini-3.1-pro",
     },
     "mistral": {
         "agent_type": "mistral",

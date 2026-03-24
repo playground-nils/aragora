@@ -144,7 +144,7 @@ class TestDetectAgents:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-anthropic")
         agents = _detect_agents("openai")
-        assert agents == [("openai-api", "gpt-4o-mini")]
+        assert agents == [("openai-api", "gpt-5.4")]
 
     def test_invalid_preferred_provider_raises(self):
         with pytest.raises(ValueError, match="Unsupported provider"):
