@@ -515,7 +515,7 @@ class SwarmSupervisor:
         for item in work_orders:
             if str(item.get("status", "")) != "leased":
                 continue
-            target_agent = str(item.get("target_agent", "codex")).strip().lower() or "codex"
+            target_agent = str(item.get("target_agent", "claude")).strip().lower() or "claude"
             if self._worker_type_circuit_breaker_is_open(
                 worker_type_circuit_breakers,
                 target_agent,
