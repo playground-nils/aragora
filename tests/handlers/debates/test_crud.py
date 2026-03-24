@@ -189,7 +189,7 @@ class TestListDebates:
         h = _make_handler(storage=storage)
         result = h._list_debates(limit=5, org_id="org-123")
         assert _status(result) == 200
-        storage.list_recent.assert_called_once_with(limit=5, org_id="org-123")
+        storage.list_recent.assert_called_once_with(limit=5, org_id="org-123", offset=0)
 
     def test_list_debates_no_storage(self):
         h = _make_handler(storage=None)
@@ -224,14 +224,14 @@ class TestListDebates:
         storage.list_recent.return_value = []
         h = _make_handler(storage=storage)
         h._list_debates(limit=25)
-        storage.list_recent.assert_called_once_with(limit=25, org_id=None)
+        storage.list_recent.assert_called_once_with(limit=25, org_id=None, offset=0)
 
     def test_list_debates_no_org_id_default(self):
         storage = MagicMock()
         storage.list_recent.return_value = []
         h = _make_handler(storage=storage)
         h._list_debates(limit=10)
-        storage.list_recent.assert_called_once_with(limit=10, org_id=None)
+        storage.list_recent.assert_called_once_with(limit=10, org_id=None, offset=0)
 
 
 # ---------------------------------------------------------------------------

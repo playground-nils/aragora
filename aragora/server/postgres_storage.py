@@ -166,9 +166,11 @@ class PostgresDebateStorage(PostgresStore):
         """Get debate by ID (sync wrapper)."""
         return run_async(self.get_by_id_async(debate_id, org_id, verify_ownership))
 
-    def list_recent(self, limit: int = 20, org_id: str | None = None) -> list[DebateMetadata]:
+    def list_recent(
+        self, limit: int = 20, org_id: str | None = None, offset: int = 0
+    ) -> list[DebateMetadata]:
         """List recent debates (sync wrapper)."""
-        return run_async(self.list_recent_async(limit, org_id))
+        return run_async(self.list_recent_async(limit, org_id, offset))
 
     def search(
         self,
@@ -385,7 +387,7 @@ class PostgresDebateStorage(PostgresStore):
         return None
 
     async def list_recent_async(
-        self, limit: int = 20, org_id: str | None = None
+        self, limit: int = 20, org_id: str | None = None, offset: int = 0
     ) -> list[DebateMetadata]:
         """List recent debates."""
         async with self.connection() as conn:
@@ -397,10 +399,11 @@ class PostgresDebateStorage(PostgresStore):
                     FROM debates
                     WHERE org_id = $1
                     ORDER BY created_at DESC
-                    LIMIT $2
+                    LIMIT $2 OFFSET $3
                     """,
                     org_id,
                     limit,
+                    offset,
                 )
             else:
                 rows = await conn.fetch(
@@ -409,12 +412,29 @@ class PostgresDebateStorage(PostgresStore):
                            confidence, created_at, view_count, is_public
                     FROM debates
                     ORDER BY created_at DESC
-                    LIMIT $1
+                    LIMIT $1 OFFSET $2
                     """,
                     limit,
+                    offset,
                 )
 
             return [self._row_to_metadata(row) for row in rows]
+
+    async def count_debates_async(self, org_id: str | None = None) -> int:
+        """Count total number of debates, optionally filtered by organization."""
+        async with self.connection() as conn:
+            if org_id:
+                row = await conn.fetchrow(
+                    "SELECT COUNT(*) FROM debates WHERE org_id = $1",
+                    org_id,
+                )
+            else:
+                row = await conn.fetchrow("SELECT COUNT(*) FROM debates")
+            return row[0] if row else 0
+
+    def count_debates(self, org_id: str | None = None) -> int:
+        """Count total debates (sync wrapper)."""
+        return run_async(self.count_debates_async(org_id))
 
     async def search_async(
         self,

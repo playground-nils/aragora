@@ -164,7 +164,7 @@ class DebateStorageProtocol(Protocol):
         """Get debate by slug (alias)."""
         ...
 
-    def list_recent(self, limit: int = 20, org_id: str | None = None) -> list[Any]:
+    def list_recent(self, limit: int = 20, org_id: str | None = None, offset: int = 0) -> list[Any]:
         """List recent debates."""
         ...
 

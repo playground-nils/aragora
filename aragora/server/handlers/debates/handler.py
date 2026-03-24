@@ -194,10 +194,11 @@ class DebatesHandler(
         # Exact path matches - list debates
         if normalized in ("/api/debates", "/api/debates/"):
             limit = min(get_int_param(query_params, "limit", 20), 100)
+            offset = max(get_int_param(query_params, "offset", 0), 0)
             # Get authenticated user for org-scoped results
             user = self.get_current_user(handler)
             org_id = user.org_id if user else None
-            return self._list_debates(limit, org_id)
+            return self._list_debates(limit, org_id, offset)
 
         if normalized.startswith("/api/debates/slug/"):
             slug = normalized.split("/")[-1]

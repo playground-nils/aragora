@@ -436,7 +436,9 @@ class DebateStorage(SQLiteStore):
             row = cursor.fetchone()
         return json.loads(row[0]) if row else None
 
-    def list_recent(self, limit: int = 20, org_id: str | None = None) -> list[DebateMetadata]:
+    def list_recent(
+        self, limit: int = 20, org_id: str | None = None, offset: int = 0
+    ) -> list[DebateMetadata]:
         """
         List recent debates, optionally filtered by organization.
 
@@ -444,6 +446,7 @@ class DebateStorage(SQLiteStore):
             limit: Maximum number of debates to return
             org_id: If provided, only return debates for this organization.
                     If None, returns all debates (for backwards compatibility).
+            offset: Number of debates to skip (for pagination).
 
         Returns:
             List of DebateMetadata ordered by creation date (newest first)
@@ -457,9 +460,9 @@ class DebateStorage(SQLiteStore):
                     FROM debates
                     WHERE org_id = ?
                     ORDER BY created_at DESC
-                    LIMIT ?
+                    LIMIT ? OFFSET ?
                 """,
-                    (org_id, limit),
+                    (org_id, limit, offset),
                 )
             else:
                 cursor = conn.execute(
@@ -468,9 +471,9 @@ class DebateStorage(SQLiteStore):
                            confidence, created_at, view_count, is_public
                     FROM debates
                     ORDER BY created_at DESC
-                    LIMIT ?
+                    LIMIT ? OFFSET ?
                 """,
-                    (limit,),
+                    (limit, offset),
                 )
 
             results = []
@@ -495,6 +498,19 @@ class DebateStorage(SQLiteStore):
                 )
 
         return results
+
+    def count_debates(self, org_id: str | None = None) -> int:
+        """Count total number of debates, optionally filtered by organization."""
+        with self.connection() as conn:
+            if org_id:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM debates WHERE org_id = ?",
+                    (org_id,),
+                )
+            else:
+                cursor = conn.execute("SELECT COUNT(*) FROM debates")
+            row = cursor.fetchone()
+        return row[0] if row else 0
 
     def search(
         self,

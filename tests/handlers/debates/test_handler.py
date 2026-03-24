@@ -363,14 +363,14 @@ class TestHandleListDebates:
         handler = _make_handler(storage=mock_storage)
         result = handler.handle("/api/debates", {"limit": "5"}, mock_http_handler)
         assert _status(result) == 200
-        mock_storage.list_recent.assert_called_with(limit=5, org_id="test-org-001")
+        mock_storage.list_recent.assert_called_with(limit=5, org_id="test-org-001", offset=0)
 
     def test_list_debates_limit_capped(self, mock_storage, mock_http_handler):
         mock_storage.list_recent.return_value = []
         handler = _make_handler(storage=mock_storage)
         result = handler.handle("/api/debates", {"limit": "500"}, mock_http_handler)
         assert _status(result) == 200
-        mock_storage.list_recent.assert_called_with(limit=100, org_id="test-org-001")
+        mock_storage.list_recent.assert_called_with(limit=100, org_id="test-org-001", offset=0)
 
     def test_list_debates_v1_path(self, mock_storage, mock_http_handler):
         mock_storage.list_recent.return_value = []
