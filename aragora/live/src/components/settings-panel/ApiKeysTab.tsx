@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { UserPreferences, ApiKey } from './types';
 
 export interface ApiKeysTabProps {
@@ -164,6 +164,299 @@ function ApiKeyCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Provider Keys — localStorage-backed LLM provider key management
+// ---------------------------------------------------------------------------
+
+const PROVIDER_KEYS_STORAGE_KEY = 'aragora_provider_keys';
+
+interface ProviderKeyConfig {
+  id: string;
+  label: string;
+  envVar: string;
+  placeholder: string;
+  docsUrl?: string;
+}
+
+const LLM_PROVIDERS: ProviderKeyConfig[] = [
+  {
+    id: 'anthropic',
+    label: 'Anthropic (Claude)',
+    envVar: 'ANTHROPIC_API_KEY',
+    placeholder: 'sk-ant-...',
+    docsUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI (GPT)',
+    envVar: 'OPENAI_API_KEY',
+    placeholder: 'sk-...',
+    docsUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter (Fallback)',
+    envVar: 'OPENROUTER_API_KEY',
+    placeholder: 'sk-or-...',
+    docsUrl: 'https://openrouter.ai/keys',
+  },
+  {
+    id: 'mistral',
+    label: 'Mistral',
+    envVar: 'MISTRAL_API_KEY',
+    placeholder: '...',
+    docsUrl: 'https://console.mistral.ai/api-keys/',
+  },
+  {
+    id: 'gemini',
+    label: 'Google Gemini',
+    envVar: 'GEMINI_API_KEY',
+    placeholder: 'AIza...',
+    docsUrl: 'https://aistudio.google.com/app/apikey',
+  },
+  {
+    id: 'xai',
+    label: 'xAI (Grok)',
+    envVar: 'XAI_API_KEY',
+    placeholder: 'xai-...',
+    docsUrl: 'https://console.x.ai/',
+  },
+];
+
+function getStoredProviderKeys(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const stored = localStorage.getItem(PROVIDER_KEYS_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function storeProviderKeys(keys: Record<string, string>): void {
+  localStorage.setItem(PROVIDER_KEYS_STORAGE_KEY, JSON.stringify(keys));
+}
+
+/** Exported for use by debate hooks — reads provider keys from localStorage. */
+export function getProviderKeyHeaders(): Record<string, string> {
+  const keys = getStoredProviderKeys();
+  const headers: Record<string, string> = {};
+  for (const [id, value] of Object.entries(keys)) {
+    if (value) {
+      const provider = LLM_PROVIDERS.find(p => p.id === id);
+      if (provider) {
+        headers[`X-Provider-Key-${provider.id}`] = value;
+      }
+    }
+  }
+  return headers;
+}
+
+function maskKey(key: string): string {
+  if (key.length <= 8) return '*'.repeat(key.length);
+  return key.slice(0, 4) + '*'.repeat(Math.min(key.length - 8, 20)) + key.slice(-4);
+}
+
+function ProviderKeyRow({
+  provider,
+  savedValue,
+  onSave,
+  onClear,
+}: {
+  provider: ProviderKeyConfig;
+  savedValue: string;
+  onSave: (value: string) => void;
+  onClear: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+  const hasSaved = !!savedValue;
+
+  const handleSave = () => {
+    const trimmed = inputValue.trim();
+    if (trimmed) {
+      onSave(trimmed);
+      setInputValue('');
+      setEditing(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setInputValue('');
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleSave();
+    if (e.key === 'Escape') handleCancel();
+  };
+
+  return (
+    <div className="p-4 bg-surface rounded border border-border hover:border-acid-green/20 transition-colors">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-mono text-sm text-text font-medium">
+              {provider.label}
+            </span>
+            {hasSaved && (
+              <span className="px-1.5 py-0.5 text-[10px] font-mono bg-acid-green/10 text-acid-green border border-acid-green/30 rounded">
+                SET
+              </span>
+            )}
+          </div>
+          <code className="font-mono text-[10px] text-text-muted">
+            {provider.envVar}
+          </code>
+          {hasSaved && !editing && (
+            <div className="mt-2">
+              <code className="font-mono text-xs text-text-muted bg-bg px-1.5 py-0.5 rounded">
+                {maskKey(savedValue)}
+              </code>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {provider.docsUrl && (
+            <a
+              href={provider.docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2 py-1 text-[10px] font-mono text-acid-cyan hover:bg-acid-cyan/10 rounded transition-colors"
+              title={`Get ${provider.label} API key`}
+            >
+              Get key
+            </a>
+          )}
+          {!editing && (
+            <button
+              onClick={() => setEditing(true)}
+              className="px-2 py-1 text-[10px] font-mono text-acid-green hover:bg-acid-green/10 rounded transition-colors"
+            >
+              {hasSaved ? 'Update' : 'Set'}
+            </button>
+          )}
+          {hasSaved && !editing && (
+            <button
+              onClick={onClear}
+              className="px-2 py-1 text-[10px] font-mono text-crimson hover:bg-crimson/10 rounded transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {editing && (
+        <div className="mt-3 pt-3 border-t border-border">
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={provider.placeholder}
+              autoFocus
+              className="flex-1 bg-bg border border-acid-green/30 rounded px-3 py-2 font-mono text-sm text-text focus:outline-none focus:border-acid-green placeholder:text-text-muted/40"
+              aria-label={`${provider.label} API key`}
+            />
+            <button
+              onClick={handleSave}
+              disabled={!inputValue.trim()}
+              className="px-3 py-2 bg-acid-green/20 border border-acid-green/40 text-acid-green font-mono text-xs rounded hover:bg-acid-green/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+            <button
+              onClick={handleCancel}
+              className="px-3 py-2 bg-surface border border-border text-text-muted font-mono text-xs rounded hover:border-text-muted transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="mt-2 font-mono text-[10px] text-text-muted">
+            Stored locally in your browser. Never sent to Aragora servers.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProviderKeysSection() {
+  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
+  const [saveFlash, setSaveFlash] = useState<string | null>(null);
+
+  useEffect(() => {
+    setProviderKeys(getStoredProviderKeys());
+  }, []);
+
+  const handleSave = useCallback((providerId: string, value: string) => {
+    const updated = { ...providerKeys, [providerId]: value };
+    setProviderKeys(updated);
+    storeProviderKeys(updated);
+    setSaveFlash(providerId);
+    setTimeout(() => setSaveFlash(null), 1500);
+  }, [providerKeys]);
+
+  const handleClear = useCallback((providerId: string) => {
+    const updated = { ...providerKeys };
+    delete updated[providerId];
+    setProviderKeys(updated);
+    storeProviderKeys(updated);
+  }, [providerKeys]);
+
+  const configuredCount = Object.values(providerKeys).filter(Boolean).length;
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-mono text-acid-green">LLM Provider Keys</h3>
+        {configuredCount > 0 && (
+          <span className="font-mono text-xs text-text-muted">
+            {configuredCount} / {LLM_PROVIDERS.length} configured
+          </span>
+        )}
+      </div>
+      <p className="mb-2 font-mono text-sm text-text-muted">
+        Enter your own LLM provider API keys so Aragora can run debates using
+        your accounts. Keys are stored in your browser only and passed to the
+        backend per-request.
+      </p>
+      <div className="mb-4 p-3 bg-acid-cyan/5 border border-acid-cyan/20 rounded">
+        <p className="font-mono text-[10px] text-acid-cyan">
+          At least one key (Anthropic or OpenAI) is required. OpenRouter is
+          recommended as an automatic fallback when primary providers hit rate
+          limits.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {LLM_PROVIDERS.map((provider) => (
+          <ProviderKeyRow
+            key={provider.id}
+            provider={provider}
+            savedValue={providerKeys[provider.id] || ''}
+            onSave={(value) => handleSave(provider.id, value)}
+            onClear={() => handleClear(provider.id)}
+          />
+        ))}
+      </div>
+
+      {saveFlash && (
+        <div className="mt-3 font-mono text-xs text-acid-green">
+          Key saved successfully.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Tab
+// ---------------------------------------------------------------------------
+
 export function ApiKeysTab({
   preferences,
   onGenerateKey,
@@ -272,6 +565,9 @@ export function ApiKeysTab({
           </div>
         )}
       </div>
+
+      {/* Provider Keys */}
+      <ProviderKeysSection />
 
       {/* Documentation */}
       <div className="card p-6">
