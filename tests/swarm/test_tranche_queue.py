@@ -204,7 +204,7 @@ def test_harvest_queue_executes_merge_for_merge_now_pr(
     assert payload["summary"] == {
         "total_items": 1,
         "prs_created": 1,
-        "merged": 1,
+        "completed": 1,
         "needs_human": 0,
         "failed": 0,
     }
@@ -278,7 +278,7 @@ def test_harvest_queue_summary_counts_needs_human_and_failed(
     assert payload["summary"] == {
         "total_items": 3,
         "prs_created": 2,
-        "merged": 1,
+        "completed": 1,
         "needs_human": 1,
         "failed": 1,
     }
@@ -299,7 +299,7 @@ def test_render_harvest_queue_summary_table_prints_counts(
             "summary": {
                 "total_items": 3,
                 "prs_created": 2,
-                "merged": 1,
+                "completed": 1,
                 "needs_human": 1,
                 "failed": 1,
             },
@@ -316,13 +316,13 @@ def test_render_harvest_queue_summary_table_prints_counts(
         if len(parts) != 2:
             continue
         label, value = parts
-        if label in {"total items", "PRs created", "merged", "needs_human", "failed"}:
+        if label in {"total items", "PRs created", "completed", "needs_human", "failed"}:
             metrics[label] = value
 
     assert metrics == {
         "total items": "3",
         "PRs created": "2",
-        "merged": "1",
+        "completed": "1",
         "needs_human": "1",
         "failed": "1",
     }
