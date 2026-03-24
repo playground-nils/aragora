@@ -39,13 +39,6 @@ type OnboardingStep = 1 | 2 | 3;
 
 const TEMPLATE_QUESTION = 'Should we adopt TypeScript for our backend?';
 
-const TEMPLATE_BODY = {
-  question: TEMPLATE_QUESTION,
-  rounds: 4,
-  debate_format: 'light',
-  auto_select: true,
-};
-
 // ---------------------------------------------------------------------------
 // Step indicator
 // ---------------------------------------------------------------------------
@@ -207,6 +200,7 @@ export default function GetStartedPage() {
   const [providersLoading, setProvidersLoading] = useState(true);
 
   // Step 2 state
+  const [userQuestion, setUserQuestion] = useState(TEMPLATE_QUESTION);
   const [debateLoading, setDebateLoading] = useState(false);
   const [debateError, setDebateError] = useState<string | null>(null);
   const [debateResult, setDebateResult] = useState<DebateResult | null>(null);
@@ -293,6 +287,8 @@ export default function GetStartedPage() {
 
   // ── Step 2: Run first debate ────────────────────────────────────────────
   const runFirstDebate = useCallback(async () => {
+    const question = userQuestion.trim() || TEMPLATE_QUESTION;
+
     setDebateLoading(true);
     setDebateError(null);
     setElapsed(0);
@@ -308,7 +304,12 @@ export default function GetStartedPage() {
       const response = await fetch(`${API_BASE_URL}/api/v1/debates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(TEMPLATE_BODY),
+        body: JSON.stringify({
+          question,
+          rounds: 4,
+          debate_format: 'light',
+          auto_select: true,
+        }),
       });
 
       if (!response.ok) {
@@ -322,7 +323,7 @@ export default function GetStartedPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                topic: TEMPLATE_QUESTION,
+                topic: question,
                 rounds: 4,
                 agents: 3,
               }),
@@ -335,7 +336,7 @@ export default function GetStartedPage() {
               clearInterval(timer);
               setDebateResult({
                 debateId,
-                question: TEMPLATE_QUESTION,
+                question,
                 consensus: pgData.consensus_reached ? 'Reached' : 'Partial',
                 confidence: pgData.confidence,
                 agents: pgData.agents,
@@ -365,7 +366,7 @@ export default function GetStartedPage() {
       clearInterval(timer);
       setDebateResult({
         debateId,
-        question: TEMPLATE_QUESTION,
+        question,
         consensus: data.consensus_reached ? 'Reached' : 'Partial',
         confidence: data.confidence,
         agents: data.agents,
@@ -380,7 +381,7 @@ export default function GetStartedPage() {
         err instanceof Error ? err.message : 'Failed to start debate'
       );
     }
-  }, []);
+  }, [userQuestion]);
 
   // Determine if the user can proceed to step 2
   const canStartDebate = health.status === 'online';
@@ -492,6 +493,11 @@ export default function GetStartedPage() {
                 <div className="bg-[var(--bg)] border border-[var(--border)] p-3">
                   <div className="text-[10px] font-mono text-[var(--text-muted)] uppercase mb-2">
                     AI Providers
+                    {hasAnyProvider && (
+                      <span className="text-[var(--acid-green)] ml-2">
+                        ({providers.filter((p) => p.configured).length} configured)
+                      </span>
+                    )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {providers.map((provider) => (
@@ -502,18 +508,34 @@ export default function GetStartedPage() {
                         <StatusDot
                           status={provider.configured ? 'ok' : 'error'}
                         />
-                        <span className="text-xs font-mono text-[var(--text-muted)]">
+                        <span
+                          className={`text-xs font-mono ${
+                            provider.configured
+                              ? 'text-[var(--text)]'
+                              : 'text-[var(--text-muted)]'
+                          }`}
+                        >
                           {provider.name}
                         </span>
                       </div>
                     ))}
                   </div>
                   {!hasAnyProvider && health.status === 'online' && (
-                    <p className="text-[10px] font-mono text-amber-400 mt-2">
-                      No API keys detected. The playground will be used for your
-                      first debate. Configure keys in your .env file for full
-                      access.
-                    </p>
+                    <div className="mt-2 space-y-1.5">
+                      <p className="text-[10px] font-mono text-amber-400">
+                        No API keys detected. The playground will be used for
+                        your first debate.
+                      </p>
+                      <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                        To use real AI providers, add keys to your{' '}
+                        <code className="text-[var(--acid-cyan)]">.env</code>{' '}
+                        file:
+                      </p>
+                      <code className="block text-[10px] font-mono bg-[var(--surface)] text-[var(--text-muted)] p-2 border border-[var(--border)]">
+                        ANTHROPIC_API_KEY=sk-...{'\n'}
+                        OPENAI_API_KEY=sk-...
+                      </code>
+                    </div>
                   )}
                 </div>
               )}
@@ -590,19 +612,37 @@ export default function GetStartedPage() {
               <div className="space-y-4">
                 <p className="text-xs font-mono text-[var(--text-muted)] max-w-2xl">
                   Launch a multi-agent debate where AI models propose, critique,
-                  and synthesize a decision. We will use a pre-filled template
-                  question to get you started.
+                  and synthesize a decision. Enter your own question or use the
+                  suggestion below.
                 </p>
 
                 {/* Debate topic card */}
                 <div className="bg-[var(--bg)] border border-[var(--acid-green)]/30 p-4">
                   <div className="mb-3">
-                    <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase">
-                      Topic
-                    </span>
-                    <div className="text-sm font-mono text-[var(--text)] mt-0.5">
-                      &quot;{TEMPLATE_QUESTION}&quot;
-                    </div>
+                    <label
+                      htmlFor="debate-question"
+                      className="text-[10px] font-mono text-[var(--text-muted)] uppercase block mb-1"
+                    >
+                      Your Question
+                    </label>
+                    <textarea
+                      id="debate-question"
+                      value={userQuestion}
+                      onChange={(e) => setUserQuestion(e.target.value)}
+                      disabled={debateLoading}
+                      rows={2}
+                      placeholder="e.g. Should we adopt TypeScript for our backend?"
+                      className="w-full bg-[var(--surface)] text-sm font-mono text-[var(--text)] border border-[var(--border)] focus:border-[var(--acid-green)]/60 focus:outline-none p-2 resize-none placeholder:text-[var(--text-muted)]/50 disabled:opacity-50"
+                    />
+                    {userQuestion !== TEMPLATE_QUESTION && userQuestion.trim() !== '' && (
+                      <button
+                        type="button"
+                        onClick={() => setUserQuestion(TEMPLATE_QUESTION)}
+                        className="text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--acid-green)] transition-colors mt-1"
+                      >
+                        Reset to suggestion
+                      </button>
+                    )}
                   </div>
 
                   {/* Configuration */}
@@ -628,7 +668,7 @@ export default function GetStartedPage() {
                   {!debateLoading && currentStep === 2 && (
                     <button
                       onClick={runFirstDebate}
-                      disabled={!canStartDebate}
+                      disabled={!canStartDebate || !userQuestion.trim()}
                       className="inline-flex items-center gap-2 px-4 py-2 text-xs font-mono font-bold bg-[var(--acid-green)] text-[var(--bg)] hover:bg-[var(--acid-green)]/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {debateError ? 'RETRY DEBATE' : 'START DEBATE'}
