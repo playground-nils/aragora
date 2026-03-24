@@ -290,7 +290,7 @@
 }
 
 body {
-  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-display, var(--font-jetbrains-mono, 'JetBrains Mono')), 'Fira Code', 'SF Mono', Menlo, Monaco, Consolas, monospace;
   font-size: 14px;
   background: var(--bg);
   color: var(--text);
