@@ -88,7 +88,7 @@ class TestGetAvailableLiveAgentsAllPrimary:
         )
         agents = _get_available_live_agents(3)
 
-        assert agents == ["anthropic-api", "openai-api", "mistral-api"]
+        assert agents == ["anthropic-api", "openai-api", "mistral"]
 
     @patch("aragora.server.handlers.playground._get_api_key")
     def test_no_openrouter_tags_when_primary_sufficient(self, mock_key):
