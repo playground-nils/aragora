@@ -1861,16 +1861,21 @@ class PlaygroundHandler(BaseHandler):
                     )
                 logger.info("Multi-perspective call failed — trying live debate")
 
-        # Run a real live debate (no mock fallback)
+        # Run a real live debate, fall back to mock if it fails
         try:
             live_result = self._run_live_debate(question or topic, rounds, agent_count)
-            return self._persist_and_respond(live_result, topic, source, **_cache_kw)
-        except (TimeoutError, ValueError, RuntimeError, OSError) as exc:
-            logger.warning("Live debate failed: %s", exc)
-            return error_response(
-                "Debate temporarily unavailable. Please try again in a moment.",
-                503,
+            # Check if live debate returned an error response (status >= 400)
+            if live_result.status_code < 400:
+                return self._persist_and_respond(live_result, topic, source, **_cache_kw)
+            logger.info(
+                "Live debate returned status %d, falling back to mock", live_result.status_code
             )
+        except (TimeoutError, ValueError, RuntimeError, OSError) as exc:
+            logger.warning("Live debate failed, falling back to mock: %s", exc)
+
+        # Mock fallback -- always works, no external dependencies
+        mock_data = _run_inline_mock_debate(topic, rounds, agent_count, question=question)
+        return self._persist_and_respond(json_response(mock_data), topic, source, **_cache_kw)
 
     @staticmethod
     def _persist_and_respond(
@@ -2327,7 +2332,7 @@ def _get_available_live_agents(count: int) -> list[str]:
     if _get_api_key("OPENAI_API_KEY"):
         candidates.append("openai-api")
     if _get_api_key("MISTRAL_API_KEY"):
-        candidates.append("mistral-api")
+        candidates.append("mistral")
 
     # If we have enough primary agents, use them
     if len(candidates) >= count:

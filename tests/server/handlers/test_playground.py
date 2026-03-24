@@ -433,14 +433,33 @@ class TestRateLimiting:
 
 
 class TestGracefulDegradation:
-    def test_no_live_debate_returns_503(self, handler, mock_http_handler):
-        """When live debate is unavailable, returns 503 instead of mock."""
+    def test_live_debate_failure_falls_back_to_mock(self, handler, mock_http_handler):
+        """When live debate fails, falls back to inline mock debate."""
         with patch.object(
             handler,
             "_run_live_debate",
             side_effect=RuntimeError("Live debate unavailable"),
         ):
-            result = handler._run_debate("test", 1, 2)
+            result = handler._run_debate("test topic", 1, 2)
             data, status = _parse_result(result)
-            assert status == 503
-            assert "unavailable" in data.get("error", "").lower()
+            assert status == 200
+            assert "id" in data
+            assert "proposals" in data
+            assert "participants" in data
+            assert len(data["participants"]) == 2
+
+    def test_live_debate_error_response_falls_back_to_mock(self, handler, mock_http_handler):
+        """When live debate returns an error status, falls back to mock."""
+        from aragora.server.handlers.base import error_response as _er
+
+        with patch.object(
+            handler,
+            "_run_live_debate",
+            return_value=_er("Live debate failed", 500),
+        ):
+            result = handler._run_debate("test topic", 1, 3)
+            data, status = _parse_result(result)
+            assert status == 200
+            assert "id" in data
+            assert data["topic"] == "test topic"
+            assert len(data["participants"]) == 3
