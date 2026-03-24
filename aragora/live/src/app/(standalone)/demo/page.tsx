@@ -386,7 +386,8 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${styles}`}
+      className={`inline-flex items-center rounded-full border text-[12px] font-semibold uppercase tracking-[0.18em] ${styles}`}
+      style={{ padding: "8px 14px" }}
     >
       {label}
     </span>
@@ -395,17 +396,18 @@ function StatusBadge({
 
 function AgentRoster({ agents }: { agents: string[] }) {
   return (
-    <div className="flex flex-wrap gap-2.5">
+    <div className="flex flex-wrap gap-3">
       {agents.map((agent) => {
         const accent = accentForAgent(agent);
         return (
           <div
             key={agent}
-            className="rounded-full border px-3.5 py-1.5 text-sm font-semibold tracking-[0.04em] shadow-[var(--shadow-panel)]"
+            className="rounded-full border text-[15px] font-semibold tracking-[0.04em] shadow-[var(--shadow-panel)]"
             style={{
               borderColor: `${accent}26`,
               color: accent,
               backgroundColor: `${accent}10`,
+              padding: "10px 16px",
             }}
           >
             {formatAgentName(agent)}
@@ -598,7 +600,8 @@ function ExpandableText({
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/40 hover:text-[var(--acid-green)]"
+          className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[15px] font-semibold text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/40 hover:text-[var(--acid-green)]"
+          style={{ padding: "10px 16px" }}
         >
           <span>{expanded ? "Show less" : buttonLabel}</span>
           <span
@@ -715,10 +718,11 @@ function LiveResultCard({
                           {formatAgentName(agent)}
                         </div>
                         <span
-                          className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+                          className="rounded-full text-[11px] font-semibold uppercase tracking-[0.16em]"
                           style={{
                             color: accent,
                             backgroundColor: `${accent}10`,
+                            padding: "8px 12px",
                           }}
                         >
                           Position
@@ -923,7 +927,8 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                         {event.model}
                       </span>
                       <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] font-semibold ${badgeColor} bg-current/5`}
+                        className={`rounded-full text-[11px] uppercase tracking-[0.16em] font-semibold ${badgeColor} bg-current/5`}
+                        style={{ padding: "8px 12px" }}
                       >
                         {event.type}
                       </span>
@@ -1141,17 +1146,18 @@ export default function PublicDemoPage() {
           >
             ARAGORA
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3.5">
             <Link
               href="/try"
-              className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+              className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+              style={{ padding: "10px 16px" }}
             >
               /try beta
             </Link>
             <Link
               href="/signup"
-              className="rounded-full bg-[var(--acid-green)] px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
-              style={{ color: '#ffffff' }}
+              className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90"
+              style={{ color: "#ffffff", padding: "10px 18px" }}
             >
               Get started free
             </Link>
@@ -1196,25 +1202,27 @@ export default function PublicDemoPage() {
               {DEMO_TOPIC}
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3.5">
             <button
               onClick={() => void runLiveDemo()}
               disabled={isLoading}
-              className="rounded-full bg-[var(--acid-green)] px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-              style={{ color: "#ffffff" }}
+              className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ color: "#ffffff", padding: "12px 20px" }}
             >
               {isLoading ? "Running..." : "Run Live"}
             </button>
             <Link
               href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
-              className="rounded-full border border-[var(--border)] px-5 py-2.5 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+              className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+              style={{ padding: "12px 20px" }}
             >
               Ask Your Own Question
             </Link>
             <button
               onClick={() => setShowRecordedSample((current) => !current)}
               disabled={recordedSamplePinned}
-              className="rounded-full border border-[var(--border)] px-5 py-2.5 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-sky-500/50 hover:text-sky-700"
+              className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-sky-500/50 hover:text-sky-700"
+              style={{ padding: "12px 20px" }}
             >
               {recordedSamplePinned
                 ? "Sample Shown"
@@ -1295,13 +1303,15 @@ export default function PublicDemoPage() {
               <button
                 onClick={() => void runLiveDemo()}
                 disabled={isLoading}
-                className="rounded-full bg-sky-700 px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="rounded-full bg-sky-700 text-[15px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ padding: "12px 20px" }}
               >
                 Retry Live Run
               </button>
               <Link
                 href="/try"
-                className="rounded-full border border-sky-500/30 px-5 py-2.5 text-sm font-medium text-sky-800 transition-colors hover:bg-sky-500/8"
+                className="rounded-full border border-sky-500/30 text-[15px] font-medium text-sky-800 transition-colors hover:bg-sky-500/8"
+                style={{ padding: "12px 20px" }}
               >
                 Open /try Instead
               </Link>
@@ -1316,11 +1326,17 @@ export default function PublicDemoPage() {
                 {resultTone === "live" ? "Fresh response" : "Fallback response"}
               </div>
               {resultTone === "live" ? (
-                <span className="rounded-full bg-[var(--surface)] px-3 py-1 text-sm font-medium text-[var(--acid-green)] shadow-[var(--shadow-panel)]">
+                <span
+                  className="rounded-full bg-[var(--surface)] text-[15px] font-medium text-[var(--acid-green)] shadow-[var(--shadow-panel)]"
+                  style={{ padding: "10px 16px" }}
+                >
                   Backend returned a live debate
                 </span>
               ) : (
-                <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 shadow-[var(--shadow-panel)]">
+                <span
+                  className="rounded-full bg-amber-50 text-[15px] font-medium text-amber-700 shadow-[var(--shadow-panel)]"
+                  style={{ padding: "10px 16px" }}
+                >
                   Backend did not return a fresh live debate
                 </span>
               )}
