@@ -538,6 +538,26 @@ class HandlerRegistryMixin:
                 self.end_headers()
                 self.wfile.write(result.body)
                 return True
+        except ImportError as e:
+            # Subsystem not available — return 503 not 500
+            logger.warning(
+                "[handlers] Subsystem unavailable in %s: %s", handler.__class__.__name__, e
+            )
+            body_503 = json.dumps(
+                {
+                    "error": "Feature temporarily unavailable",
+                    "code": "subsystem_unavailable",
+                }
+            ).encode()
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body_503)))
+            self._add_cors_headers()
+            self._add_security_headers()
+            self._add_trace_headers()
+            self.end_headers()
+            self.wfile.write(body_503)
+            return True
         except (
             RuntimeError,
             OSError,

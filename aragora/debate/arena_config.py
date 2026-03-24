@@ -431,7 +431,7 @@ class ArenaConfig:
         # Protocol-level flags (stored for preset passthrough to Arena/Protocol)
         enable_adaptive_consensus: bool = False,
         enable_synthesis: bool = False,
-        enable_knowledge_injection: bool = False,
+        enable_knowledge_injection: bool = True,
         enable_meta_learning: bool = False,
         # RLM (Recursive Language Models): context compression for long debates
         enable_rlm: bool = False,
