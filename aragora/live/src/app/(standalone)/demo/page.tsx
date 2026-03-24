@@ -499,7 +499,7 @@ function LiveResultCard({
           <div className="flex flex-col gap-3">
             <Link
               href={shareHref}
-              className="rounded-full bg-[var(--acid-green)] px-5 py-2.5 text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-full bg-[var(--acid-green)] px-5 py-2.5 text-center text-sm font-semibold transition-opacity hover:opacity-90" style={{ color: '#ffffff' }}
             >
               View Shareable Result
             </Link>
@@ -743,7 +743,7 @@ export default function PublicDemoPage() {
           </Link>
           <Link
             href="/signup"
-            className="rounded-full bg-[var(--acid-green)] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="rounded-full bg-[var(--acid-green)] px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90" style={{ color: '#ffffff' }}
           >
             Get started free
           </Link>
@@ -774,7 +774,7 @@ export default function PublicDemoPage() {
             <button
               onClick={() => void runLiveDemo()}
               disabled={isLoading}
-              className="rounded-full bg-[var(--acid-green)] px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-full bg-[var(--acid-green)] px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50" style={{ color: '#ffffff' }}
             >
               {isLoading ? 'Running...' : 'Run Live'}
             </button>
