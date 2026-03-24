@@ -386,10 +386,10 @@ function LiveResultCard({
   const proposalEntries = Object.entries(result.proposals).slice(0, 3);
 
   return (
-    <section className="space-y-8 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-10 shadow-[var(--shadow-elevated)]">
-      <div className="grid gap-10 xl:grid-cols-[minmax(0,1.6fr)_340px]">
-        <div className="space-y-8">
-          <div className="space-y-4 border-b border-[var(--border)] pb-8">
+    <section className="space-y-8 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]" style={{ padding: '40px' }}>
+      <div className="grid xl:grid-cols-[minmax(0,1.6fr)_340px]" style={{ gap: '40px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          <div className="border-b border-[var(--border)]" style={{ paddingBottom: '32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <StatusBadge label={resultLabel} tone={resultTone} />
             <div className="space-y-2">
               <p className="max-w-3xl text-[21px] font-semibold leading-9 text-[var(--text)] text-balance">
@@ -402,7 +402,7 @@ function LiveResultCard({
               </p>
             </div>
           </div>
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-10 shadow-[var(--shadow-panel)]">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" style={{ padding: '36px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Verdict
             </h3>
@@ -426,8 +426,8 @@ function LiveResultCard({
                   return (
                     <div
                       key={agent}
-                      className="space-y-4 rounded-[18px] border bg-[var(--surface)] p-8 pl-10 shadow-[var(--shadow-panel)]"
-                      style={{ borderColor: `${accent}28`, boxShadow: `inset 4px 0 0 ${accent}` }}
+                      className="rounded-[18px] border bg-[var(--surface)] shadow-[var(--shadow-panel)]"
+                      style={{ borderColor: `${accent}28`, boxShadow: `inset 4px 0 0 ${accent}`, padding: '32px', paddingLeft: '40px', display: 'flex', flexDirection: 'column', gap: '16px' }}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-lg font-bold uppercase tracking-[0.08em]" style={{ color: accent }}>
@@ -457,28 +457,28 @@ function LiveResultCard({
 
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
           <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-7 py-5 shadow-[var(--shadow-panel)]">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" style={{ padding: '24px' }}">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Runtime</div>
               <div className="mt-2 text-lg font-semibold text-[var(--text)]">{result.duration_seconds.toFixed(1)}s</div>
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-7 py-5 shadow-[var(--shadow-panel)]">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" style={{ padding: '24px' }}">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Started</div>
               <div className="mt-2 text-sm font-semibold text-[var(--text)]">{runStartedAt ?? 'Just now'}</div>
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-7 py-5 shadow-[var(--shadow-panel)] sm:col-span-3 xl:col-span-1">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" style={{ padding: '24px' }} sm:col-span-3 xl:col-span-1">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Result ID</div>
               <div className="mt-2 break-all font-mono text-xs text-[var(--text)]">{result.id}</div>
             </div>
           </div>
 
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-8 shadow-[var(--shadow-panel)]">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" style={{ padding: '28px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Returned agents
             </h3>
             <AgentRoster agents={result.participants} />
           </div>
 
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-8 shadow-[var(--shadow-panel)]">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]" style={{ padding: '28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <ConsensusBar confidence={result.confidence} />
           </div>
 
@@ -750,7 +750,7 @@ export default function PublicDemoPage() {
         </div>
       </nav>
 
-      <div className="mx-auto flex max-w-[1120px] flex-col gap-10 px-8 py-10 md:px-12">
+      <div className="mx-auto max-w-[1120px] flex flex-col" style={{ padding: '40px', gap: '40px' }}>
         <header className="space-y-3 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-[var(--acid-green)] sm:text-4xl text-balance">
             Live Demo
@@ -761,7 +761,7 @@ export default function PublicDemoPage() {
           </p>
         </header>
 
-        <section className="space-y-5 rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-10 shadow-[var(--shadow-elevated)]">
+        <section className="rounded-[22px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]" style={{ padding: '40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div className="space-y-2">
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Canonical question
