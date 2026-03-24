@@ -2255,18 +2255,17 @@ def _harvest_summary(items: list[dict[str, Any]]) -> dict[str, int]:
     summary = {
         "total_items": len(items),
         "prs_created": 0,
-        "merged": 0,
+        "completed": 0,
         "needs_human": 0,
         "failed": 0,
     }
     for item in items:
         pr_records = [entry for entry in item.get("prs", []) if isinstance(entry, dict)]
         summary["prs_created"] += len(pr_records)
-        summary["merged"] += sum(
-            1 for entry in pr_records if str(entry.get("disposition", "")).strip() == "merged"
-        )
         outcome = _harvest_item_outcome(item)
-        if outcome == "needs_human":
+        if outcome == "merged" or outcome == QUEUE_ITEM_STATUS_COMPLETED:
+            summary["completed"] += 1
+        elif outcome == "needs_human":
             summary["needs_human"] += 1
         elif outcome == "failed":
             summary["failed"] += 1

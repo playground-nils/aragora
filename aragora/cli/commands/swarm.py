@@ -71,7 +71,7 @@ def _render_tranche_queue_harvest_table(payload: dict[str, object]) -> None:
     rows = [
         ("total items", int(summary.get("total_items", 0) or 0)),
         ("PRs created", int(summary.get("prs_created", 0) or 0)),
-        ("merged", int(summary.get("merged", 0) or 0)),
+        ("completed", int(summary.get("completed", 0) or 0)),
         ("needs_human", int(summary.get("needs_human", 0) or 0)),
         ("failed", int(summary.get("failed", 0) or 0)),
     ]
