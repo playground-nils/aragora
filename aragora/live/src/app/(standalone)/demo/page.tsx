@@ -232,7 +232,7 @@ function StatusBadge({
   }[tone];
 
   return (
-    <span className={`inline-flex items-center px-2 py-1 text-[10px] font-mono uppercase tracking-[0.2em] border ${styles}`}>
+    <span className={`inline-flex items-center px-3 py-1 text-xs font-semibold uppercase tracking-wider border rounded ${styles}`}>
       {label}
     </span>
   );
@@ -246,8 +246,8 @@ function AgentRoster({ agents }: { agents: string[] }) {
         return (
           <div
             key={agent}
-            className="px-2 py-1 border text-xs font-mono"
-            style={{ borderColor: `${accent}55`, color: accent }}
+            className="px-3 py-1.5 border text-sm font-semibold rounded"
+            style={{ borderColor: `${accent}40`, color: accent, backgroundColor: `${accent}08` }}
           >
             {agent}
           </div>
@@ -317,11 +317,11 @@ function LiveResultCard({
 
       <ConsensusBar confidence={result.confidence} />
 
-      <div className="space-y-2">
+      <div className="space-y-3 bg-[var(--surface-elevated)] border border-[var(--border)] rounded-lg p-5">
         <h3 className="text-xs uppercase tracking-[0.2em] font-semibold text-[var(--acid-green)]">
           Verdict
         </h3>
-        <p className="text-sm text-[var(--text)] leading-relaxed">{summary}</p>
+        <p className="text-base text-[var(--text)] leading-relaxed max-w-prose">{summary}</p>
       </div>
 
       {proposalEntries.length > 0 && (
@@ -335,13 +335,13 @@ function LiveResultCard({
               return (
                 <div
                   key={agent}
-                  className="border p-4 bg-[var(--bg)]/40 rounded"
-                  style={{ borderColor: `${accent}55` }}
+                  className="border p-5 bg-[var(--surface)] rounded-lg shadow-sm space-y-3"
+                  style={{ borderColor: `${accent}30` }}
                 >
-                  <div className="mb-2 text-base font-semibold uppercase tracking-wide" style={{ color: accent }}>
+                  <div className="text-lg font-bold uppercase tracking-wide" style={{ color: accent }}>
                     {agent}
                   </div>
-                  <p className="text-sm text-[var(--text-muted)] leading-relaxed">
+                  <p className="text-sm text-[var(--text)] leading-relaxed max-w-prose">
                     {proposal}
                   </p>
                 </div>
@@ -389,11 +389,11 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
       <AgentRoster agents={sample.agents} />
       <ConsensusBar confidence={sample.confidence} />
 
-      <div className="space-y-2">
-        <h3 className="text-xs uppercase tracking-[0.2em] font-semibold text-blue-400">
+      <div className="space-y-3 bg-[var(--surface-elevated)] border border-[var(--border)] rounded-lg p-5">
+        <h3 className="text-xs uppercase tracking-[0.2em] font-semibold text-blue-500">
           Recorded verdict
         </h3>
-        <p className="text-sm text-[var(--text)] leading-relaxed">{sample.verdict}</p>
+        <p className="text-base text-[var(--text)] leading-relaxed max-w-prose">{sample.verdict}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -411,30 +411,30 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
           return (
             <div
               key={`${event.agent}-${index}`}
-              className="border p-4 bg-[var(--bg)]/30 space-y-2 rounded"
-              style={{ borderColor: `${accent}55` }}
+              className="border p-5 bg-[var(--surface)] space-y-3 rounded-lg shadow-sm"
+              style={{ borderColor: `${accent}30` }}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-semibold uppercase tracking-wide" style={{ color: accent }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-bold uppercase tracking-wide" style={{ color: accent }}>
                     {event.model}
                   </span>
-                  <span className={`text-[10px] uppercase font-medium ${badgeColor}`}>
+                  <span className={`text-[11px] uppercase font-semibold px-2 py-0.5 rounded ${badgeColor} bg-current/5`}>
                     {event.type}
                   </span>
                 </div>
-                <div className="text-xs text-[var(--text-muted)]">
+                <div className="text-sm text-[var(--text-muted)]">
                   Round {event.round}
                   {event.confidence !== undefined
-                    ? ` · ${Math.round(event.confidence * 100)}% confidence`
+                    ? ` · ${Math.round(event.confidence * 100)}%`
                     : ''}
                 </div>
               </div>
-              <p className="text-sm text-[var(--text-muted)] leading-relaxed">
+              <p className="text-sm text-[var(--text)] leading-relaxed max-w-prose">
                 {event.content}
               </p>
               {event.vote && (
-                <div className="text-xs text-[var(--text-muted)]">
+                <div className="text-sm font-medium text-[var(--acid-green)]">
                   Vote: {event.vote}
                 </div>
               )}
@@ -585,74 +585,42 @@ export default function PublicDemoPage() {
       </nav>
 
       <div className="container mx-auto px-4 py-8 max-w-5xl space-y-8">
-        <header className="text-center space-y-4">
-          <div className="text-[10px] font-mono text-[var(--acid-green)] uppercase tracking-[0.3em]">
-            Truthful Public Demo
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-mono text-[var(--acid-green)]">
-            LIVE PROOF SURFACE
+        <header className="text-center space-y-3">
+          <h1 className="text-2xl sm:text-3xl font-bold text-[var(--acid-green)] tracking-tight">
+            Live Demo
           </h1>
-          <p className="text-sm font-mono text-[var(--text-muted)] max-w-3xl mx-auto leading-relaxed">
-            This page runs one canonical question against the same public playground backend used
-            elsewhere. If the backend returns a simulated fallback instead of a fresh live run, it
-            is labeled as such. If the backend is unavailable, the recorded sample appears instead
-            of an error. If you want to bring your own question, use <span className="text-[var(--acid-green)]">/try</span>.
+          <p className="text-sm text-[var(--text-muted)] max-w-2xl mx-auto leading-relaxed">
+            Watch AI agents debate a real question. Want to ask your own?{' '}
+            <Link href="/try/" className="text-[var(--acid-green)] hover:underline font-medium">Try it free</Link>.
           </p>
         </header>
 
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-[var(--surface)] border border-[var(--acid-green)]/30 space-y-2">
-            <StatusBadge label="/demo" tone="live" />
-            <p className="text-sm font-mono text-[var(--text)]">Canonical live-backed proof</p>
-            <p className="text-xs font-mono text-[var(--text-muted)]">
-              Fresh run of one public question. Honest fallback labeling if the backend is not live.
-            </p>
-          </div>
-          <div className="p-4 bg-[var(--surface)] border border-[var(--border)] space-y-2">
-            <StatusBadge label="/try" tone="live" />
-            <p className="text-sm font-mono text-[var(--text)]">Primary beta funnel</p>
-            <p className="text-xs font-mono text-[var(--text-muted)]">
-              Ask your own question. Keep the existing rate limits, persistence, and share flow.
-            </p>
-          </div>
-          <div className="p-4 bg-[var(--surface)] border border-blue-400/30 space-y-2">
-            <StatusBadge label="Recorded sample" tone="sample" />
-            <p className="text-sm font-mono text-[var(--text)]">Canned example, clearly labeled</p>
-            <p className="text-xs font-mono text-[var(--text-muted)]">
-              Available for comparison and fast browsing, but never presented as a live proof.
-            </p>
-          </div>
-        </section>
-
-        <section className="p-4 bg-[var(--surface)] border border-[var(--acid-green)]/30 space-y-3">
-          <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--acid-green)]">
-            Canonical question for this surface
-          </div>
-          <p className="text-sm font-mono text-[var(--text)] leading-relaxed">{DEMO_TOPIC}</p>
+        <section className="p-5 bg-[var(--surface)] border border-[var(--border)] rounded-lg space-y-4">
+          <p className="text-base text-[var(--text)] leading-relaxed font-medium">{DEMO_TOPIC}</p>
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => void runLiveDemo()}
               disabled={isLoading}
-              className="px-4 py-2 text-xs font-mono bg-[var(--acid-green)] text-[var(--bg)] hover:opacity-90 disabled:opacity-50 transition-opacity"
+              className="px-5 py-2.5 text-sm font-semibold bg-[var(--acid-green)] text-white rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
-              {isLoading ? 'RUNNING LIVE PROOF...' : 'RUN LIVE AGAIN'}
+              {isLoading ? 'Running...' : 'Run Live'}
             </button>
             <Link
               href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
-              className="px-4 py-2 text-xs font-mono border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--acid-green)] hover:border-[var(--acid-green)]/50 transition-colors"
+              className="px-5 py-2.5 text-sm font-medium border border-[var(--border)] text-[var(--text-muted)] rounded hover:text-[var(--acid-green)] hover:border-[var(--acid-green)]/50 transition-colors"
             >
-              TAKE THIS TO /TRY
+              Ask Your Own Question
             </Link>
             <button
               onClick={() => setShowRecordedSample((current) => !current)}
               disabled={recordedSamplePinned}
-              className="px-4 py-2 text-xs font-mono border border-blue-400/40 text-blue-300 hover:bg-blue-400/10 transition-colors"
+              className="px-5 py-2.5 text-sm font-medium border border-[var(--border)] text-[var(--text-muted)] rounded hover:text-blue-500 hover:border-blue-400/50 transition-colors"
             >
               {recordedSamplePinned
-                ? 'RECORDED SAMPLE SHOWN'
+                ? 'Sample Shown'
                 : showRecordedSample
-                  ? 'HIDE RECORDED SAMPLE'
-                  : 'SHOW RECORDED SAMPLE'}
+                  ? 'Hide Sample'
+                  : 'Show Recorded Sample'}
             </button>
           </div>
         </section>
