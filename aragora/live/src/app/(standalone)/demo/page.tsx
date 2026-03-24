@@ -257,6 +257,120 @@ function formatVerdict(result: LiveDebateResult): string {
   return "No verdict returned.";
 }
 
+function cleanPreviewText(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitIntoSentences(text: string): string[] {
+  return cleanPreviewText(text)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function trimInsight(text: string, maxLength = 170): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  const trimmed = text.slice(0, maxLength);
+  const boundary = trimmed.lastIndexOf(" ");
+  return `${trimmed.slice(0, boundary > 0 ? boundary : maxLength).trim()}…`;
+}
+
+function pickInsight(
+  sentences: string[],
+  used: Set<number>,
+  patterns: RegExp[],
+): string | null {
+  const index = sentences.findIndex(
+    (sentence, sentenceIndex) =>
+      !used.has(sentenceIndex) &&
+      patterns.some((pattern) => pattern.test(sentence)),
+  );
+
+  if (index === -1) {
+    return null;
+  }
+
+  used.add(index);
+  return sentences[index];
+}
+
+function buildDecisionSnapshot(summary: string): {
+  recommendation: string;
+  rationale: string;
+  caution: string;
+  nextStep: string;
+} {
+  const sentences = splitIntoSentences(summary);
+  const used = new Set<number>();
+
+  const recommendation =
+    sentences[0]?.replace(/^As the [^,]+,\s*/i, "").trim() ||
+    "Review the full verdict below.";
+  if (sentences[0]) {
+    used.add(0);
+  }
+
+  const rationale =
+    pickInsight(sentences, used, [
+      /benefit/i,
+      /improv/i,
+      /reduce/i,
+      /quality/i,
+      /security/i,
+      /velocity/i,
+      /impact/i,
+      /value/i,
+    ]) ||
+    sentences.find((_, index) => !used.has(index)) ||
+    "The case for the recommendation is in the full verdict below.";
+
+  const caution =
+    pickInsight(sentences, used, [
+      /however/i,
+      /but/i,
+      /risk/i,
+      /uncertaint/i,
+      /cost/i,
+      /friction/i,
+      /latency/i,
+      /false positive/i,
+      /trade-?off/i,
+      /pushback/i,
+    ]) ||
+    "The decision still depends on rollout tradeoffs, costs, and human review.";
+
+  const nextStep =
+    pickInsight(sentences, used, [
+      /start/i,
+      /pilot/i,
+      /rollout/i,
+      /measure/i,
+      /monitor/i,
+      /review/i,
+      /phase/i,
+      /prioriti/i,
+      /recommend/i,
+    ]) ||
+    "Compare the agent positions below before turning this into policy.";
+
+  return {
+    recommendation: trimInsight(recommendation, 220),
+    rationale: trimInsight(rationale),
+    caution: trimInsight(caution),
+    nextStep: trimInsight(nextStep),
+  };
+}
+
 function StatusBadge({
   label,
   tone,
@@ -321,6 +435,96 @@ function ConsensusBar({ confidence }: { confidence: number }) {
           style={{ width: `${clamped * 100}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+function SnapshotCard({
+  label,
+  value,
+  accentClass,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  accentClass: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-panel)] ${className}`}
+    >
+      <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${accentClass}`}>
+        {label}
+      </div>
+      <p className="mt-3 text-[15px] leading-7 text-[var(--text)] text-pretty">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function DecisionSnapshot({
+  summary,
+  tone,
+}: {
+  summary: string;
+  tone: "live" | "sample";
+}) {
+  const snapshot = buildDecisionSnapshot(summary);
+  const accentClass =
+    tone === "live" ? "text-[var(--acid-green)]" : "text-sky-700";
+
+  return (
+    <div className="space-y-4">
+      <h3 className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>
+        Decision snapshot
+      </h3>
+      <div className="grid gap-4 md:grid-cols-2">
+        <SnapshotCard
+          label="Recommendation"
+          value={snapshot.recommendation}
+          accentClass={accentClass}
+          className="md:col-span-2"
+        />
+        <SnapshotCard
+          label="Why"
+          value={snapshot.rationale}
+          accentClass={accentClass}
+        />
+        <SnapshotCard
+          label="Main caution"
+          value={snapshot.caution}
+          accentClass={accentClass}
+        />
+        <SnapshotCard
+          label="Next step"
+          value={snapshot.nextStep}
+          accentClass={accentClass}
+          className="md:col-span-2"
+        />
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="grid gap-1 sm:grid-cols-[88px_1fr] sm:gap-3">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+        {label}
+      </dt>
+      <dd className={mono ? "break-all font-mono text-xs text-[var(--text)]" : "text-sm font-medium text-[var(--text)]"}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -441,19 +645,24 @@ function LiveResultCard({
               padding: "36px",
               display: "flex",
               flexDirection: "column",
-              gap: "16px",
+              gap: "24px",
             }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
-              Verdict
-            </h3>
-            <ExpandableText
-              text={summary}
-              collapsedLines={5}
-              buttonLabel="Read full verdict"
-              surfaceTone="elevated"
-              className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
-            />
+            <DecisionSnapshot summary={summary} tone="live" />
+            <div className="border-t border-[var(--border)] pt-6">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+                Full verdict
+              </h3>
+              <div className="mt-4">
+                <ExpandableText
+                  text={summary}
+                  collapsedLines={4}
+                  buttonLabel="Read full verdict"
+                  surfaceTone="elevated"
+                  className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
+                />
+              </div>
+            </div>
           </div>
 
           {proposalEntries.length > 0 && (
@@ -511,40 +720,28 @@ function LiveResultCard({
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-            <div
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
-              style={{ padding: "24px" }}
-            >
-              <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                Runtime
-              </div>
-              <div className="mt-2 text-lg font-semibold text-[var(--text)]">
-                {result.duration_seconds.toFixed(1)}s
-              </div>
-            </div>
-            <div
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
-              style={{ padding: "24px" }}
-            >
-              <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                Started
-              </div>
-              <div className="mt-2 text-sm font-semibold text-[var(--text)]">
-                {runStartedAt ?? "Just now"}
-              </div>
-            </div>
-            <div
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)] sm:col-span-3 lg:col-span-1"
-              style={{ padding: "24px" }}
-            >
-              <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                Result ID
-              </div>
-              <div className="mt-2 break-all font-mono text-xs text-[var(--text)]">
-                {result.id}
-              </div>
-            </div>
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+              Run details
+            </h3>
+            <dl className="mt-5 space-y-4">
+              <DetailRow
+                label="Runtime"
+                value={`${result.duration_seconds.toFixed(1)}s`}
+              />
+              <DetailRow
+                label="Started"
+                value={runStartedAt ?? "Just now"}
+              />
+              <DetailRow
+                label="Status"
+                value={`${result.status} after ${result.rounds_used} round${result.rounds_used === 1 ? "" : "s"}`}
+              />
+              <DetailRow label="Result ID" value={result.id} mono />
+              {result.receipt_hash ? (
+                <DetailRow label="Receipt" value={result.receipt_hash} mono />
+              ) : null}
+            </dl>
           </div>
 
           <div
@@ -574,21 +771,15 @@ function LiveResultCard({
             <ConsensusBar confidence={result.confidence} />
           </div>
 
-          <div className="flex flex-wrap gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-5 text-sm text-[var(--text-muted)] shadow-[var(--shadow-panel)]">
-            <span className="rounded-full bg-[var(--surface)] px-3 py-1 shadow-[var(--shadow-panel)]">
-              Rounds {result.rounds_used}
-            </span>
-            <span className="rounded-full bg-[var(--surface)] px-3 py-1 shadow-[var(--shadow-panel)]">
-              Status {result.status}
-            </span>
-            {result.receipt_hash && (
-              <span className="rounded-full bg-[var(--surface)] px-3 py-1 font-mono text-xs shadow-[var(--shadow-panel)]">
-                Receipt {result.receipt_hash.slice(0, 16)}...
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+              Next action
+            </h3>
+            <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
+              Open the shareable result, or take the same prompt into /try for
+              a deeper run.
+            </p>
+            <div className="mt-5 flex flex-col gap-3">
             <Link
               href={shareHref}
               className="rounded-full bg-[var(--acid-green)] px-5 py-2.5 text-center text-sm font-semibold transition-opacity hover:opacity-90"
@@ -602,6 +793,7 @@ function LiveResultCard({
             >
               Ask This in /try
             </Link>
+            </div>
           </div>
         </aside>
       </div>
@@ -622,17 +814,22 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             </p>
           </div>
 
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
-              Recorded verdict
-            </h3>
-            <ExpandableText
-              text={sample.verdict}
-              collapsedLines={4}
-              buttonLabel="Read full verdict"
-              surfaceTone="elevated"
-              className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
-            />
+          <div className="space-y-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+            <DecisionSnapshot summary={sample.verdict} tone="sample" />
+            <div className="border-t border-[var(--border)] pt-6">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
+                Recorded verdict
+              </h3>
+              <div className="mt-4">
+                <ExpandableText
+                  text={sample.verdict}
+                  collapsedLines={4}
+                  buttonLabel="Read full verdict"
+                  surfaceTone="elevated"
+                  className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-5">
@@ -696,6 +893,20 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
+              Sample details
+            </h3>
+            <dl className="mt-5 space-y-4">
+              <DetailRow
+                label="Rounds"
+                value={`${sample.rounds} recorded round${sample.rounds === 1 ? "" : "s"}`}
+              />
+              <DetailRow label="Debate ID" value={sample.id} mono />
+              <DetailRow label="Receipt" value={sample.receiptHash} mono />
+            </dl>
+          </div>
+
           <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Sample agents
@@ -705,11 +916,6 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
 
           <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
             <ConsensusBar confidence={sample.confidence} />
-          </div>
-
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 text-xs text-[var(--text-muted)] shadow-[var(--shadow-panel)]">
-            Receipt sample (not cryptographic):{" "}
-            <span className="break-all font-mono">{sample.receiptHash}</span>
           </div>
         </aside>
       </div>
