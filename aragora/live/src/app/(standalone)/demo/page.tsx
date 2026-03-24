@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/config";
 
@@ -64,6 +64,9 @@ const LIVE_PROGRESS_STEPS = [
   "Collecting multi-agent positions from the playground backend",
   "Persisting a shareable debate result",
 ];
+
+const PAGE_SHELL_MAX_WIDTH = "1240px";
+const PAGE_SHELL_PADDING = "40px";
 
 const RECORDED_SAMPLE: RecordedDebate = {
   id: "demo_showcase_001",
@@ -267,6 +270,14 @@ function formatVerdict(result: LiveDebateResult): string {
     return result.verdict.replace(/_/g, " ");
   }
   return "No verdict returned.";
+}
+
+function compactHash(value: string, leading = 16, trailing = 10): string {
+  if (value.length <= leading + trailing + 1) {
+    return value;
+  }
+
+  return `${value.slice(0, leading)}…${value.slice(-trailing)}`;
 }
 
 function cleanPreviewText(text: string): string {
@@ -538,10 +549,12 @@ function DetailRow({
   label,
   value,
   mono = false,
+  title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  title?: string;
 }) {
   return (
     <div
@@ -565,10 +578,30 @@ function DetailRow({
             ? "break-all font-mono text-[12px] leading-6 text-[var(--text)]"
             : "text-sm font-medium leading-6 text-[var(--text)]"
         }
+        title={title ?? value}
       >
         {value}
       </dd>
     </div>
+  );
+}
+
+function ResultStateChip({ tone }: { tone: "live" | "fallback" }) {
+  const isLive = tone === "live";
+
+  return (
+    <span
+      className={`rounded-full text-[15px] font-medium shadow-[var(--shadow-panel)] ${
+        isLive
+          ? "bg-[var(--surface)] text-[var(--acid-green)]"
+          : "bg-amber-50 text-amber-700"
+      }`}
+      style={{ padding: "10px 16px" }}
+    >
+      {isLive
+        ? "Backend returned a live debate"
+        : "Backend did not return a fresh live debate"}
+    </span>
   );
 }
 
@@ -668,10 +701,23 @@ function LiveResultCard({
               paddingBottom: "32px",
               display: "flex",
               flexDirection: "column",
-              gap: "16px",
+              gap: "18px",
             }}
           >
-            <StatusBadge label={resultLabel} tone={resultTone} />
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+              >
+                <div
+                  className="font-semibold uppercase text-[var(--text-muted)]"
+                  style={EYEBROW_TEXT_STYLE}
+                >
+                  {resultTone === "live" ? "Fresh response" : "Fallback response"}
+                </div>
+                <StatusBadge label={resultLabel} tone={resultTone} />
+              </div>
+              <ResultStateChip tone={resultTone} />
+            </div>
             <div className="space-y-2">
               <p className="max-w-3xl text-[21px] font-semibold leading-9 text-[var(--text)] text-balance">
                 {result.topic}
@@ -737,7 +783,7 @@ function LiveResultCard({
                         gap: "16px",
                       }}
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-baseline gap-3">
                         <div
                           className="text-lg font-bold uppercase tracking-[0.08em]"
                           style={{ color: accent }}
@@ -806,11 +852,45 @@ function LiveResultCard({
                 label="Status"
                 value={`${result.status} after ${result.rounds_used} round${result.rounds_used === 1 ? "" : "s"}`}
               />
-              <DetailRow label="Result ID" value={result.id} mono />
-              {result.receipt_hash ? (
-                <DetailRow label="Receipt" value={result.receipt_hash} mono />
-              ) : null}
             </dl>
+            <div
+              className="border-t border-[var(--border)]"
+              style={{
+                paddingTop: "18px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
+              <div
+                className="font-semibold uppercase text-[var(--text-muted)]"
+                style={LABEL_TEXT_STYLE}
+              >
+                Result record
+              </div>
+              <dl
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                }}
+              >
+                <DetailRow
+                  label="Result ID"
+                  value={compactHash(result.id, 12, 6)}
+                  title={result.id}
+                  mono
+                />
+                {result.receipt_hash ? (
+                  <DetailRow
+                    label="Receipt"
+                    value={compactHash(result.receipt_hash)}
+                    title={result.receipt_hash}
+                    mono
+                  />
+                ) : null}
+              </dl>
+            </div>
           </div>
 
           <div
@@ -1025,9 +1105,43 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                 label="Rounds"
                 value={`${sample.rounds} recorded round${sample.rounds === 1 ? "" : "s"}`}
               />
-              <DetailRow label="Debate ID" value={sample.id} mono />
-              <DetailRow label="Receipt" value={sample.receiptHash} mono />
             </dl>
+            <div
+              className="border-t border-[var(--border)]"
+              style={{
+                paddingTop: "18px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
+              <div
+                className="font-semibold uppercase text-[var(--text-muted)]"
+                style={LABEL_TEXT_STYLE}
+              >
+                Sample record
+              </div>
+              <dl
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                }}
+              >
+                <DetailRow
+                  label="Debate ID"
+                  value={compactHash(sample.id, 12, 6)}
+                  title={sample.id}
+                  mono
+                />
+                <DetailRow
+                  label="Receipt"
+                  value={compactHash(sample.receiptHash)}
+                  title={sample.receiptHash}
+                  mono
+                />
+              </dl>
+            </div>
           </div>
 
           <div
@@ -1167,15 +1281,6 @@ export default function PublicDemoPage() {
     };
   }, [runLiveDemo]);
 
-  const resultTone = useMemo(() => {
-    if (!result) {
-      return null;
-    }
-    return result.mock_fallback || result.is_live === false
-      ? "fallback"
-      : "live";
-  }, [result]);
-
   const recordedSamplePinned =
     sampleFallbackMessage !== null ||
     result?.mock_fallback === true ||
@@ -1185,7 +1290,14 @@ export default function PublicDemoPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(21,128,61,0.08),_transparent_32%),var(--bg)] text-[var(--text)]">
       <nav className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--surface)]/92 backdrop-blur">
-        <div className="mx-auto flex max-w-[1240px] items-center justify-between px-5 py-3 sm:px-6 lg:px-8">
+        <div
+          className="mx-auto flex items-center justify-between"
+          style={{
+            maxWidth: PAGE_SHELL_MAX_WIDTH,
+            padding: "14px 40px",
+            gap: "20px",
+          }}
+        >
           <Link
             href="/landing"
             className="text-sm font-semibold tracking-[0.14em] text-[var(--acid-green)] transition-opacity hover:opacity-80"
@@ -1212,10 +1324,14 @@ export default function PublicDemoPage() {
       </nav>
 
       <div
-        className="mx-auto max-w-[1240px] flex flex-col"
-        style={{ padding: "40px", gap: "40px" }}
+        className="mx-auto flex flex-col"
+        style={{
+          maxWidth: PAGE_SHELL_MAX_WIDTH,
+          padding: PAGE_SHELL_PADDING,
+          gap: "40px",
+        }}
       >
-        <header className="space-y-3 text-center">
+        <header className="mx-auto w-full max-w-[760px] space-y-3 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-[var(--acid-green)] sm:text-4xl text-balance">
             Live Demo
           </h1>
@@ -1233,52 +1349,49 @@ export default function PublicDemoPage() {
 
         <section
           className="rounded-[22px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
-          style={{
-            padding: "40px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "20px",
-          }}
+          style={{ padding: "40px" }}
         >
-          <div className="space-y-2">
-            <div
-              className="font-semibold uppercase text-[var(--acid-green)]"
-              style={EYEBROW_TEXT_STYLE}
-            >
-              Canonical question
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="space-y-2">
+              <div
+                className="font-semibold uppercase text-[var(--acid-green)]"
+                style={EYEBROW_TEXT_STYLE}
+              >
+                Canonical question
+              </div>
+              <p className="max-w-[780px] text-[20px] font-semibold leading-8 text-[var(--text)] text-balance">
+                {DEMO_TOPIC}
+              </p>
             </div>
-            <p className="max-w-4xl text-[20px] font-semibold leading-8 text-[var(--text)] text-balance">
-              {DEMO_TOPIC}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3.5">
-            <button
-              onClick={() => void runLiveDemo()}
-              disabled={isLoading}
-              className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-              style={{ color: "#ffffff", padding: "12px 20px" }}
-            >
-              {isLoading ? "Running..." : "Run Live"}
-            </button>
-            <Link
-              href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
-              className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
-              style={{ padding: "12px 20px" }}
-            >
-              Ask Your Own Question
-            </Link>
-            <button
-              onClick={() => setShowRecordedSample((current) => !current)}
-              disabled={recordedSamplePinned}
-              className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-sky-500/50 hover:text-sky-700"
-              style={{ padding: "12px 20px" }}
-            >
-              {recordedSamplePinned
-                ? "Sample Shown"
-                : showRecordedSample
-                  ? "Hide Sample"
-                  : "Show Recorded Sample"}
-            </button>
+            <div className="flex flex-wrap gap-3.5 lg:max-w-[420px] lg:justify-end">
+              <button
+                onClick={() => void runLiveDemo()}
+                disabled={isLoading}
+                className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ color: "#ffffff", padding: "12px 20px" }}
+              >
+                {isLoading ? "Running..." : "Run Live"}
+              </button>
+              <Link
+                href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
+                className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+                style={{ padding: "12px 20px" }}
+              >
+                Ask Your Own Question
+              </Link>
+              <button
+                onClick={() => setShowRecordedSample((current) => !current)}
+                disabled={recordedSamplePinned}
+                className="rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[14px] font-medium text-[var(--text-muted)] transition-colors hover:border-sky-500/40 hover:text-sky-700"
+                style={{ padding: "11px 18px" }}
+              >
+                {recordedSamplePinned
+                  ? "Sample Shown"
+                  : showRecordedSample
+                    ? "Hide Sample"
+                    : "Show Recorded Sample"}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -1305,14 +1418,19 @@ export default function PublicDemoPage() {
               {LIVE_PROGRESS_STEPS.map((step, index) => (
                 <div
                   key={step}
-                  className="flex items-start gap-3 text-sm leading-7 transition-opacity"
+                  className="transition-opacity"
                   style={{
                     opacity: index <= progressStep ? 1 : 0.35,
                     padding: "4px 0",
+                    display: "grid",
+                    gridTemplateColumns: "12px minmax(0,1fr)",
+                    columnGap: "14px",
+                    alignItems: "start",
                   }}
                 >
                   <span
-                    className="mt-[10px] h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--acid-green)]"
+                    className="h-3 w-3 shrink-0 rounded-full bg-[var(--acid-green)]"
+                    style={{ marginTop: "10px" }}
                     aria-hidden="true"
                   />
                   <span
@@ -1321,6 +1439,10 @@ export default function PublicDemoPage() {
                         ? "text-[var(--text)]"
                         : "text-[var(--text-muted)]"
                     }
+                    style={{
+                      fontSize: "15px",
+                      lineHeight: "1.9",
+                    }}
                   >
                     {step}
                   </span>
@@ -1369,47 +1491,10 @@ export default function PublicDemoPage() {
         )}
 
         {result && !isLoading && (
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div
-                className="font-semibold uppercase text-[var(--text-muted)]"
-                style={EYEBROW_TEXT_STYLE}
-              >
-                {resultTone === "live" ? "Fresh response" : "Fallback response"}
-              </div>
-              {resultTone === "live" ? (
-                <span
-                  className="rounded-full bg-[var(--surface)] text-[15px] font-medium text-[var(--acid-green)] shadow-[var(--shadow-panel)]"
-                  style={{ padding: "10px 16px" }}
-                >
-                  Backend returned a live debate
-                </span>
-              ) : (
-                <span
-                  className="rounded-full bg-amber-50 text-[15px] font-medium text-amber-700 shadow-[var(--shadow-panel)]"
-                  style={{ padding: "10px 16px" }}
-                >
-                  Backend did not return a fresh live debate
-                </span>
-              )}
-            </div>
-            <LiveResultCard result={result} runStartedAt={runStartedAt} />
-          </section>
+          <LiveResultCard result={result} runStartedAt={runStartedAt} />
         )}
 
-        {recordedSampleVisible && (
-          <section className="space-y-3">
-            <div
-              className="font-semibold uppercase text-sky-700"
-              style={EYEBROW_TEXT_STYLE}
-            >
-              {sampleFallbackMessage
-                ? "Recorded fallback currently shown"
-                : "Clearly labeled canned example"}
-            </div>
-            <RecordedSampleCard sample={RECORDED_SAMPLE} />
-          </section>
-        )}
+        {recordedSampleVisible && <RecordedSampleCard sample={RECORDED_SAMPLE} />}
       </div>
     </main>
   );
