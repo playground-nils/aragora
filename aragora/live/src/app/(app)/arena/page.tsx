@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DebateInput } from '@/components/DebateInput';
 import { TemplateSuggestions } from '@/components/arena/TemplateSuggestions';
 import { useRightSidebar } from '@/context/RightSidebarContext';
+import { useToast } from '@/context/ToastContext';
 import { Scanlines, CRTVignette } from '@/components/MatrixRain';
 import { API_BASE_URL } from '@/config';
 import Link from 'next/link';
@@ -100,6 +101,7 @@ export default function ArenaPage() {
 function ArenaContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { showSuccess } = useToast();
   const templateId = searchParams.get('template');
   const topicParam = searchParams.get('topic');
   const templateConfig = templateId ? TEMPLATE_CONFIGS[templateId] : null;
@@ -138,8 +140,9 @@ function ArenaContent() {
 
   // Handle debate started - navigate to debate viewer
   const handleDebateStarted = useCallback((debateId: string, _question: string) => {
+    showSuccess('Debate started! Redirecting to results...', 4000);
     router.push(`/debates/${debateId}`);
-  }, [router]);
+  }, [router, showSuccess]);
 
   // Handle error
   const handleError = useCallback((err: string) => {

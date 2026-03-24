@@ -597,6 +597,9 @@ export function DebateInput({
           router.push(`/debates/graph?id=${debateId}`);
         } else if (!usePlayground && debateMode === 'matrix') {
           router.push(`/debates/matrix?id=${data.matrix_id || debateId}`);
+        } else if (!onDebateStarted) {
+          // No callback provided — navigate to the debate detail page by default
+          router.push(`/debates/${debateId}`);
         }
 
         // Always call onDebateStarted for tracking/notification

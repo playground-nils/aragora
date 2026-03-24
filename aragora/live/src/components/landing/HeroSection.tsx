@@ -58,6 +58,7 @@ export function HeroSection(props: Partial<HeroSectionProps> & Record<string, un
   const [shareCopied, setShareCopied] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const startTimeRef = useRef<number>(0);
+  const resultRef = useRef<HTMLDivElement | null>(null);
 
   // Phase progression during debate
   useEffect(() => {
@@ -102,6 +103,13 @@ export function HeroSection(props: Partial<HeroSectionProps> & Record<string, un
     cycleTimer.current = setInterval(cyclePlaceholder, 3500);
     return () => { if (cycleTimer.current) clearInterval(cycleTimer.current); };
   }, [question, isRunning, cyclePlaceholder]);
+
+  // Scroll to results when they appear
+  useEffect(() => {
+    if (result && resultRef.current) {
+      resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [result]);
 
   const { config: backendConfig } = useBackend();
   const apiBase = (isDashboardMode ? props.apiBase as string : backendConfig.api) || BACKENDS.production.api;
@@ -582,7 +590,11 @@ export function HeroSection(props: Partial<HeroSectionProps> & Record<string, un
         )}
 
         {/* Result preview */}
-        {result && <DebateResultPreview result={result} />}
+        {result && (
+          <div ref={resultRef}>
+            <DebateResultPreview result={result} />
+          </div>
+        )}
 
         {/* Post-debate CTAs */}
         {result && (

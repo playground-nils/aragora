@@ -715,6 +715,28 @@ export default function DebateDetailClient() {
               />
             </div>
           )}
+
+          {/* Bottom navigation */}
+          <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-6 pb-4">
+            <Link
+              href="/arena"
+              className="px-4 py-2 text-xs font-mono font-bold bg-[var(--acid-green)] text-[var(--bg)] hover:bg-[var(--acid-green)]/80 transition-colors"
+            >
+              START ANOTHER DEBATE
+            </Link>
+            <Link
+              href="/debates"
+              className="px-4 py-2 text-xs font-mono font-bold bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)] hover:border-[var(--acid-green)]/30 hover:text-[var(--text)] transition-colors"
+            >
+              VIEW ALL DEBATES
+            </Link>
+            <Link
+              href="/receipts"
+              className="px-4 py-2 text-xs font-mono font-bold bg-[var(--acid-cyan)]/10 text-[var(--acid-cyan)] border border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/20 transition-colors"
+            >
+              VIEW RECEIPTS
+            </Link>
+          </div>
         </div>
       </main>
     </>
