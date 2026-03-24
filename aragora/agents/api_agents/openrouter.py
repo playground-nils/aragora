@@ -55,11 +55,10 @@ OPENROUTER_FALLBACK_MODELS: dict[str, str] = {
     "qwen/qwen3.5-plus-02-15": "deepseek/deepseek-chat",
     # DeepSeek -> GPT-5.2-chat (fast, reliable)
     "deepseek/deepseek-chat": "openai/gpt-5.3-chat",
-    "deepseek/deepseek-chat-v3-0324": "openai/gpt-5.3-chat",
+    "deepseek/deepseek-chat-v3-0324": "anthropic/claude-haiku-4.5",
     "deepseek/deepseek-v3.2": "openai/gpt-5.3-chat",
     "deepseek/deepseek-v3.2-exp": "openai/gpt-5.3-chat",
     "deepseek/deepseek-chat-v3.1": "openai/gpt-5.3-chat",
-    "deepseek/deepseek-reasoner": "anthropic/claude-haiku-4.5",
     # Kimi -> Claude Haiku 4.5
     "moonshotai/kimi-k2-0905": "anthropic/claude-haiku-4.5",
     "moonshotai/kimi-k2-thinking": "anthropic/claude-haiku-4.5",
@@ -90,7 +89,7 @@ class OpenRouterAgent(APIAgent):
     and others through an OpenAI-compatible API.
 
     Supported models (via model parameter):
-    - deepseek/deepseek-reasoner (DeepSeek R1)
+    - deepseek/deepseek-chat-v3-0324 (DeepSeek R1)
     - deepseek/deepseek-chat (DeepSeek V3.2)
     - deepseek/deepseek-v3.2 (DeepSeek V3.2 direct)
     - meta-llama/llama-4-maverick (Llama 4 Maverick 400B MoE)
@@ -550,19 +549,19 @@ REASONING: explanation"""
 # Convenience aliases for specific OpenRouter models
 @AgentRegistry.register(
     "deepseek",
-    default_model="deepseek/deepseek-reasoner",
+    default_model="deepseek/deepseek-chat-v3-0324",
     agent_type="API (OpenRouter)",
     env_vars="OPENROUTER_API_KEY",
-    description="DeepSeek R1 - reasoning model with chain-of-thought",
+    description="DeepSeek V3 via OpenRouter - fast, capable chat model",
 )
 class DeepSeekAgent(OpenRouterAgent):
-    """DeepSeek R1 via OpenRouter - reasoning model with chain-of-thought."""
+    """DeepSeek V3 via OpenRouter - fast, capable chat model."""
 
     def __init__(
         self,
         name: str = "deepseek",
         role: AgentRole = "analyst",
-        model: str = "deepseek/deepseek-reasoner",
+        model: str = "deepseek/deepseek-chat-v3-0324",
         system_prompt: str | None = None,
     ):
         super().__init__(
@@ -588,7 +587,7 @@ class DeepSeekReasonerAgent(OpenRouterAgent):
         self,
         name: str = "deepseek-r1",
         role: AgentRole = "analyst",
-        model: str = "deepseek/deepseek-reasoner",
+        model: str = "deepseek/deepseek-chat-v3-0324",
         system_prompt: str | None = None,
     ):
         super().__init__(
