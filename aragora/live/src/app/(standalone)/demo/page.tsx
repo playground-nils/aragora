@@ -262,9 +262,9 @@ function ConsensusBar({ confidence }: { confidence: number }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-xs font-mono text-[var(--text-muted)]">
+      <div className="flex items-center justify-between text-sm text-[var(--text-muted)]">
         <span>Consensus confidence</span>
-        <span className="text-[var(--acid-green)]">{Math.round(clamped * 100)}%</span>
+        <span className="font-semibold text-[var(--acid-green)]">{Math.round(clamped * 100)}%</span>
       </div>
       <div className="h-2 bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
         <div
@@ -295,53 +295,53 @@ function LiveResultCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-2">
           <StatusBadge label={resultLabel} tone={resultTone} />
-          <div className="text-xs font-mono text-[var(--text-muted)]">
+          <div className="text-sm text-[var(--text-muted)]">
             {resultTone === 'live'
               ? 'Fresh result from the public playground backend.'
               : `The backend returned a non-live fallback${result.mock_fallback_reason ? `: ${result.mock_fallback_reason}` : '.'}`}
           </div>
         </div>
-        <div className="text-right text-xs font-mono text-[var(--text-muted)] space-y-1">
-          <div>ID: {result.id}</div>
+        <div className="text-right text-xs text-[var(--text-muted)] space-y-1">
+          <div className="font-mono">ID: {result.id}</div>
           <div>{result.duration_seconds.toFixed(1)}s runtime</div>
           {runStartedAt && <div>Started {runStartedAt}</div>}
         </div>
       </div>
 
       <div className="space-y-3">
-        <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--acid-green)]">
+        <h3 className="text-xs uppercase tracking-[0.2em] font-semibold text-[var(--acid-green)]">
           Returned agents
-        </div>
+        </h3>
         <AgentRoster agents={result.participants} />
       </div>
 
       <ConsensusBar confidence={result.confidence} />
 
       <div className="space-y-2">
-        <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--acid-green)]">
+        <h3 className="text-xs uppercase tracking-[0.2em] font-semibold text-[var(--acid-green)]">
           Verdict
-        </div>
-        <p className="text-sm font-mono text-[var(--text)] leading-relaxed">{summary}</p>
+        </h3>
+        <p className="text-sm text-[var(--text)] leading-relaxed">{summary}</p>
       </div>
 
       {proposalEntries.length > 0 && (
-        <div className="space-y-3">
-          <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--acid-green)]">
+        <div className="space-y-4">
+          <h3 className="text-xs uppercase tracking-[0.2em] font-semibold text-[var(--acid-green)]">
             Agent positions
-          </div>
-          <div className="grid grid-cols-1 gap-3">
+          </h3>
+          <div className="grid grid-cols-1 gap-4">
             {proposalEntries.map(([agent, proposal]) => {
               const accent = accentForAgent(agent);
               return (
                 <div
                   key={agent}
-                  className="border p-3 bg-[var(--bg)]/40"
+                  className="border p-4 bg-[var(--bg)]/40 rounded"
                   style={{ borderColor: `${accent}55` }}
                 >
-                  <div className="mb-2 text-xs font-mono" style={{ color: accent }}>
+                  <div className="mb-2 text-base font-semibold uppercase tracking-wide" style={{ color: accent }}>
                     {agent}
                   </div>
-                  <p className="text-xs font-mono text-[var(--text-muted)] leading-relaxed">
+                  <p className="text-sm text-[var(--text-muted)] leading-relaxed">
                     {proposal}
                   </p>
                 </div>
@@ -351,10 +351,10 @@ function LiveResultCard({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-[var(--text-muted)]">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--border)]">
         <span>Rounds: {result.rounds_used}</span>
         <span>Status: {result.status}</span>
-        {result.receipt_hash && <span>Receipt: {result.receipt_hash.slice(0, 16)}...</span>}
+        {result.receipt_hash && <span className="font-mono">Receipt: {result.receipt_hash.slice(0, 16)}...</span>}
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -380,7 +380,7 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
     <section className="border border-blue-400/30 bg-blue-400/5 p-5 space-y-5">
       <div className="space-y-2">
         <StatusBadge label="Recorded sample" tone="sample" />
-        <p className="text-sm font-mono text-[var(--text-muted)] leading-relaxed">
+        <p className="text-sm text-[var(--text-muted)] leading-relaxed">
           This is a captured example for zero-latency browsing. It is illustrative only and is
           never presented as a fresh run.
         </p>
@@ -390,51 +390,51 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
       <ConsensusBar confidence={sample.confidence} />
 
       <div className="space-y-2">
-        <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-blue-300">
+        <h3 className="text-xs uppercase tracking-[0.2em] font-semibold text-blue-400">
           Recorded verdict
-        </div>
-        <p className="text-sm font-mono text-[var(--text)] leading-relaxed">{sample.verdict}</p>
+        </h3>
+        <p className="text-sm text-[var(--text)] leading-relaxed">{sample.verdict}</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-4">
         {sample.events.map((event, index) => {
           const accent = accentForAgent(event.agent);
           const badgeColor =
             event.type === 'proposal'
-              ? 'text-blue-300'
+              ? 'text-blue-400'
               : event.type === 'critique'
-                ? 'text-red-300'
+                ? 'text-red-400'
                 : event.type === 'vote'
-                  ? 'text-green-300'
+                  ? 'text-green-400'
                   : 'text-[var(--acid-green)]';
 
           return (
             <div
               key={`${event.agent}-${index}`}
-              className="border p-3 bg-[var(--bg)]/30 space-y-2"
+              className="border p-4 bg-[var(--bg)]/30 space-y-2 rounded"
               style={{ borderColor: `${accent}55` }}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono" style={{ color: accent }}>
+                  <span className="text-base font-semibold uppercase tracking-wide" style={{ color: accent }}>
                     {event.model}
                   </span>
-                  <span className={`text-[10px] font-mono uppercase ${badgeColor}`}>
+                  <span className={`text-[10px] uppercase font-medium ${badgeColor}`}>
                     {event.type}
                   </span>
                 </div>
-                <div className="text-[10px] font-mono text-[var(--text-muted)]">
+                <div className="text-xs text-[var(--text-muted)]">
                   Round {event.round}
                   {event.confidence !== undefined
-                    ? ` | ${Math.round(event.confidence * 100)}% confidence`
+                    ? ` · ${Math.round(event.confidence * 100)}% confidence`
                     : ''}
                 </div>
               </div>
-              <p className="text-xs font-mono text-[var(--text-muted)] leading-relaxed">
+              <p className="text-sm text-[var(--text-muted)] leading-relaxed">
                 {event.content}
               </p>
               {event.vote && (
-                <div className="text-[10px] font-mono text-[var(--text-muted)]">
+                <div className="text-xs text-[var(--text-muted)]">
                   Vote: {event.vote}
                 </div>
               )}
@@ -443,8 +443,8 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
         })}
       </div>
 
-      <div className="text-xs font-mono text-[var(--text-muted)]">
-        Receipt sample (not cryptographic): {sample.receiptHash}
+      <div className="text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--border)]">
+        Receipt sample (not cryptographic): <span className="font-mono">{sample.receiptHash}</span>
       </div>
     </section>
   );
