@@ -310,6 +310,55 @@ function ConsensusBar({ confidence }: { confidence: number }) {
   );
 }
 
+function ExpandableText({
+  text,
+  collapsedLines,
+  className,
+  buttonLabel,
+}: {
+  text: string;
+  collapsedLines: number;
+  className: string;
+  buttonLabel: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shouldCollapse = text.trim().length > collapsedLines * 110;
+
+  return (
+    <div className="space-y-3">
+      <div className="relative">
+        <p
+          className={className}
+          style={
+            !expanded && shouldCollapse
+              ? {
+                  display: '-webkit-box',
+                  WebkitBoxOrient: 'vertical',
+                  WebkitLineClamp: collapsedLines,
+                  overflow: 'hidden',
+                }
+              : undefined
+          }
+        >
+          {text}
+        </p>
+        {!expanded && shouldCollapse ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--surface-elevated)] via-[var(--surface-elevated)]/90 to-transparent" />
+        ) : null}
+      </div>
+      {shouldCollapse ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/40 hover:text-[var(--acid-green)]"
+        >
+          {expanded ? 'Show Less' : buttonLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function LiveResultCard({
   result,
   runStartedAt,
@@ -345,9 +394,12 @@ function LiveResultCard({
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Verdict
             </h3>
-            <p className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty">
-              {summary}
-            </p>
+            <ExpandableText
+              text={summary}
+              collapsedLines={7}
+              buttonLabel="Read Full Verdict"
+              className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
+            />
           </div>
 
           {proposalEntries.length > 0 && (
@@ -375,9 +427,12 @@ function LiveResultCard({
                           Position
                         </span>
                       </div>
-                      <p className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty">
-                        {proposal}
-                      </p>
+                      <ExpandableText
+                        text={proposal}
+                        collapsedLines={5}
+                        buttonLabel="Read Full Position"
+                        className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty"
+                      />
                     </div>
                   );
                 })}
@@ -464,7 +519,12 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Recorded verdict
             </h3>
-            <p className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty">{sample.verdict}</p>
+            <ExpandableText
+              text={sample.verdict}
+              collapsedLines={5}
+              buttonLabel="Read Full Verdict"
+              className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-5">
@@ -501,9 +561,12 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                         : ''}
                     </div>
                   </div>
-                  <p className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty">
-                    {event.content}
-                  </p>
+                  <ExpandableText
+                    text={event.content}
+                    collapsedLines={4}
+                    buttonLabel="Read Full Entry"
+                    className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty"
+                  />
                   {event.vote && (
                     <div className="text-sm font-semibold text-[var(--acid-green)]">
                       Vote: {event.vote}
