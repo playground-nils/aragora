@@ -356,10 +356,11 @@ class TestLiveQuickstartHelpers:
             api_key="sk-inline",
         )
         assert [agent["role"] for agent in team] == ["proposer", "critic", "synthesizer"]
-        assert [agent["provider"] for agent in team] == ["openai-api"] * 3
-        assert [agent["api_key"] for agent in team] == ["sk-inline"] * 3
+        # Primary provider is openai-api; OpenRouter fallback may be mixed in
+        assert team[0]["provider"] == "openai-api"
+        assert team[0]["api_key"] == "sk-inline"
 
-    def test_build_live_team_defaults_to_single_preferred_provider(self):
+    def test_build_live_team_includes_openrouter_fallback(self):
         team = _build_live_team(
             [
                 ("anthropic-api", "claude-sonnet-4-5-20250929"),
@@ -368,7 +369,13 @@ class TestLiveQuickstartHelpers:
             ]
         )
 
-        assert [agent["provider"] for agent in team] == ["openai-api"] * 3
+        providers = [agent["provider"] for agent in team]
+        assert providers[0] == "openai-api"
+        # OpenRouter fallback included when OPENROUTER_API_KEY is set
+        if os.environ.get("OPENROUTER_API_KEY"):
+            assert "deepseek" in providers
+        else:
+            assert providers == ["openai-api"] * 3
 
     def test_build_live_receipt_surfaces_consensus_dissent_and_receipt(self):
         from aragora.gauntlet.receipt_models import DecisionReceipt

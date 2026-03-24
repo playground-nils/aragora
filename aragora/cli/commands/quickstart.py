@@ -520,6 +520,14 @@ def _build_live_team(
             }
         )
 
+    # Always include OpenRouter as a fallback provider when available.
+    # This ensures at least one agent can complete even when primary
+    # providers are rate-limited or out of credits.
+    openrouter_available = os.environ.get("OPENROUTER_API_KEY")
+    primary_provider = provider_configs[0]["provider"]
+    if openrouter_available and primary_provider != "deepseek":
+        provider_configs.append({"provider": "deepseek", "model": None, "api_key": None})
+
     team: list[dict[str, Any]] = []
     for index, (role, role_label) in enumerate(_LIVE_ROLES):
         provider_cfg = provider_configs[index % len(provider_configs)]
