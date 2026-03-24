@@ -134,6 +134,12 @@ def normalize_debate_response(debate: dict | None) -> dict | None:
     elif "final_answer" in debate and "conclusion" not in debate:
         debate["conclusion"] = debate["final_answer"]
 
+    # winning_proposal alias for final_answer (used by frontend debates list)
+    if "winning_proposal" not in debate:
+        winning = debate.get("final_answer") or debate.get("conclusion")
+        if winning:
+            debate["winning_proposal"] = winning
+
     return debate
 
 

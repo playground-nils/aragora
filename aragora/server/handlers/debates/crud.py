@@ -91,8 +91,12 @@ class CrudOperationsMixin:
         method="GET",
         path="/api/v1/debates",
         summary="List all debates",
-        description="List recent debates with optional organization filtering. Requires authentication.",
+        description="List recent debates with optional organization filtering and pagination.",
         tags=["Debates"],
+        parameters=[
+            {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20}},
+            {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0}},
+        ],
         responses={
             "200": {
                 "description": "List of debates returned",
@@ -103,6 +107,10 @@ class CrudOperationsMixin:
                             "properties": {
                                 "debates": {"type": "array", "items": {"type": "object"}},
                                 "count": {"type": "integer"},
+                                "total": {"type": "integer"},
+                                "has_more": {"type": "boolean"},
+                                "offset": {"type": "integer"},
+                                "limit": {"type": "integer"},
                             },
                         },
                     },
@@ -117,7 +125,7 @@ class CrudOperationsMixin:
     @ttl_cache(ttl_seconds=CACHE_TTL_DEBATES_LIST, key_prefix="debates_list", skip_first=True)
     @handle_errors("list debates")
     def _list_debates(
-        self: _DebatesHandlerProtocol, limit: int, org_id: str | None = None
+        self: _DebatesHandlerProtocol, limit: int, org_id: str | None = None, offset: int = 0
     ) -> HandlerResult:
         """List recent debates, optionally filtered by organization.
 
@@ -125,11 +133,12 @@ class CrudOperationsMixin:
             limit: Maximum number of debates to return
             org_id: If provided, only return debates for this organization.
                     If None, returns all debates (backwards compatible).
+            offset: Number of debates to skip (for pagination).
 
         Cached for 30 seconds. Cache key includes org_id for per-org isolation.
         """
         storage = self.get_storage()
-        debates = storage.list_recent(limit=limit, org_id=org_id)
+        debates = storage.list_recent(limit=limit, org_id=org_id, offset=offset)
         # Convert DebateMetadata objects to dicts and normalize for SDK compatibility
         debates_list = [
             normalize_debate_response(
@@ -137,7 +146,35 @@ class CrudOperationsMixin:
             )  # DebateMetadata may be dict-like at runtime
             for d in debates
         ]
-        return json_response({"debates": debates_list, "count": len(debates_list)})
+
+        # Get total count for pagination metadata
+        total = -1
+        try:
+            count_fn = getattr(storage, "count_debates", None)
+            if callable(count_fn):
+                raw_total = count_fn(org_id=org_id)
+                if isinstance(raw_total, int):
+                    total = raw_total
+        except Exception:  # noqa: BLE001
+            logger.debug("count_debates not available, estimating from results")
+
+        # If count_debates isn't available, estimate has_more from result size
+        if total >= 0:
+            has_more = (offset + len(debates_list)) < total
+        else:
+            has_more = len(debates_list) == limit
+            total = offset + len(debates_list) + (1 if has_more else 0)
+
+        return json_response(
+            {
+                "debates": debates_list,
+                "count": len(debates_list),
+                "total": total,
+                "has_more": has_more,
+                "offset": offset,
+                "limit": limit,
+            }
+        )
 
     @api_endpoint(
         method="GET",
