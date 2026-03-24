@@ -1141,16 +1141,38 @@ export default function PublicDemoPage() {
         </section>
 
         {isLoading && (
-          <section className="space-y-4 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-elevated)]">
+          <section
+            className="rounded-[20px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
+            style={{
+              padding: "36px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "20px",
+            }}
+          >
             <StatusBadge label="Running live proof" tone="live" />
-            <div className="space-y-3">
+            <div
+              className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)]"
+              style={{
+                padding: "24px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "14px",
+              }}
+            >
               {LIVE_PROGRESS_STEPS.map((step, index) => (
                 <div
                   key={step}
-                  className="flex items-center gap-3 text-sm transition-opacity"
-                  style={{ opacity: index <= progressStep ? 1 : 0.35 }}
+                  className="flex items-start gap-3 text-sm leading-7 transition-opacity"
+                  style={{
+                    opacity: index <= progressStep ? 1 : 0.35,
+                    padding: "4px 0",
+                  }}
                 >
-                  <span className="w-2 h-2 rounded-full bg-[var(--acid-green)]" />
+                  <span
+                    className="mt-[10px] h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--acid-green)]"
+                    aria-hidden="true"
+                  />
                   <span
                     className={
                       index <= progressStep
@@ -1163,7 +1185,7 @@ export default function PublicDemoPage() {
                 </div>
               ))}
             </div>
-            <p className="text-sm leading-7 text-[var(--text-muted)]">
+            <p className="max-w-3xl text-sm leading-7 text-[var(--text-muted)]">
               This surface only claims a live proof when the backend explicitly
               returns a live result.
             </p>
@@ -1171,7 +1193,15 @@ export default function PublicDemoPage() {
         )}
 
         {sampleFallbackMessage && (
-          <section className="space-y-4 rounded-[20px] border border-sky-500/20 bg-sky-500/5 p-6 shadow-[var(--shadow-elevated)]">
+          <section
+            className="rounded-[20px] border border-sky-500/20 bg-sky-500/5 shadow-[var(--shadow-elevated)]"
+            style={{
+              padding: "36px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "20px",
+            }}
+          >
             <StatusBadge label="Showing recorded sample" tone="sample" />
             <p className="max-w-3xl text-sm leading-7 text-sky-900">
               {sampleFallbackMessage}
