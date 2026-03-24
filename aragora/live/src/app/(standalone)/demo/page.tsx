@@ -452,12 +452,18 @@ function SnapshotCard({
 }) {
   return (
     <div
-      className={`rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-panel)] ${className}`}
+      className={`rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-panel)] ${className}`}
+      style={{
+        padding: "24px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "12px",
+      }}
     >
       <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${accentClass}`}>
         {label}
       </div>
-      <p className="mt-3 text-[15px] leading-7 text-[var(--text)] text-pretty">
+      <p className="text-[15px] leading-7 text-[var(--text)] text-pretty">
         {value}
       </p>
     </div>
@@ -518,15 +524,23 @@ function DetailRow({
   mono?: boolean;
 }) {
   return (
-    <div className="rounded-[14px] bg-[var(--surface)] px-4 py-3 shadow-[var(--shadow-panel)]">
+    <div
+      className="rounded-[14px] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
+      style={{
+        padding: "16px 18px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px",
+      }}
+    >
       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
         {label}
       </dt>
       <dd
         className={
           mono
-            ? "mt-2 break-all font-mono text-[12px] leading-6 text-[var(--text)]"
-            : "mt-2 text-sm font-medium leading-6 text-[var(--text)]"
+            ? "break-all font-mono text-[12px] leading-6 text-[var(--text)]"
+            : "text-sm font-medium leading-6 text-[var(--text)]"
         }
       >
         {value}
@@ -620,8 +634,8 @@ function LiveResultCard({
       style={{ padding: "40px" }}
     >
       <div
-        className="grid gap-8 lg:grid-cols-[minmax(0,1.42fr)_320px] xl:grid-cols-[minmax(0,1.52fr)_360px]"
-        style={{ gap: "40px" }}
+        className="grid gap-8 lg:grid-cols-[minmax(0,1.36fr)_336px] xl:grid-cols-[minmax(0,1.46fr)_384px]"
+        style={{ gap: "44px" }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
           <div
@@ -725,12 +739,26 @@ function LiveResultCard({
           )}
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+        <aside className="space-y-5 lg:sticky lg:top-6 lg:self-start">
+          <div
+            className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
+            style={{
+              padding: "32px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "18px",
+            }}
+          >
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Run details
             </h3>
-            <dl className="mt-5 space-y-3">
+            <dl
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
               <DetailRow
                 label="Runtime"
                 value={`${result.duration_seconds.toFixed(1)}s`}
@@ -777,28 +805,36 @@ function LiveResultCard({
             <ConsensusBar confidence={result.confidence} />
           </div>
 
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+          <div
+            className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
+            style={{
+              padding: "32px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "18px",
+            }}
+          >
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Next action
             </h3>
-            <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
+            <p className="text-sm leading-7 text-[var(--text-muted)]">
               Open the shareable result, or take the same prompt into /try for
               a deeper run.
             </p>
-            <div className="mt-6 flex flex-col gap-4">
-            <Link
-              href={shareHref}
-              className="rounded-full bg-[var(--acid-green)] px-6 py-3 text-center text-[15px] font-semibold transition-opacity hover:opacity-90"
-              style={{ color: "#ffffff" }}
-            >
-              View Shareable Result
-            </Link>
-            <Link
-              href={`/try?topic=${encodeURIComponent(result.topic)}`}
-              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-6 py-3 text-center text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
-            >
-              Ask This in /try
-            </Link>
+            <div className="flex flex-col gap-4">
+              <Link
+                href={shareHref}
+                className="rounded-full bg-[var(--acid-green)] px-6 py-3 text-center text-[15px] font-semibold transition-opacity hover:opacity-90"
+                style={{ color: "#ffffff" }}
+              >
+                View Shareable Result
+              </Link>
+              <Link
+                href={`/try?topic=${encodeURIComponent(result.topic)}`}
+                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-6 py-3 text-center text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+              >
+                Ask This in /try
+              </Link>
             </div>
           </div>
         </aside>
@@ -809,8 +845,14 @@ function LiveResultCard({
 
 function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
   return (
-    <section className="rounded-[20px] border border-sky-500/18 bg-[var(--surface)] p-10 shadow-[var(--shadow-elevated)]">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.42fr)_320px] xl:grid-cols-[minmax(0,1.52fr)_360px]">
+    <section
+      className="rounded-[20px] border border-sky-500/18 bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
+      style={{ padding: "40px" }}
+    >
+      <div
+        className="grid gap-8 lg:grid-cols-[minmax(0,1.36fr)_336px] xl:grid-cols-[minmax(0,1.46fr)_384px]"
+        style={{ gap: "44px" }}
+      >
         <div className="space-y-6">
           <div className="space-y-2 border-b border-[var(--border)] pb-6">
             <StatusBadge label="Recorded sample" tone="sample" />
@@ -820,7 +862,15 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             </p>
           </div>
 
-          <div className="space-y-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+          <div
+            className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
+            style={{
+              padding: "36px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "24px",
+            }}
+          >
             <DecisionSnapshot summary={sample.verdict} tone="sample" />
             <div className="border-t border-[var(--border)] pt-6">
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
@@ -853,10 +903,15 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
               return (
                 <div
                   key={`${event.agent}-${index}`}
-                  className="border p-6 bg-[var(--surface)] space-y-3 rounded-[18px] shadow-sm"
+                  className="border bg-[var(--surface)] rounded-[18px] shadow-sm"
                   style={{
                     borderColor: `${accent}28`,
                     boxShadow: `inset 4px 0 0 ${accent}`,
+                    padding: "30px",
+                    paddingLeft: "36px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "14px",
                   }}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -898,12 +953,26 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
           </div>
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+        <aside className="space-y-5 lg:sticky lg:top-6 lg:self-start">
+          <div
+            className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
+            style={{
+              padding: "32px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "18px",
+            }}
+          >
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Sample details
             </h3>
-            <dl className="mt-5 space-y-3">
+            <dl
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
               <DetailRow
                 label="Rounds"
                 value={`${sample.rounds} recorded round${sample.rounds === 1 ? "" : "s"}`}
@@ -913,14 +982,30 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             </dl>
           </div>
 
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+          <div
+            className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
+            style={{
+              padding: "32px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "18px",
+            }}
+          >
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Sample agents
             </h3>
             <AgentRoster agents={sample.agents} />
           </div>
 
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+          <div
+            className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
+            style={{
+              padding: "32px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+            }}
+          >
             <ConsensusBar confidence={sample.confidence} />
           </div>
         </aside>
