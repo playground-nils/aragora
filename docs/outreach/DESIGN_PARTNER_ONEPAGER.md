@@ -2,7 +2,7 @@
 
 **Stop shipping decisions you can't explain.**
 
-Last updated: 2026-03-23
+Last updated: 2026-03-24
 
 ---
 
@@ -34,7 +34,7 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
    with agent votes, agreement scores, and provenance chains.
 
 3. **Self-improving knowledge loop.** Debate outcomes feed back into a Knowledge Mound
-   (45 adapters), so the platform learns from every decision it vets.
+   (42 adapters), so the platform learns from every decision it vets.
 
 4. **Autonomous bounded execution.** Supervisor-backed work orders with receipt gates,
    lease-based coordination, and explicit merge policy -- not unguarded autonomy.
@@ -111,12 +111,12 @@ founder-led teams with painful inbox triage, AI-native teams frustrated by singl
 
 ## Numbers
 
-- **210,000+ tests** across 5,000+ test files
-- **3,700+ Python modules** | **3,000+ API operations**
-- **45 knowledge adapters** for cross-system learning
+- **216,000+ tests** across 4,700+ test files
+- **3,800+ Python modules** | **3,100+ API operations**
+- **42 knowledge adapters** for cross-system learning
 - **43 agent types** across 6+ LLM providers
 - **190+ WebSocket event types** for real-time streaming
-- **Python + TypeScript SDKs** (186 Py / 185 TS namespaces)
+- **Python + TypeScript SDKs** (185 Py / 183 TS namespaces)
 
 ## Next Step
 

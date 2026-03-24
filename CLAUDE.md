@@ -167,7 +167,7 @@ Aragora is the **Decision Integrity Platform** -- orchestrating 43 agent types t
 
 **Five Pillars:** (1) SMB-ready with enterprise-grade security, (2) leading-edge memory and context processing, (3) extensible/modular with broad connectors and SDKs, (4) multi-agent robustness via heterogeneous model consensus, (5) self-healing and self-extending via the Nomic Loop.
 
-**Codebase Scale:** 3,700+ Python modules | 208,000+ tests | 5,000+ test files | 210+ debate modules | 3,000+ API operations across 2,900+ paths | 45 registered KM adapters | 185 Python / 183 TypeScript SDK namespaces
+**Codebase Scale:** 3,800+ Python modules | 216,000+ tests | 4,700+ test files | 210+ debate modules | 3,100+ API operations across 2,900+ paths | 42 registered KM adapters | 185 Python / 183 TypeScript SDK namespaces
 
 ## Architecture
 
@@ -199,7 +199,7 @@ aragora/
 ├── knowledge/        # Unified knowledge management
 │   ├── bridges.py          # KnowledgeBridgeHub, MetaLearner, Evidence bridges
 │   └── mound/              # KnowledgeMound with sync, revalidation
-│       └── adapters/       # KM adapters (45 registered)
+│       └── adapters/       # KM adapters (42 registered)
 │           └── factory.py  # Auto-create adapters from Arena subsystems
 ├── connectors/       # External integrations
 │   ├── chat/               # Telegram, WhatsApp connectors
@@ -415,7 +415,7 @@ See `docs/reference/ENVIRONMENT.md` for full reference.
 
 ## Feature Status
 
-**Test Suite:** 208,000+ tests across 5,000+ test files
+**Test Suite:** 216,000+ tests across 4,700+ test files
 
 **Core (stable):**
 - Debate orchestration (Arena, consensus, convergence)
@@ -483,7 +483,7 @@ See `docs/reference/ENVIRONMENT.md` for full reference.
 
 **Integrated:**
 - Knowledge Mound - STABLE Phase A2 (100% integrated, 4,300+ tests passing)
-  - 45 adapters (Belief, CalibrationFusion, ClaudeMem, Codebase, Compliance, ComputerUse, Confluence, Consensus, Continuum, ControlPlane, Cost, Critique, Culture, Debate, DecisionPlan, ELO, Email, ERC8004, Evidence, Explainability, Extraction, Fabric, Gateway, Genesis, GoalCanvas, IdeaCanvas, Insights, Jira, LangExtract, NomicCycle, Obsidian, OpenClaw, Outcome, Performance, Pipeline, Provenance, Pulse, Ranking, Receipt, RLM, RLMContext, Supermemory, Trickster, Workflow, Workspace)
+  - 42 adapters (Belief, CalibrationFusion, ClaudeMem, Codebase, Compliance, ComputerUse, Confluence, Consensus, Continuum, ControlPlane, Cost, Critique, Culture, Debate, DecisionPlan, ELO, Email, ERC8004, Evidence, Explainability, Extraction, Fabric, Gateway, Genesis, GoalCanvas, IdeaCanvas, Insights, Jira, LangExtract, NomicCycle, Obsidian, OpenClaw, Outcome, Performance, Pipeline, Provenance, Pulse, Ranking, Receipt, RLM, RLMContext, Supermemory, Trickster, Workflow, Workspace)
   - Visibility, sharing, federation, global knowledge
   - Semantic search, validation feedback, cross-debate learning
   - SLO alerting with Prometheus metrics
@@ -499,6 +499,19 @@ See `docs/reference/ENVIRONMENT.md` for full reference.
   - CrossSystemDedupEngine: SHA-256 exact + Jaccard near-duplicate detection
   - RLMMemoryNavigator: REPL helpers for programmatic cross-system exploration
   - ClaudeMemAdapter: KM adapter wrapping claude-mem MCP connector
+
+**Recently landed (March 24, 2026):**
+- Prover-Estimator consensus mode - opt-in via `consensus="prover_estimator"` in DebateProtocol
+- Cross-verification post-debate enrichment - opt-in via `enable_cross_verification` on Arena
+- Truth scorer vote weighting - opt-in via `enable_truth_ratio_weighting` in DebateProtocol
+- `aragora spec` CLI command - prompt-to-specification pipeline via prompt engine
+- `aragora triage auth` CLI command - interactive Gmail OAuth for inbox trust wedge
+- `aragora triage run --dry-run` - preview triage decisions without executing mutations
+- Extended thinking traces captured in decision receipts (Anthropic agent)
+- Receipt store persistence from quickstart (visible via API, dashboard, CLI)
+- Agent-level token counter fallback in orchestrator when cost tracker unavailable
+- Embedding rate-limit resilience with hash fallback
+- KM semantic store dimension filtering (mixed 256/1536 rows no longer crash)
 
 See `docs/STATUS.md` for 74+ detailed feature statuses.
 
