@@ -410,7 +410,7 @@ function LiveResultCard({
       style={{ padding: "40px" }}
     >
       <div
-        className="grid xl:grid-cols-[minmax(0,1.6fr)_340px]"
+        className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_300px] xl:grid-cols-[minmax(0,1.55fr)_340px]"
         style={{ gap: "40px" }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
@@ -510,8 +510,8 @@ function LiveResultCard({
           )}
         </div>
 
-        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
             <div
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
               style={{ padding: "24px" }}
@@ -535,7 +535,7 @@ function LiveResultCard({
               </div>
             </div>
             <div
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)] sm:col-span-3 xl:col-span-1"
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)] sm:col-span-3 lg:col-span-1"
               style={{ padding: "24px" }}
             >
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
@@ -612,7 +612,7 @@ function LiveResultCard({
 function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
   return (
     <section className="rounded-[20px] border border-sky-500/18 bg-[var(--surface)] p-10 shadow-[var(--shadow-elevated)]">
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.6fr)_340px]">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_300px] xl:grid-cols-[minmax(0,1.55fr)_340px]">
         <div className="space-y-6">
           <div className="space-y-2 border-b border-[var(--border)] pb-6">
             <StatusBadge label="Recorded sample" tone="sample" />
@@ -695,7 +695,7 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
           </div>
         </div>
 
-        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Sample agents
@@ -836,32 +836,34 @@ export default function PublicDemoPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(21,128,61,0.08),_transparent_32%),var(--bg)] text-[var(--text)]">
-      <nav className="sticky top-0 z-20 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/92 px-4 py-3 backdrop-blur">
-        <Link
-          href="/landing"
-          className="text-sm font-semibold tracking-[0.14em] text-[var(--acid-green)] transition-opacity hover:opacity-80"
-        >
-          ARAGORA
-        </Link>
-        <div className="flex items-center gap-3">
+      <nav className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--surface)]/92 backdrop-blur">
+        <div className="mx-auto flex max-w-[1240px] items-center justify-between px-5 py-3 sm:px-6 lg:px-8">
           <Link
-            href="/try"
-            className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+            href="/landing"
+            className="text-sm font-semibold tracking-[0.14em] text-[var(--acid-green)] transition-opacity hover:opacity-80"
           >
-            /try beta
+            ARAGORA
           </Link>
-          <Link
-            href="/signup"
-            className="rounded-full bg-[var(--acid-green)] px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
-            style={{ color: "#ffffff" }}
-          >
-            Get started free
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/try"
+              className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+            >
+              /try beta
+            </Link>
+            <Link
+              href="/signup"
+              className="rounded-full bg-[var(--acid-green)] px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+              style={{ color: '#ffffff' }}
+            >
+              Get started free
+            </Link>
+          </div>
         </div>
       </nav>
 
       <div
-        className="mx-auto max-w-[1120px] flex flex-col"
+        className="mx-auto max-w-[1240px] flex flex-col"
         style={{ padding: "40px", gap: "40px" }}
       >
         <header className="space-y-3 text-center">
