@@ -66,7 +66,6 @@ const LIVE_PROGRESS_STEPS = [
 ];
 
 const PAGE_SHELL_MAX_WIDTH = "1240px";
-const PAGE_SHELL_PADDING = "40px";
 
 const RECORDED_SAMPLE: RecordedDebate = {
   id: "demo_showcase_001",
@@ -477,7 +476,7 @@ function SnapshotCard({
 }) {
   return (
     <div
-      className={`rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-panel)] ${className}`}
+      className={`h-full rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-panel)] ${className}`}
       style={{
         padding: "24px",
         display: "flex",
@@ -517,7 +516,7 @@ function DecisionSnapshot({
       >
         Decision snapshot
       </h3>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid items-stretch gap-4 md:grid-cols-2">
         <SnapshotCard
           label="Recommendation"
           value={snapshot.recommendation}
@@ -528,11 +527,13 @@ function DecisionSnapshot({
           label="Why"
           value={snapshot.rationale}
           accentClass={accentClass}
+          className="md:min-h-[260px]"
         />
         <SnapshotCard
           label="Main caution"
           value={snapshot.caution}
           accentClass={accentClass}
+          className="md:min-h-[260px]"
         />
         <SnapshotCard
           label="Next step"
@@ -550,20 +551,22 @@ function DetailRow({
   value,
   mono = false,
   title,
+  compact = false,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   title?: string;
+  compact?: boolean;
 }) {
   return (
     <div
       className="rounded-[14px] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
       style={{
-        padding: "16px 18px",
+        padding: compact ? "12px 16px" : "16px 18px",
         display: "flex",
         flexDirection: "column",
-        gap: "8px",
+        gap: compact ? "6px" : "8px",
       }}
     >
       <dt
@@ -575,7 +578,7 @@ function DetailRow({
       <dd
         className={
           mono
-            ? "break-all font-mono text-[12px] leading-6 text-[var(--text)]"
+            ? "break-all font-mono text-[12px] leading-5 text-[var(--text)]"
             : "text-sm font-medium leading-6 text-[var(--text)]"
         }
         title={title ?? value}
@@ -880,6 +883,7 @@ function LiveResultCard({
                   value={compactHash(result.id, 12, 6)}
                   title={result.id}
                   mono
+                  compact
                 />
                 {result.receipt_hash ? (
                   <DetailRow
@@ -887,6 +891,7 @@ function LiveResultCard({
                     value={compactHash(result.receipt_hash)}
                     title={result.receipt_hash}
                     mono
+                    compact
                   />
                 ) : null}
               </dl>
@@ -1133,12 +1138,14 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                   value={compactHash(sample.id, 12, 6)}
                   title={sample.id}
                   mono
+                  compact
                 />
                 <DetailRow
                   label="Receipt"
                   value={compactHash(sample.receiptHash)}
                   title={sample.receiptHash}
                   mono
+                  compact
                 />
               </dl>
             </div>
@@ -1327,11 +1334,11 @@ export default function PublicDemoPage() {
         className="mx-auto flex flex-col"
         style={{
           maxWidth: PAGE_SHELL_MAX_WIDTH,
-          padding: PAGE_SHELL_PADDING,
-          gap: "40px",
+          padding: "32px 40px 40px",
+          gap: "34px",
         }}
       >
-        <header className="mx-auto w-full max-w-[760px] space-y-3 text-center">
+        <header className="mx-auto w-full max-w-[760px] space-y-2 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-[var(--acid-green)] sm:text-4xl text-balance">
             Live Demo
           </h1>
@@ -1351,7 +1358,7 @@ export default function PublicDemoPage() {
           className="rounded-[22px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
           style={{ padding: "40px" }}
         >
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
             <div className="space-y-2">
               <div
                 className="font-semibold uppercase text-[var(--acid-green)]"
@@ -1363,27 +1370,32 @@ export default function PublicDemoPage() {
                 {DEMO_TOPIC}
               </p>
             </div>
-            <div className="flex flex-wrap gap-3.5 lg:max-w-[420px] lg:justify-end">
-              <button
-                onClick={() => void runLiveDemo()}
-                disabled={isLoading}
-                className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-                style={{ color: "#ffffff", padding: "12px 20px" }}
-              >
-                {isLoading ? "Running..." : "Run Live"}
-              </button>
-              <Link
-                href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
-                className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
-                style={{ padding: "12px 20px" }}
-              >
-                Ask Your Own Question
-              </Link>
+            <div
+              className="flex flex-col gap-3 lg:items-end"
+              style={{ maxWidth: "430px" }}
+            >
+              <div className="flex flex-wrap gap-3.5 lg:justify-end">
+                <button
+                  onClick={() => void runLiveDemo()}
+                  disabled={isLoading}
+                  className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ color: "#ffffff", padding: "12px 22px" }}
+                >
+                  {isLoading ? "Running..." : "Run Live"}
+                </button>
+                <Link
+                  href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
+                  className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+                  style={{ padding: "12px 20px" }}
+                >
+                  Ask Your Own Question
+                </Link>
+              </div>
               <button
                 onClick={() => setShowRecordedSample((current) => !current)}
                 disabled={recordedSamplePinned}
-                className="rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[14px] font-medium text-[var(--text-muted)] transition-colors hover:border-sky-500/40 hover:text-sky-700"
-                style={{ padding: "11px 18px" }}
+                className="rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[13px] font-medium text-[var(--text-muted)] transition-colors hover:border-sky-500/40 hover:text-sky-700"
+                style={{ padding: "10px 16px" }}
               >
                 {recordedSamplePinned
                   ? "Sample Shown"
