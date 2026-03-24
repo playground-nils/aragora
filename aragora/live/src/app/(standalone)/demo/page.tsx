@@ -47,6 +47,18 @@ interface LiveDebateResult {
 const DEMO_TOPIC =
   "Should our startup adopt AI-powered code review as a mandatory step in our CI/CD pipeline?";
 
+const EYEBROW_TEXT_STYLE = {
+  fontSize: "12px",
+  letterSpacing: "0.16em",
+  lineHeight: "1.5",
+} as const;
+
+const LABEL_TEXT_STYLE = {
+  fontSize: "12px",
+  letterSpacing: "0.14em",
+  lineHeight: "1.5",
+} as const;
+
 const LIVE_PROGRESS_STEPS = [
   "Submitting the canonical public demo question",
   "Collecting multi-agent positions from the playground backend",
@@ -386,8 +398,8 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border text-[12px] font-semibold uppercase tracking-[0.18em] ${styles}`}
-      style={{ padding: "8px 14px" }}
+      className={`inline-flex items-center rounded-full border font-semibold uppercase ${styles}`}
+      style={{ ...EYEBROW_TEXT_STYLE, padding: "8px 14px" }}
     >
       {label}
     </span>
@@ -462,7 +474,10 @@ function SnapshotCard({
         gap: "12px",
       }}
     >
-      <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${accentClass}`}>
+      <div
+        className={`font-semibold uppercase ${accentClass}`}
+        style={LABEL_TEXT_STYLE}
+      >
         {label}
       </div>
       <p className="text-[15px] leading-7 text-[var(--text)] text-pretty">
@@ -485,7 +500,10 @@ function DecisionSnapshot({
 
   return (
     <div className="space-y-4">
-      <h3 className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>
+      <h3
+        className={`font-semibold uppercase ${accentClass}`}
+        style={EYEBROW_TEXT_STYLE}
+      >
         Decision snapshot
       </h3>
       <div className="grid gap-4 md:grid-cols-2">
@@ -535,7 +553,10 @@ function DetailRow({
         gap: "8px",
       }}
     >
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+      <dt
+        className="font-semibold uppercase text-[var(--text-muted)]"
+        style={LABEL_TEXT_STYLE}
+      >
         {label}
       </dt>
       <dd
@@ -673,7 +694,10 @@ function LiveResultCard({
           >
             <DecisionSnapshot summary={summary} tone="live" />
             <div className="border-t border-[var(--border)] pt-6">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+              <h3
+                className="font-semibold uppercase text-[var(--acid-green)]"
+                style={EYEBROW_TEXT_STYLE}
+              >
                 Full verdict
               </h3>
               <div className="mt-4">
@@ -690,7 +714,10 @@ function LiveResultCard({
 
           {proposalEntries.length > 0 && (
             <div className="space-y-5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+              <h3
+                className="font-semibold uppercase text-[var(--acid-green)]"
+                style={EYEBROW_TEXT_STYLE}
+              >
                 Agent positions
               </h3>
               <div className="grid grid-cols-1 gap-5">
@@ -718,8 +745,9 @@ function LiveResultCard({
                           {formatAgentName(agent)}
                         </div>
                         <span
-                          className="rounded-full text-[11px] font-semibold uppercase tracking-[0.16em]"
+                          className="rounded-full font-semibold uppercase"
                           style={{
+                            ...LABEL_TEXT_STYLE,
                             color: accent,
                             backgroundColor: `${accent}10`,
                             padding: "8px 12px",
@@ -753,7 +781,10 @@ function LiveResultCard({
               gap: "18px",
             }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+            <h3
+              className="font-semibold uppercase text-[var(--acid-green)]"
+              style={EYEBROW_TEXT_STYLE}
+            >
               Run details
             </h3>
             <dl
@@ -791,7 +822,10 @@ function LiveResultCard({
               gap: "18px",
             }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+            <h3
+              className="font-semibold uppercase text-[var(--acid-green)]"
+              style={EYEBROW_TEXT_STYLE}
+            >
               Returned agents
             </h3>
             <AgentRoster agents={result.participants} />
@@ -818,7 +852,10 @@ function LiveResultCard({
               gap: "18px",
             }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+            <h3
+              className="font-semibold uppercase text-[var(--acid-green)]"
+              style={EYEBROW_TEXT_STYLE}
+            >
               Next action
             </h3>
             <p className="text-sm leading-7 text-[var(--text-muted)]">
@@ -877,7 +914,10 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
           >
             <DecisionSnapshot summary={sample.verdict} tone="sample" />
             <div className="border-t border-[var(--border)] pt-6">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
+              <h3
+                className="font-semibold uppercase text-sky-700"
+                style={EYEBROW_TEXT_STYLE}
+              >
                 Recorded verdict
               </h3>
               <div className="mt-4">
@@ -927,8 +967,8 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                         {event.model}
                       </span>
                       <span
-                        className={`rounded-full text-[11px] uppercase tracking-[0.16em] font-semibold ${badgeColor} bg-current/5`}
-                        style={{ padding: "8px 12px" }}
+                        className={`rounded-full uppercase font-semibold ${badgeColor} bg-current/5`}
+                        style={{ ...LABEL_TEXT_STYLE, padding: "8px 12px" }}
                       >
                         {event.type}
                       </span>
@@ -968,7 +1008,10 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
               gap: "18px",
             }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
+            <h3
+              className="font-semibold uppercase text-sky-700"
+              style={EYEBROW_TEXT_STYLE}
+            >
               Sample details
             </h3>
             <dl
@@ -996,7 +1039,10 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
               gap: "18px",
             }}
           >
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
+            <h3
+              className="font-semibold uppercase text-sky-700"
+              style={EYEBROW_TEXT_STYLE}
+            >
               Sample agents
             </h3>
             <AgentRoster agents={sample.agents} />
@@ -1195,7 +1241,10 @@ export default function PublicDemoPage() {
           }}
         >
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
+            <div
+              className="font-semibold uppercase text-[var(--acid-green)]"
+              style={EYEBROW_TEXT_STYLE}
+            >
               Canonical question
             </div>
             <p className="max-w-4xl text-[20px] font-semibold leading-8 text-[var(--text)] text-balance">
@@ -1322,7 +1371,10 @@ export default function PublicDemoPage() {
         {result && !isLoading && (
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
+              <div
+                className="font-semibold uppercase text-[var(--text-muted)]"
+                style={EYEBROW_TEXT_STYLE}
+              >
                 {resultTone === "live" ? "Fresh response" : "Fallback response"}
               </div>
               {resultTone === "live" ? (
@@ -1347,7 +1399,10 @@ export default function PublicDemoPage() {
 
         {recordedSampleVisible && (
           <section className="space-y-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700">
+            <div
+              className="font-semibold uppercase text-sky-700"
+              style={EYEBROW_TEXT_STYLE}
+            >
               {sampleFallbackMessage
                 ? "Recorded fallback currently shown"
                 : "Clearly labeled canned example"}
