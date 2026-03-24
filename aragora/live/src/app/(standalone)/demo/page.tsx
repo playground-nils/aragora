@@ -325,10 +325,10 @@ function LiveResultCard({
   const proposalEntries = Object.entries(result.proposals).slice(0, 3);
 
   return (
-    <section className="space-y-5 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-elevated)] md:p-7">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_320px]">
-        <div className="space-y-5">
-          <div className="space-y-3 border-b border-[var(--border)] pb-5">
+    <section className="space-y-6 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-7 shadow-[var(--shadow-elevated)] md:p-9">
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.6fr)_340px]">
+        <div className="space-y-6">
+          <div className="space-y-3 border-b border-[var(--border)] pb-6">
             <StatusBadge label={resultLabel} tone={resultTone} />
             <div className="space-y-2">
               <p className="max-w-3xl text-[21px] font-semibold leading-9 text-[var(--text)] text-balance">
@@ -341,7 +341,7 @@ function LiveResultCard({
               </p>
             </div>
           </div>
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Verdict
             </h3>
@@ -351,18 +351,18 @@ function LiveResultCard({
           </div>
 
           {proposalEntries.length > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
                 Agent positions
               </h3>
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 gap-5">
                 {proposalEntries.map(([agent, proposal]) => {
                   const accent = accentForAgent(agent);
                   return (
                     <div
                       key={agent}
-                      className="space-y-3 rounded-[18px] border bg-[var(--surface)] p-5 shadow-[var(--shadow-panel)]"
-                      style={{ borderColor: `${accent}28`, boxShadow: `inset 3px 0 0 ${accent}` }}
+                      className="space-y-3 rounded-[18px] border bg-[var(--surface)] p-6 pl-7 shadow-[var(--shadow-panel)]"
+                      style={{ borderColor: `${accent}28`, boxShadow: `inset 4px 0 0 ${accent}` }}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-lg font-bold uppercase tracking-[0.08em]" style={{ color: accent }}>
@@ -388,28 +388,28 @@ function LiveResultCard({
 
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
           <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3 shadow-[var(--shadow-panel)]">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4 shadow-[var(--shadow-panel)]">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Runtime</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--text)]">{result.duration_seconds.toFixed(1)}s</div>
+              <div className="mt-1.5 text-lg font-semibold text-[var(--text)]">{result.duration_seconds.toFixed(1)}s</div>
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3 shadow-[var(--shadow-panel)]">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4 shadow-[var(--shadow-panel)]">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Started</div>
-              <div className="mt-1 text-sm font-semibold text-[var(--text)]">{runStartedAt ?? 'Just now'}</div>
+              <div className="mt-1.5 text-sm font-semibold text-[var(--text)]">{runStartedAt ?? 'Just now'}</div>
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3 shadow-[var(--shadow-panel)] sm:col-span-3 xl:col-span-1">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4 shadow-[var(--shadow-panel)] sm:col-span-3 xl:col-span-1">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Result ID</div>
-              <div className="mt-1 break-all font-mono text-xs text-[var(--text)]">{result.id}</div>
+              <div className="mt-1.5 break-all font-mono text-xs text-[var(--text)]">{result.id}</div>
             </div>
           </div>
 
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)]">
+          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Returned agents
             </h3>
             <AgentRoster agents={result.participants} />
           </div>
 
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)]">
+          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
             <ConsensusBar confidence={result.confidence} />
           </div>
 
@@ -449,10 +449,10 @@ function LiveResultCard({
 
 function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
   return (
-    <section className="rounded-[20px] border border-sky-500/18 bg-[var(--surface)] p-6 shadow-[var(--shadow-elevated)] md:p-7">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_320px]">
-        <div className="space-y-5">
-          <div className="space-y-2 border-b border-[var(--border)] pb-5">
+    <section className="rounded-[20px] border border-sky-500/18 bg-[var(--surface)] p-7 shadow-[var(--shadow-elevated)] md:p-9">
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.6fr)_340px]">
+        <div className="space-y-6">
+          <div className="space-y-2 border-b border-[var(--border)] pb-6">
             <StatusBadge label="Recorded sample" tone="sample" />
             <p className="max-w-2xl text-sm leading-7 text-[var(--text-muted)]">
               This is a captured example for zero-latency browsing. It is illustrative only and is
@@ -460,14 +460,14 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             </p>
           </div>
 
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Recorded verdict
             </h3>
             <p className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty">{sample.verdict}</p>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-5">
             {sample.events.map((event, index) => {
               const accent = accentForAgent(event.agent);
               const badgeColor =
@@ -482,8 +482,8 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
               return (
                 <div
                   key={`${event.agent}-${index}`}
-                  className="border p-5 bg-[var(--surface)] space-y-3 rounded-lg shadow-sm"
-                  style={{ borderColor: `${accent}30` }}
+                  className="border p-6 bg-[var(--surface)] space-y-3 rounded-[18px] shadow-sm"
+                  style={{ borderColor: `${accent}28`, boxShadow: `inset 4px 0 0 ${accent}` }}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -516,18 +516,18 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)]">
+          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Sample agents
             </h3>
             <AgentRoster agents={sample.agents} />
           </div>
 
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-panel)]">
+          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
             <ConsensusBar confidence={sample.confidence} />
           </div>
 
-          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-5 text-xs text-[var(--text-muted)] shadow-[var(--shadow-panel)]">
+          <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 text-xs text-[var(--text-muted)] shadow-[var(--shadow-panel)]">
             Receipt sample (not cryptographic):{' '}
             <span className="break-all font-mono">{sample.receiptHash}</span>
           </div>
@@ -671,7 +671,7 @@ export default function PublicDemoPage() {
         </div>
       </nav>
 
-      <div className="mx-auto flex max-w-[1120px] flex-col gap-8 px-4 py-8 md:px-6">
+      <div className="mx-auto flex max-w-[1120px] flex-col gap-8 px-5 py-8 md:px-8 lg:px-10">
         <header className="space-y-3 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-[var(--acid-green)] sm:text-4xl text-balance">
             Live Demo
@@ -682,7 +682,7 @@ export default function PublicDemoPage() {
           </p>
         </header>
 
-        <section className="space-y-5 rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-elevated)] md:p-7">
+        <section className="space-y-5 rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-7 shadow-[var(--shadow-elevated)] md:p-9">
           <div className="space-y-2">
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Canonical question
