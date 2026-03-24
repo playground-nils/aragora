@@ -529,14 +529,16 @@ class TestCmdQuickstart:
         assert mock_arena.enable_introspection is False
 
     @pytest.mark.asyncio
-    async def test_filter_reachable_live_agents_raises_clean_tls_error(self):
-        """Quickstart should stop before debate startup when TLS verification fails."""
+    async def test_filter_reachable_live_agents_returns_empty_on_tls_failure(self):
+        """When all providers fail TLS, return empty list for demo fallback."""
         with patch(
             "aragora.cli.commands.quickstart._can_reach_provider_tls",
             new=AsyncMock(return_value=(False, "CERTIFICATE_VERIFY_FAILED")),
         ):
-            with pytest.raises(RuntimeError, match="CA trust store"):
-                await _filter_reachable_live_agents([("openai-api", "gpt-4o"), ("gemini", None)])
+            result = await _filter_reachable_live_agents(
+                [("openai-api", "gpt-4o"), ("gemini", None)]
+            )
+            assert result == []
 
     @pytest.mark.asyncio
     async def test_filter_reachable_live_agents_keeps_healthy_subset(self):
@@ -868,8 +870,8 @@ class TestCmdQuickstart:
         output = capsys.readouterr().out
         assert "Falling back to demo mode" in output
 
-    def test_live_mode_exits_cleanly_on_tls_failure(self, capsys):
-        """TLS/provider failures should surface a clear operator hint."""
+    def test_live_mode_falls_back_to_demo_on_tls_failure(self, capsys):
+        """TLS/provider failures should fall back to demo mode, not exit."""
         args = argparse.Namespace(
             question="Should we use the live path?",
             demo=False,
@@ -882,6 +884,17 @@ class TestCmdQuickstart:
             no_browser=True,
         )
 
+        mock_demo_result = {
+            "question": "Should we use the live path?",
+            "verdict": "consensus",
+            "confidence": 0.85,
+            "rounds": 2,
+            "agents": ["analyst", "critic", "synthesizer"],
+            "summary": "Demo result",
+            "dissent": [],
+            "mode": "demo",
+        }
+
         with (
             patch(
                 "aragora.cli.commands.quickstart._detect_agents",
@@ -889,15 +902,15 @@ class TestCmdQuickstart:
             ),
             patch(
                 "aragora.cli.commands.quickstart._run_live_debate",
-                side_effect=RuntimeError(
-                    "Live debate failed before producing a result: CERTIFICATE_VERIFY_FAILED"
-                ),
+                side_effect=RuntimeError("Live debate failed: CERTIFICATE_VERIFY_FAILED"),
+            ),
+            patch(
+                "aragora.cli.commands.quickstart._run_demo_debate",
+                return_value=mock_demo_result,
             ),
         ):
-            with pytest.raises(SystemExit):
-                cmd_quickstart(args)
+            cmd_quickstart(args)
 
         output = capsys.readouterr().out
-        assert "Debate failed" in output
-        assert "CA trust store" in output
-        assert "quickstart --demo" in output
+        assert "Falling back to demo" in output
+        assert "RESULT" in output  # Demo result was displayed
