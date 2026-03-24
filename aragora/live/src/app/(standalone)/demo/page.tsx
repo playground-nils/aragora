@@ -315,14 +315,18 @@ function ExpandableText({
   collapsedLines,
   className,
   buttonLabel,
+  surfaceTone,
 }: {
   text: string;
   collapsedLines: number;
   className: string;
   buttonLabel: string;
+  surfaceTone: 'surface' | 'elevated';
 }) {
   const [expanded, setExpanded] = useState(false);
   const shouldCollapse = text.trim().length > collapsedLines * 110;
+  const surfaceColor =
+    surfaceTone === 'surface' ? 'var(--surface)' : 'var(--surface-elevated)';
 
   return (
     <div className="space-y-3">
@@ -343,16 +347,24 @@ function ExpandableText({
           {text}
         </p>
         {!expanded && shouldCollapse ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--surface-elevated)] via-[var(--surface-elevated)]/90 to-transparent" />
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
+            style={{
+              background: `linear-gradient(to top, ${surfaceColor} 0%, color-mix(in srgb, ${surfaceColor} 92%, transparent) 58%, transparent 100%)`,
+            }}
+          />
         ) : null}
       </div>
       {shouldCollapse ? (
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/40 hover:text-[var(--acid-green)]"
+          className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/40 hover:text-[var(--acid-green)]"
         >
-          {expanded ? 'Show Less' : buttonLabel}
+          <span>{expanded ? 'Show less' : buttonLabel}</span>
+          <span aria-hidden="true" className={`text-base leading-none ${expanded ? 'rotate-180' : ''}`}>
+            ↓
+          </span>
         </button>
       ) : null}
     </div>
@@ -396,8 +408,9 @@ function LiveResultCard({
             </h3>
             <ExpandableText
               text={summary}
-              collapsedLines={7}
-              buttonLabel="Read Full Verdict"
+              collapsedLines={5}
+              buttonLabel="Read full verdict"
+              surfaceTone="elevated"
               className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
             />
           </div>
@@ -429,8 +442,9 @@ function LiveResultCard({
                       </div>
                       <ExpandableText
                         text={proposal}
-                        collapsedLines={5}
-                        buttonLabel="Read Full Position"
+                        collapsedLines={4}
+                        buttonLabel="Read full position"
+                        surfaceTone="surface"
                         className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty"
                       />
                     </div>
@@ -521,8 +535,9 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             </h3>
             <ExpandableText
               text={sample.verdict}
-              collapsedLines={5}
-              buttonLabel="Read Full Verdict"
+              collapsedLines={4}
+              buttonLabel="Read full verdict"
+              surfaceTone="elevated"
               className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
             />
           </div>
@@ -563,8 +578,9 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                   </div>
                   <ExpandableText
                     text={event.content}
-                    collapsedLines={4}
-                    buttonLabel="Read Full Entry"
+                    collapsedLines={3}
+                    buttonLabel="Read full entry"
+                    surfaceTone="surface"
                     className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty"
                   />
                   {event.vote && (
