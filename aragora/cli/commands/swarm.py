@@ -66,6 +66,31 @@ def _print_supervisor_run(run: dict[str, object]) -> None:
     print(f"work_orders={len(work_orders)} [{counts_text}]")
 
 
+def _render_tranche_queue_harvest_table(payload: dict[str, object]) -> None:
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    rows = [
+        ("total items", int(summary.get("total_items", 0) or 0)),
+        ("PRs created", int(summary.get("prs_created", 0) or 0)),
+        ("merged", int(summary.get("merged", 0) or 0)),
+        ("needs_human", int(summary.get("needs_human", 0) or 0)),
+        ("failed", int(summary.get("failed", 0) or 0)),
+    ]
+    metric_width = max(len("metric"), *(len(label) for label, _ in rows))
+    count_width = max(len("count"), *(len(str(value)) for _, value in rows))
+    queue_id = str(payload.get("queue_id", "") or "").strip()
+    status = str(payload.get("status", "") or "").strip()
+
+    title = f"Tranche Queue Harvest ({queue_id})" if queue_id else "Tranche Queue Harvest"
+    print(title)
+    if status:
+        print(f"status={status}")
+    print()
+    print(f"{'metric':<{metric_width}}  {'count':>{count_width}}")
+    print(f"{'-' * metric_width}  {'-' * count_width}")
+    for label, value in rows:
+        print(f"{label:<{metric_width}}  {value:>{count_width}}")
+
+
 def _run_supervised_or_report(awaitable: object) -> object | None:
     try:
         return asyncio.run(awaitable)
@@ -967,7 +992,10 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             if as_json:
                 print(json.dumps(payload, indent=2))
             else:
-                print(json.dumps(payload, indent=2))
+                if subaction == "harvest-queue":
+                    _render_tranche_queue_harvest_table(payload)
+                else:
+                    print(json.dumps(payload, indent=2))
             return
         if subaction == "plan":
             prompt_arg = str(getattr(args, "from_prompts", "") or "").strip()

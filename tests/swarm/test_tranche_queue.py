@@ -7,12 +7,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from aragora.cli.commands.swarm import _render_tranche_queue_harvest_table
 from aragora.swarm.tranche_queue import (
     QUEUE_STATUS_PENDING,
     QUEUE_ITEM_STATUS_COMPLETED,
     QUEUE_ITEM_STATUS_NEEDS_HUMAN,
     QUEUE_ITEM_STATUS_PENDING,
     QUEUE_ITEM_STATUS_RUNNING,
+    QUEUE_ITEM_STATUS_STOPPED,
     QUEUE_STATUS_COMPLETED,
     QUEUE_STATUS_RUNNING,
     QUEUE_STATUS_STOPPED,
@@ -199,8 +201,131 @@ def test_harvest_queue_executes_merge_for_merge_now_pr(
             "used_admin": False,
         }
     ]
+    assert payload["summary"] == {
+        "total_items": 1,
+        "prs_created": 1,
+        "merged": 1,
+        "needs_human": 0,
+        "failed": 0,
+    }
     assert payload["items"][0]["prs"][0]["snapshot_disposition"] == "merge_now"
     assert payload["items"][0]["prs"][0]["disposition"] == "merged"
+    assert payload["items"][0]["summary_outcome"] == "merged"
+
+
+def test_harvest_queue_summary_counts_needs_human_and_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue_path = tmp_path / "overnight.yaml"
+    manifest = _write_queue(queue_path)
+
+    state = TrancheQueueRunState(queue_id="overnight", status=QUEUE_STATUS_COMPLETED)
+    state.ensure_manifest(manifest)
+    merged_item = state.item_states["issue-1046"]
+    merged_item.status = QUEUE_ITEM_STATUS_COMPLETED
+    merged_item.pr_urls = ["https://github.com/org/repo/pull/42"]
+    needs_human_item = state.item_states["intake-docs"]
+    needs_human_item.status = QUEUE_ITEM_STATUS_NEEDS_HUMAN
+    failed_item = state.item_states["issue-1047"]
+    failed_item.status = QUEUE_ITEM_STATUS_STOPPED
+    failed_item.pr_urls = ["https://github.com/org/repo/pull/99"]
+    state.save(queue_state_path_for_queue(queue_path))
+
+    class _FakeSnapshot:
+        def __init__(self, pr_url: str, *, disposition: str) -> None:
+            self.pr_url = pr_url
+            self.disposition = disposition
+            self.required_checks_green = True
+            self.head_branch = "codex/example-branch"
+
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "pr_url": self.pr_url,
+                "state": "MERGED" if self.disposition == "merged" else "OPEN",
+                "draft": False,
+                "head_branch": self.head_branch,
+                "base_branch": "main",
+                "review_decision": "APPROVED",
+                "merge_state_status": "CLEAN",
+                "merge_commit_sha": "abc123" if self.disposition == "merged" else None,
+                "required_checks": [],
+                "advisory_checks": [],
+                "required_checks_green": True,
+                "required_checks_known": True,
+                "required_checks_source": "ruleset",
+                "disposition": self.disposition,
+                "blocker_detail": None,
+            }
+
+    class _FakeGitHubControl:
+        def __init__(self, *, repo_root: Path) -> None:
+            self.repo_root = repo_root
+
+        def fetch_gate_snapshot(self, pr_ref: str) -> _FakeSnapshot:
+            if pr_ref == "https://github.com/org/repo/pull/42":
+                return _FakeSnapshot(pr_ref, disposition="merged")
+            raise RuntimeError("snapshot unavailable")
+
+    monkeypatch.setattr("aragora.swarm.tranche_queue.GitHubControl", _FakeGitHubControl)
+
+    payload = harvest_tranche_queue(
+        queue_path=queue_path,
+        repo_root=tmp_path,
+    )
+
+    assert payload["pr_counts"] == {"merged": 1, "error": 1}
+    assert payload["summary"] == {
+        "total_items": 3,
+        "prs_created": 2,
+        "merged": 1,
+        "needs_human": 1,
+        "failed": 1,
+    }
+    assert [item["summary_outcome"] for item in payload["items"]] == [
+        "merged",
+        "needs_human",
+        "failed",
+    ]
+
+
+def test_render_harvest_queue_summary_table_prints_counts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _render_tranche_queue_harvest_table(
+        {
+            "queue_id": "overnight",
+            "status": "completed",
+            "summary": {
+                "total_items": 3,
+                "prs_created": 2,
+                "merged": 1,
+                "needs_human": 1,
+                "failed": 1,
+            },
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "Tranche Queue Harvest (overnight)" in output
+    assert "status=completed" in output
+
+    metrics: dict[str, str] = {}
+    for line in output.splitlines():
+        parts = line.rsplit(None, 1)
+        if len(parts) != 2:
+            continue
+        label, value = parts
+        if label in {"total items", "PRs created", "merged", "needs_human", "failed"}:
+            metrics[label] = value
+
+    assert metrics == {
+        "total items": "3",
+        "PRs created": "2",
+        "merged": "1",
+        "needs_human": "1",
+        "failed": "1",
+    }
 
 
 def test_compile_queue_records_proposal_for_synthesize_doc_source(tmp_path: Path) -> None:
