@@ -366,7 +366,7 @@ export { FeaturesTab } from './FeaturesTab';
 export { DebateTab } from './DebateTab';
 export { AppearanceTab } from './AppearanceTab';
 export { NotificationsTab } from './NotificationsTab';
-export { ApiKeysTab } from './ApiKeysTab';
+export { ApiKeysTab, getProviderKeyHeaders } from './ApiKeysTab';
 export { IntegrationsTab } from './IntegrationsTab';
 export { AccountTab } from './AccountTab';
 
