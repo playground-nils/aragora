@@ -374,10 +374,10 @@ function LiveResultCard({
   const proposalEntries = Object.entries(result.proposals).slice(0, 3);
 
   return (
-    <section className="space-y-6 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-7 shadow-[var(--shadow-elevated)] md:p-9">
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.6fr)_340px]">
-        <div className="space-y-6">
-          <div className="space-y-3 border-b border-[var(--border)] pb-6">
+    <section className="space-y-7 rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-8 shadow-[var(--shadow-elevated)] md:p-10">
+      <div className="grid gap-10 xl:grid-cols-[minmax(0,1.6fr)_340px]">
+        <div className="space-y-7">
+          <div className="space-y-4 border-b border-[var(--border)] pb-7">
             <StatusBadge label={resultLabel} tone={resultTone} />
             <div className="space-y-2">
               <p className="max-w-3xl text-[21px] font-semibold leading-9 text-[var(--text)] text-balance">
@@ -390,7 +390,7 @@ function LiveResultCard({
               </p>
             </div>
           </div>
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
+          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-8 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Verdict
             </h3>
@@ -413,7 +413,7 @@ function LiveResultCard({
                   return (
                     <div
                       key={agent}
-                      className="space-y-3 rounded-[18px] border bg-[var(--surface)] p-6 pl-7 shadow-[var(--shadow-panel)]"
+                      className="space-y-4 rounded-[18px] border bg-[var(--surface)] p-7 pl-9 shadow-[var(--shadow-panel)]"
                       style={{ borderColor: `${accent}28`, boxShadow: `inset 4px 0 0 ${accent}` }}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -443,28 +443,28 @@ function LiveResultCard({
 
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
           <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4 shadow-[var(--shadow-panel)]">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-6 py-5 shadow-[var(--shadow-panel)]">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Runtime</div>
-              <div className="mt-1.5 text-lg font-semibold text-[var(--text)]">{result.duration_seconds.toFixed(1)}s</div>
+              <div className="mt-2 text-lg font-semibold text-[var(--text)]">{result.duration_seconds.toFixed(1)}s</div>
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4 shadow-[var(--shadow-panel)]">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-6 py-5 shadow-[var(--shadow-panel)]">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Started</div>
-              <div className="mt-1.5 text-sm font-semibold text-[var(--text)]">{runStartedAt ?? 'Just now'}</div>
+              <div className="mt-2 text-sm font-semibold text-[var(--text)]">{runStartedAt ?? 'Just now'}</div>
             </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-5 py-4 shadow-[var(--shadow-panel)] sm:col-span-3 xl:col-span-1">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] px-6 py-5 shadow-[var(--shadow-panel)] sm:col-span-3 xl:col-span-1">
               <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Result ID</div>
-              <div className="mt-1.5 break-all font-mono text-xs text-[var(--text)]">{result.id}</div>
+              <div className="mt-2 break-all font-mono text-xs text-[var(--text)]">{result.id}</div>
             </div>
           </div>
 
-          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="space-y-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Returned agents
             </h3>
             <AgentRoster agents={result.participants} />
           </div>
 
-          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="space-y-3 rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] p-7 shadow-[var(--shadow-panel)]">
             <ConsensusBar confidence={result.confidence} />
           </div>
 
@@ -734,7 +734,7 @@ export default function PublicDemoPage() {
         </div>
       </nav>
 
-      <div className="mx-auto flex max-w-[1120px] flex-col gap-8 px-5 py-8 md:px-8 lg:px-10">
+      <div className="mx-auto flex max-w-[1120px] flex-col gap-8 px-6 py-10 md:px-10 lg:px-12">
         <header className="space-y-3 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-[var(--acid-green)] sm:text-4xl text-balance">
             Live Demo
@@ -745,7 +745,7 @@ export default function PublicDemoPage() {
           </p>
         </header>
 
-        <section className="space-y-5 rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-7 shadow-[var(--shadow-elevated)] md:p-9">
+        <section className="space-y-5 rounded-[22px] border border-[var(--border)] bg-[var(--surface)] p-8 shadow-[var(--shadow-elevated)] md:p-10">
           <div className="space-y-2">
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--acid-green)]">
               Canonical question
