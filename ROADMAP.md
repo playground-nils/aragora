@@ -1,12 +1,12 @@
 # Aragora Product Roadmap
 
-**Last Updated:** March 23, 2026
+**Last Updated:** March 24, 2026
 
 ---
 
 ## Current Status (March 2026)
 
-Aragora has shipped most of the closed-loop backbone (CLB) infrastructure and completed the 14/14 issue sprint. The March 21-23 merge stream materially improved the product loop on `main`, and current `main` now includes a mocked founder-loop E2E proof plus the tightened quickstart contract. Launch readiness is still gated first by **live** PMF closure, not by enterprise certification.
+Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 issue sprint, Phase 2 truth-seeking advances, and **proven the live founder loop repeatable** (5/5 consecutive runs, 35-62s, March 24, 2026). The March 21-24 work stream materially advanced the product loop: live debate receipts are now visible on API/dashboard surfaces, the prompt-to-spec engine works end-to-end, and the inbox trust wedge CLI is dogfood-ready. The current gate is design partner readiness and inbox wedge dogfooding, not enterprise certification.
 
 **By the numbers:**
 - 3,846 Python files under `aragora/`
@@ -42,13 +42,20 @@ Aragora has shipped most of the closed-loop backbone (CLB) infrastructure and co
 - Queue max-parallel-two safety slice ([#1141](https://github.com/synaptent/aragora/pull/1141))
 - Queue harvest command ([#1164](https://github.com/synaptent/aragora/pull/1164))
 
+**Completed since March 23, 2026 (latest):**
+- Live founder loop proven repeatable: 5/5 consecutive runs (35-62s), all 7 acceptance items pass
+- Quickstart receipts persist to receipt store (API/dashboard/share-link visible)
+- Prompt-to-spec CLI (`aragora spec`) completes end-to-end in ~23s
+- Inbox trust wedge CLI: `aragora triage auth` (OAuth), `--dry-run`, `--auto-approve`
+- Phase 2 truth-seeking wired: Prover-Estimator consensus, cross-verification, truth ratio vote weights
+- Embedding rate limit resilience (hash-based fallback on 429 errors)
+- Summary preamble cleaning (strip LLM chain-of-thought from CLI output)
+- EU AI Act compliance bundle verified end-to-end with real quickstart receipts
+
 **Remaining tracked priority work:**
-- Prove the canonical founder loop live on current `main`: readiness -> live debate -> receipt -> visible result -> KM ingestion
-- Turn any live founder-loop failure into a bounded PMF blocker with an exact command transcript and truthful stop condition
-- Use `aragora pipeline dogfood` and bounded swarm/nomic lanes only on those founder-loop blockers
-- Re-run the founder loop after each landed blocker tranche until it is repeatable without manual rescue
-- Dogfood the inbox trust wedge only after the founder loop holds
-- Keep pentest / SOC 2 preparation warm, but after PMF proof ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
+- Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
+- Prepare for design partner outreach with repeatable live demo
+- Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 **EU AI Act enforcement date: August 2, 2026** — the compliance CLI and audit trail infrastructure
 position Aragora as a natural adoption path for enterprises facing this deadline.
@@ -195,7 +202,7 @@ Aragora is the control plane for multi-agent vetted decisionmaking across organi
 - [ ] Global compliance (HIPAA, FedRAMP)
 
 ### 2027 R&D
-- Prover-Estimator debate protocol
+- ~~Prover-Estimator debate protocol~~ **SHIPPED** (March 2026 — wired into consensus pipeline)
 - Canvas GUI 8-stage visual pipeline
 - Market resolution mechanism for long-horizon settlement
 - ERC-8004 on-chain agent identity deployment to mainnet (contracts written, pending deployment)
@@ -210,16 +217,17 @@ Aragora is the control plane for multi-agent vetted decisionmaking across organi
 This section captures the prioritized forward roadmap as of March 2026, organized by quarter and theme.
 Execution priority source of truth: [docs/status/NEXT_STEPS_CANONICAL.md](docs/status/NEXT_STEPS_CANONICAL.md). This roadmap summarizes quarter-level themes and does not supersede canonical execution priorities.
 
-The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use, no complete user journey, provider routing not yet wired to runtime selection, Knowledge Mound retrieval not yet enriching default debates, and a shell-heavy frontend surface. The March 21-23 merge stream changed those specific facts on `main`, but it did not eliminate the need for live PMF proof. The near-term roadmap still prioritizes proving the founder loop before widening enterprise-readiness work.
+The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use. The March 21-24 work stream changed the material facts: the live founder loop is now proven repeatable, receipts are visible on product surfaces, Phase 2 truth-seeking is wired, and the inbox trust wedge is CLI-ready. The near-term roadmap now prioritizes dogfooding the second workflow and design partner outreach.
 
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
 ### Q2 2026 Priorities
-- [ ] Prove the live founder loop using the runbook in [docs/plans/PMF_DOGFOOD_EXECUTION_PLAN.md](docs/plans/PMF_DOGFOOD_EXECUTION_PLAN.md)
-- [ ] Reconstitute the PMF blocker queue from observed founder-loop failures instead of stale March umbrella issues
-- [ ] Use the idea-to-execution pipeline and swarm queue to clear only those PMF blockers
-- [ ] Productize the founder-loop result surfaces so the live outcome is understandable without operator context
-- [ ] Dogfood the second workflow (inbox trust wedge) after the founder loop is repeatable
+- [x] Prove the live founder loop (5/5 runs, 35-62s, all acceptance items pass — March 24, 2026)
+- [x] Productize the founder-loop result surfaces (receipts persist to store for API/dashboard/share-link)
+- [x] Prompt-to-spec engine (`aragora spec` end-to-end in ~23s)
+- [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
+- [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
+- [ ] Dogfood the inbox trust wedge on a real Gmail inbox
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
 - [x] GitHub Actions pre-merge gate (`aragora-review-gate.yml` shipped)
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
@@ -239,7 +247,7 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [ ] Decision-Integrity UI Workbench (visual debate canvas)
 
 ### 2027 Horizon
-- Prover-Estimator debate protocol
+- ~~Prover-Estimator debate protocol~~ **SHIPPED** (March 2026)
 - Canvas GUI 8-stage visual pipeline
 - Market resolution mechanism (long-horizon settlement)
 - ERC-8004 on-chain deployment to mainnet

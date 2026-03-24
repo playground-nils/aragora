@@ -2,7 +2,7 @@
 
 > **Living document** — tracks features planned, partially built, or in need of hardening. Updated as items are completed or priorities shift.
 > Active execution status now lives in [docs/status/ACTIVE_EXECUTION_ISSUES.md](status/ACTIVE_EXECUTION_ISSUES.md) and the linked GitHub issues. This file remains the capability and productization backlog truth.
-> Last updated: March 23, 2026
+> Last updated: March 24, 2026
 > March 2026 priority reframe: product cohesion and PMF proof come before certification. Pentest / SOC 2 stay tracked, but they are no longer the first blocker lane.
 
 ## How to Read This List
@@ -20,7 +20,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Truthful live founder loop | **Current gate** | `main` now has the structural slices and the focused mocked proof (`python3 -m pytest tests/e2e/test_user_journey.py tests/cli/test_quickstart.py -q` -> `57 passed` on March 23, 2026). The remaining blocker is one repeatable live run from readiness -> debate -> receipt -> visible result -> KM ingestion without manual rescue. Source of truth: [docs/plans/PMF_DOGFOOD_EXECUTION_PLAN.md](plans/PMF_DOGFOOD_EXECUTION_PLAN.md). |
+| Truthful live founder loop | **PROVEN — moved to Completed** | 5/5 consecutive live runs pass (35-62s, March 24, 2026). Test baseline: `71 passed` (focused) / `125 passed` (extended). Receipts persist to store for API/dashboard visibility. All 7 acceptance checklist items pass. |
 | Smart provider routing | **Shipped on `main`; live proof pending** | PR #724 shipped the Pareto optimizer and pricing database. Runtime wiring landed on `main` via [#1167](https://github.com/synaptent/aragora/pull/1167), and downstream runtime hints are applied through the debate path. The remaining obligation is to prove that routing behaves well in the live founder loop rather than to debate whether the wiring exists. Historical lineage: [#813](https://github.com/synaptent/aragora/issues/813). |
 | Complete one working user journey | **Mocked proof passes; live proof still open** | The relevant slices are on `main`: live settings/API-key wiring ([#1146](https://github.com/synaptent/aragora/pull/1146)), live debate creation ([#1147](https://github.com/synaptent/aragora/pull/1147)), onboarding/get-started ([#1170](https://github.com/synaptent/aragora/pull/1170)), quickstart fail-closed behavior ([#1180](https://github.com/synaptent/aragora/pull/1180)), and structured quickstart receipts ([#1192](https://github.com/synaptent/aragora/pull/1192)). The current gap is one repeatable live proof, not another architecture slice. Historical lineage: [#1046](https://github.com/synaptent/aragora/issues/1046). |
 | Knowledge Mound reads enrich debate context | **Shipped on `main`; live read/write proof pending** | Retrieval, precedent loading, and writeback groundwork landed via [#1111](https://github.com/synaptent/aragora/pull/1111), [#1131](https://github.com/synaptent/aragora/pull/1131), [#1132](https://github.com/synaptent/aragora/pull/1132), [#1134](https://github.com/synaptent/aragora/pull/1134), [#1151](https://github.com/synaptent/aragora/pull/1151), [#1168](https://github.com/synaptent/aragora/pull/1168), and [#1176](https://github.com/synaptent/aragora/pull/1176). The remaining question is whether that read/write path is visible and trustworthy in the live founder loop. Historical lineage: [#1048](https://github.com/synaptent/aragora/issues/1048). |
@@ -74,13 +74,16 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Prover-Estimator debate protocol | Design only | Beyond consensus to structured truth-seeking. Replaces/supplements current majority-vote consensus. |
-| Cross-verification phase (3-pass hallucination detection) | Design only | Three-agent verification pass post-synthesis. |
+| Prover-Estimator debate protocol | **Shipped and wired** | 581 LOC engine + consensus handler wired into `consensus_phase.py`. Use `protocol.consensus="prover_estimator"` to activate. 5-stage pipeline: decompose→estimate→challenge→re-estimate→aggregate. 33 unit tests pass. |
+| Cross-verification phase (3-pass hallucination detection) | **Shipped and wired** | 395 LOC engine wired as optional post-debate enrichment in `orchestrator_runner.py`. Set `arena.enable_cross_verification=True`. Computes grounding_delta, adversarial_resistance, hallucination_risk. |
+| Truth scorer integrated into vote weights | **Shipped and wired** | `TruthScorer` (398 LOC) scores evidence-vs-rhetoric ratio per proposal. `apply_truth_ratio_bonuses()` in `VoteBonusCalculator` rewards high truth ratios. Enable via `protocol.enable_truth_ratio_weighting=True`. |
+| Epistemic hygiene + anti-sycophancy | **Shipped and integrated** | ~1,695 LOC across `epistemic_hygiene.py`, `trickster.py`, `trickster_calibrator.py`. Fully integrated into consensus, settlement, prompt assembly, and server. ~3,744 LOC tests. |
+| Prompt-to-spec engine | **Shipped** | `aragora spec` CLI command completes in ~23s. Decompose→interrogate→research→specify pipeline. `aragora/prompt_engine/` module (decomposer, interrogator, researcher, spec_builder, conductor). |
 | Canvas GUI (8-stage visual DAG) | Partial frontend | Prompt-engine page exists; full 8-stage visual canvas missing. |
 | Market resolution mechanism | Design only | Long-horizon settlement claim pricing via prediction market. |
 | STOP N-candidate for Nomic Loop | Design only | Multi-plan generation before committing to self-improvement path. |
 | Meta-improver for debate protocols | Design only | A/B test protocol variants using Nomic Loop. |
-| Obsidian bidirectional sync | Design only | Full sync + bidirectional updates from Obsidian vault. |
+| Obsidian bidirectional sync | **Shipped** | `ObsidianAdapter` with `ReverseFlowMixin` for KM→Obsidian writeback. Forward sync, conflict detection, filesystem watcher. |
 
 ---
 
@@ -162,3 +165,13 @@ These items were planned and are now shipped:
 | Admin merge bypass — autonomous merge when required checks pass (PR #1006) | Mar 2026 |
 | Ralph V14 benchmark — full autonomous loop validated (spec→PR→merge, zero intervention) | Mar 2026 |
 | Ralph blocker taxonomy — campaign_stalled, needs_human classification (PRs #946-#950) | Mar 2026 |
+| **Live founder loop proven repeatable** (5/5 runs, 35-62s, receipts on API/dashboard) | Mar 2026 |
+| Prover-Estimator consensus handler wired into debate pipeline | Mar 2026 |
+| Cross-verification post-debate enrichment wired into orchestrator | Mar 2026 |
+| Truth scorer ratio bonuses wired into vote weight calculation | Mar 2026 |
+| Prompt-to-spec CLI (`aragora spec`) — 23s end-to-end | Mar 2026 |
+| Inbox trust wedge CLI (`aragora triage auth`, `--dry-run`) | Mar 2026 |
+| Quickstart receipt store persistence for API/dashboard visibility | Mar 2026 |
+| Embedding rate limit resilience (hash-based fallback on 429) | Mar 2026 |
+| Summary preamble cleaning (strip LLM chain-of-thought from CLI output) | Mar 2026 |
+| EU AI Act compliance bundle verified end-to-end with real quickstart receipts | Mar 2026 |

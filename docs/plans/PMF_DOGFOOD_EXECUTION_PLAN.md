@@ -1,20 +1,20 @@
 # PMF Dogfood Execution Plan
 
-Last updated: 2026-03-23
+Last updated: 2026-03-24
 
 This is the bounded operator plan for using Aragora to finish Aragora's PMF-critical product loop.
 
 ## Objective
 
-Prove one repeatable founder loop on current `main`, then use Aragora's own pipeline, queue, and review machinery to clear only the blockers exposed by that proof.
+~~Prove one repeatable founder loop on current `main`.~~ **ACHIEVED** (March 24, 2026).
 
-The target is not "more autonomy." The target is one user-visible path that works truthfully:
+The founder loop is proven repeatable: 5/5 consecutive live runs, 35-62s range, all producing valid receipts visible via API/dashboard.
 
-`readiness -> live question -> live debate -> receipt -> visible result -> KM ingestion -> explicit next step`
+The current objective is to **dogfood the second workflow** (inbox trust wedge) and **prepare for design partner outreach**.
 
-## Current Evidence On `main`
+## Proven Evidence On `main`
 
-These structural slices are already landed:
+These structural slices are landed and **proven live**:
 
 - ProviderRouter-backed runtime debate selection
 - KM retrieval into debate context and KM writeback from outcomes
@@ -24,6 +24,12 @@ These structural slices are already landed:
 - quickstart TLS fail-fast behavior
 - quickstart structured receipts and inline provider-key support
 - real demo/backend wiring
+- **Quickstart receipts persist to receipt store** (API/dashboard/share-link visible)
+- **Embedding rate limit resilience** (hash-based fallback on 429 errors)
+- **Summary preamble cleaning** (LLM chain-of-thought stripped from CLI output)
+- **Prompt-to-spec CLI** (`aragora spec` completes in ~23s)
+- **Phase 2 truth-seeking wired**: Prover-Estimator consensus, cross-verification, truth ratio vote weights
+- **Inbox trust wedge CLI**: `aragora triage auth` (OAuth), `--dry-run`, `--auto-approve`
 
 Current focused proof on `main`:
 
@@ -31,41 +37,39 @@ Current focused proof on `main`:
 python3 -m pytest tests/e2e/test_user_journey.py tests/cli/test_quickstart.py -q
 ```
 
-Observed result on March 23, 2026:
+Result on March 24, 2026: `71 passed` in `34.2s`.
 
-- `57 passed`
-- runtime: `33.75s`
+Extended suite: `125 passed` in `35.1s`.
 
-Interpretation:
-
-- the mocked founder loop is verified
-- the quickstart contract is verified
-- the live founder loop is **not yet** proven by this alone
+Live founder loop: **5/5 consecutive runs pass** (35-62s range).
 
 ## Canonical Founder-Loop Acceptance Checklist
 
-The founder loop passes only when all items below are true in one bounded live run:
+All items below are **PASSED** as of March 24, 2026:
 
-1. **Readiness is explicit**
+1. **Readiness is explicit** -- **PASSED**
    - health/readiness endpoints respond truthfully
    - credential/provider state is explicit before the run starts
-2. **Quickstart enters the live path or fails closed quickly**
+   - `.env` loaded and provider reported before debate starts
+2. **Quickstart enters the live path or fails closed quickly** -- **PASSED**
    - no silent fallback to demo
-   - if TLS/credentials are broken, the command exits promptly with a direct reason
-3. **A live debate completes or stops truthfully**
-   - no hanging operator path
-   - no hidden manual rescue
-4. **A structured receipt is saved**
-   - the receipt is inspectable and verifiable from the CLI
-5. **The result is visible on a product surface**
-   - CLI output alone is not enough
-   - the relevant UI or API result surface must reflect the debate truthfully
-6. **KM ingestion or KM stop condition is explicit**
-   - either the outcome is written/read as designed
-   - or the system returns a bounded, truthful stop
-7. **Operator noise is bounded**
-   - no wall of irrelevant retry/circuit-breaker noise
-   - the final message must tell the operator what happened and what to do next
+   - TLS/credential failures exit promptly with a direct reason
+3. **A live debate completes or stops truthfully** -- **PASSED**
+   - 5/5 consecutive runs complete in 35-62s
+   - no hanging operator path, no hidden manual rescue
+4. **A structured receipt is saved** -- **PASSED**
+   - receipt inspectable and verifiable via `aragora receipt inspect/verify`
+   - receipt also persisted to receipt store (commit 97074e28c)
+5. **The result is visible on a product surface** -- **PASSED**
+   - receipts visible via `/api/v2/receipts`, dashboard ReceiptsBrowser, share links
+   - `aragora receipt list` shows quickstart receipts
+6. **KM ingestion or KM stop condition is explicit** -- **PASSED**
+   - truthful message: "ingestion skipped (quickstart uses lightweight KM)"
+   - guidance: "Use 'aragora ask' or 'aragora decide' for full KM writeback"
+7. **Operator noise is bounded** -- **PASSED**
+   - embedding dimension mismatch demoted to DEBUG (commit 5333ada7d)
+   - LLM chain-of-thought preamble stripped from summary output
+   - final message shows clear next steps
 
 ## Strict Execution Order
 

@@ -1,6 +1,6 @@
 # Next Steps (Canonical)
 
-Last updated: 2026-03-23
+Last updated: 2026-03-24
 
 This is the single source of truth for short-horizon execution priorities.
 [CANONICAL_GOALS](../CANONICAL_GOALS.md) defines what Aragora is and why.
@@ -12,78 +12,88 @@ This is the single source of truth for short-horizon execution priorities.
 ## Current Reality
 
 - Historical program epics still matter as lineage even though they are no longer the live gate: [#804](https://github.com/synaptent/aragora/issues/804), [#805](https://github.com/synaptent/aragora/issues/805), and [#806](https://github.com/synaptent/aragora/issues/806).
-- `main` now contains the structural product-loop slices that were missing earlier in March: ProviderRouter-backed debate selection, KM retrieval and writeback, versioned API-key endpoints, the onboarding/get-started flow, truthful dashboard/integrations state, live demo wiring, queue/workbench productization, and quickstart fail-closed behavior.
-- Current repo proof is materially stronger than the previous docs claimed. On current `main`, this focused verification passes:
+- `main` now contains the structural product-loop slices that were missing earlier in March, plus the live founder loop proof, Phase 2 truth-seeking wiring, and the inbox trust wedge dogfood surface.
+- The focused test baseline on current `main`:
 
   ```bash
   python3 -m pytest tests/e2e/test_user_journey.py tests/cli/test_quickstart.py -q
   ```
 
-  Result on March 23, 2026: `57 passed` in `33.75s`.
+  Result on March 24, 2026: `71 passed` in `34.2s`.
 
-- That proof matters, but it is still a controlled proof:
-  - `tests/e2e/test_user_journey.py` validates a mocked end-to-end founder loop
-  - `tests/cli/test_quickstart.py` validates the quickstart contract and fail-closed behavior
-- It does **not** prove that the live founder loop is ready for external users without operator babysitting.
-- GitHub's open issue set is no longer a truthful PMF map. As of March 23, 2026, the only open issues are enterprise-assurance items: [#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), and [#509](https://github.com/synaptent/aragora/issues/509).
-- Therefore the next live lane is **dogfood-first PMF proof**, not design-partner GTM, not sales, and not more generic substrate work.
+  Extended suite (including truth_scorer, prover_estimator, cross_verification):
+
+  ```bash
+  python3 -m pytest tests/e2e/test_user_journey.py tests/cli/test_quickstart.py \
+    tests/debate/test_truth_scorer.py tests/debate/test_prover_estimator.py \
+    tests/debate/test_cross_verification.py -q
+  ```
+
+  Result: `125 passed` in `35.1s`.
+
+- **The live founder loop is now proven repeatable.** Five consecutive live runs completed successfully on March 24, 2026 (35-62s range, all producing valid receipts). Receipts are now persisted to the receipt store, making them visible via the API (`/api/v2/receipts`), dashboard, and `aragora receipt list`.
+- The acceptance checklist items that were open on March 23 are now closed:
+  - Readiness: explicit, provider state shown before run starts (**passed**)
+  - Quickstart enters live path or fails closed: no silent fallback (**passed**)
+  - Live debate completes: 5/5 runs, 35-62s (**passed**)
+  - Structured receipt saved: verified via `receipt inspect` and `receipt verify` (**passed**)
+  - Result visible on product surface: receipts persist to store for API/dashboard (**passed**, commit 97074e28c)
+  - KM ingestion: truthful explicit stop with guidance message (**passed**)
+  - Operator noise bounded: embedding warnings demoted, summary preamble cleaned (**passed**)
+- The next lane is **dogfooding the second workflow** (inbox trust wedge) and **design partner readiness**.
+- GitHub's open issue set remains enterprise-assurance items: [#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), and [#509](https://github.com/synaptent/aragora/issues/509).
 
 ## Execution Order
 
-### 1) Prove The Canonical Founder Loop Live
+### 1) ~~Prove The Canonical Founder Loop Live~~ DONE (March 24, 2026)
 
-- Run the live founder loop from the actual product surfaces and CLI path:
-  - health / readiness
-  - API-key or provider readiness
-  - live debate execution
-  - structured receipt save + inspect + verify
-  - visible result surface
-  - KM ingestion or a truthful explicit stop
-- Use [PMF_DOGFOOD_EXECUTION_PLAN](../plans/PMF_DOGFOOD_EXECUTION_PLAN.md) as the runbook and acceptance checklist.
-- Treat this as the current gate for PMF. Do not claim "operational" or "design-partner ready" until this live proof is repeatable.
+The canonical founder loop is proven repeatable on `main`:
+- 5/5 consecutive live runs completed (35-62s range)
+- All acceptance checklist items pass (see Current Reality above)
+- Receipts persist to store for API/dashboard visibility
+- Summary output is clean (preamble stripped, noise demoted)
+- Commits: 5333ada7d, 97074e28c, 650f9c164
 
-### 2) Convert Live Failures Into Bounded PMF Blockers
+### 2) Dogfood The Second Workflow (Inbox Trust Wedge) — CURRENT GATE
 
-- If the founder loop fails, capture the exact command transcript, observed stop condition, and affected surface.
-- Reopen or create GitHub issues only after reproducing a concrete live blocker.
-- Do not revive broad umbrella issues without current evidence.
+The inbox trust wedge is structurally complete (~3,900 LOC) and the CLI is dogfood-ready:
+- `aragora triage auth` — interactive Gmail OAuth flow (commit f045d653c)
+- `aragora triage run --dry-run` — preview decisions without executing actions
+- `aragora triage run --auto-approve` — full automated pipeline
+- `aragora triage status` — shows configuration readiness
 
-### 3) Use Idea-To-Execution / Nomic Only On Those PMF Blockers
+Remaining to dogfood:
+- Configure Gmail OAuth credentials and run `aragora triage auth`
+- Execute `aragora triage run --dry-run` on a real inbox
+- Review proposed actions and verify receipt quality
+- Execute a live triage batch and confirm receipt-gated actions work
 
-- Compile PMF blocker sources through:
+### 3) Productize The Prompt-to-Spec Pipeline
 
-  ```bash
-  python3 -m aragora.cli.main pipeline dogfood \
-    --source-file docs/plans/PMF_DOGFOOD_EXECUTION_PLAN.md \
-    --output-dir .aragora/dogfood/pmf \
-    --max-goals 3 \
-    --budget-limit 10 \
-    --time-limit-hours 4 \
-    --json
-  ```
+`aragora spec` is proven end-to-end (~23s with gpt-4o-mini):
+- Decomposes vague prompts into structured intents
+- Generates specifications with success criteria and risk registers
+- Supports `--skip-interrogation`, `--skip-research`, `--dry-run`
 
-- The pipeline is now a product-completion tool, not a reason to widen scope.
-- Every generated lane must map to a founder-loop acceptance failure or a direct blocker to that failure.
+Remaining:
+- Add `aragora spec` to the onboarding flow as a second entry point alongside `quickstart`
+- Wire spec output into `aragora decide` for debate-driven validation
+- Surface specs in the dashboard
 
-### 4) Run Bounded Swarm / Ralph Repair Lanes
+### 4) Design Partner Outreach
 
-- Keep execution narrow, evidence-backed, and human-gated.
-- Prefer one blocker tranche at a time.
-- Re-run the founder loop after each landed blocker tranche before widening scope.
+The founder loop is repeatable. The sales point is now:
+- Clean live demo: `aragora quickstart` produces a trustworthy receipt in <60s
+- Receipts are visible on API/dashboard/share-link surfaces
+- EU AI Act compliance bundle generates from real receipts
+- Inbox trust wedge provides a second workflow for retention testing
 
-### 5) Dogfood The Second Workflow Only After The Founder Loop Holds
+Use the [PMF_SCORECARD](PMF_SCORECARD.md) to evaluate design partners.
 
-- Once the founder loop is repeatable, dogfood the inbox trust wedge and adjacent real-user workflows.
-- The second workflow exists to test retention and repeatability, not to bypass the founder-loop gate.
+### 5) Enterprise Assurance (After Design Partner Validation)
 
-### 6) Design Partner Outreach Comes After Repeatable Live Proof
-
-- The right sales point is not "the repo is large" or "all epics are closed."
-- The right sales point is a clean, repeatable founder loop with truthful receipts and bounded operator recovery when something fails.
-
-### 7) Enterprise Assurance Remains Parked
-
-- [#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), and [#509](https://github.com/synaptent/aragora/issues/509) are real work, but they follow PMF proof rather than precede it.
+- [#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), and [#509](https://github.com/synaptent/aragora/issues/509) are real work.
+- Kickoff after at least 1 design partner is engaged and scoring above 65 on the PMF scorecard.
 
 ## Operating Rules
 

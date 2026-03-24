@@ -1,8 +1,8 @@
 # Aragora Evolution Roadmap
 
-> **Generated**: 2026-02-27
+> **Generated**: 2026-02-27 | **Last updated**: 2026-03-24
 > **Methodology**: Vague founder prompt → multi-agent research → structured interrogation → refined spec
-> **Status**: Approved for implementation
+> **Status**: Phases 0-2 shipped and proven. Phases 3-6 in progress or planned.
 
 ## Vision
 
@@ -16,7 +16,7 @@ Aragora is the Decision Intelligence Platform — the only system that takes a v
 | Cryptographic decision receipts | - | - | - | - | - | **Yes** |
 | Self-improving agent orchestration | - | - | - | - | - | **Yes** |
 | Idea → Spec → Code pipeline | Partial | Partial | - | - | Yes | **Yes** |
-| Obsidian bidirectional sync | - | - | - | - | - | **Planned** |
+| Obsidian bidirectional sync | - | - | - | - | - | **Shipped** |
 | EU AI Act compliance package | - | - | - | - | - | **Yes** |
 | 43-agent heterogeneous consensus | - | - | - | - | - | **Yes** |
 
@@ -407,11 +407,11 @@ magnitude compared to any single-model platform.**
 
 ---
 
-## Phase 0: Foundation Hardening (Week 1-2)
+## Phase 0: Foundation Hardening (Week 1-2) — SHIPPED
 
-### 0A. Obsidian Bidirectional Sync
+### 0A. Obsidian Bidirectional Sync — SHIPPED
 
-**Current state**: Forward sync only (Obsidian → Knowledge Mound). No reverse flow.
+**Status**: Implemented. `ObsidianAdapter` with `ReverseFlowMixin`, conflict detection, and filesystem watcher.
 
 **Implementation**:
 
@@ -439,9 +439,9 @@ magnitude compared to any single-model platform.**
 - `aragora/connectors/knowledge/obsidian.py` — add watcher, conflict detection
 - `aragora/knowledge/mound/adapters/factory.py` — update registration
 
-### 0B. Extended Thinking Capture
+### 0B. Extended Thinking Capture — SHIPPED
 
-**Rationale**: Quick win. Claude's extended thinking provides transparent reasoning chains. Capture these as debate metadata for explainability.
+**Status**: Implemented. Thinking traces extracted from Anthropic agents and persisted in debate metadata and decision receipts (commit c45a3d359).
 
 **Implementation**:
 
@@ -457,7 +457,9 @@ magnitude compared to any single-model platform.**
 
 ---
 
-## Phase 1: Prompt-to-Spec Engine (Week 2-4)
+## Phase 1: Prompt-to-Spec Engine (Week 2-4) — SHIPPED
+
+**Status**: `aragora spec` CLI command completes in ~23s. Full `aragora/prompt_engine/` module with decomposer, interrogator, researcher, spec_builder, and conductor. Uses gpt-4o-mini for speed. Supports `--skip-interrogation`, `--skip-research`, `--dry-run`, `--depth`, `--profile`.
 
 ### The Core Problem
 
@@ -590,9 +592,13 @@ PROFILE_DEFAULTS = {
 
 ---
 
-## Phase 2: Truth-Seeking Advances (Week 4-6)
+## Phase 2: Truth-Seeking Advances (Week 4-6) — SHIPPED
 
-### 2A. Prover-Estimator Debate Protocol
+All four Phase 2 components are implemented and wired into the live debate pipeline.
+
+### 2A. Prover-Estimator Debate Protocol — SHIPPED
+
+**Status**: 581 LOC engine (`aragora/debate/prover_estimator.py`) + consensus handler wired into `consensus_phase.py`. Activate via `protocol.consensus="prover_estimator"`. 33 unit tests pass.
 
 **Rationale**: Strongest theoretical grounding for debate-based truth-finding. Solves the "obfuscated arguments" problem where a debater hides a flaw.
 
@@ -631,7 +637,9 @@ class ProverEstimatorProtocol(DebateProtocol):
 - Trickster agent naturally fills the Estimator role
 - Existing consensus module tracks the probability chain
 
-### 2B. Cross-Verification Phase
+### 2B. Cross-Verification Phase — SHIPPED
+
+**Status**: 395 LOC engine (`aragora/debate/cross_verification.py`) wired as optional post-debate enrichment in `orchestrator_runner.py`. Set `arena.enable_cross_verification=True`. Computes grounding_delta, adversarial_resistance, hallucination_risk. 14 unit tests pass.
 
 **Rationale**: After each debate round, verify claims against evidence. Catches hallucinations before they influence consensus.
 
@@ -671,7 +679,9 @@ class VerificationPhase:
 
 **Hook**: Integrate via existing `auto_verify_arguments` flag in `PostDebateConfig`.
 
-### 2C. Persuasion vs. Truth Detection
+### 2C. Persuasion vs. Truth Detection — SHIPPED
+
+**Status**: `TruthScorer` (398 LOC) + `RhetoricalAnalysisObserver` (1,211 LOC) both complete. Truth scorer now wired into vote weights via `apply_truth_ratio_bonuses()` in `VoteBonusCalculator`. Enable via `protocol.enable_truth_ratio_weighting=True`. 20 unit tests pass.
 
 **Rationale**: Research shows debate can fail when agents emphasize persuasion over truth. Aragora needs active mitigation.
 
@@ -683,7 +693,9 @@ class VerificationPhase:
 2. Weight evidence-backed claims higher in consensus
 3. Flag "persuasive but unsupported" claims in decision receipts
 
-### 2D. Epistemic Hygiene Mode and Anti-Sycophancy Detection
+### 2D. Epistemic Hygiene Mode and Anti-Sycophancy Detection — SHIPPED
+
+**Status**: Production-ready. ~1,695 LOC across `epistemic_hygiene.py`, `trickster.py`, `trickster_calibrator.py`, and mode registry. Fully integrated into consensus_phase, prompt_assemblers, debate_factory, debate_controller, settlement, presets, vote_bonus_calculator, server handlers, and scheduler. ~3,744 LOC tests.
 
 **Rationale**: Cross-model analysis (March 2026) revealed that frontier models systematically amplify user framings, perform recursive self-awareness as engagement optimization, and inflate metaphors into ontological claims. Aragora's debate engine must detect and counter these failure modes, not reproduce them.
 
@@ -1120,15 +1132,15 @@ for proposal in proposals:
 
 ## Implementation Priority
 
-| Phase | Weeks | Key Deliverable | User Value |
-|-------|-------|----------------|------------|
-| 0 | 1-2 | Obsidian bidirectional sync + extended thinking | "My Obsidian vault feeds debates, results flow back" |
-| 1 | 2-4 | Prompt-to-spec engine | "I type a vague idea, get a professional spec" |
-| 2 | 4-6 | Prover-Estimator protocol + cross-verification | "Debates actually find truth, not just consensus" |
-| 3 | 6-8 | STOP implementation + self-healing tests + pause-refresh cadence | "The system improves itself measurably without drifting" |
-| 4 | 8-10 | Merkle receipt chain + GraphRAG explainability | "Every decision has a cryptographic audit trail" |
-| 5 | 10-14 | Canvas GUI | "Professional, intuitive, not a developer tool" |
-| 6 | 14-18 | Agent team orchestration hardening | "Enterprise-grade, handles day-long debates" |
+| Phase | Weeks | Key Deliverable | User Value | Status |
+|-------|-------|----------------|------------|--------|
+| 0 | 1-2 | Obsidian bidirectional sync + extended thinking | "My Obsidian vault feeds debates, results flow back" | **SHIPPED** |
+| 1 | 2-4 | Prompt-to-spec engine | "I type a vague idea, get a professional spec" | **SHIPPED** |
+| 2 | 4-6 | Prover-Estimator protocol + cross-verification + truth scoring | "Debates actually find truth, not just consensus" | **SHIPPED** |
+| 3 | 6-8 | STOP implementation + self-healing tests + pause-refresh cadence | "The system improves itself measurably without drifting" | Partial (3D shipped) |
+| 4 | 8-10 | Merkle receipt chain + GraphRAG explainability | "Every decision has a cryptographic audit trail" | 4C shipped (EU AI Act) |
+| 5 | 10-14 | Canvas GUI | "Professional, intuitive, not a developer tool" | Partial |
+| 6 | 14-18 | Agent team orchestration hardening | "Enterprise-grade, handles day-long debates" | Planned |
 
 ## Success Criteria
 
