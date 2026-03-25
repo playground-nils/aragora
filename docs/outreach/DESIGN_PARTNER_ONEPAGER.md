@@ -124,22 +124,31 @@ only where the risk justifies it.
 | Real artifacts (sanitized OK): inbox batch, design doc, bounded backlog | Priority feature requests and weekly iteration |
 | Candid feedback on quality, friction, and trust | Co-marketing opportunity (anonymized case studies OK) |
 
-## Who Owns The First Deal Decisions
+## Default Bounded Pilot
 
-Do not treat the first deal as "find one champion and hope they carry everything."
-Aragora has to clear four different decisions:
+Aragora pilots are intentionally narrow. We start with **one workflow, one
+champion, one integration surface, and one agreed metric**. The default offer
+is:
 
-| Role | Typical titles | Decision they own | What they need to see |
-|------|----------------|-------------------|-----------------------|
-| Buyer | CTO, VP Engineering, Head of Platform, founder | Whether this workflow deserves budget, attention, and a live pilot | Narrow scope, credible pain, clear owner, time-to-value |
-| Daily user | Engineering manager, tech lead, triage owner, security analyst | Whether Aragora fits into the weekly operating loop and saves real time | Low-friction workflow, useful receipts, obvious next actions |
-| Evaluator | Staff engineer, platform lead, security/compliance lead | Whether Aragora's evidence and controls are trustworthy enough for consequential use | Receipts, dissent, provenance, review gates, truthful stopping behavior |
-| Blocker | Security, legal, procurement, IT admin, skeptical exec | Whether a specific control, policy, or deployment issue still prevents rollout | Precise answers on data flow, providers, auth, deployment options, exports, and guardrails |
+- **Scope:** Pick one wedge only: decision review, inbox trust wedge, or a
+  bounded backlog lane. Out of scope for the pilot: broad org rollout,
+  autonomous merges, open-ended custom builds, or multi-workflow deployment.
+- **Duration:** Default **4 weeks**. Week 1 gets to the first live receipt.
+  Weeks 2-3 run the real workflow and tighten prompts/policy. Week 4 ends with
+  a go/no-go review.
+- **Success criteria:** First live receipt in 7 days, at least 8 real
+  receipt-backed runs during the pilot (or 3 full cycles for lower-frequency
+  workflows), one agreed operational metric improves, and the champion wants to
+  expand or convert.
+- **Failure criteria:** No live receipt by day 7, repeated manual rescue after
+  week 2, no measurable trust or speed improvement, or no clear expansion path
+  by the final review.
+- **Founder commitment:** The founder personally runs onboarding, joins the
+  first live workflow, reviews failures weekly, ships or supervises pilot-
+  critical fixes, and makes an honest go/no-go call instead of dragging the
+  pilot out.
 
-In smaller teams one person may hold multiple roles, but the decision owners
-should still be named explicitly. A deal is easier to unblock when you know
-whether it is stalled on budget, operator trust, evaluator standards, or a
-hard veto.
+See also: [Bounded pilot structure](../plans/2026-03-24-design-partner-pilot-structure.md)
 
 ## Who This Is For
 
