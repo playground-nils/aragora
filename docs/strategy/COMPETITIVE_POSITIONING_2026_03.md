@@ -4,7 +4,9 @@
 > [CANONICAL_GOALS](../CANONICAL_GOALS.md),
 > [WHY_ARAGORA](../WHY_ARAGORA.md), and
 > [COMMERCIAL_OVERVIEW](../COMMERCIAL_OVERVIEW.md). It adds competitive
-> context and priority ordering based on the current agent-tool landscape.
+> context and priority ordering based on the current agent-tool landscape. For
+> the explicit anti-commodity memo, see
+> [WHY_NOT_GENERIC_AGENTS](./WHY_NOT_GENERIC_AGENTS.md).
 
 ## The Landscape Shift
 

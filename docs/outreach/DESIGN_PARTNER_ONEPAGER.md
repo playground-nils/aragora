@@ -21,9 +21,10 @@ But when something goes wrong, nobody can answer: *why did we decide that?*
 
 ## What Aragora Does
 
-Aragora is a **Decision Integrity Platform**. It orchestrates multiple AI agents
-to adversarially vet decisions, then delivers audit-ready **decision receipts**
-to any channel.
+Aragora is not another generic agent platform or model router.
+It is an **auditable execution control plane** for consequential AI-assisted
+work. Aragora orchestrates multiple AI agents to adversarially vet decisions,
+then delivers audit-ready **decision receipts** to any channel.
 
 ```
 Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack / GitHub / API
@@ -31,21 +32,19 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
 
 ## Core Proof Points
 
-1. **Disagreement becomes useful evidence.** Multiple models challenge each
-   other before work advances, so dissent shows exactly where human judgment is
-   still needed.
+1. **Disagreement as evidence.** Aragora uses heterogeneous models to pressure-test
+   decisions. Convergence matters because it survives challenge; dissent matters
+   because it tells you exactly where human judgment is still required.
 
 2. **Every consequential action has a receipt.** Aragora produces
    audit-ready decision receipts with provenance, votes, confidence, and the
    explicit next action.
 
-3. **Execution is bounded and truthful.** Approval gates, lease-based
-   coordination, and explicit blocker handling are first-class parts of the
-   system, not afterthoughts.
+3. **Truthful execution gates.** Supervisor-backed work orders with receipt gates,
+   lease-based coordination, and explicit merge policy -- not unguarded autonomy.
 
-4. **It fits above the tools you already use.** Aragora complements GitHub,
-   Slack, the terminal, and existing worker runtimes instead of forcing a stack
-   replacement.
+4. **Learning from outcomes.** Debate outcomes feed back into a Knowledge Mound,
+   so the platform improves how it grounds future decisions.
 
 ## What Works End-to-End Today (March 23, 2026)
 
@@ -61,7 +60,7 @@ Onboarding wizard -> API key setup -> ProviderRouter-backed debate
 
 | Capability | Status | Evidence |
 |------------|--------|----------|
-| Multi-agent debate engine (43 agent types, 10+ concurrent) | Production | PR #1182 |
+| Heterogeneous debate engine with explicit dissent trails | Production | PR #1182 |
 | Smart provider routing (cost/quality/latency Pareto) | Wired | PR #1167 |
 | KM-enriched debate context + outcome writeback | Wired | PRs #1168, #1176 |
 | Interactive onboarding wizard (landing to first debate) | Shipped | PR #1170 |
@@ -108,7 +107,7 @@ only where the risk justifies it.
 
 ## What Partners Get
 
-- A self-improving platform that learns from every decision it vets
+- A governed execution layer that makes AI-assisted decisions reviewable
 - Autonomous repo maintenance under explicit policy and receipt gates
 - Audit-ready decision receipts (SHA-256 signed, exportable, verifiable)
 - Priority support, roadmap influence, and direct access to the team
@@ -154,12 +153,12 @@ We are looking for **3-5 design partners** who:
 **Best-fit segments:** Regulated SaaS, FinTech, HealthTech, platform/security teams,
 founder-led teams with painful inbox triage, AI-native teams frustrated by single-model trust gaps.
 
-## Numbers
+## Proof Points
 
 - **216,000+ tests** across 4,700+ test files
-- **3,800+ Python modules** | **3,100+ API operations**
-- **42 knowledge adapters** for cross-system learning
-- **43 agent types** across 6+ LLM providers
+- **Receipt-gated repo improvement** validated on the benchmark path
+- **Inbox trust wedge** shipped from debate to signed receipt to action
+- **Heterogeneous provider support** across CLI, API, and local-model workers
 - **190+ WebSocket event types** for real-time streaming
 - **Python + TypeScript SDKs** (185 Py / 183 TS namespaces)
 
