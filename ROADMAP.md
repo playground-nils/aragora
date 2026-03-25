@@ -69,6 +69,35 @@ position Aragora as a natural adoption path for enterprises facing this deadline
 
 Aragora is the control plane for multi-agent vetted decisionmaking across organizational knowledge and channels. We orchestrate heterogeneous AI agents to debate, synthesize, and deliver defensible decisions through structured vetted decisionmaking—building institutional memory with full audit trails.
 
+## Product Evolution Story
+
+Aragora's roadmap makes the most sense when read as a product evolution:
+
+1. **Debate engine**: the original core was adversarial multi-agent reasoning.
+2. **Decision-integrity platform**: receipts, provenance, calibrated trust, and
+   truthful blockers turned debates into governable decisions.
+3. **Execution control plane**: review, delegation, queueing, and merge/publish
+   gates now extend those integrity guarantees into real execution loops.
+
+This ordering clarifies roadmap focus. Debate is still the core mechanism, but
+it is no longer the full product story. The near-term wedge is decision
+integrity on consequential workflows, and the larger category is the control
+plane that governs execution across worker runtimes and channels.
+
+Implications for prioritization:
+
+- prioritize repeatable control loops such as `aragora review`, the founder
+  loop, inbox triage, and prompt-to-spec/spec-to-execution handoffs
+- improve operator-facing receipts, blocker summaries, and truthful stage
+  transitions before expanding platform breadth
+- treat worker runtimes as substrates Aragora governs, not as products Aragora
+  must replace
+- defer category-expansion bets that outrun PMF, including large orchestras,
+  marketplace surface area, and cryptoeconomic accountability
+
+For the fuller narrative, see
+[docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md](docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md).
+
 ---
 
 ## Stop-Doing Ledger (March 2026)
@@ -238,6 +267,10 @@ Execution priority source of truth: [docs/status/NEXT_STEPS_CANONICAL.md](docs/s
 
 The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use. The March 21-24 work stream changed the material facts: the live founder loop is now proven repeatable, receipts are visible on product surfaces, Phase 2 truth-seeking is wired, and the inbox trust wedge is CLI-ready. The near-term roadmap now prioritizes dogfooding the second workflow and design partner outreach.
 
+That priority ordering follows the product evolution story above: move from a
+strong debate core to trusted decision-integrity surfaces and then to repeatable
+execution-control loops that external users can adopt.
+
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
 ### Q2 2026 Priorities
@@ -253,23 +286,13 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
 - [ ] EU AI Act compliance package — keep packaging warm without displacing PMF loop closure
 
-### Near-Term Dependency Register (March 2026)
+Roadmap focus for the rest of Q2:
 
-In practice, the next proof milestone is a **partner-repeatable proof pack**: a real Gmail inbox dogfood run, a repeatable live demo on truthful public/default surfaces, and operator-visible receipts/blockers that can be shown to design partners. This ordering follows `docs/plans/PMF_DOGFOOD_EXECUTION_PLAN.md`, `docs/plans/ARAGORA_IDEA_TO_EXECUTION_STRATEGY.md`, and `docs/strategy/COMPETITIVE_POSITIONING_2026_03.md`.
-
-| User-facing surface | Current proof state | Next proof milestone | What blocks it now | Unblock sequence |
-| --- | --- | --- | --- | --- |
-| Founder loop CLI (`quickstart`, `aragora spec`) | Founder loop proven repeatable (5/5 runs); prompt-to-spec completes end-to-end in ~23s | Turn the proven loop into a repeatable design-partner walkthrough | The loop is proven technically, but the product still has to feel continuous from credentials and provider routing through visible result and receipt; the proof must become a repeatable partner workflow, not a one-off dogfood win | Keep the default loop truthful end-to-end, then script the live demo around the already-proven receipt path |
-| Inbox trust wedge (`aragora triage`, Gmail, integrations) | OAuth, `--dry-run`, and `--auto-approve` CLI are ready | Dogfood the second workflow on a real Gmail inbox with visible result evidence | No real-inbox run has been captured yet; the broader integrations surface still needs to be trustworthy by default; any live failure must yield an exact blocker transcript instead of operator guesswork | Run the bounded Gmail dogfood, capture the exact command/runtime/stop reason, and route only observed blockers into follow-up work |
-| Public proof surfaces (`/demo`, receipts, dashboard, share links, pipeline live state) | Receipts persist to store and are visible via API/dashboard/share links; public demo page is live | Make the public/default surfaces safe for design-partner demos under live or partial states | `/demo`, integrations status/edit, receipts, and pipeline live state still need to stay truthful under partial/live conditions instead of falling back to optimistic UI theater | Finish truthfulness-by-default on these surfaces, then use them as the external proof layer for partner outreach |
-| Operator review and execution control plane (`aragora review`, swarm/OpenClaw) | OpenClaw fleet is live; pre-merge gate shipped; bounded execution proof exists | Show one operator-grade PR-or-blocker path with canonical provenance, remote review, and explicit next human action | The manual operator pattern is still partly outside Aragora: prompt rendering from leases, canonical lane ownership, and stop-at-PR-or-blocker enforcement still need to become first-class operator surfaces | Tighten receipt/review/blocker summaries, preserve canonical provenance on every lane, and make the conductor/integrator view the default operating surface |
-| Compliance proof pack (`aragora compliance export`, EU AI Act bundle) | EU AI Act bundle already verifies end-to-end with real quickstart receipts | Attach compliance-ready artifacts to a proofed core workflow without displacing PMF work | Compliance is commercially downstream of PMF proof; it depends on a usable, design-partner-ready product loop and repeated use of the real review/receipt path | Keep packaging warm, but only promote it after the inbox/design-partner proof is repeatable |
-
-Critical-path dependency order for the near term:
-- Prove the second workflow on a real Gmail inbox.
-- Keep the public/default proof surfaces truthful under live and partial states.
-- Package the proven founder loop plus inbox wedge into a repeatable design-partner demo.
-- Layer compliance and assurance packaging on top of that proven workflow, not ahead of it.
+- make the review, inbox, and founder-loop paths feel like one product surface
+- keep receipts, operator summaries, and truthful blocker handling ahead of new
+  orchestration breadth
+- validate the decision-integrity wedge with real users before expanding into
+  broader control-plane packaging
 
 ### Q3 2026 Priorities
 - [ ] 10+ agent coordination at enterprise scale ([#815](https://github.com/synaptent/aragora/issues/815))
@@ -279,6 +302,10 @@ Critical-path dependency order for the near term:
 - [ ] Vertical packages: Healthcare (FHIR/HIPAA), Financial Services (SOX/audit), Legal
 - [ ] Skills marketplace pilot (community agent templates)
 - [ ] Kubernetes Operator for automated horizontal scaling
+
+Q3 sequencing note: only expand enterprise scale, compliance, and category
+surface area as the consequence of proven decision-integrity workflows, not as a
+substitute for them.
 
 ### Q4 2026 Priorities
 - [ ] Cross-organization federation foundation

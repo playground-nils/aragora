@@ -14,13 +14,7 @@ receipts, provenance, and truthful gates.
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll
-have a working debate in under a minute. For a deeper overview, see [Start
-Here](docs/START_HERE.md). For strategic framing, see [Message Architecture
-(March 2026)](docs/strategy/MESSAGE_ARCHITECTURE_2026_03.md), [Competitive
-Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md),
-and [When To Use Aragora Vs Execution
-Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md).
+**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll have a working debate in under a minute. For a deeper overview, see [Start Here](docs/START_HERE.md). For strategic framing, see [Competitive Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md), [Product Evolution Story (March 2026)](docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md), and [When To Use Aragora Vs Execution Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md).
 
 | I want to... | Install |
 |--------------|---------|
@@ -43,6 +37,23 @@ Why teams adopt Aragora:
 - **Every consequential action has a receipt.** Review, provenance, confidence, and next steps stay inspectable.
 - **Execution is bounded and truthful.** Approval gates and blocker handling are explicit.
 - **It fits above existing tools.** Use Aragora when review and governance matter; keep direct runtimes when raw speed is enough.
+
+## Product Evolution
+
+Aragora's product story has three layers:
+
+1. **Debate engine**: structured adversarial reasoning made model disagreement
+   useful instead of hidden.
+2. **Decision-integrity platform**: receipts, provenance, dissent, and truthful
+   blockers turned debates into inspectable decisions.
+3. **Execution control plane**: those same integrity guarantees now govern
+   review, delegation, merge gates, and other consequential execution flows.
+
+That sequence matters for roadmap focus. Debate remains the core mechanism, but
+the product wedge is decision integrity, and the company-scale opportunity is
+the control plane above worker runtimes. The current roadmap therefore favors
+repeatable review, inbox, and spec-to-execution loops over generic orchestration
+breadth. See [Product Evolution Story (March 2026)](docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md) for the full narrative.
 
 ## Try It Now
 
