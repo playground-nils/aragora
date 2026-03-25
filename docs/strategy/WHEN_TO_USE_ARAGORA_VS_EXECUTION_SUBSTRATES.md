@@ -3,6 +3,10 @@
 This is the practical decision table for operating Aragora alongside tools like
 Codex, Claude Code, OpenCode, and Pi.
 
+The explicit boundary is captured in the [Non-Goals Ledger](NON_GOALS_LEDGER.md):
+Aragora is the control plane above execution substrates, not a generic
+autonomous-agent platform that tries to replace them.
+
 ## Default Rule
 
 Use the **simplest layer that preserves the needed truthfulness**.
