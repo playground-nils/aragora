@@ -509,7 +509,7 @@ function DecisionSnapshot({
     tone === "live" ? "text-[var(--acid-green)]" : "text-sky-700";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <h3
         className={`font-semibold uppercase ${accentClass}`}
         style={EYEBROW_TEXT_STYLE}

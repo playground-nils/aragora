@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { getEnvWarnings, IS_DEV_MODE, type EnvWarning } from '@/config';
 
 const DISMISS_KEY = 'aragora-config-warnings-dismissed';
@@ -18,6 +19,7 @@ export function ConfigHealthBanner() {
   const [dismissed, setDismissed] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [hasDomainWarning, setHasDomainWarning] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     setMounted(true);
@@ -57,6 +59,9 @@ export function ConfigHealthBanner() {
 
   // Don't show if no warnings or dismissed
   if (warnings.length === 0 || dismissed) return null;
+
+  // Keep the public demo surface visually clean during local/dev checks.
+  if (pathname === '/demo' || pathname?.startsWith('/demo/')) return null;
 
   // Don't show in production unless there are errors
   const hasErrors = warnings.some((w) => w.severity === 'error');
