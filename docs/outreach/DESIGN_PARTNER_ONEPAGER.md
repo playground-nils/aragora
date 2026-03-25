@@ -81,7 +81,30 @@ Onboarding wizard -> API key setup -> ProviderRouter-backed debate
 | EU AI Act compliance artifacts (85/100 score) | Production | |
 | 210,000+ tests across 5,000+ test files | CI | |
 
-## First Design Partner Workflow
+## What We Can Prove Today
+
+- **Better governed decisions than a single-model workflow.** Aragora already
+  proves multi-model challenge, explicit dissent, signed receipts, and
+  truthful stopping behavior on bounded workflows.
+- **Repeatable live proof on the founder loop.** 5/5 consecutive live runs
+  passed on March 24, 2026, with receipts visible on API/dashboard surfaces.
+- **Receipt-before-action on consequential flows.** The inbox trust wedge and
+  bounded repo workflows are built so action is gated by review artifacts, not
+  one model's unchecked output.
+
+## What We Are Still Proving
+
+- **Quantified quality delta vs the strongest single-model baseline.** We have
+  strong internal debate-quality evidence and real dogfood wins, but we still
+  need published catch-rate deltas on partner workflows.
+- **One fully continuous partner user journey.** Routing, KM enrichment,
+  receipt visibility, and UI continuity are materially better on `main`, but
+  one repeatable external proof is still owed.
+- **High-impact external verification.** Multi-model review is stronger than
+  single-model review, but correlated failure and coordinated compromise are
+  not fully eliminated without stricter external verification gates.
+
+## Three Proof Surfaces for Partners
 
 For the first design partner cohort, we are intentionally starting with **one
 workflow**, not the whole platform:
