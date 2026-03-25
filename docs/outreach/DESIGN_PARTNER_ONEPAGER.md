@@ -84,21 +84,22 @@ Onboarding wizard -> API key setup -> ProviderRouter-backed debate
 | EU AI Act compliance artifacts (85/100 score) | Production | |
 | 210,000+ tests across 5,000+ test files | CI | |
 
-## Three Proof Surfaces for Partners
+## First Design Partner Workflow
 
-**1. Decision Review.** Run any artifact (spec, PR, architecture proposal) through
-multi-agent debate. Get a receipt with consensus, dissent, confidence, and provenance.
-Share it on Slack, export as PDF/MD/JSON.
+For the first design partner cohort, we are intentionally starting with **one
+workflow**, not the whole platform:
 
-Dissent is not a product flaw here. It is the part of the output that tells an
-operator where judgment is still required before they approve or act.
+**Inbox Trust Wedge.** Gmail -> adversarial debate -> signed receipt -> CLI approval
+-> action (`archive`, `star`, `label`, `ignore`).
 
-**2. Autonomous Repo Improvement.** Point Aragora at bounded engineering work.
-The Ralph loop: spec -> deliverable -> cross-model review -> repair -> PR -> merge.
-Zero operator intervention on the validated benchmark path.
+Why this is first:
 
-**3. Inbox Trust Wedge.** Gmail -> adversarial debate -> signed receipt -> CLI approval
--> action (archive/star/label). Receipt-before-action is non-negotiable.
+- it is already the narrowest credible proof surface on `main`
+- it exercises Aragora's real differentiator: receipt-gated actioning
+- success is measurable in recall, override rate, latency, and time saved
+
+Decision review and autonomous repo improvement remain important proof surfaces,
+but they are **not** the first design-partner outreach motion.
 
 ## Pain Patterns That Create Real Urgency
 
@@ -160,15 +161,14 @@ See also: [Bounded pilot structure](../plans/2026-03-24-design-partner-pilot-str
 
 We are looking for **3-5 design partners** who:
 
-- Feel real pain from review latency, manual triage, audit evidence work, or bounded engineering backlog throughput
-- Have one recurring workflow with a clear trigger, owner, and success/failure outcome
-- Have a forcing event in the next 90 days: missed issue, scaling bottleneck, audit request, or pressure to trust more AI-assisted execution
-- Can start narrow (one receipt-gated workflow) before expanding
-- Can name the buyer, daily user, evaluator, and likely blocker for the first workflow
-- Have a champion who can coordinate artifacts, review receipts, and pull the right decision owner into the weekly loop
+- Have a painful Gmail or Google Workspace inbox triage workflow with a single clear owner
+- Handle consequential messages where misses are costly: revenue, recruiting, partnerships, investor updates, or executive follow-up
+- Can start with `archive`, `star`, `label`, and `ignore` before asking for reply/send automation
+- Want explicit receipts and human approval before actions execute
+- Have a champion who can provide sample artifacts, review receipts, and join a weekly loop
 
-**Best-fit segments:** Regulated SaaS, FinTech, HealthTech, platform/security teams,
-founder-led teams with painful inbox triage, AI-native teams frustrated by single-model trust gaps.
+**Best-fit segments:** founder-led B2B teams, executives or chiefs of staff with painful inbox overload,
+business development leaders, and recruiting-heavy operators who already feel the cost of manual triage.
 
 ## Numbers
 
