@@ -294,6 +294,8 @@ execution-control loops that external users can adopt.
 
 That outreach now needs a practical buyer-menu story, not just an agent-landscape story. The real substitutes are status quo coordination, generic agents, bespoke automation, and human-only review. Aragora's go-to-market burden is to show where it should sit above or replace those defaults on consequential workflows.
 
+The external market now matches Aragora's wedge. OpenAI, Anthropic, GitHub, and Google all ship agentic execution surfaces; the scarce layer is increasingly operator control, truthful stopping, and auditable action. Roadmap priority should stay on receipt-before-action workflows and control-plane truthfulness, not generic orchestration breadth.
+
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
 Future-evolution framing: [docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md](docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md).
