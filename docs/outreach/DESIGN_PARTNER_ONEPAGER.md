@@ -18,6 +18,7 @@ But when something goes wrong, nobody can answer: *why did we decide that?*
 - **No audit trail.** AI outputs are ephemeral. Decisions evaporate.
 - **Single-model blind spots.** One LLM = one perspective. No adversarial vetting.
 - **Compliance gaps.** Regulators want explainability. You have chat logs. EU AI Act enforcement begins August 2, 2026.
+- **Painful recurring queues.** PR review, inbox triage, and bounded execution all speed up with AI until trust breaks at the approval step.
 
 ## What Aragora Does
 
@@ -88,23 +89,17 @@ Zero operator intervention on the validated benchmark path.
 **3. Inbox Trust Wedge.** Gmail -> adversarial debate -> signed receipt -> CLI approval
 -> action (archive/star/label). Receipt-before-action is non-negotiable.
 
-## Common Objections
+## Pain Patterns That Create Real Urgency
 
-**"Why not just use Codex, Claude Code, or OpenCode?"**
-Those tools are worker runtimes. Aragora governs the layer above them: review,
-receipts, provenance, dissent, and truthful stopping behavior.
+The best early partners are not buying generic AI governance. They are trying to
+fix one painful recurring queue before the next miss, audit, or scaling cliff.
 
-**"Won't this be slower than a single model?"**
-Yes, and that is the point. Use the simplest layer that preserves the needed
-truthfulness. Aragora is for consequential work, not every autocomplete.
-
-**"Are receipts just logs?"**
-No. A receipt explains who said what, what evidence was used, why the system
-advanced or stopped, and what the next human action is.
-
-**"Do we have to replace our current tools?"**
-No. Aragora sits above the tools your team already uses and adds governance
-only where the risk justifies it.
+| Pain pattern | Trigger event | Start here |
+|---|---|---|
+| Consequential review bottleneck | A bad escape, rollback, security miss, or too many AI-generated changes for current reviewers to vet well | Decision Review |
+| Manual triage overload | Missed escalation, SLA pressure, executive inbox pain, or operator bandwidth collapse | Inbox Trust Wedge |
+| Bounded engineering backlog | Repetitive but consequential work is piling up, and the team does not trust ungated autopilot | Autonomous Repo Improvement |
+| Audit evidence scramble | Audit request, procurement review, incident postmortem, or AI-governance question from customers or leadership | Layer decision receipts onto whichever workflow already hurts |
 
 ## What Partners Get
 
@@ -118,7 +113,7 @@ only where the risk justifies it.
 
 | From You | From Us |
 |----------|---------|
-| One bounded recurring workflow with a clear trigger | Free access during partner period |
+| One bounded recurring workflow with a clear trigger and downside if wrong | Free access during partner period |
 | 30 min onboarding + weekly 30 min check-in for 4-6 weeks | Hands-on onboarding to first receipt |
 | Named buyer, daily user, evaluator, and likely blocker | Role-specific materials for each decision owner |
 | Real artifacts (sanitized OK): inbox batch, design doc, bounded backlog | Priority feature requests and weekly iteration |
@@ -147,6 +142,7 @@ We are looking for **3-5 design partners** who:
 
 - Feel real pain from review latency, manual triage, audit evidence work, or bounded engineering backlog throughput
 - Have one recurring workflow with a clear trigger, owner, and success/failure outcome
+- Have a forcing event in the next 90 days: missed issue, scaling bottleneck, audit request, or pressure to trust more AI-assisted execution
 - Can start narrow (one receipt-gated workflow) before expanding
 - Can name the buyer, daily user, evaluator, and likely blocker for the first workflow
 - Have a champion who can coordinate artifacts, review receipts, and pull the right decision owner into the weekly loop

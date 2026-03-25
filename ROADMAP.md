@@ -54,8 +54,8 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 
 **Remaining tracked priority work:**
 - Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
-- Clear the design-partner onboarding readiness checklist for the live founder loop (`docs/plans/2026-03-25-design-partner-onboarding-readiness-checklist.md`)
-- Prepare for design partner outreach with repeatable live demo and evidence pack
+- Prepare for design partner outreach with repeatable live demo
+- Lock first-cohort design partner targeting around three recurring pains: consequential review bottlenecks, manual triage overload, and bounded execution backlog; treat audit-evidence scramble as the urgency amplifier
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 **Founder risk register:** See [docs/plans/FOUNDER_RISK_REGISTER_2026_03.md](docs/plans/FOUNDER_RISK_REGISTER_2026_03.md) for the current PMF, trust, onboarding, ops, and technical cohesion tripwires and direct mitigations.
@@ -251,6 +251,8 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
 - [x] GitHub Actions pre-merge gate (`aragora-review-gate.yml` shipped)
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
+- [x] Define the first-cohort pain taxonomy and trigger rubric for design partner targeting
+- [ ] Validate 3-5 design partner conversations against the recurring-workflow + forcing-event qualification rule
 - [ ] EU AI Act compliance package — keep packaging warm without displacing PMF loop closure
 
 ### Near-Term Dependency Register (March 2026)
