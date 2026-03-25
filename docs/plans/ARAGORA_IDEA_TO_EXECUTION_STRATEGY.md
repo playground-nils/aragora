@@ -185,6 +185,7 @@ surface must make four things legible:
    result
 3. the state: whether the run is complete, partial, failed, or `needs_human`
 4. the next action: what the operator should do next when the loop stops short
+   of completion
 
 What does **not** count as a visible result:
 
@@ -272,7 +273,7 @@ Without this surface, `needs_human` is only a failure code, not a truthful hando
 ### 6. Durable history / share surface
 
 The outcome must remain retrievable after the original session through a durable
-surface such as dashboard history, API lookup, or share link. Production-worth
+surface such as dashboard history, API lookup, or share link. Production-worthy
 claims require that the result survive beyond the terminal session and be easy
 to reference in sales, review, or audit contexts.
 
