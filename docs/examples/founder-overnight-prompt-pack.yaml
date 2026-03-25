@@ -1,0 +1,223 @@
+bundle_id: founder-overnight-2026-03-24
+objective: >-
+  Drive a bounded overnight founder tranche that sharpens Aragora's roadmap,
+  positioning, wedge, and execution plan without widening into unrelated
+  implementation work.
+repo:
+  name: synaptent/aragora
+  root: /Users/armand/Development/aragora
+  base_ref: origin/main
+shared_constraints:
+  report_requirements:
+    - exact commands run
+    - URLs for issues, PRs, or docs touched
+    - residual risk
+    - truthful stop reason if blocked
+lanes:
+  - lane_id: canonical_narrative
+    owner_role: founder_story_editor
+    title: Define what Aragora is, is not, and why now
+    prompt: >-
+      Produce the canonical founder narrative for Aragora as a crisp category
+      statement. Make the artifact reusable in docs, outreach, and onboarding.
+      Distinguish Aragora from generic agent frameworks and generic chat tools,
+      and include explicit non-goals.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1298
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - README.md
+      - ROADMAP.md
+      - docs/strategy/**
+      - docs/outreach/**
+    verification_commands:
+      - git diff --stat -- README.md ROADMAP.md docs/strategy docs/outreach
+    stop_conditions:
+      - The lane requires live customer research or a broader write scope.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+  - lane_id: icp_wedge
+    owner_role: founder_icp_editor
+    title: Define the first buyer, pain, and trust trigger
+    prompt: >-
+      Define the initial ideal customer profile and the narrowest plausible
+      wedge for Aragora's first paid design partners. Separate buyer, user, and
+      evaluator if they differ, and make exclusion criteria explicit.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1299
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - ROADMAP.md
+      - docs/strategy/**
+      - docs/outreach/**
+    verification_commands:
+      - git diff --stat -- ROADMAP.md docs/strategy docs/outreach
+    stop_conditions:
+      - The lane drifts into broad TAM analysis or enterprise segmentation.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+  - lane_id: execution_map
+    owner_role: founder_execution_editor
+    title: Rebuild the 30/60/90 plan from current repo reality
+    prompt: >-
+      Rebuild the 30/60/90 execution plan from the March 24, 2026 product
+      state. Use the founder loop, inbox wedge, and design partner readiness as
+      the baseline, and include explicit stop-doing guidance.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1300
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - ROADMAP.md
+      - docs/plans/**
+      - docs/strategy/**
+    verification_commands:
+      - git diff --stat -- ROADMAP.md docs/plans docs/strategy
+    stop_conditions:
+      - The lane assumes enterprise expansion before wedge proof.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+  - lane_id: design_partner_motion
+    owner_role: founder_outreach_editor
+    title: Tighten outreach, qualification, and pilot structure
+    prompt: >-
+      Tighten Aragora's design partner motion into a usable founder sales
+      artifact with qualification rules, disqualification rules, evidence to
+      collect, and a bounded pilot structure.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1301
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - docs/outreach/**
+      - docs/plans/**
+      - docs/strategy/**
+    verification_commands:
+      - git diff --stat -- docs/outreach docs/plans docs/strategy
+    stop_conditions:
+      - The lane drifts into CRM tooling or broad brand strategy.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+  - lane_id: pricing_hypotheses
+    owner_role: founder_pricing_editor
+    title: Package the first paid offers without fake precision
+    prompt: >-
+      Produce the first pricing and packaging hypothesis set for Aragora's
+      initial offers. Make uncertainty explicit, define included and excluded
+      scope, and state what evidence would validate or falsify the pricing.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1302
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - docs/strategy/**
+      - docs/outreach/**
+      - docs/plans/**
+    verification_commands:
+      - git diff --stat -- docs/strategy docs/outreach docs/plans
+    stop_conditions:
+      - The lane drifts into billing implementation or procurement sprawl.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+  - lane_id: inbox_wedge_journey
+    owner_role: founder_product_editor
+    title: Define the inbox trust wedge default journey
+    prompt: >-
+      Define the default user journey, truth contract, and success criteria for
+      the inbox trust wedge. State what Aragora can truthfully claim today and
+      where it must stop rather than bluff.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1303
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - ROADMAP.md
+      - docs/plans/**
+      - docs/strategy/**
+      - docs/outreach/**
+    verification_commands:
+      - git diff --stat -- ROADMAP.md docs/plans docs/strategy docs/outreach
+    stop_conditions:
+      - The lane drifts into connector implementation or UI rewrite work.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+  - lane_id: pmf_scorecard
+    owner_role: founder_metrics_editor
+    title: Define the PMF scorecard and weekly operating cadence
+    prompt: >-
+      Define the founder-facing PMF scorecard and weekly review cadence for
+      Aragora. Separate activity metrics from proof metrics and make the
+      triggered decisions explicit.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1304
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - ROADMAP.md
+      - docs/plans/**
+      - docs/strategy/**
+    verification_commands:
+      - git diff --stat -- ROADMAP.md docs/plans docs/strategy
+    stop_conditions:
+      - The lane drifts into analytics plumbing or vanity KPI sprawl.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+  - lane_id: dependency_map
+    owner_role: founder_dependency_editor
+    title: Identify what to ship, defer, and stop doing
+    prompt: >-
+      Produce the near-term roadmap dependency map for Aragora and make the
+      critical path, parallelizable work, defer list, and stop-doing list
+      explicit.
+    source_refs:
+      - https://github.com/synaptent/aragora/issues/1305
+    target_agent: codex
+    review_model: claude
+    allowed_write_scope:
+      - ROADMAP.md
+      - docs/plans/**
+      - docs/strategy/**
+    verification_commands:
+      - git diff --stat -- ROADMAP.md docs/plans docs/strategy
+    stop_conditions:
+      - The lane drifts into unbounded architecture ideation.
+    expected_receipts_artifacts:
+      - issue URL
+      - changed doc paths
+      - residual risk
+
+terminal_outcomes:
+  success:
+    definition: >-
+      The overnight founder tranche produces bounded roadmap and strategy
+      artifacts with truthful receipts and no scope break.
+  needs_human:
+    definition: >-
+      A lane hits a blocker that requires customer input, broader scope, or a
+      manual product decision.
+  stop_and_replan:
+    definition: >-
+      The issue set or write scope no longer matches the tranche objective.
