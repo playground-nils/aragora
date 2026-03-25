@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 import { API_BASE_URL } from "@/config";
 
 interface RecordedEvent {
@@ -262,13 +263,18 @@ function normalizeLiveDebateResult(data: unknown): LiveDebateResult | null {
 }
 
 function formatVerdict(result: LiveDebateResult): string {
-  if (result.final_answer.trim()) {
-    return result.final_answer.trim();
+  const directVerdict = result.final_answer.trim()
+    ? result.final_answer.trim()
+    : result.verdict
+      ? result.verdict.replace(/_/g, " ")
+      : "";
+
+  if (!directVerdict) {
+    return "No verdict returned.";
   }
-  if (result.verdict) {
-    return result.verdict.replace(/_/g, " ");
-  }
-  return "No verdict returned.";
+
+  const synthesizedVerdict = buildVerdictFallback(result, directVerdict);
+  return synthesizedVerdict ?? directVerdict;
 }
 
 function compactHash(value: string, leading = 16, trailing = 10): string {
@@ -290,6 +296,44 @@ function cleanPreviewText(text: string): string {
     .trim();
 }
 
+function containsMarkdownSyntax(text: string): boolean {
+  return /(^|\n)\s*#{1,6}\s+|(^|\n)\s*[-*+]\s+|(^|\n)\s*\d+\.\s+|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)]+\)/m.test(
+    text,
+  );
+}
+
+function normalizeComparableText(text: string): string {
+  return cleanPreviewText(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenOverlapRatio(a: string, b: string): number {
+  const aTokens = new Set(a.split(" ").filter(Boolean));
+  const bTokens = new Set(b.split(" ").filter(Boolean));
+  if (aTokens.size === 0 || bTokens.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function lowerFirst(text: string): string {
+  if (!text) {
+    return text;
+  }
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function splitIntoSentences(text: string): string[] {
   return cleanPreviewText(text)
     .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
@@ -305,6 +349,62 @@ function trimInsight(text: string, maxLength = 170): string {
   const trimmed = text.slice(0, maxLength);
   const boundary = trimmed.lastIndexOf(" ");
   return `${trimmed.slice(0, boundary > 0 ? boundary : maxLength).trim()}…`;
+}
+
+function buildVerdictFallback(
+  result: LiveDebateResult,
+  directVerdict: string,
+): string | null {
+  const normalizedVerdict = normalizeComparableText(directVerdict);
+  if (!normalizedVerdict) {
+    return null;
+  }
+
+  const proposalEntries = Object.entries(result.proposals).filter(([, value]) =>
+    normalizeComparableText(value),
+  );
+
+  if (proposalEntries.length < 2) {
+    return null;
+  }
+
+  const echoesProposal = proposalEntries.some(([, proposal]) => {
+    const normalizedProposal = normalizeComparableText(proposal);
+    if (!normalizedProposal) {
+      return false;
+    }
+
+    if (normalizedVerdict === normalizedProposal) {
+      return true;
+    }
+
+    const shorter = Math.min(normalizedVerdict.length, normalizedProposal.length);
+    const longer = Math.max(normalizedVerdict.length, normalizedProposal.length);
+
+    return (
+      shorter / longer > 0.72 &&
+      tokenOverlapRatio(normalizedVerdict, normalizedProposal) > 0.82
+    );
+  });
+
+  if (!echoesProposal) {
+    return null;
+  }
+
+  const debateLead = result.consensus_reached
+    ? `The returned agents reached a ${Math.round(result.confidence * 100)}% confidence consensus after ${result.rounds_used} round${result.rounds_used === 1 ? "" : "s"}, but they emphasized different tradeoffs.`
+    : "The returned agents surfaced competing positions without a clean consensus.";
+
+  const positionHighlights = proposalEntries
+    .slice(0, 3)
+    .map(([agent, proposal]) => {
+      const firstSentence =
+        splitIntoSentences(proposal)[0] || cleanPreviewText(proposal);
+      return `${formatAgentName(agent)} argued that ${lowerFirst(trimInsight(firstSentence, 130))}`;
+    })
+    .join(" ");
+
+  return `${debateLead} ${positionHighlights}`.trim();
 }
 
 function pickInsight(
@@ -385,12 +485,93 @@ function buildDecisionSnapshot(summary: string): {
     ]) ||
     "Compare the agent positions below before turning this into policy.";
 
+  const normalizedRationale = normalizeComparableText(rationale);
+  let distinctCaution = caution;
+  if (normalizeComparableText(caution) === normalizedRationale) {
+    distinctCaution =
+      pickInsight(sentences, used, [
+        /however/i,
+        /but/i,
+        /risk/i,
+        /uncertaint/i,
+        /cost/i,
+        /friction/i,
+        /latency/i,
+        /false positive/i,
+        /trade-?off/i,
+        /pushback/i,
+      ]) ||
+      "The recommendation still depends on rollout risk, cost control, and human review discipline.";
+  }
+
+  let distinctNextStep = nextStep;
+  const normalizedNextStep = normalizeComparableText(nextStep);
+  if (
+    normalizedNextStep === normalizedRationale ||
+    normalizedNextStep === normalizeComparableText(distinctCaution)
+  ) {
+    distinctNextStep =
+      "Compare the agent positions below before turning this into policy.";
+  }
+
   return {
     recommendation: trimInsight(recommendation, 220),
     rationale: trimInsight(rationale),
-    caution: trimInsight(caution),
-    nextStep: trimInsight(nextStep),
+    caution: trimInsight(distinctCaution),
+    nextStep: trimInsight(distinctNextStep),
   };
+}
+
+function MarkdownBody({
+  text,
+  className,
+}: {
+  text: string;
+  className: string;
+}) {
+  return (
+    <div className={className}>
+      <ReactMarkdown
+        components={{
+          h1: ({ children }) => (
+            <h4 className="mb-3 text-[1.05em] font-semibold leading-7">
+              {children}
+            </h4>
+          ),
+          h2: ({ children }) => (
+            <h4 className="mb-3 text-[1.05em] font-semibold leading-7">
+              {children}
+            </h4>
+          ),
+          h3: ({ children }) => (
+            <h4 className="mb-3 text-[1.02em] font-semibold leading-7">
+              {children}
+            </h4>
+          ),
+          p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+          ul: ({ children }) => (
+            <ul className="mb-3 list-disc space-y-2 pl-5 last:mb-0">
+              {children}
+            </ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="mb-3 list-decimal space-y-2 pl-5 last:mb-0">
+              {children}
+            </ol>
+          ),
+          li: ({ children }) => <li className="pl-1">{children}</li>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          code: ({ children }) => (
+            <code className="rounded bg-[var(--surface-elevated)] px-1.5 py-0.5 text-[0.95em]">
+              {children}
+            </code>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function StatusBadge({
@@ -444,7 +625,7 @@ function ConsensusBar({ confidence }: { confidence: number }) {
   const clamped = Math.max(0, Math.min(confidence, 1));
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       <div className="flex items-center justify-between gap-3 text-[13px] font-medium text-[var(--text-muted)]">
         <span className="uppercase tracking-[0.12em]">
           Consensus confidence
@@ -453,7 +634,10 @@ function ConsensusBar({ confidence }: { confidence: number }) {
           {Math.round(clamped * 100)}%
         </span>
       </div>
-      <div className="h-3 overflow-hidden rounded-full border border-[var(--border)] bg-[var(--surface-elevated)]">
+      <div
+        className="overflow-hidden rounded-full border border-[var(--border)] bg-[var(--surface-elevated)]"
+        style={{ height: "14px" }}
+      >
         <div
           className="h-full bg-[var(--acid-green)]"
           style={{ width: `${clamped * 100}%` }}
@@ -569,10 +753,10 @@ function DetailRow({
     <div
       className="rounded-[14px] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
       style={{
-        padding: compact ? "10px 14px" : "16px 18px",
+        padding: compact ? "9px 13px" : "14px 16px",
         display: "flex",
         flexDirection: "column",
-        gap: compact ? "4px" : "8px",
+        gap: compact ? "3px" : "6px",
       }}
     >
       <dt
@@ -620,36 +804,48 @@ function ExpandableText({
   className,
   buttonLabel,
   surfaceTone,
+  renderMarkdown = false,
 }: {
   text: string;
   collapsedLines: number;
   className: string;
   buttonLabel: string;
   surfaceTone: "surface" | "elevated";
+  renderMarkdown?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const shouldCollapse = text.trim().length > collapsedLines * 110;
   const surfaceColor =
     surfaceTone === "surface" ? "var(--surface)" : "var(--surface-elevated)";
+  const shouldRenderMarkdown = renderMarkdown && containsMarkdownSyntax(text);
+  const previewText = shouldRenderMarkdown ? cleanPreviewText(text) : text;
+  const buttonBorderColor =
+    surfaceTone === "surface"
+      ? "color-mix(in srgb, var(--border) 68%, transparent)"
+      : "color-mix(in srgb, var(--border) 60%, transparent)";
 
   return (
     <div className="space-y-3">
       <div className="relative">
-        <p
-          className={className}
-          style={
-            !expanded && shouldCollapse
-              ? {
-                  display: "-webkit-box",
-                  WebkitBoxOrient: "vertical",
-                  WebkitLineClamp: collapsedLines,
-                  overflow: "hidden",
-                }
-              : undefined
-          }
-        >
-          {text}
-        </p>
+        {shouldRenderMarkdown && (expanded || !shouldCollapse) ? (
+          <MarkdownBody text={text} className={className} />
+        ) : (
+          <p
+            className={className}
+            style={
+              !expanded && shouldCollapse
+                ? {
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: collapsedLines,
+                    overflow: "hidden",
+                  }
+                : undefined
+            }
+          >
+            {previewText}
+          </p>
+        )}
         {!expanded && shouldCollapse ? (
           <div
             className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
@@ -663,8 +859,8 @@ function ExpandableText({
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[14px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/35 hover:text-[var(--acid-green)]"
-          style={{ padding: "9px 14px" }}
+          className="inline-flex items-center gap-2 rounded-full border bg-transparent text-[13px] font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--acid-green)]"
+          style={{ padding: "8px 12px", borderColor: buttonBorderColor }}
         >
           <span>{expanded ? "Show less" : buttonLabel}</span>
           <span
@@ -764,6 +960,7 @@ function LiveResultCard({
                   collapsedLines={4}
                   buttonLabel="Read full verdict"
                   surfaceTone="elevated"
+                  renderMarkdown
                   className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
                 />
               </div>
@@ -809,23 +1006,13 @@ function LiveResultCard({
                         >
                           {formatAgentName(agent)}
                         </div>
-                        <span
-                          className="rounded-full font-semibold uppercase"
-                          style={{
-                            ...LABEL_TEXT_STYLE,
-                            color: accent,
-                            backgroundColor: `${accent}10`,
-                            padding: "8px 12px",
-                          }}
-                        >
-                          Position
-                        </span>
                       </div>
                       <ExpandableText
                         text={proposal}
                         collapsedLines={4}
                         buttonLabel="Read full position"
                         surfaceTone="surface"
+                        renderMarkdown
                         className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty"
                       />
                     </div>
@@ -840,10 +1027,10 @@ function LiveResultCard({
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "32px",
+              padding: "28px",
               display: "flex",
               flexDirection: "column",
-              gap: "18px",
+              gap: "16px",
             }}
           >
             <h3
@@ -875,10 +1062,10 @@ function LiveResultCard({
             <div
               className="border-t border-[var(--border)]"
               style={{
-                paddingTop: "16px",
+                paddingTop: "14px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "10px",
+                gap: "8px",
               }}
             >
               <div
@@ -891,7 +1078,7 @@ function LiveResultCard({
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "10px",
+                  gap: "8px",
                 }}
               >
                 <DetailRow
@@ -917,10 +1104,10 @@ function LiveResultCard({
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "32px",
+              padding: "28px",
               display: "flex",
               flexDirection: "column",
-              gap: "18px",
+              gap: "16px",
             }}
           >
             <h3
@@ -935,10 +1122,10 @@ function LiveResultCard({
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "32px",
+              padding: "28px",
               display: "flex",
               flexDirection: "column",
-              gap: "14px",
+              gap: "12px",
             }}
           >
             <ConsensusBar confidence={result.confidence} />
@@ -947,10 +1134,10 @@ function LiveResultCard({
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "32px",
+              padding: "28px",
               display: "flex",
               flexDirection: "column",
-              gap: "18px",
+              gap: "16px",
             }}
           >
             <h3
@@ -1030,6 +1217,7 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                   collapsedLines={4}
                   buttonLabel="Read full verdict"
                   surfaceTone="elevated"
+                  renderMarkdown
                   className="max-w-2xl text-[17px] leading-8 text-[var(--text)] text-pretty"
                 />
               </div>
@@ -1089,6 +1277,7 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                     collapsedLines={3}
                     buttonLabel="Read full entry"
                     surfaceTone="surface"
+                    renderMarkdown
                     className="max-w-2xl text-[15px] leading-7 text-[var(--text)] text-pretty"
                   />
                   {event.vote && (
@@ -1106,10 +1295,10 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "32px",
+              padding: "28px",
               display: "flex",
               flexDirection: "column",
-              gap: "18px",
+              gap: "16px",
             }}
           >
             <h3
@@ -1133,10 +1322,10 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             <div
               className="border-t border-[var(--border)]"
               style={{
-                paddingTop: "18px",
+                paddingTop: "14px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "12px",
+                gap: "8px",
               }}
             >
               <div
@@ -1149,7 +1338,7 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "12px",
+                  gap: "8px",
                 }}
               >
                 <DetailRow
@@ -1173,10 +1362,10 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "32px",
+              padding: "28px",
               display: "flex",
               flexDirection: "column",
-              gap: "18px",
+              gap: "16px",
             }}
           >
             <h3
@@ -1191,10 +1380,10 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
           <div
             className="rounded-[18px] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-panel)]"
             style={{
-              padding: "32px",
+              padding: "28px",
               display: "flex",
               flexDirection: "column",
-              gap: "14px",
+              gap: "12px",
             }}
           >
             <ConsensusBar confidence={sample.confidence} />
@@ -1353,11 +1542,11 @@ export default function PublicDemoPage() {
         className="mx-auto flex flex-col"
         style={{
           maxWidth: PAGE_SHELL_MAX_WIDTH,
-          padding: "24px 40px 40px",
-          gap: "30px",
+          padding: "20px 40px 36px",
+          gap: "26px",
         }}
       >
-        <header className="mx-auto w-full max-w-[720px] space-y-1.5 text-center">
+        <header className="mx-auto w-full max-w-[720px] space-y-1 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-[var(--acid-green)] sm:text-4xl text-balance">
             Live Demo
           </h1>
@@ -1390,31 +1579,32 @@ export default function PublicDemoPage() {
               </p>
             </div>
             <div
-              className="flex flex-col gap-3 lg:items-end"
-              style={{ maxWidth: "410px" }}
+              className="flex flex-wrap gap-3 lg:justify-end"
+              style={{ maxWidth: "470px" }}
             >
-              <div className="flex flex-wrap gap-3 lg:justify-end">
-                <button
-                  onClick={() => void runLiveDemo()}
-                  disabled={isLoading}
-                  className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-                  style={{ color: "#ffffff", padding: "12px 22px" }}
-                >
-                  {isLoading ? "Running..." : "Run Live"}
-                </button>
-                <Link
-                  href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
-                  className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
-                  style={{ padding: "12px 20px" }}
-                >
-                  Ask Your Own Question
-                </Link>
-              </div>
+              <button
+                onClick={() => void runLiveDemo()}
+                disabled={isLoading}
+                className="rounded-full bg-[var(--acid-green)] text-[15px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ color: "#ffffff", padding: "12px 22px" }}
+              >
+                {isLoading ? "Running..." : "Run Live"}
+              </button>
+              <Link
+                href={`/try?topic=${encodeURIComponent(DEMO_TOPIC)}`}
+                className="rounded-full border border-[var(--border)] text-[15px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/50 hover:text-[var(--acid-green)]"
+                style={{ padding: "12px 20px" }}
+              >
+                Ask Your Own Question
+              </Link>
               <button
                 onClick={() => setShowRecordedSample((current) => !current)}
                 disabled={recordedSamplePinned}
-                className="rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[12px] font-medium tracking-[0.01em] text-[var(--text-muted)] transition-colors hover:border-sky-500/35 hover:text-sky-700 lg:self-end"
-                style={{ padding: "8px 14px" }}
+                className="rounded-full border bg-transparent text-[13px] font-medium tracking-[0.01em] text-[var(--text-muted)] transition-colors hover:text-sky-700"
+                style={{
+                  padding: "9px 14px",
+                  borderColor: "color-mix(in srgb, var(--border) 68%, transparent)",
+                }}
               >
                 {recordedSamplePinned
                   ? "Sample Shown"
