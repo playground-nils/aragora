@@ -1,6 +1,6 @@
 # Aragora Product Roadmap
 
-**Last Updated:** March 24, 2026
+**Last Updated:** March 25, 2026
 
 ---
 
@@ -57,6 +57,8 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 - Clear the design-partner onboarding readiness checklist for the live founder loop (`docs/plans/2026-03-25-design-partner-onboarding-readiness-checklist.md`)
 - Prepare for design partner outreach with repeatable live demo and evidence pack
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
+
+**Founder risk register:** See [docs/plans/FOUNDER_RISK_REGISTER_2026_03.md](docs/plans/FOUNDER_RISK_REGISTER_2026_03.md) for the current PMF, trust, onboarding, ops, and technical cohesion tripwires and direct mitigations.
 
 **EU AI Act enforcement date: August 2, 2026** — the compliance CLI and audit trail infrastructure
 position Aragora as a natural adoption path for enterprises facing this deadline.
