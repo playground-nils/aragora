@@ -106,6 +106,35 @@ Everything outside those outcomes remains backlog or horizon work.
 
 Aragora is the control plane for multi-agent vetted decisionmaking across organizational knowledge and channels. We orchestrate heterogeneous AI agents to debate, synthesize, and deliver defensible decisions through structured vetted decisionmaking—building institutional memory with full audit trails.
 
+## Product Evolution Story
+
+Aragora's roadmap makes the most sense when read as a product evolution:
+
+1. **Debate engine**: the original core was adversarial multi-agent reasoning.
+2. **Decision-integrity platform**: receipts, provenance, calibrated trust, and
+   truthful blockers turned debates into governable decisions.
+3. **Execution control plane**: review, delegation, queueing, and merge/publish
+   gates now extend those integrity guarantees into real execution loops.
+
+This ordering clarifies roadmap focus. Debate is still the core mechanism, but
+it is no longer the full product story. The near-term wedge is decision
+integrity on consequential workflows, and the larger category is the control
+plane that governs execution across worker runtimes and channels.
+
+Implications for prioritization:
+
+- prioritize repeatable control loops such as `aragora review`, the founder
+  loop, inbox triage, and prompt-to-spec/spec-to-execution handoffs
+- improve operator-facing receipts, blocker summaries, and truthful stage
+  transitions before expanding platform breadth
+- treat worker runtimes as substrates Aragora governs, not as products Aragora
+  must replace
+- defer category-expansion bets that outrun PMF, including large orchestras,
+  marketplace surface area, and cryptoeconomic accountability
+
+For the fuller narrative, see
+[docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md](docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md).
+
 ---
 
 ## Stop-Doing Ledger (March 2026)
@@ -276,6 +305,10 @@ Execution priority source of truth: [docs/status/NEXT_STEPS_CANONICAL.md](docs/s
 
 The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use. The March 21-24 work stream changed the material facts: the live founder loop is now proven repeatable, receipts are visible on product surfaces, Phase 2 truth-seeking is wired, and the inbox trust wedge is CLI-ready. The active founder scope for March 25-May 5, 2026 is the six-week operating plan above. Everything else in this section is backlog or horizon unless it directly unblocks that plan.
 
+That priority ordering follows the product evolution story above: move from a
+strong debate core to trusted decision-integrity surfaces and then to repeatable
+execution-control loops that external users can adopt.
+
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
 Future-evolution framing: [docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md](docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md).
@@ -296,14 +329,13 @@ into adjacent workflows and enterprise packaging in sequence.
 - [ ] Prepare the repeatable design partner proof kit after the internal dogfood gate is met (demo script, receipt pack, KPI template, blocker taxonomy)
 - [ ] EU AI Act compliance package — keep packaging warm without displacing PMF loop closure
 
-### Post-Proof Expansion Sequence
+Roadmap focus for the rest of Q2:
 
-These are the intended gates after the current wedge is proven. They are not
-parallel near-term priorities.
-
-1. Deepen the inbox/founder loop until it is clearly painful to remove.
-2. Reuse the same receipt-governed control plane for adjacent consequential flows such as PR review, bounded execution, and merge gating.
-3. Package proven flows into a cohesive workbench and only then widen enterprise hardening, verticals, and long-horizon accountability bets.
+- make the review, inbox, and founder-loop paths feel like one product surface
+- keep receipts, operator summaries, and truthful blocker handling ahead of new
+  orchestration breadth
+- validate the decision-integrity wedge with real users before expanding into
+  broader control-plane packaging
 
 ### Q3 2026 Priorities
 - [ ] Convert repeatable design partner proof into paid expansion in one wedge (2 design partner conversions, 1 additional paid logo, 1 expansion within 60 days)
@@ -314,6 +346,10 @@ parallel near-term priorities.
 - [ ] Vertical packages: Healthcare (FHIR/HIPAA), Financial Services (SOX/audit), Legal
 - [ ] Skills marketplace pilot (community agent templates)
 - [ ] Kubernetes Operator for automated horizontal scaling
+
+Q3 sequencing note: only expand enterprise scale, compliance, and category
+surface area as the consequence of proven decision-integrity workflows, not as a
+substitute for them.
 
 ### Q4 2026 Priorities
 - [ ] Cross-organization federation foundation
