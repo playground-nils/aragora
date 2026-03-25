@@ -176,12 +176,16 @@ That is a much better place to be than the original March 2026 strategy assumed.
 
 1. Close the default product loop on current `main`.
    The immediate job is no longer "generate candidate PRs." It is "make one truthful path work end to end": credentials and provider routing -> debate -> KM-enriched context -> receipt -> visible result.
+2. Establish the provider-path truth contract before widening live-default usage.
+   Saved credentials, env vars, or a green settings form are only `config_present`, not proof that the live route works. Missing keys, rejected keys, provider-selection gaps, and transport failures before the first verified provider response must end as blocked/failed states with explicit next action, not as "live" success.
 2. Make the proof surfaces truthful by default.
    `/demo`, integrations status/edit, receipts, and pipeline live state should reflect actual live or partial state, not optimistic UI theater.
 3. Finish the operator contract for bounded repo execution.
    Every lane should preserve verification evidence, publish completed deliverables after watch exit, review remote PR heads, and end with canonical provenance plus an explicit next manual step when blocked.
 4. Treat the wedge as three bounded proof surfaces, not one generic starter pack.
    The real wedge on `main` is receipt-gated inbox actioning, truthful public/default debate surfaces, and bounded swarm/OpenClaw execution under operator control.
+
+In practice, that means only two classes of non-live output are acceptable: explicitly requested demo/offline output, and visibly labeled fallback output when the operator allowed fallback. Everything else must stop truthfully.
 
 ### Near Term
 
