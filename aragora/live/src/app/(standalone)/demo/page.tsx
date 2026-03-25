@@ -509,7 +509,13 @@ function DecisionSnapshot({
     tone === "live" ? "text-[var(--acid-green)]" : "text-sky-700";
 
   return (
-    <div className="space-y-5">
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "24px",
+      }}
+    >
       <h3
         className={`font-semibold uppercase ${accentClass}`}
         style={EYEBROW_TEXT_STYLE}
@@ -742,14 +748,14 @@ function LiveResultCard({
             }}
           >
             <DecisionSnapshot summary={summary} tone="live" />
-            <div className="border-t border-[var(--border)] pt-6">
+            <div className="border-t border-[var(--border)] pt-10">
               <h3
                 className="font-semibold uppercase text-[var(--acid-green)]"
                 style={EYEBROW_TEXT_STYLE}
               >
                 Full verdict
               </h3>
-              <div className="mt-4">
+              <div className="mt-6">
                 <ExpandableText
                   text={summary}
                   collapsedLines={4}
@@ -998,14 +1004,14 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
             }}
           >
             <DecisionSnapshot summary={sample.verdict} tone="sample" />
-            <div className="border-t border-[var(--border)] pt-6">
+            <div className="border-t border-[var(--border)] pt-10">
               <h3
                 className="font-semibold uppercase text-sky-700"
                 style={EYEBROW_TEXT_STYLE}
               >
                 Recorded verdict
               </h3>
-              <div className="mt-4">
+              <div className="mt-6">
                 <ExpandableText
                   text={sample.verdict}
                   collapsedLines={4}
