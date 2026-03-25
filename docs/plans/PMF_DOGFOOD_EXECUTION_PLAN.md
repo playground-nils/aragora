@@ -12,6 +12,103 @@ The founder loop is proven repeatable: 5/5 consecutive live runs, 35-62s range, 
 
 The current objective is to **dogfood the second workflow** (inbox trust wedge) and **prepare for design partner outreach**.
 
+## Founder Metrics Tree
+
+The founder scorecard should answer one question in decision order:
+
+1. are external users completing consequential workflows and trusting the
+   output enough to come back
+2. if not, which execution bottleneck is preventing that proof
+3. which numbers are merely narrative garnish and should not move roadmap
+
+### Proof Metrics
+
+These are the only metrics that should directly change roadmap priority,
+resource allocation, or go-to-market confidence.
+
+#### Root proof metric
+
+- **Weekly trusted workflow completions**: number of design-partner or
+  founder-operated runs that reach one of three truthful outcomes:
+  accepted action taken, accepted deliverable produced, or explicit
+  needs-human stop with the next action clear.
+
+#### Proof branches
+
+- **Repeat usage**
+  - active design partners who run more than one consequential workflow in a
+    week
+  - percent of users who come back for a second real task within 7 days
+- **Time-to-value**
+  - median time from auth/setup to first trusted visible result with receipt
+  - median time from starting a real inbox or review workflow to terminal truth
+- **Outcome advantage**
+  - measurable delta versus the incumbent path on quality, risk caught, or
+    time saved
+  - examples: review findings caught vs single-model baseline, inbox triage
+    actions accepted vs manually deferred
+- **Workflow-specific PMF proof**
+  - founder loop remains green as a baseline acceptance gate
+  - inbox trust wedge live runs on a real inbox
+  - design-partner workflows completed without hidden operator rescue
+- **Commercial pull**
+  - design partners who request continued use, commit to a pilot, or supply
+    more consequential workflows after the first proof
+
+If proof metrics improve, keep investing. If execution metrics improve but
+proof stays flat, the team is polishing plumbing instead of proving demand.
+
+### Execution Metrics
+
+These are leading indicators and diagnostics. They matter only insofar as they
+lift the proof metrics above.
+
+- **Default journey success**
+  - live founder-loop pass rate
+  - real inbox wedge pass rate
+  - percent of runs with a visible result plus persisted receipt
+- **Truthfulness quality**
+  - percent of failures that end with the correct terminal state
+  - percent of blockers that name the real next human action
+  - false-success and false-block rates
+- **Operator burden**
+  - operator interventions per live run
+  - manual minutes required to get from setup to terminal truth
+  - number of hidden rescue steps discovered during reruns
+- **Latency and reliability**
+  - p50 and p95 runtime for quickstart, prompt-to-spec, and inbox flows
+  - retry rate, timeout rate, and provider failure rate on canonical paths
+  - receipt persistence success and result-surface freshness
+- **Repair velocity**
+  - time from failed proof run to landed fix
+  - time from landed fix to validated rerun
+  - number of reruns required before the proof turns green again
+
+Execution metrics are the engineering dashboard. They are not PMF proof by
+themselves.
+
+### Vanity Metrics
+
+These numbers can be useful as inventory or storytelling context, but they
+must not drive roadmap decisions:
+
+- total agent types, providers, adapters, or integrations
+- total debates, runs, or receipts without accepted outcomes
+- test count, file count, doc count, and repo size
+- GitHub stars, social impressions, newsletter signups, or waitlist growth
+- benchmark wins disconnected from real operator workflows
+- compliance-completeness percentages before repeated workflow usage exists
+- raw demo traffic or `/demo` visits without retained real-task usage
+
+### Decision Rules
+
+- Proof metrics outrank execution metrics.
+- Execution metrics only justify work when they are a credible bottleneck to a
+  proof metric.
+- Vanity metrics never justify a roadmap pivot or shipping priority.
+- The founder loop is now a guardrail metric. The next true proof metric is
+  repeatable external workflow success on the inbox/design-partner wedge.
+
 ## Proven Evidence On `main`
 
 These structural slices are landed and **proven live**:
