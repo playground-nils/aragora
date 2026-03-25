@@ -54,8 +54,8 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 
 **Remaining tracked priority work:**
 - Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
-- Clear the design-partner onboarding readiness checklist for the live founder loop (`docs/plans/2026-03-25-design-partner-onboarding-readiness-checklist.md`)
-- Prepare for design partner outreach with repeatable live demo and evidence pack
+- Productize a canonical founder-facing run taxonomy across CLI/dashboard/share-link surfaces (`auth_failure`, `no_evidence`, `low_confidence`, `conflicting_models`, `blocked_integration`, `truthful_stop`)
+- Prepare for design partner outreach with repeatable live demo
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 **Founder risk register:** See [docs/plans/FOUNDER_RISK_REGISTER_2026_03.md](docs/plans/FOUNDER_RISK_REGISTER_2026_03.md) for the current PMF, trust, onboarding, ops, and technical cohesion tripwires and direct mitigations.
