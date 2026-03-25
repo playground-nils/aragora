@@ -114,21 +114,33 @@ Why this works:
 - receipts and blocker truthfulness are valuable immediately
 - the repo now contains real evidence from queue-produced work, not just demos
 
-## First-Deal Decision Ownership
+## Founder Proof Discipline
 
-The first deals will usually have four distinct decision owners, even if a
-smaller company compresses them into two people:
+Founder messaging should lead with the smallest set of claims that can be
+repeated on current `main` with durable artifacts.
 
-| Role | Owns this decision | What Aragora must prove |
-|------|--------------------|-------------------------|
-| Buyer | Is this worth budget and organizational attention right now? | Clear ROI wedge, narrow pilot, fast time-to-first-receipt |
-| Daily user | Will I actually run this workflow every week? | Low-friction operator path, useful summaries, precise next actions |
-| Evaluator | Do the receipts, dissent, and controls meet the bar for consequential work? | Provenance, review evidence, explicit gates, truthful stopping |
-| Blocker | Is there any security, legal, procurement, or policy issue that still stops rollout? | Exact blocker handling, deployment answers, audit/export story |
+Lead with these three claims:
 
-If Aragora collapses these roles into a generic "champion," the team will
-misread where a deal is stuck. Product and GTM should track them separately and
-build artifacts for each.
+- Aragora can run a live decision review and produce a stored receipt
+- Aragora can show why the system advanced or stopped
+- Aragora can gate bounded actions on persisted receipts and explicit policy
+
+Support those claims with concrete proof packets, not generic category language:
+
+- live run plus receipt ID or share link
+- exported or stored receipt showing consensus, dissent, provenance, and outcome
+- explicit gate or approval surface for any action claim
+
+Do not lead with:
+
+- "43 agent types"
+- provider breadth
+- connector counts
+- generic orchestration claims
+- autonomy claims that depend on a benchmark or a not-yet-live-proven path
+
+The detailed claim boundary and proof requirements live in
+`docs/outreach/FOUNDER_PROOF_POINTS_LIBRARY.md`.
 
 ## Competitor Map
 
