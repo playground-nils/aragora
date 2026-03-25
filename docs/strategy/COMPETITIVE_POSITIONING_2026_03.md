@@ -4,9 +4,9 @@
 > [CANONICAL_GOALS](../CANONICAL_GOALS.md),
 > [WHY_ARAGORA](../WHY_ARAGORA.md), and
 > [COMMERCIAL_OVERVIEW](../COMMERCIAL_OVERVIEW.md). It adds competitive
-> context and priority ordering based on the current agent-tool landscape. For
-> the explicit anti-commodity memo, see
-> [WHY_NOT_GENERIC_AGENTS](./WHY_NOT_GENERIC_AGENTS.md).
+> context and priority ordering based on the current agent-tool landscape. The
+> explicit product boundary is tracked in the
+> [Non-Goals Ledger](NON_GOALS_LEDGER.md).
 
 ## One-Sentence Framing
 
@@ -23,7 +23,13 @@ That is a more credible category than:
 
 ## What The Repo Actually Shows Today
 
-These are the product surfaces that are easy to defend from the current repo:
+## Category Boundary
+
+Aragora is not a generic autonomous-agent platform. It is the governance and
+truthfulness layer used when AI-assisted execution needs receipts, review,
+provenance, and explicit terminal states.
+
+## What Aragora Should Actually Be
 
 | Repo-visible capability | Evidence in repo | Safe claim |
 |---|---|---|

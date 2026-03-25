@@ -106,34 +106,17 @@ Everything outside those outcomes remains backlog or horizon work.
 
 Aragora is the control plane for multi-agent vetted decisionmaking across organizational knowledge and channels. We orchestrate heterogeneous AI agents to debate, synthesize, and deliver defensible decisions through structured vetted decisionmaking—building institutional memory with full audit trails.
 
-## Product Evolution Story
+## Explicit Non-Goals
 
-Aragora's roadmap makes the most sense when read as a product evolution:
+Aragora is not a generic autonomous-agent platform. The roadmap is constrained
+by the [Non-Goals Ledger](docs/strategy/NON_GOALS_LEDGER.md): we do not try to
+replace worker runtimes, we do not treat agent-count inflation as strategy, and
+we do not sell unattended autonomy as the default story.
 
-1. **Debate engine**: the original core was adversarial multi-agent reasoning.
-2. **Decision-integrity platform**: receipts, provenance, calibrated trust, and
-   truthful blockers turned debates into governable decisions.
-3. **Execution control plane**: review, delegation, queueing, and merge/publish
-   gates now extend those integrity guarantees into real execution loops.
-
-This ordering clarifies roadmap focus. Debate is still the core mechanism, but
-it is no longer the full product story. The near-term wedge is decision
-integrity on consequential workflows, and the larger category is the control
-plane that governs execution across worker runtimes and channels.
-
-Implications for prioritization:
-
-- prioritize repeatable control loops such as `aragora review`, the founder
-  loop, inbox triage, and prompt-to-spec/spec-to-execution handoffs
-- improve operator-facing receipts, blocker summaries, and truthful stage
-  transitions before expanding platform breadth
-- treat worker runtimes as substrates Aragora governs, not as products Aragora
-  must replace
-- defer category-expansion bets that outrun PMF, including large orchestras,
-  marketplace surface area, and cryptoeconomic accountability
-
-For the fuller narrative, see
-[docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md](docs/strategy/PRODUCT_EVOLUTION_STORY_2026_03.md).
+Roadmap work is in scope when it improves receipts, review quality,
+provenance, bounded delegation, or truthful terminalization. Roadmap work is
+out of scope when its main effect is making Aragora look like a generic agent
+substrate.
 
 ---
 
@@ -269,7 +252,7 @@ Default stop-doing calls:
 
 ## 2027 Vision
 
-### Autonomous Agents
+### Governed Automation And Research
 - [x] Self-improving debate protocols (Nomic Loop, operational as of Q1 2026)
 - [x] Autonomous knowledge acquisition (Knowledge Mound Phase A2)
 - [ ] Proactive insight generation
