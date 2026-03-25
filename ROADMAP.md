@@ -303,21 +303,30 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
+### PMF Evidence Ladder
+
+Source of truth: `docs/strategy/PMF_EVIDENCE_LADDER_2026_03.md`.
+
+| Step | Evidence required to unlock the next step | Unlocks |
+|------|-------------------------------------------|---------|
+| Baseline already proven | Founder loop repeatable (5/5 live runs, 35-62s), receipts visible on product surfaces, prompt-to-spec and inbox CLI wired | Internal dogfood on the second workflow |
+| Internal dogfood | 10 consecutive live inbox runs over at least 5 business days, 2 internal operators can run it from docs, >=70% of 20 internal runs end in accepted action, 0 false-success incidents | Repeatable design partner proof |
+| Repeatable design partner proof | 3-5 design partners run real tasks with receipts, 2 partners repeat weekly for 4 consecutive weeks, 2 partners show measurable KPI delta, 2 partners ask for a paid next step | Paid expansion in the same wedge |
+| Paid expansion | 2 design partners convert to paid, 1 additional paid logo closes in the same wedge, 1 paid account expands within 60 days, 8 weeks of active receipt-backed usage without founder-operated rescue | Enterprise hardening and adjacent-workflow expansion |
+
+The roadmap should advance only when the evidence for the current rung is in hand. More infrastructure, provider breadth, or compliance packaging does not substitute for the next proof gate.
+
 ### Q2 2026 Priorities
 - [x] Prove the live founder loop (5/5 runs, 35-62s, all acceptance items pass — March 24, 2026)
 - [x] Productize the founder-loop result surfaces (receipts persist to store for API/dashboard/share-link)
 - [x] Prompt-to-spec engine (`aragora spec` end-to-end in ~23s)
 - [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
 - [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
-- [ ] Complete the six-week founder operating plan ([docs/plans/2026-03-25-six-week-founder-operating-plan.md](docs/plans/2026-03-25-six-week-founder-operating-plan.md))
-- [ ] Dogfood the inbox trust wedge on a real Gmail inbox with daily-use metrics and receipt-backed actions
-- [ ] Produce one repeatable demo pack and receipt-backed case study
-- [ ] Start one weekly design-partner pilot and score prospects against the PMF rubric
+- [ ] Close the internal dogfood gate for the inbox trust wedge on a real Gmail inbox (10 consecutive live runs, 2 operators, 0 false-success incidents)
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
 - [x] GitHub Actions pre-merge gate (`aragora-review-gate.yml` shipped)
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
-- [x] Define the first-cohort pain taxonomy and trigger rubric for design partner targeting
-- [ ] Validate 3-5 design partner conversations against the recurring-workflow + forcing-event qualification rule
+- [ ] Prepare the repeatable design partner proof kit after the internal dogfood gate is met (demo script, receipt pack, KPI template, blocker taxonomy)
 - [ ] EU AI Act compliance package — keep packaging warm without displacing PMF loop closure
 
 ### Near-Term Dependency Register (March 2026)
@@ -339,8 +348,9 @@ Critical-path dependency order for the near term:
 - Layer compliance and assurance packaging on top of that proven workflow, not ahead of it.
 
 ### Q3 2026 Priorities
+- [ ] Convert repeatable design partner proof into paid expansion in one wedge (2 design partner conversions, 1 additional paid logo, 1 expansion within 60 days)
 - [ ] 10+ agent coordination at enterprise scale ([#815](https://github.com/synaptent/aragora/issues/815))
-- [ ] Pentest / SOC 2 engagement kickoff after PMF proof ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
+- [ ] Pentest / SOC 2 engagement kickoff after paid expansion proof, not before ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 - [ ] ERC-8004 on-chain deployment ([#816](https://github.com/synaptent/aragora/issues/816))
 - [ ] Cloud marketplace listings: AWS Marketplace and Azure Marketplace
 - [ ] Vertical packages: Healthcare (FHIR/HIPAA), Financial Services (SOX/audit), Legal
