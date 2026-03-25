@@ -51,8 +51,23 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
 
 ## What Aragora Can Prove Today (March 24, 2026)
 
-These are the only top-line proof points we should lead with in partner
-conversations. Source of truth: `docs/outreach/FOUNDER_PROOF_POINTS_LIBRARY.md`.
+## Canonical Terms For Partner Conversations
+
+Use these phrases consistently in outreach and sales conversations. The full
+internal glossary lives in
+[`docs/strategy/TERMINOLOGY_GLOSSARY.md`](../strategy/TERMINOLOGY_GLOSSARY.md).
+
+- **Debate** = structured adversarial review, not generic multi-agent chatter.
+- **Receipt** = the audit artifact that records evidence, dissent, confidence,
+  and the reason an action did or did not happen.
+- **Trust wedge** = the first narrow workflow where receipt-before-action earns
+  trust. Today that is inbox triage.
+- **Founder loop** = the repeatable live dogfood path the founder runs to prove
+  the product on real work.
+- **Control plane** = the governance layer above worker runtimes that routes
+  work, enforces policy, preserves receipts, and stops truthfully.
+
+## What Works End-to-End Today (March 23, 2026)
 
 | Claim | Status | Minimum proof to show |
 |-------|--------|-----------------------|
