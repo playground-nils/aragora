@@ -14,13 +14,7 @@ receipts, provenance, and truthful gates.
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll
-have a working debate in under a minute. For a deeper overview, see [Start
-Here](docs/START_HERE.md). For strategic framing, see [Message Architecture
-(March 2026)](docs/strategy/MESSAGE_ARCHITECTURE_2026_03.md), [Competitive
-Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md),
-and [When To Use Aragora Vs Execution
-Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md).
+**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll have a working debate in under a minute. For a deeper overview, see [Start Here](docs/START_HERE.md). For strategic framing, see [Competitive Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md), [When To Use Aragora Vs Execution Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md), and [Receipts, Dissent, and Evidence Narrative](docs/strategy/RECEIPTS_DISSENT_EVIDENCE_NARRATIVE_2026_03.md).
 
 | I want to... | Install |
 |--------------|---------|
@@ -199,6 +193,27 @@ Aragora treats each model as an **unreliable witness** and uses structured debat
 | **Calibrated Trust** | ELO rankings and Brier scores track which models are actually reliable on which domains |
 | **Institutional Memory** | Decisions persist across sessions with 4-tier memory and Knowledge Mound (<!-- adpt-count -->42<!-- /adpt-count --> adapters) |
 | **Channel Delivery** | Results route to Slack, Teams, Discord, Telegram, WhatsApp, email, or voice |
+
+### If You're New: How To Read Aragora
+
+Aragora is designed for the moment after an AI recommendation is made, when a buyer, reviewer, or operator asks: "Why should I trust this enough to act?"
+
+Every consequential run is explained through three plain-language elements:
+
+| Term | What it means in practice |
+|---|---|
+| **Receipt** | The record of what was asked, what Aragora recommended, and what should happen next |
+| **Evidence** | The documents, policies, tests, prior decisions, or artifacts Aragora relied on |
+| **Dissent** | The disagreements, residual risks, or open questions that still need human judgment |
+
+The goal is not to make AI sound more certain. The goal is to make the decision legible. A first-time operator should be able to answer four questions in under a minute:
+
+1. What happened?
+2. Why did the system reach that recommendation?
+3. What could still be wrong?
+4. What is the next human action?
+
+That is the purpose of Aragora receipts: not just a log, but a reviewable handoff.
 
 ---
 

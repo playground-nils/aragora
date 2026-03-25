@@ -30,7 +30,13 @@ to any channel.
 Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack / GitHub / API
 ```
 
-## Core Proof Points
+For a first-time operator, the explanation should stay simple:
+
+- **Receipt:** what Aragora recommended and what should happen next
+- **Evidence:** what it looked at before making that recommendation
+- **Dissent:** where reviewers still disagree or want a human to look closer
+
+**What makes it different:**
 
 1. **Disagreement becomes useful evidence.** Multiple models challenge each
    other before work advances, so dissent shows exactly where human judgment is
@@ -40,9 +46,11 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
    audit-ready decision receipts with provenance, votes, confidence, and the
    explicit next action.
 
-3. **Execution is bounded and truthful.** Approval gates, lease-based
-   coordination, and explicit blocker handling are first-class parts of the
-   system, not afterthoughts.
+   In plain English: the receipt is the reviewable record of what happened,
+   why Aragora reached that recommendation, and where uncertainty remains.
+
+3. **Self-improving knowledge loop.** Debate outcomes feed back into a Knowledge Mound
+   (42 adapters), so the platform learns from every decision it vets.
 
 4. **It fits above the tools you already use.** Aragora complements GitHub,
    Slack, the terminal, and existing worker runtimes instead of forcing a stack
@@ -81,6 +89,9 @@ Onboarding wizard -> API key setup -> ProviderRouter-backed debate
 **1. Decision Review.** Run any artifact (spec, PR, architecture proposal) through
 multi-agent debate. Get a receipt with consensus, dissent, confidence, and provenance.
 Share it on Slack, export as PDF/MD/JSON.
+
+Dissent is not a product flaw here. It is the part of the output that tells an
+operator where judgment is still required before they approve or act.
 
 **2. Autonomous Repo Improvement.** Point Aragora at bounded engineering work.
 The Ralph loop: spec -> deliverable -> cross-model review -> repair -> PR -> merge.
