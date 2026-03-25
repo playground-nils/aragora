@@ -11,13 +11,28 @@ If the task only needs raw execution, use a worker runtime.
 If the task needs receipts, review, provenance, or truthful blocker handling,
 use Aragora.
 
+## The Buyer's Actual Menu
+
+Most teams are not choosing between agent research papers. They are choosing
+between a few practical defaults.
+
+| Default buyer choice | Best when | What breaks first | Move to Aragora when |
+|---|---|---|---|
+| Status quo coordination: Slack, docs, meetings, checklists | Work is infrequent, ambiguous, and one owner can carry context | Decisions vanish into chat, handoffs get slow, and no one can reconstruct why something shipped | The same consequential workflow repeats and rework or audit pain is now visible |
+| Generic agent: Codex, Claude Code, OpenCode, Pi, ChatGPT | A bounded task has one owner and speed matters most | Human arbitration stays implicit, evidence is thin, and blocker handling varies by run | AI-assisted work needs explicit review, delegation, or truthful stopping behavior |
+| Bespoke workflow: scripts, prompts, GitHub Actions, MCP glue | One narrow path is stable enough to script around | Logic sprawls across prompts and scripts, ownership is brittle, and auditability is poor | You need one control plane across multiple workflows with policy, receipts, and outcome tracking |
+| Human-only review | Trust matters more than throughput and volume is low | Review becomes the bottleneck and evidence quality depends on heroics | Humans still approve, but they need pre-structured evidence, dissent, and provenance |
+
 ## Decision Table
 
 | Situation | Best default | Why |
 |---|---|---|
+| Manual coordination across Slack / docs / meetings | Status quo | Cheapest path when the work is rare and one human can absorb the ambiguity |
 | Small code edit with clear scope | Single strong coding agent | Lowest coordination overhead |
 | One owner, 2-4 bounded parallel subtasks | Lead agent plus bounded subagents | Keeps ownership clear while getting real parallelism |
 | Vague natural-language request | Lead agent first | Someone has to frame, slice, and own integration |
+| Recurring workflow already held together by scripts, prompts, and GitHub Actions | Aragora | Replace brittle bespoke governance with explicit review, receipts, and truthful stopping |
+| High-risk approval where a human must own the final call | Human-only review, optionally prepared by Aragora | Keep the human gate explicit while reducing evidence-prep cost |
 | High-stakes review or merge decision | Aragora | Receipts, dissent, gates, and blocker truth matter |
 | Unattended multi-step execution | Aragora | Queue, watch, integrate, and truthful terminalization are the point |
 | Pure terminal productivity for one developer | Codex / Claude Code / OpenCode / Pi | Fastest path, lowest ceremony |
@@ -108,3 +123,7 @@ Aragora should sit above them:
 - preserving receipts and provenance
 - making disagreement useful
 - turning "needs human" into a precise, low-cost next action
+
+That same logic applies to manual coordination, bespoke automation, and
+human-only review: Aragora wins when the cost of being fast but unexplainable
+has become higher than the overhead of governance.

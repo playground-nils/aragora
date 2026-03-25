@@ -57,10 +57,10 @@ describe surface area, but they do not prove PMF.
 - EU AI Act compliance bundle verified end-to-end with real quickstart receipts
 
 **Remaining tracked priority work:**
-- Run the bounded six-week founder operating plan for March 25-May 5, 2026: [docs/plans/2026-03-25-six-week-founder-operating-plan.md](docs/plans/2026-03-25-six-week-founder-operating-plan.md)
-- Dogfood the inbox trust wedge on a real Gmail inbox and turn it into a daily-use proof, not a CLI capability claim
-- Prepare for design partner outreach with a repeatable live demo and first pilot proof, not a broad platform pitch
-- Keep pentest / SOC 2 preparation warm only after design partner evidence exists ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
+- Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
+- Prepare for design partner outreach with repeatable live demo
+- Package the buyer alternatives story for outreach: status quo coordination, generic agents, bespoke workflows, and human-only review
+- Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 **Decision-integrity proof status:**
 - **Proven now:** repeatable live founder loop, visible receipts on product
@@ -309,6 +309,8 @@ That priority ordering follows the product evolution story above: move from a
 strong debate core to trusted decision-integrity surfaces and then to repeatable
 execution-control loops that external users can adopt.
 
+That outreach now needs a practical buyer-menu story, not just an agent-landscape story. The real substitutes are status quo coordination, generic agents, bespoke automation, and human-only review. Aragora's go-to-market burden is to show where it should sit above or replace those defaults on consequential workflows.
+
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
 Future-evolution framing: [docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md](docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md).
@@ -322,7 +324,8 @@ into adjacent workflows and enterprise packaging in sequence.
 - [x] Prompt-to-spec engine (`aragora spec` end-to-end in ~23s)
 - [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
 - [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
-- [ ] Close the internal dogfood gate for the inbox trust wedge on a real Gmail inbox (10 consecutive live runs, 2 operators, 0 false-success incidents)
+- [ ] Dogfood the inbox trust wedge on a real Gmail inbox
+- [ ] Publish the practical alternatives matrix for design partner conversations and live demos
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
 - [x] GitHub Actions pre-merge gate (`aragora-review-gate.yml` shipped)
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
