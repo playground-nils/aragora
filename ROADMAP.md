@@ -62,42 +62,14 @@ describe surface area, but they do not prove PMF.
 - Prepare for design partner outreach with a repeatable live demo and first pilot proof, not a broad platform pitch
 - Keep pentest / SOC 2 preparation warm only after design partner evidence exists ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
-## Visible Result Gate
-
-Aragora should not claim the loop is production-worthy because a background run
-completed once or because a receipt exists in storage. For roadmap purposes, a
-run counts as a **visible result** only when a user can reach the outcome
-through product surfaces, without reading raw logs, and answer these questions:
-
-- what happened
-- what artifact, answer, or proposed action Aragora produced
-- what evidence and verification support that outcome
-- what exact human action is next if the loop stopped short of completion
-
-A run is not a visible result if it only leaves behind a shell transcript, a
-database row, a hidden receipt, or an optimistic UI placeholder.
-
-The minimum user-facing surfaces required before the team can call the loop
-production-worthy are:
-
-- **Start/setup surface:** the user can enter the task, see credentials or
-  provider routing status, and understand whether the run is dry-run,
-  approval-gated, or live.
-- **Live-state surface:** queued, running, partial, `needs_human`, failed, and
-  completed states are visible truthfully while the loop runs.
-- **Result surface:** the user gets a readable outcome, not just a run ID. That
-  may be a synthesis, triage recommendation, artifact bundle, PR-ready summary,
-  or explicit blocked outcome.
-- **Receipt/provenance surface:** the result links to receipts, evidence,
-  verification, model participation, and produced artifacts.
-- **Intervention surface:** when Aragora cannot finish unattended, the user can
-  review the blocker, inspect the latest state, and approve, edit, retry, or
-  stop with an explicit next step.
-- **Durable history/share surface:** the same run remains retrievable later via
-  dashboard, API, or share link so the result survives the original session.
-
-If one of those surfaces is missing, the loop is still a dogfood proof, not a
-production-worthy product path.
+**Decision-integrity proof status:**
+- **Proven now:** repeatable live founder loop, visible receipts on product
+  surfaces, adversarial review with explicit dissent, and receipt-gated bounded
+  execution that can stop truthfully instead of bluffing past blockers.
+- **Still incomplete:** published single-model vs Aragora quality deltas on real
+  work, one repeatable external end-to-end partner journey, live proof for
+  routing and KM visibility, and stricter external-verification defenses for
+  correlated high-impact failure modes.
 
 **EU AI Act enforcement date: August 2, 2026** — the compliance CLI and audit trail infrastructure
 position Aragora as a natural adoption path for enterprises facing this deadline.
