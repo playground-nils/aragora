@@ -278,18 +278,10 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
-### PMF Evidence Ladder
-
-Source of truth: `docs/strategy/PMF_EVIDENCE_LADDER_2026_03.md`.
-
-| Step | Evidence required to unlock the next step | Unlocks |
-|------|-------------------------------------------|---------|
-| Baseline already proven | Founder loop repeatable (5/5 live runs, 35-62s), receipts visible on product surfaces, prompt-to-spec and inbox CLI wired | Internal dogfood on the second workflow |
-| Internal dogfood | 10 consecutive live inbox runs over at least 5 business days, 2 internal operators can run it from docs, >=70% of 20 internal runs end in accepted action, 0 false-success incidents | Repeatable design partner proof |
-| Repeatable design partner proof | 3-5 design partners run real tasks with receipts, 2 partners repeat weekly for 4 consecutive weeks, 2 partners show measurable KPI delta, 2 partners ask for a paid next step | Paid expansion in the same wedge |
-| Paid expansion | 2 design partners convert to paid, 1 additional paid logo closes in the same wedge, 1 paid account expands within 60 days, 8 weeks of active receipt-backed usage without founder-operated rescue | Enterprise hardening and adjacent-workflow expansion |
-
-The roadmap should advance only when the evidence for the current rung is in hand. More infrastructure, provider breadth, or compliance packaging does not substitute for the next proof gate.
+Future-evolution framing: [docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md](docs/strategy/FUTURE_EVOLUTION_AFTER_PROOF.md).
+That memo describes how the wedge expands after proof. It does not change the
+current source of truth: prove the inbox/design-partner wedge first, then widen
+into adjacent workflows and enterprise packaging in sequence.
 
 ### Q2 2026 Priorities
 - [x] Prove the live founder loop (5/5 runs, 35-62s, all acceptance items pass — March 24, 2026)
@@ -304,41 +296,14 @@ The roadmap should advance only when the evidence for the current rung is in han
 - [ ] Prepare the repeatable design partner proof kit after the internal dogfood gate is met (demo script, receipt pack, KPI template, blocker taxonomy)
 - [ ] EU AI Act compliance package — keep packaging warm without displacing PMF loop closure
 
-### Founder Metrics Tree
+### Post-Proof Expansion Sequence
 
-The founder question for this phase is: are we becoming the default control
-plane for consequential AI-assisted work, first for ourselves and then for
-design partners.
+These are the intended gates after the current wedge is proven. They are not
+parallel near-term priorities.
 
-#### Proof metrics — these drive roadmap decisions
-
-- external design partners completing a real workflow that reaches an accepted
-  outcome or truthful stop
-- repeat workflow rate per active design partner
-- median time from setup/auth to first trusted visible result with receipt
-- measurable quality delta versus the user's current baseline (single model,
-  manual review, or ad hoc tooling)
-- inbox trust wedge adoption: real inbox runs that end in action taken,
-  deferral with explicit next step, or truthful escalation
-
-#### Execution metrics — these diagnose the proof metrics
-
-- live founder-loop pass rate and inbox wedge pass rate
-- receipt persistence and result-surface visibility rate
-- median and p95 runtime for the default journeys
-- operator interventions per run and blocker truthfulness quality
-- repair cycle time from failed proof run to landed fix and re-run
-
-#### Vanity metrics — track for context, never as decision inputs
-
-- total agent types, providers, adapters, or integrations
-- raw debate/run volume without accepted outcomes
-- GitHub stars, impressions, waitlist signups, or pageviews without retained use
-- file, test, and document counts
-- compliance completeness before the wedge is repeatedly used
-
-Internal founder-loop proof is now a release gate, not the north-star metric.
-The north-star proof is repeatable external workflow success.
+1. Deepen the inbox/founder loop until it is clearly painful to remove.
+2. Reuse the same receipt-governed control plane for adjacent consequential flows such as PR review, bounded execution, and merge gating.
+3. Package proven flows into a cohesive workbench and only then widen enterprise hardening, verticals, and long-horizon accountability bets.
 
 ### Q3 2026 Priorities
 - [ ] Convert repeatable design partner proof into paid expansion in one wedge (2 design partner conversions, 1 additional paid logo, 1 expansion within 60 days)
