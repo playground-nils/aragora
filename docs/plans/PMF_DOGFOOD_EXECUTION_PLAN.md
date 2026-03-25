@@ -71,6 +71,27 @@ All items below are **PASSED** as of March 24, 2026:
    - LLM chain-of-thought preamble stripped from summary output
    - final message shows clear next steps
 
+## Founder-Facing Failure Taxonomy
+
+When the founder loop does not complete successfully, label the run with one
+primary canonical state from
+[`docs/strategy/FOUNDER_RUN_FAILURE_TAXONOMY.md`](../strategy/FOUNDER_RUN_FAILURE_TAXONOMY.md):
+
+- `auth_failure`
+- `no_evidence`
+- `low_confidence`
+- `conflicting_models`
+- `blocked_integration`
+- `truthful_stop`
+
+Classification rules for this plan:
+
+- choose the earliest blocking reason that best explains why the run stopped
+- do not collapse `conflicting_models` into `low_confidence`
+- do not collapse `blocked_integration` into `auth_failure` once access is valid
+- use `truthful_stop` only for a correct human/policy boundary, not as a
+  generic fallback
+
 ## Strict Execution Order
 
 ### 1) Re-run The Controlled Baseline
@@ -111,7 +132,14 @@ Record:
 - runtime
 - stop condition
 - affected surface
-- whether the failure is:
+- primary taxonomy label:
+  - `auth_failure`
+  - `no_evidence`
+  - `low_confidence`
+  - `conflicting_models`
+  - `blocked_integration`
+  - `truthful_stop`
+- secondary diagnostics, if any:
   - credentials / readiness
   - provider/TLS
   - runtime debate execution
