@@ -170,6 +170,126 @@ The main remaining questions are now narrower:
 
 That is a much better place to be than the original March 2026 strategy assumed.
 
+## Visible Result Contract
+
+Aragora should define a **visible result** more strictly than "the loop ran" or
+"a receipt was written somewhere."
+
+A run counts as a visible result only when the user can open Aragora and see a
+first-class outcome for that exact run without reading raw terminal output. The
+surface must make four things legible:
+
+1. the outcome: answer, artifact, proposed action, PR-ready summary, or
+   truthful blocked state
+2. the why: evidence, model debate, KM context, and verification linked to the
+   result
+3. the state: whether the run is complete, partial, failed, or `needs_human`
+4. the next action: what the operator should do next when the loop stops short
+
+What does **not** count as a visible result:
+
+- a shell transcript or `/tmp` artifact that never becomes product-visible
+- a receipt row that exists in storage but is not attached to a readable result
+- a status chip without the underlying answer, artifact, or blocker explanation
+- a side effect outside Aragora that cannot be inspected from Aragora's own
+  surfaces
+- an optimistic placeholder that hides partial or missing live state
+
+The practical standard is: if a design partner asks "what did Aragora actually
+do here?" the answer must be visible in-product, with provenance one click
+away.
+
+## Minimum User-Facing Surfaces Before The Loop Is Production-Worthy
+
+Aragora can reasonably claim the loop is production-worthy only after one
+default journey has all of these surfaces working together on the same run:
+
+### 1. Start / setup surface
+
+The user can:
+
+- enter or select the task
+- see credential/provider readiness
+- understand whether the run is advisory, approval-gated, or live
+- know which bounded workflow is about to execute
+
+This is the start of the trust contract. If routing or auth state is hidden,
+the rest of the loop will feel like operator folklore instead of product.
+
+### 2. Live-state surface
+
+The user can watch the run move through real stages with truthful partial
+state:
+
+- queued
+- running
+- waiting on approval
+- `needs_human`
+- failed
+- completed
+
+This surface should cover debate/pipeline progress, not just a generic spinner.
+If the run is stuck or partially complete, the UI/CLI/API should say that
+plainly.
+
+### 3. Result surface
+
+The loop must culminate in a readable outcome:
+
+- a debate synthesis
+- a spec or plan artifact
+- an inbox action recommendation
+- a PR or execution summary
+- or an explicit blocked result with the missing decision called out
+
+This is the core answer to "what did Aragora produce?" A receipt ID alone is
+not enough.
+
+### 4. Receipt and provenance surface
+
+From the result, the user must be able to inspect:
+
+- evidence and citations
+- model participation / dissent
+- verification status
+- generated artifacts
+- settlement or follow-on links where relevant
+
+This is where Aragora differentiates from a generic agent shell. The result has
+to be inspectable, not just asserted.
+
+### 5. Review / intervention surface
+
+When the loop cannot finish unattended, the user needs a first-class place to:
+
+- inspect the blocker
+- review the latest artifact or PR head
+- approve, edit, retry, or hold
+- see the exact next manual step
+
+Without this surface, `needs_human` is only a failure code, not a truthful handoff.
+
+### 6. Durable history / share surface
+
+The outcome must remain retrievable after the original session through a durable
+surface such as dashboard history, API lookup, or share link. Production-worth
+claims require that the result survive beyond the terminal session and be easy
+to reference in sales, review, or audit contexts.
+
+## Implication For The Current Wedge
+
+The current wedge is still the right one, but the bar is now clearer:
+
+- receipt-gated inbox actioning must end in a visible triage result, not just a
+  successful backend auth flow
+- truthful public/default debate surfaces must show both the synthesis and the
+  receipt trail
+- bounded swarm/OpenClaw execution must end in a reviewable execution result or
+  explicit `needs_human` handoff
+
+If those surfaces do not exist on the same default journey, Aragora has
+autonomy proof but not a production-worthy loop.
+
 ## Updated Strategy And Best Next Steps
 
 ### Immediate

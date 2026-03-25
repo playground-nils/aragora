@@ -58,7 +58,42 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 - Prepare for design partner outreach with repeatable live demo and evidence pack
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
-**Founder risk register:** See [docs/plans/FOUNDER_RISK_REGISTER_2026_03.md](docs/plans/FOUNDER_RISK_REGISTER_2026_03.md) for the current PMF, trust, onboarding, ops, and technical cohesion tripwires and direct mitigations.
+## Visible Result Gate
+
+Aragora should not claim the loop is production-worthy because a background run
+completed once or because a receipt exists in storage. For roadmap purposes, a
+run counts as a **visible result** only when a user can reach the outcome
+through product surfaces, without reading raw logs, and answer these questions:
+
+- what happened
+- what artifact, answer, or proposed action Aragora produced
+- what evidence and verification support that outcome
+- what exact human action is next if the loop stopped short of completion
+
+A run is not a visible result if it only leaves behind a shell transcript, a
+database row, a hidden receipt, or an optimistic UI placeholder.
+
+The minimum user-facing surfaces required before the team can call the loop
+production-worthy are:
+
+- **Start/setup surface:** the user can enter the task, see credentials or
+  provider routing status, and understand whether the run is dry-run,
+  approval-gated, or live.
+- **Live-state surface:** queued, running, partial, `needs_human`, failed, and
+  completed states are visible truthfully while the loop runs.
+- **Result surface:** the user gets a readable outcome, not just a run ID. That
+  may be a synthesis, triage recommendation, artifact bundle, PR-ready summary,
+  or explicit blocked outcome.
+- **Receipt/provenance surface:** the result links to receipts, evidence,
+  verification, model participation, and produced artifacts.
+- **Intervention surface:** when Aragora cannot finish unattended, the user can
+  review the blocker, inspect the latest state, and approve, edit, retry, or
+  stop with an explicit next step.
+- **Durable history/share surface:** the same run remains retrievable later via
+  dashboard, API, or share link so the result survives the original session.
+
+If one of those surfaces is missing, the loop is still a dogfood proof, not a
+production-worthy product path.
 
 **EU AI Act enforcement date: August 2, 2026** — the compliance CLI and audit trail infrastructure
 position Aragora as a natural adoption path for enterprises facing this deadline.
@@ -247,7 +282,9 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
 - [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
 - [ ] Dogfood the inbox trust wedge on a real Gmail inbox
-- [ ] Clear the design-partner onboarding readiness checklist before the next live founder-loop invite
+- [ ] Close the visible-result gate on one default journey: start/setup, live
+  state, result, receipt, intervention, and durable history surfaces agree on
+  the same run
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
 - [x] GitHub Actions pre-merge gate (`aragora-review-gate.yml` shipped)
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
