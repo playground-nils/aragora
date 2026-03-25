@@ -6,7 +6,7 @@ Aragora governs consequential AI-assisted work with multi-model review,
 decision receipts, and truthful gates, so teams can move faster without losing
 provenance or human control.
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 ---
 
@@ -88,23 +88,46 @@ Zero operator intervention on the validated benchmark path.
 **3. Inbox Trust Wedge.** Gmail -> adversarial debate -> signed receipt -> CLI approval
 -> action (archive/star/label). Receipt-before-action is non-negotiable.
 
-## Common Objections
+## First-Week Journey
 
-**"Why not just use Codex, Claude Code, or OpenCode?"**
-Those tools are worker runtimes. Aragora governs the layer above them: review,
-receipts, provenance, dissent, and truthful stopping behavior.
+The week-one goal is not "turn on full autonomy." It is to get from setup to
+**one trustworthy result** on a narrow recurring workflow.
 
-**"Won't this be slower than a single model?"**
-Yes, and that is the point. Use the simplest layer that preserves the needed
-truthfulness. Aragora is for consequential work, not every autocomplete.
+| Stage | Outcome |
+|-------|---------|
+| Day 0: qualify the lane | one workflow, one owner, one success metric, representative artifacts |
+| Day 1: setup and readiness | live path works and produces a visible receipt or truthful blocker |
+| Day 2: trust contract | explicit action policy, approval points, and stop conditions |
+| Day 3: first real run | real artifact or inbox batch processed in a bounded lane |
+| Day 4: review friction | receipt quality, evidence gaps, and trust blockers documented |
+| Day 5: first trustworthy result | one receipt-backed decision a human can act on, reject, or hold |
 
-**"Are receipts just logs?"**
-No. A receipt explains who said what, what evidence was used, why the system
-advanced or stopped, and what the next human action is.
+Default order for week one:
 
-**"Do we have to replace our current tools?"**
-No. Aragora sits above the tools your team already uses and adds governance
-only where the risk justifies it.
+1. Decision review
+2. Inbox trust wedge in `--dry-run` or approval-gated mode
+3. Bounded repo execution only after receipt review feels trustworthy
+
+See the canonical journey and exit gate:
+`docs/plans/2026-03-25-design-partner-first-week-journey.md`.
+
+## Explicit Truth Boundaries
+
+What we can claim in week one:
+
+- Aragora can run a bounded workflow through debate or gated execution.
+- Aragora can produce visible receipts with evidence, provenance, and dissent.
+- Aragora can stop with a specific blocker instead of pretending completion.
+
+What we do **not** claim in week one:
+
+- guaranteed correctness of the underlying business decision
+- removal of the responsible human approver
+- safe broad autonomy across an entire organization
+- audit/certification completion just because receipts exist
+
+If the receipt is missing, the evidence is weak, or the workflow needs
+undocumented operator rescue, we treat that as a blocker, not a success.
 
 ## What Partners Get
 

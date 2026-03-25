@@ -6,7 +6,7 @@
 
 ## Current Status (March 2026)
 
-Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 issue sprint, Phase 2 truth-seeking advances, and **proven the live founder loop repeatable** (5/5 consecutive runs, 35-62s, March 24, 2026). The March 21-24 work stream materially advanced the product loop: live debate receipts are now visible on API/dashboard surfaces, the prompt-to-spec engine works end-to-end, and the inbox trust wedge CLI is dogfood-ready. The current gate is design partner readiness and inbox wedge dogfooding, not enterprise certification.
+Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 issue sprint, Phase 2 truth-seeking advances, and **proven the live founder loop repeatable** (5/5 consecutive runs, 35-62s, March 24, 2026). The March 21-25 work stream materially advanced the product loop: live debate receipts are now visible on API/dashboard surfaces, the prompt-to-spec engine works end-to-end, the inbox trust wedge CLI is dogfood-ready, and the design-partner first-week trust contract is now documented. The current gate is design partner readiness and inbox wedge dogfooding, not enterprise certification.
 
 **By the numbers:**
 - 3,846 Python files under `aragora/`
@@ -48,14 +48,14 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 - Prompt-to-spec CLI (`aragora spec`) completes end-to-end in ~23s
 - Inbox trust wedge CLI: `aragora triage auth` (OAuth), `--dry-run`, `--auto-approve`
 - Phase 2 truth-seeking wired: Prover-Estimator consensus, cross-verification, truth ratio vote weights
+- Design partner first-week journey defined: setup -> first trustworthy result -> explicit truth boundaries
 - Embedding rate limit resilience (hash-based fallback on 429 errors)
 - Summary preamble cleaning (strip LLM chain-of-thought from CLI output)
 - EU AI Act compliance bundle verified end-to-end with real quickstart receipts
 
 **Remaining tracked priority work:**
 - Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
-- Clear the design-partner onboarding readiness checklist for the live founder loop (`docs/plans/2026-03-25-design-partner-onboarding-readiness-checklist.md`)
-- Prepare for design partner outreach with repeatable live demo and evidence pack
+- Turn the documented first-week journey into a repeatable external partner runbook and live demo
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 **Founder risk register:** See [docs/plans/FOUNDER_RISK_REGISTER_2026_03.md](docs/plans/FOUNDER_RISK_REGISTER_2026_03.md) for the current PMF, trust, onboarding, ops, and technical cohesion tripwires and direct mitigations.
@@ -246,6 +246,7 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [x] Prompt-to-spec engine (`aragora spec` end-to-end in ~23s)
 - [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
 - [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
+- [x] Design partner first-week journey + truth-boundary contract documented (March 25, 2026)
 - [ ] Dogfood the inbox trust wedge on a real Gmail inbox
 - [ ] Clear the design-partner onboarding readiness checklist before the next live founder-loop invite
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
