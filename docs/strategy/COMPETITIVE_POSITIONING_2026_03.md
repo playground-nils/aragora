@@ -128,12 +128,37 @@ The honest comparison is:
 - Aragora owns the judgment-heavy control points inside those flows
 - the wedge is not "more DAGs"; it is "better governed decisions inside DAGs"
 
-## The Real Buyer Alternatives
+## Founder Proof Discipline
 
-Buyers do not wake up choosing between abstract agent frameworks. They compare
-Aragora against whatever already gets the job done well enough today.
+Founder messaging should lead with the smallest set of claims that can be
+repeated on current `main` with durable artifacts.
 
-| Alternative buyers use today | Why it wins initially | Where it breaks | Aragora position |
+Lead with these three claims:
+
+- Aragora can run a live decision review and produce a stored receipt
+- Aragora can show why the system advanced or stopped
+- Aragora can gate bounded actions on persisted receipts and explicit policy
+
+Support those claims with concrete proof packets, not generic category language:
+
+- live run plus receipt ID or share link
+- exported or stored receipt showing consensus, dissent, provenance, and outcome
+- explicit gate or approval surface for any action claim
+
+Do not lead with:
+
+- "43 agent types"
+- provider breadth
+- connector counts
+- generic orchestration claims
+- autonomy claims that depend on a benchmark or a not-yet-live-proven path
+
+The detailed claim boundary and proof requirements live in
+`docs/outreach/FOUNDER_PROOF_POINTS_LIBRARY.md`.
+
+## Competitor Map
+
+| Dimension | Aragora | LangGraph/CrewAI | OpenCode/Pi |
 |-----------|---------|------------------|-------------|
 | Status quo coordination: Slack, email, docs, meetings, checklists | Already deployed, flexible, no new procurement, humans absorb ambiguity | Decisions disappear into chat and docs, handoffs are slow, audit trails are incomplete, repeatability is weak | Replace only the recurring consequential workflows where missing provenance or repeated rework is already expensive |
 | Generic agents: Codex, Claude Code, OpenCode, Pi, ChatGPT, similar single-agent tools | Fastest time to useful draft, low ceremony, strong local productivity | Review burden stays hidden, provenance is weak, blocker handling is uneven, one answer often looks more certain than it is | Treat them as worker runtimes under Aragora's review, receipts, routing, and bounded delegation layer |

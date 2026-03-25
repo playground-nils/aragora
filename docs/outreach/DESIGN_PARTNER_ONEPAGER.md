@@ -30,98 +30,47 @@ That makes auditable decision-making urgent now, not later. The EU AI Act become
 
 ## What Aragora Does
 
-Aragora is not another generic agent platform or model router.
-It is an **auditable execution control plane** for consequential AI-assisted
-work. Aragora orchestrates multiple AI agents to adversarially vet decisions,
-then delivers audit-ready **decision receipts** to any channel.
+Aragora is a **Decision Integrity Platform**. It runs adversarial multi-agent
+review, then delivers audit-ready **decision receipts** that explain why the
+system advanced or stopped.
 
 ```
 Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack / GitHub / API
 ```
 
-For a first-time operator, the explanation should stay simple:
+**Founder-safe differentiation:**
 
-- **Receipt:** what Aragora recommended and what should happen next
-- **Evidence:** what it looked at before making that recommendation
-- **Dissent:** where reviewers still disagree or want a human to look closer
+1. **Disagreement becomes evidence.** Multiple models challenge each other so
+   the operator can see convergence, dissent, and unresolved judgment calls.
 
-**What makes it different:**
+2. **Receipts are first-class outputs.** Aragora stores a receipt that captures
+   outcome, provenance, and why the system advanced or stopped.
 
-1. **Disagreement as evidence.** Aragora uses heterogeneous models to pressure-test
-   decisions. Convergence matters because it survives challenge; dissent matters
-   because it tells you exactly where human judgment is still required.
+3. **Actions stay bounded.** Receipt-before-action and explicit approval policy
+   matter more than generic autonomy claims.
 
-2. **Every consequential action has a receipt.** Aragora produces
-   audit-ready decision receipts with provenance, votes, confidence, and the
-   explicit next action.
+## What Aragora Can Prove Today (March 24, 2026)
 
-3. **Truthful execution gates.** Supervisor-backed work orders with receipt gates,
-   lease-based coordination, and explicit merge policy -- not unguarded autonomy.
+These are the only top-line proof points we should lead with in partner
+conversations. Source of truth: `docs/outreach/FOUNDER_PROOF_POINTS_LIBRARY.md`.
 
-4. **Operator control by default.** Supervisor-backed work orders, receipt gates,
-   `--dry-run`, approval steps, lease-based coordination, and explicit merge policy --
-   not unguarded autonomy.
+| Claim | Status | Minimum proof to show |
+|-------|--------|-----------------------|
+| Live decision review is repeatable on current `main` | **Proven** | One live run plus receipt ID/share link; if citing repeatability or speed, use the March 24, 2026 baseline: 5/5 consecutive founder-loop runs, 35-62s, all 7 acceptance items pass |
+| Aragora shows why the system advanced or stopped | **Proven** | One stored or exported receipt showing consensus, dissent, provenance, and outcome shape; one verification surface (`aragora receipt verify`, API, or receipt store view) |
+| Bounded actions can be gated on persisted receipts and explicit policy | **Dogfood-ready** | One policy-gated flow, such as inbox triage with `aragora triage auth` and `aragora triage run --dry-run`; show that receipt persistence happens before action |
 
-## What Works End-to-End Today (March 23, 2026)
+## Reserve Proofs, Not Opening Claims
 
-The product loop is **structurally closed** on `main`. The complete path:
+- **Inbox trust wedge:** Gmail -> debate -> receipt -> CLI approval -> action. Pitch as a narrow, policy-gated path that is ready for dogfood, not as broad autonomous email ops.
+- **Ralph autonomous benchmark:** Use only as bounded autonomy evidence. It proves one validated benchmark path under explicit merge policy, not unrestricted autonomy.
+- **EU AI Act artifacts:** Safe claim is that Aragora can generate artifact bundles from real receipts. Do not turn that into a certification claim.
 
-```
-Onboarding wizard -> API key setup -> ProviderRouter-backed debate
-  -> KM-enriched context -> consensus + receipt -> KM writeback
-  -> live dashboard -> demo surface
-```
+## Default Partner Surface
 
-23 PRs merged March 21-23 closing 15 issues to wire this loop shut:
-
-| Capability | Status | Evidence |
-|------------|--------|----------|
-| Heterogeneous debate engine with explicit dissent trails | Production | PR #1182 |
-| Smart provider routing (cost/quality/latency Pareto) | Wired | PR #1167 |
-| KM-enriched debate context + outcome writeback | Wired | PRs #1168, #1176 |
-| Interactive onboarding wizard (landing to first debate) | Shipped | PR #1170 |
-| API key management (real backend, no client-side fakes) | Shipped | PR #1169 |
-| Live dashboard with active debate tracking | Shipped | PR #1175 |
-| Demo surface hitting real backend | Shipped | PR #1177 |
-| Decision receipts with SHA-256 audit trail | Production | |
-| Autonomous repo improvement (Ralph loop) | Validated | V14 benchmark |
-| Swarm orchestration (supervisor, leases, receipts) | Production | |
-| Inbox trust wedge (Gmail -> debate -> receipt -> action) | Shipped | |
-| EU AI Act compliance artifacts (85/100 score) | Production | |
-| 210,000+ tests across 5,000+ test files | CI | |
-
-## What We Can Prove Today
-
-- **Better governed decisions than a single-model workflow.** Aragora already
-  proves multi-model challenge, explicit dissent, signed receipts, and
-  truthful stopping behavior on bounded workflows.
-- **Repeatable live proof on the founder loop.** 5/5 consecutive live runs
-  passed on March 24, 2026, with receipts visible on API/dashboard surfaces.
-- **Receipt-before-action on consequential flows.** The inbox trust wedge and
-  bounded repo workflows are built so action is gated by review artifacts, not
-  one model's unchecked output.
-
-## What We Are Still Proving
-
-- **Quantified quality delta vs the strongest single-model baseline.** We have
-  strong internal debate-quality evidence and real dogfood wins, but we still
-  need published catch-rate deltas on partner workflows.
-- **One fully continuous partner user journey.** Routing, KM enrichment,
-  receipt visibility, and UI continuity are materially better on `main`, but
-  one repeatable external proof is still owed.
-- **High-impact external verification.** Multi-model review is stronger than
-  single-model review, but correlated failure and coordinated compromise are
-  not fully eliminated without stricter external verification gates.
-
-## Three Proof Surfaces for Partners
-
-For the first design partner cohort, we are intentionally starting with **one
-workflow**, not the whole platform:
-
-**Inbox Trust Wedge.** Gmail -> adversarial debate -> signed receipt -> CLI approval
--> action (`archive`, `star`, `label`, `ignore`).
-
-Why this is first:
+**Decision review** is the default proof surface for partners today. Run a real
+artifact (spec, PR, architecture proposal, inbox slice) through multi-agent
+review, then share the receipt internally.
 
 ## First-Week Journey
 
@@ -166,9 +115,9 @@ undocumented operator rescue, we treat that as a blocker, not a success.
 
 ## What Partners Get
 
-- A governed execution layer that makes AI-assisted decisions reviewable
-- Autonomous repo maintenance under explicit policy and receipt gates
-- Audit-ready decision receipts (SHA-256 signed, exportable, verifiable)
+- One receipt-backed pilot on a bounded recurring workflow
+- Audit-ready decision receipts that can be exported and verified
+- A narrow approval-gated automation path where it is warranted
 - Priority support, roadmap influence, and direct access to the team
 - Early access to enterprise features (OIDC/SAML SSO, RBAC, multi-tenancy)
 
@@ -238,7 +187,7 @@ We are looking for **3-5 design partners** who:
 **Best-fit segments:** founder-led B2B teams, executives or chiefs of staff with painful inbox overload,
 business development leaders, and recruiting-heavy operators who already feel the cost of manual triage.
 
-## Proof Points
+## Supporting Facts, Not Opening Claims
 
 - **216,000+ tests** across 4,700+ test files
 - **Receipt-gated repo improvement** validated on the benchmark path
