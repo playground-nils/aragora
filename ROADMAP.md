@@ -55,7 +55,7 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 
 **Remaining tracked priority work:**
 - Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
-- Lock the provider setup / API-key truth contract so live-default runs block truthfully on missing, rejected, or unverified provider paths instead of reporting success
+- Productize a canonical founder-facing run taxonomy across CLI/dashboard/share-link surfaces (`auth_failure`, `no_evidence`, `low_confidence`, `conflicting_models`, `blocked_integration`, `truthful_stop`)
 - Prepare for design partner outreach with repeatable live demo
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
