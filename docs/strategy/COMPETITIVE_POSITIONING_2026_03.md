@@ -122,17 +122,21 @@ The honest comparison is:
 - Aragora owns the judgment-heavy control points inside those flows
 - the wedge is not "more DAGs"; it is "better governed decisions inside DAGs"
 
-What to say:
+## The Real Buyer Alternatives
 
-- Aragora already has queue, pipeline, and workflow components.
-- Those components are most useful when tied to receipts, approvals, and review evidence.
-- Aragora can be the policy and evidence layer around a broader execution stack.
+Buyers do not wake up choosing between abstract agent frameworks. They compare
+Aragora against whatever already gets the job done well enough today.
 
-What not to say:
+| Alternative buyers use today | Why it wins initially | Where it breaks | Aragora position |
+|-----------|---------|------------------|-------------|
+| Status quo coordination: Slack, email, docs, meetings, checklists | Already deployed, flexible, no new procurement, humans absorb ambiguity | Decisions disappear into chat and docs, handoffs are slow, audit trails are incomplete, repeatability is weak | Replace only the recurring consequential workflows where missing provenance or repeated rework is already expensive |
+| Generic agents: Codex, Claude Code, OpenCode, Pi, ChatGPT, similar single-agent tools | Fastest time to useful draft, low ceremony, strong local productivity | Review burden stays hidden, provenance is weak, blocker handling is uneven, one answer often looks more certain than it is | Treat them as worker runtimes under Aragora's review, receipts, routing, and bounded delegation layer |
+| Bespoke internal workflows: scripts, prompt chains, GitHub Actions, MCP glue, eval harnesses | Tailored to one team's stack and one narrow workflow | Brittle ownership, scattered logic, hard-to-audit prompts, expensive to extend across teams and workflows | Replace patchwork governance with a standard control plane for policy, receipts, review, and outcome tracking |
+| Human-only review and approval | Highest immediate trust, easiest answer for regulated or politically sensitive work | Slow, expensive, inconsistent, and still poorly documented unless someone captures the reasoning manually | Keep the human gate, but let Aragora compress pre-review work and preserve the evidence package |
 
-- Aragora should replace purpose-built workflow infrastructure everywhere.
-- generic workflow breadth is the differentiator buyers should care about first.
-- durable execution alone creates a moat.
+This is why Aragora should not pitch "more agents." It should pitch
+"AI-assisted work with explicit governance" that can sit above or alongside the
+buyer's current default.
 
 The clean line is:
 
@@ -141,8 +145,19 @@ needs adversarial review, explicit approval, or truthful escalation.**
 
 ## 4. Aragora Vs Internal Human Processes
 
-This category is easy to mishandle. Aragora should not be framed as "automation
-that removes humans from consequential decisions."
+## Buyer Switching Triggers
+
+Aragora becomes the better default when most of these are true:
+
+- the workflow repeats often enough that rework and review latency matter
+- multiple humans or models are already involved, even if informally
+- the cost of an unexplainable decision is non-trivial
+- someone will later ask why the work advanced, stopped, or was approved
+
+If none of those are true, the buyer should probably stay with the simpler
+alternative.
+
+## ERC-8004 And Cryptoeconomic Accountability
 
 The honest comparison is:
 

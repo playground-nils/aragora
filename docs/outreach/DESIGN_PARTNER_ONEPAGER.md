@@ -53,6 +53,19 @@ For a first-time operator, the explanation should stay simple:
 4. **Learning from outcomes.** Debate outcomes feed back into a Knowledge Mound,
    so the platform improves how it grounds future decisions.
 
+## What Teams Use Instead Today
+
+| Current default | Why buyers stay with it | Where it stops scaling |
+|---|---|---|
+| Status quo: Slack, docs, meetings, checklists | Already deployed, flexible, zero procurement | Decisions disappear, handoffs are slow, and no one can reconstruct why something advanced |
+| Generic agents: Codex, Claude Code, ChatGPT, OpenCode, Pi | Fastest path to a draft or code change | One output still needs hidden human arbitration, provenance is weak, and blocker handling is inconsistent |
+| Bespoke workflows: internal scripts, prompts, GitHub Actions, glue code | Tailored to one workflow and one team | Brittle, person-dependent, hard to audit, and expensive to generalize |
+| Human-only review | Highest immediate trust for consequential approvals | Slowest and most expensive path, with weak institutional memory unless someone documents everything |
+
+Aragora is for the point where those defaults stop being good enough. It sits
+above generic agents and bespoke automation, and beside human review, as the
+explicit control plane for receipts, dissent, provenance, and bounded action.
+
 ## What Works End-to-End Today (March 23, 2026)
 
 The product loop is **structurally closed** on `main`. The complete path:
