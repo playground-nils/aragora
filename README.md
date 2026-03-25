@@ -14,7 +14,7 @@ receipts, provenance, and truthful gates.
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll have a working debate in under a minute. For a deeper overview, see [Start Here](docs/START_HERE.md). For strategic framing, see [Competitive Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md), [Why Not Generic Agents](docs/strategy/WHY_NOT_GENERIC_AGENTS.md), and [When To Use Aragora Vs Execution Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md).
+**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll have a working debate in under a minute. For a deeper overview, see [Start Here](docs/START_HERE.md). For strategic framing, see [Competitive Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md), [When To Use Aragora Vs Execution Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md), and the [Buyer and Analyst FAQ](docs/outreach/BUYER_ANALYST_FAQ.md).
 
 | I want to... | Install |
 |--------------|---------|
