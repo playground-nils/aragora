@@ -55,7 +55,8 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 
 **Remaining tracked priority work:**
 - Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
-- Turn the documented first-week journey into a repeatable external partner runbook and live demo
+- Lock the provider setup / API-key truth contract so live-default runs block truthfully on missing, rejected, or unverified provider paths instead of reporting success
+- Prepare for design partner outreach with repeatable live demo
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 ## Visible Result Gate
@@ -281,7 +282,7 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [x] Prompt-to-spec engine (`aragora spec` end-to-end in ~23s)
 - [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
 - [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
-- [x] Design partner first-week journey + truth-boundary contract documented (March 25, 2026)
+- [ ] Provider truth contract: only observed provider calls can produce `live` success; missing/rejected/broken provider paths must terminate as blocked or explicitly labeled fallback
 - [ ] Dogfood the inbox trust wedge on a real Gmail inbox
 - [ ] Close the visible-result gate on one default journey: start/setup, live
   state, result, receipt, intervention, and durable history surfaces agree on
