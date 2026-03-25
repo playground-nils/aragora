@@ -204,6 +204,20 @@ So the correct sequence is:
 - unify the full idea-to-execution workbench
 - turn upstream ideas/goals/actions into the default shell around the control plane
 
+## Six-Week Founder Translation (March 25-May 5, 2026)
+
+For the next six weeks, the strategy collapses into one founder operating
+constraint:
+
+- prove the inbox trust wedge is useful enough for daily founder use
+- package one repeatable live demo plus one receipt-backed case study
+- convert that proof into 5 discovery calls, 3 live demos, 2 prospects scored
+  at `>=65`, and 1 weekly pilot reaching a first receipt
+- treat everything else as backlog unless it directly unblocks those outcomes
+
+This keeps the competitive thesis honest. Aragora should sell accountable
+execution on one painful workflow before reopening broader platform ambitions.
+
 ## 90-Day Execution Stack
 
 ### Weeks 1-4

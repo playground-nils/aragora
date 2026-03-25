@@ -54,10 +54,10 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 - EU AI Act compliance bundle verified end-to-end with real quickstart receipts
 
 **Remaining tracked priority work:**
-- Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
-- Productize a canonical founder-facing run taxonomy across CLI/dashboard/share-link surfaces (`auth_failure`, `no_evidence`, `low_confidence`, `conflicting_models`, `blocked_integration`, `truthful_stop`)
-- Prepare for design partner outreach with repeatable live demo
-- Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
+- Run the bounded six-week founder operating plan for March 25-May 5, 2026: [docs/plans/2026-03-25-six-week-founder-operating-plan.md](docs/plans/2026-03-25-six-week-founder-operating-plan.md)
+- Dogfood the inbox trust wedge on a real Gmail inbox and turn it into a daily-use proof, not a CLI capability claim
+- Prepare for design partner outreach with a repeatable live demo and first pilot proof, not a broad platform pitch
+- Keep pentest / SOC 2 preparation warm only after design partner evidence exists ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 ## Visible Result Gate
 
@@ -98,6 +98,32 @@ production-worthy product path.
 
 **EU AI Act enforcement date: August 2, 2026** — the compliance CLI and audit trail infrastructure
 position Aragora as a natural adoption path for enterprises facing this deadline.
+
+---
+
+## Next Six Weeks: Founder Operating Plan (March 25-May 5, 2026)
+
+Detailed plan: [docs/plans/2026-03-25-six-week-founder-operating-plan.md](docs/plans/2026-03-25-six-week-founder-operating-plan.md)
+
+This is the active roadmap for the next six weeks. It is intentionally narrower than the quarter backlog. If a task does not improve daily inbox dogfooding, repeatable demo readiness, or first design-partner pull, it is not active founder scope.
+
+### Required outcomes by May 5, 2026
+
+| Outcome | Concrete definition |
+|---------|---------------------|
+| Daily-use wedge proof | Founder uses the inbox trust wedge on 10 business days, processes at least 50 real emails, keeps `100%` receipt-before-action, keeps reply/send/forward at `0`, and meets the cost/latency/override/recall thresholds in the operating plan. |
+| Repeatable demo pack | One 7-minute live demo, one seeded setup, three clean rehearsals, and one receipt-backed case study are ready without hidden operator rescue. |
+| First partner pull | 15 named target accounts are narrowed to 5 completed discovery calls, 3 live demos, 2 scorecarded prospects at `>=65`, and 1 weekly pilot reaching a first receipt. |
+
+### Explicit non-goals through May 5, 2026
+
+- No broad connector expansion beyond the Gmail trust wedge
+- No reply/send autonomy
+- No pentest / SOC 2 kickoff
+- No marketplace, on-chain identity, or horizontal-scale initiatives
+- No new workbench/canvas surface unless it directly helps the demo or pilot
+
+Everything outside those outcomes remains backlog or horizon work.
 
 ---
 
@@ -273,7 +299,7 @@ Default stop-doing calls:
 This section captures the prioritized forward roadmap as of March 2026, organized by quarter and theme.
 Execution priority source of truth: [docs/status/NEXT_STEPS_CANONICAL.md](docs/status/NEXT_STEPS_CANONICAL.md). This roadmap summarizes quarter-level themes and does not supersede canonical execution priorities.
 
-The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use. The March 21-24 work stream changed the material facts: the live founder loop is now proven repeatable, receipts are visible on product surfaces, Phase 2 truth-seeking is wired, and the inbox trust wedge is CLI-ready. The near-term roadmap now prioritizes dogfooding the second workflow and design partner outreach.
+The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use. The March 21-24 work stream changed the material facts: the live founder loop is now proven repeatable, receipts are visible on product surfaces, Phase 2 truth-seeking is wired, and the inbox trust wedge is CLI-ready. The active founder scope for March 25-May 5, 2026 is the six-week operating plan above. Everything else in this section is backlog or horizon unless it directly unblocks that plan.
 
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
@@ -283,11 +309,10 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [x] Prompt-to-spec engine (`aragora spec` end-to-end in ~23s)
 - [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
 - [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
-- [ ] Provider truth contract: only observed provider calls can produce `live` success; missing/rejected/broken provider paths must terminate as blocked or explicitly labeled fallback
-- [ ] Dogfood the inbox trust wedge on a real Gmail inbox
-- [ ] Close the visible-result gate on one default journey: start/setup, live
-  state, result, receipt, intervention, and durable history surfaces agree on
-  the same run
+- [ ] Complete the six-week founder operating plan ([docs/plans/2026-03-25-six-week-founder-operating-plan.md](docs/plans/2026-03-25-six-week-founder-operating-plan.md))
+- [ ] Dogfood the inbox trust wedge on a real Gmail inbox with daily-use metrics and receipt-backed actions
+- [ ] Produce one repeatable demo pack and receipt-backed case study
+- [ ] Start one weekly design-partner pilot and score prospects against the PMF rubric
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
 - [x] GitHub Actions pre-merge gate (`aragora-review-gate.yml` shipped)
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)
