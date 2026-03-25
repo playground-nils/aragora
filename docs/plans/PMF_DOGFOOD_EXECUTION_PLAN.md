@@ -1,6 +1,6 @@
 # PMF Dogfood Execution Plan
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 This is the bounded operator plan for using Aragora to finish Aragora's PMF-critical product loop.
 
@@ -11,6 +11,29 @@ This is the bounded operator plan for using Aragora to finish Aragora's PMF-crit
 The founder loop is proven repeatable: 5/5 consecutive live runs, 35-62s range, all producing valid receipts visible via API/dashboard.
 
 The current objective is to **dogfood the second workflow** (inbox trust wedge) and **prepare for design partner outreach**.
+
+Source of truth for the commercial stage gates:
+`docs/strategy/PMF_EVIDENCE_LADDER_2026_03.md`.
+
+## Internal Dogfood Exit Evidence
+
+This plan is complete only when it produces the evidence that unlocks the
+design partner phase:
+
+1. Founder loop and inbox trust wedge both have exact command transcripts,
+   receipt bundles, and a visible result surface.
+2. The inbox trust wedge completes 10 consecutive live runs over at least 5
+   business days on a real internal inbox.
+3. At least 2 internal operators other than the primary builder can run the
+   workflow from the written runbook and reach first useful result in 10
+   minutes or less.
+4. Over a 2-week window, at least 70% of internal runs end in an accepted
+   action. Every remaining run stops truthfully with blocker class and next
+   action.
+5. Zero false-success incidents occur in the validation window.
+
+If these five conditions are not met, the correct outcome is "keep dogfooding"
+rather than widen into design partner claims.
 
 ## Proven Evidence On `main`
 
@@ -164,6 +187,7 @@ Stop and re-plan if any of the following happen:
 - the queue proposes generic infra work not tied to the founder loop
 - a lane widens into repo cleanup, enterprise certification, or unrelated product work
 - the live proof cannot be reproduced with an exact command transcript
+- the run evidence is insufficient to satisfy the internal dogfood exit proof above
 
 ## Out Of Scope
 
