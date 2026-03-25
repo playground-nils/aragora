@@ -147,6 +147,8 @@ aragora/live/playwright-report/
 aragora/live/playwright-report-production/
 aragora/live/test-results/
 aragora/live/playwright/.cache/
+.playwright-cli/
+.playwright-mcp/
 
 # Test results (Playwright, pytest, etc.)
 test-results/
@@ -158,6 +160,7 @@ test-results/
 # Nomic loop state (runtime artifacts, not needed in git)
 # The entire .nomic/ directory is runtime state -- databases, logs, checkpoints, etc.
 .nomic/
+.work_queue/
 
 # Web cache
 .web_cache/
@@ -208,6 +211,7 @@ consolidated/
 .data/
 .aragora/
 /knowledge/
+compliance-bundle/
 docs/openapi_generated.json
 .testfixer/
 .tmp/
