@@ -6,7 +6,7 @@ Aragora governs consequential AI-assisted work with multi-model review,
 decision receipts, and truthful gates, so teams can move faster without losing
 provenance or human control.
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 ---
 
@@ -94,24 +94,46 @@ workflow**, not the whole platform:
 
 Why this is first:
 
-- it is already the narrowest credible proof surface on `main`
-- it exercises Aragora's real differentiator: receipt-gated actioning
-- success is measurable in recall, override rate, latency, and time saved
+## First-Week Journey
 
-Decision review and autonomous repo improvement remain important proof surfaces,
-but they are **not** the first design-partner outreach motion.
+The week-one goal is not "turn on full autonomy." It is to get from setup to
+**one trustworthy result** on a narrow recurring workflow.
 
-## Pain Patterns That Create Real Urgency
+| Stage | Outcome |
+|-------|---------|
+| Day 0: qualify the lane | one workflow, one owner, one success metric, representative artifacts |
+| Day 1: setup and readiness | live path works and produces a visible receipt or truthful blocker |
+| Day 2: trust contract | explicit action policy, approval points, and stop conditions |
+| Day 3: first real run | real artifact or inbox batch processed in a bounded lane |
+| Day 4: review friction | receipt quality, evidence gaps, and trust blockers documented |
+| Day 5: first trustworthy result | one receipt-backed decision a human can act on, reject, or hold |
 
-The best early partners are not buying generic AI governance. They are trying to
-fix one painful recurring queue before the next miss, audit, or scaling cliff.
+Default order for week one:
 
-| Pain pattern | Trigger event | Start here |
-|---|---|---|
-| Consequential review bottleneck | A bad escape, rollback, security miss, or too many AI-generated changes for current reviewers to vet well | Decision Review |
-| Manual triage overload | Missed escalation, SLA pressure, executive inbox pain, or operator bandwidth collapse | Inbox Trust Wedge |
-| Bounded engineering backlog | Repetitive but consequential work is piling up, and the team does not trust ungated autopilot | Autonomous Repo Improvement |
-| Audit evidence scramble | Audit request, procurement review, incident postmortem, or AI-governance question from customers or leadership | Layer decision receipts onto whichever workflow already hurts |
+1. Decision review
+2. Inbox trust wedge in `--dry-run` or approval-gated mode
+3. Bounded repo execution only after receipt review feels trustworthy
+
+See the canonical journey and exit gate:
+`docs/plans/2026-03-25-design-partner-first-week-journey.md`.
+
+## Explicit Truth Boundaries
+
+What we can claim in week one:
+
+- Aragora can run a bounded workflow through debate or gated execution.
+- Aragora can produce visible receipts with evidence, provenance, and dissent.
+- Aragora can stop with a specific blocker instead of pretending completion.
+
+What we do **not** claim in week one:
+
+- guaranteed correctness of the underlying business decision
+- removal of the responsible human approver
+- safe broad autonomy across an entire organization
+- audit/certification completion just because receipts exist
+
+If the receipt is missing, the evidence is weak, or the workflow needs
+undocumented operator rescue, we treat that as a blocker, not a success.
 
 ## What Partners Get
 
