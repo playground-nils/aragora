@@ -1,332 +1,231 @@
-# Aragora Competitive Positioning — March 2026
+# Aragora Competitive Framing Memo — March 2026
 
-> This document augments, not replaces, the broader vision in
-> [CANONICAL_GOALS](../CANONICAL_GOALS.md),
-> [WHY_ARAGORA](../WHY_ARAGORA.md), and
-> [COMMERCIAL_OVERVIEW](../COMMERCIAL_OVERVIEW.md). It adds competitive
-> context and priority ordering based on the current agent-tool landscape.
+This memo is intentionally narrower than a generic market map. It is grounded
+in what this repository visibly supports today and in the gaps the repo itself
+still documents. The goal is to give Aragora a defensible category story
+without turning adjacent tools into straw men.
 
-## The Landscape Shift
+## One-Sentence Framing
 
-Multi-model orchestration is now commodity.
+Aragora is best framed as an **auditable control plane for consequential
+AI-assisted work**: it adds adversarial review, receipts, provenance, and
+truthful gates above worker agents, review loops, and automation runtimes.
 
-Tools like OpenCode, Pi, and model-routing plugin ecosystems already provide:
+That is a more credible category than:
 
-- provider-agnostic model access
-- task-type-based routing
-- terminal and IDE-native execution
-- extensible tool/plugin surfaces
-- lightweight multi-agent coordination
+- "general-purpose agent framework"
+- "faster PR review bot"
+- "replacement for Temporal-style workflow engines"
+- "replacement for accountable human decision makers"
 
-Aragora should not try to win on those dimensions alone.
+## What The Repo Actually Shows Today
 
-## What Aragora Should Actually Be
+These are the product surfaces that are easy to defend from the current repo:
 
-Aragora is best framed as an **auditable execution control plane for
-AI-assisted work**.
+| Repo-visible capability | Evidence in repo | Safe claim |
+|---|---|---|
+| Multi-agent debate and review | [README](../../README.md), [Developer Quickstart](../QUICKSTART_DEVELOPER.md) | Aragora can run structured multi-agent review flows and expose pass / changes-requested / blocked outcomes. |
+| Review artifacts on real PR heads | [Developer Quickstart](../QUICKSTART_DEVELOPER.md) | Aragora can review the current remote PR head and persist structured review artifacts to disk. |
+| Decision receipts and audit-oriented artifacts | [README](../../README.md), [Feature Discovery](../FEATURE_DISCOVERY.md) | Aragora already treats receipts as first-class outputs, not just logs. |
+| Bounded delegation with leases and isolated worktrees | [Feature Discovery](../FEATURE_DISCOVERY.md) | Aragora has supervisor, worker-launch, and reconciliation primitives for bounded multi-agent execution. |
+| Queue / pipeline / workflow surfaces | [README](../../README.md), [Feature Discovery](../FEATURE_DISCOVERY.md) | Aragora has workflow and pipeline surfaces, but those should support the control-plane story rather than become the primary pitch. |
+| Human approval and blocker handling | [Feature Discovery](../FEATURE_DISCOVERY.md) | Aragora is designed to stop, classify blockers, and route the next action instead of pretending every run is fully autonomous. |
 
-That means:
+The repo also shows constraints that should shape the pitch:
 
-- multiple models can contribute
-- disagreement is surfaced, not hidden
-- review and approval gates stay explicit
-- receipts and provenance are first-class outputs
-- automation stops truthfully when evidence is insufficient
+- [Feature Gap List](../FEATURE_GAP_LIST.md) still calls out control-plane truth
+  gaps around universal per-lane receipts, claims, and integrator visibility.
+- [Feature Discovery](../FEATURE_DISCOVERY.md) marks some receipt and inbox
+  surfaces as integrated or partial rather than uniformly complete.
+- The strongest "real today" proof path is review, debate, bounded delegation,
+  and receipt capture, not "fully autonomous organization."
 
-This is a different category from "AI coding assistant" or "agent shell."
+## The Competitive Frame By Category
 
-## First-Time Narrative
+Aragora sits next to four categories that buyers will naturally compare:
 
-For first-time buyers and operators, Aragora should be explained in review
-language, not architecture language.
+| Category | What that category is good at | Where Aragora should concede ground | Where Aragora has a real wedge | Correct positioning |
+|---|---|---|---|---|
+| Agent frameworks | Wiring tasks, tool calls, agent roles, and graph execution | They are usually simpler and better known for cooperative automation plumbing | Aragora is stronger when the work needs explicit disagreement, review evidence, receipts, and truthful stopping | Use frameworks to execute or orchestrate; use Aragora when the decision or merge step needs governance |
+| Review tools | Fast feedback on code diffs, lint-like issues, and routine PR checks | Simple review bots are lower-friction for everyday diffs and narrow defect classes | Aragora is stronger for consequential review where dissent, blocker classification, and durable artifacts matter | Aragora is a governed review layer, not just a comment bot |
+| Workflow tools | Durable retries, scheduling, queues, SLAs, and stateful automation | They are better default choices for generic business-process automation and background job reliability | Aragora is stronger at the judgment-heavy gates inside a workflow: review, approval, escalation, and evidence capture | Use workflow engines for execution reliability; call Aragora at high-consequence decision points |
+| Internal human processes | Accountability, domain context, politics, and final approval authority | Humans still own accountability, exception handling, and irreversible decisions | Aragora is stronger at compressing first-pass analysis, preserving rationale, and surfacing disagreement before meetings or approvals | Aragora should tighten human review loops, not claim to replace them |
 
-The plain-English version is:
+## 1. Aragora Vs Agent Frameworks
 
-**Aragora gives each consequential AI decision a receipt: what it recommended,
-what evidence it used, and where disagreement still remains.**
+Examples in the repo and surrounding docs include LangGraph, CrewAI, AutoGen,
+and external framework integrations.
 
-That framing does three things:
+The honest comparison is:
 
-- makes the product legible without requiring AI systems knowledge
-- explains why dissent is useful instead of alarming
-- positions Aragora as a governance layer, not just another model router
+- agent frameworks are primarily about coordination and execution structure
+- Aragora's best story is not "more orchestration"
+- Aragora's best story is "better governed judgment"
 
-## Where Aragora Has A Real Wedge
+What to say:
 
-### 1. Adversarial disagreement as evidence
+- Aragora treats disagreement as a feature, not a routing failure.
+- Aragora preserves receipts, provenance, and explicit terminal states.
+- Aragora can sit above worker runtimes and frameworks rather than replace them.
 
-Most tools treat model disagreement as a nuisance to route around.
-Aragora should treat disagreement as data:
+What not to say:
 
-- where models converge after challenge, confidence is stronger
-- where they diverge, the dissent trail tells the human where judgment is still needed
+- Aragora has a stronger orchestration ecosystem than the incumbent frameworks.
+- Aragora is the easiest way to build ordinary cooperative automations.
+- multi-provider breadth by itself is the moat.
 
-### 2. Receipts, provenance, and truthful gates
+The clean line is:
 
-Aragora's strongest product distinction is not "many models" but:
+**Use an agent framework to run the work. Use Aragora to vet consequential
+outputs before they ship, merge, or trigger irreversible actions.**
 
-- receipts
-- provenance
-- review outcomes
-- merge gates
-- truthful blocker handling
+## 2. Aragora Vs Review Tools
 
-The system should always be able to answer:
+This category includes PR review bots, static analyzers, CI gates, and
+single-model review loops.
 
-- who said what
-- what evidence was used
-- why the system advanced or stopped
-- what the next human action actually is
+The honest comparison is:
 
-For non-technical audiences, the same idea should be rendered as:
+- review tools are optimized for speed, coverage, and low ceremony
+- Aragora adds overhead on purpose when the review outcome matters
+- Aragora should win on review governance, not on "fewest seconds to first comment"
 
-- **Receipt:** what happened and what Aragora recommends
-- **Evidence:** why Aragora believes that recommendation is justified
-- **Dissent:** what still needs human judgment before action
+What to say:
 
-### 3. Control-plane coordination above worker runtimes
+- Aragora can review a live GitHub PR head and persist structured artifacts.
+- Aragora can return `passed`, `changes_requested`, or `blocked` style outcomes.
+- Aragora is a better fit when teams need evidence for why a change advanced or stopped.
 
-OpenCode, Pi, Codex, Claude Code, and similar tools can be excellent worker
-runtimes. Aragora does not need to replace them.
+What not to say:
 
-The better strategy is to own the layer above them:
+- Aragora should replace every ordinary PR bot or static analysis rule.
+- Aragora is always cheaper or faster than a single-reviewer path.
+- every receipt is already complete enough for every compliance workflow.
 
-- policy
-- routing
-- bounded delegation
-- review
-- receipts
-- publish and merge truthfulness
+The clean line is:
 
-### 4. Long-term calibrated accountability
+**Review bots are good at fast comments. Aragora is for review decisions that
+need dissent, receipts, and truthful blocker handling.**
 
-Aragora already has the ingredients for a deeper moat:
+## 3. Aragora Vs Workflow Tools
 
-- ELO and calibration tracking
-- receipts
-- historical outcomes
-- heterogeneous model comparison
+This category includes workflow engines, queue systems, and DAG runtimes.
+The repo does show workflow and queue surfaces, but that does not mean Aragora
+should be sold as a generic workflow winner.
 
-That creates the foundation for evidence-based trust weighting and, later,
-cryptoeconomic accountability.
+The honest comparison is:
 
-## What Is Table Stakes Now
+- workflow tools own durability, retries, scheduling, and operational cadence
+- Aragora owns the judgment-heavy control points inside those flows
+- the wedge is not "more DAGs"; it is "better governed decisions inside DAGs"
 
-These are necessary, but no longer differentiators:
+What to say:
 
-- multi-provider support
-- plugin/extensibility stories
-- generic "43 agent types" breadth
-- broad connector counts
-- generic workflow orchestration
+- Aragora already has queue, pipeline, and workflow components.
+- Those components are most useful when tied to receipts, approvals, and review evidence.
+- Aragora can be the policy and evidence layer around a broader execution stack.
 
-If Aragora leads with these, it will sound interchangeable with stronger,
-larger ecosystems.
+What not to say:
 
-## Beachhead
+- Aragora should replace purpose-built workflow infrastructure everywhere.
+- generic workflow breadth is the differentiator buyers should care about first.
+- durable execution alone creates a moat.
 
-The most credible near-term beachhead is:
+The clean line is:
 
-**auditable multi-model execution and review for consequential engineering work**
+**Use workflow tooling to move work reliably. Use Aragora where the workflow
+needs adversarial review, explicit approval, or truthful escalation.**
 
-Why this works:
+## 4. Aragora Vs Internal Human Processes
 
-- engineering teams already use AI tooling
-- PR review and execution quality are measurable
-- receipts and blocker truthfulness are valuable immediately
-- the repo now contains real evidence from queue-produced work, not just demos
+This category is easy to mishandle. Aragora should not be framed as "automation
+that removes humans from consequential decisions."
 
-## What Makes The Beachhead Urgent Enough To Buy
+The honest comparison is:
 
-The first design partner cohort should be recruited around recurring pain plus a
-forcing event, not around abstract excitement about multi-agent systems.
+- humans still own accountability, context, and exception handling
+- many internal review loops are slow because evidence is fragmented or lost
+- Aragora is most credible when it sharpens human review rather than bypassing it
 
-The highest-urgency patterns are:
+What to say:
 
-- consequential review bottlenecks after a bad escape, rollback, or rising AI-generated change volume
-- manual triage overload after missed escalations, SLA pressure, or operator bottlenecks
-- bounded execution backlog when the team wants more automation but no longer trusts ungated agents
-- audit-evidence scramble as an urgency amplifier layered onto any of the above
+- Aragora can produce a durable record of who argued what and why a run stopped.
+- Aragora can narrow the set of questions humans need to answer.
+- Aragora can make handoffs and approvals more explicit.
 
-See [DESIGN_PARTNER_PAIN_TAXONOMY_2026_03.md](./DESIGN_PARTNER_PAIN_TAXONOMY_2026_03.md)
-for the full qualification and trigger rubric.
+What not to say:
 
-## Competitor Map
+- Aragora can replace domain owners, approvers, or legal/compliance judgment.
+- every decision should be fully autonomous.
+- a receipt is the same thing as accountability.
 
-| Dimension | Aragora | LangGraph/CrewAI | OpenCode/Pi |
-|-----------|---------|------------------|-------------|
-| Multi-model routing | yes | yes | yes |
-| Adversarial debate | yes, core primitive | mostly cooperative | no |
-| Decision receipts | yes, explicit output | logging-first | no |
-| Calibration tracking | yes | limited | no |
-| Truthful blocker handling | yes | uneven | uneven |
-| Worker-runtime breadth | secondary | strong | strong |
-| Primary moat | control-plane truthfulness | orchestration ecosystem | lightweight execution |
+The clean line is:
 
-Aragora should not compete on generic orchestration breadth. It should compete
-on decision quality, provenance, and accountable execution.
+**Aragora reduces review latency and preserves decision evidence, but humans
+remain the accountable final authority.**
 
-## ERC-8004 And Cryptoeconomic Accountability
+## Where Aragora Should Lead
 
-This is not a sideshow, but it is not the beachhead.
+The best near-term wedge is:
 
-ERC-8004-style staking and identity become strategically valuable only after
-Aragora has enough real decision volume to justify:
+**auditable multi-model review and execution governance for consequential
+engineering and operational work**
 
-- per-model, per-domain track records
-- durable outcome labeling
-- reputation weighting
-- stronger external trust guarantees
+Why this is the most credible beachhead:
 
-So the correct sequence is:
+- the repo already demonstrates debate, review, receipts, and bounded work orders
+- PR review and merge decisions have clear pass / fail / blocked outcomes
+- buyers can understand the cost of bad approval decisions immediately
+- the control-plane story is distinct from "yet another coding agent"
 
-1. generate real decision and execution data
-2. preserve receipts and outcomes truthfully
-3. calibrate model reliability empirically
-4. later, make that accountability economically meaningful
+## Where Aragora Should Not Lead
 
-## Current Priority Order
+These themes are present in the repo, but they should not be the opening claim:
 
-### P0
+- raw agent-count breadth
+- generic connector counts
+- generic workflow breadth
+- "fully autonomous company" rhetoric
+- claims that Aragora replaces human governance
+- claims that compliance is solved merely because receipts exist
 
-- make the product surface reflect the real wedge
-- keep unattended execution truthful
-- make `aragora review` / execution flows feel like product, not internal plumbing
+Those can support the story later. They should not define the category.
 
-### P1
+## The Message Stack
 
-- strengthen audit-ready PR and review workflows
-- expose routing, review, and blocker evidence cleanly to operators
-- validate with real external users on consequential tasks
+If the prospect starts with agent frameworks:
 
-### P2
+**Aragora is the review and governance layer above execution frameworks.**
 
-- unify the full idea-to-execution workbench
-- turn upstream ideas/goals/actions into the default shell around the control plane
+If the prospect starts with PR review tools:
 
-## Six-Week Founder Translation (March 25-May 5, 2026)
+**Aragora is for merge decisions that need evidence, dissent, and explicit stop
+conditions, not just another stream of comments.**
 
-For the next six weeks, the strategy collapses into one founder operating
-constraint:
+If the prospect starts with workflow platforms:
 
-- prove the inbox trust wedge is useful enough for daily founder use
-- package one repeatable live demo plus one receipt-backed case study
-- convert that proof into 5 discovery calls, 3 live demos, 2 prospects scored
-  at `>=65`, and 1 weekly pilot reaching a first receipt
-- treat everything else as backlog unless it directly unblocks those outcomes
+**Aragora governs the judgment-heavy gates inside the workflow; it is not trying
+to win on generic scheduling or retries.**
 
-This keeps the competitive thesis honest. Aragora should sell accountable
-execution on one painful workflow before reopening broader platform ambitions.
+If the prospect starts with internal human process:
 
-## 90-Day Execution Stack
-
-### Weeks 1-4
-
-- make `aragora review` feel like a complete product path
-- keep unattended execution and merge gating truthful
-- tighten receipt, review, and blocker summaries for operators
-- package first-deal artifacts by owner: buyer brief, daily-user workflow, evaluator evidence pack, blocker FAQ
-
-### Weeks 5-8
-
-- get 3-5 external users through real review and execution flows
-- measure single-model vs multi-model quality deltas on real work
-- publish concrete case studies with findings and receipts
-
-### Weeks 9-12
-
-- package compliance-ready artifacts around the real review path
-- prepare pentest and audit work only after the beachhead flow is repeatedly used
-- treat cryptoeconomic accountability as follow-on leverage, not the first sale
-
-## Key Metrics To Track
-
-| Metric | Why it matters |
-|--------|----------------|
-| Active deals with named buyer, daily user, evaluator, and blocker | shows whether deal ownership is explicit instead of assumed |
-| External users running `aragora review` | proves the beachhead is real |
-| Receipts generated per week | measures decision volume and provenance capture |
-| Live multi-model debates per week | measures real usage, not surface clicks |
-| Bug/finding catch-rate delta vs single model | proves the epistemic wedge |
-| Time from install to first useful result | shows whether the path is productized |
-| Outcome-labeled calibration samples by domain | determines whether long-term accountability is becoming real |
-
-## What This Means For Development
-
-Build product surface and control-plane truthfulness, not more generic substrate.
-
-The right next steps are things like:
-
-- clearer review and receipt UX
-- stronger publish / merge visibility
-- truthful stage transitions
-- better operator-facing summaries
-
-The wrong next steps are:
-
-- more generic orchestration infrastructure without user pull
-- selling provider breadth as if it were a moat
-- building huge agent orchestras before the control plane is unquestionably truthful
+**Aragora makes human review tighter and more inspectable; it does not remove
+human accountability.**
 
 ## Simple Strategic Test
 
-If a user asks, "Why not just use OpenCode or Pi plus plugins?" the answer
-should not be "because Aragora supports more models."
+If the answer to "why Aragora instead of adjacent tools?" is:
 
-The answer should be:
+- "more models"
+- "more agents"
+- "more workflows"
+- "more connectors"
 
-**Because Aragora governs AI-assisted execution with receipts, review, provenance,
-and truthful stopping behavior.**
+the framing is weak.
 
-That is the category worth owning.
+If the answer is:
 
-## Field Objection Anchors
+**"because this work needs adversarial review, durable receipts, provenance, and
+truthful gates before it advances"**
 
-Use these anchors to keep sales, partner, and product messaging aligned. The
-full talk tracks live in
-[`docs/outreach/OBJECTION_HANDLING_LIBRARY.md`](../outreach/OBJECTION_HANDLING_LIBRARY.md).
-
-### Security
-
-Lead with narrow authority, not broad autonomy:
-
-- receipt before action
-- explicit approval gates
-- narrow allowed action surfaces
-- self-hosted and offline deployment where required
-
-### Trust
-
-Do not ask the buyer to trust "AI" in the abstract. Ask them to inspect a
-process that makes disagreement visible:
-
-- adversarial challenge across heterogeneous models
-- dissent preserved in the receipt
-- calibrated weighting over time
-- truthful stopping when evidence is insufficient
-
-### False positives
-
-Do not promise zero noise. Promise legible uncertainty and bounded rollout:
-
-- keep human approval in place initially
-- measure approval and override rate
-- expand only after repeated bounded wins
-
-### Integration burden
-
-Do not sell a platform rollout. Sell one bounded workflow:
-
-- one trigger
-- one owner
-- one approval path
-- one useful receipt
-
-### Existing tools
-
-Do not frame worker runtimes as enemies. Frame them as substrates that Aragora
-governs when the work becomes consequential:
-
-- execution tools are for speed
-- Aragora is for receipts, provenance, and accountable review
-- the moat is control-plane truthfulness, not provider breadth
+the framing is on target.
