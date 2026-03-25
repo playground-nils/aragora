@@ -6,7 +6,7 @@ Aragora governs consequential AI-assisted work with multi-model review,
 decision receipts, and truthful gates, so teams can move faster without losing
 provenance or human control.
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 ---
 
@@ -46,6 +46,19 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
 4. **It fits above the tools you already use.** Aragora complements GitHub,
    Slack, the terminal, and existing worker runtimes instead of forcing a stack
    replacement.
+
+## What Teams Use Instead Today
+
+| Current default | Why buyers stay with it | Where it stops scaling |
+|---|---|---|
+| Status quo: Slack, docs, meetings, checklists | Already deployed, flexible, zero procurement | Decisions disappear, handoffs are slow, and no one can reconstruct why something advanced |
+| Generic agents: Codex, Claude Code, ChatGPT, OpenCode, Pi | Fastest path to a draft or code change | One output still needs hidden human arbitration, provenance is weak, and blocker handling is inconsistent |
+| Bespoke workflows: internal scripts, prompts, GitHub Actions, glue code | Tailored to one workflow and one team | Brittle, person-dependent, hard to audit, and expensive to generalize |
+| Human-only review | Highest immediate trust for consequential approvals | Slowest and most expensive path, with weak institutional memory unless someone documents everything |
+
+Aragora is for the point where those defaults stop being good enough. It sits
+above generic agents and bespoke automation, and beside human review, as the
+explicit control plane for receipts, dissent, provenance, and bounded action.
 
 ## What Works End-to-End Today (March 23, 2026)
 

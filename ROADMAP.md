@@ -54,8 +54,8 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 
 **Remaining tracked priority work:**
 - Dogfood the inbox trust wedge on a real Gmail inbox (CLI is ready)
-- Clear the design-partner onboarding readiness checklist for the live founder loop (`docs/plans/2026-03-25-design-partner-onboarding-readiness-checklist.md`)
-- Prepare for design partner outreach with repeatable live demo and evidence pack
+- Prepare for design partner outreach with repeatable live demo
+- Package the buyer alternatives story for outreach: status quo coordination, generic agents, bespoke workflows, and human-only review
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
 **Founder risk register:** See [docs/plans/FOUNDER_RISK_REGISTER_2026_03.md](docs/plans/FOUNDER_RISK_REGISTER_2026_03.md) for the current PMF, trust, onboarding, ops, and technical cohesion tripwires and direct mitigations.
@@ -238,6 +238,8 @@ Execution priority source of truth: [docs/status/NEXT_STEPS_CANONICAL.md](docs/s
 
 The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use. The March 21-24 work stream changed the material facts: the live founder loop is now proven repeatable, receipts are visible on product surfaces, Phase 2 truth-seeking is wired, and the inbox trust wedge is CLI-ready. The near-term roadmap now prioritizes dogfooding the second workflow and design partner outreach.
 
+That outreach now needs a practical buyer-menu story, not just an agent-landscape story. The real substitutes are status quo coordination, generic agents, bespoke automation, and human-only review. Aragora's go-to-market burden is to show where it should sit above or replace those defaults on consequential workflows.
+
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
 ### Q2 2026 Priorities
@@ -247,7 +249,7 @@ The March 2026 product cohesion assessment found ~25% effective feature complete
 - [x] Phase 2 truth-seeking: Prover-Estimator, cross-verification, truth ratio vote weights wired
 - [x] Inbox trust wedge CLI ready (`aragora triage auth`, `--dry-run`)
 - [ ] Dogfood the inbox trust wedge on a real Gmail inbox
-- [ ] Clear the design-partner onboarding readiness checklist before the next live founder-loop invite
+- [ ] Publish the practical alternatives matrix for design partner conversations and live demos
 - [x] Agent-first beta: OpenClaw fleet deployed on 3 machines, running `aragora review` on real PRs via REST API
 - [x] GitHub Actions pre-merge gate (`aragora-review-gate.yml` shipped)
 - [x] Public demo at aragora.ai/demo (PR #705; standalone demo page live)

@@ -114,21 +114,21 @@ Why this works:
 - receipts and blocker truthfulness are valuable immediately
 - the repo now contains real evidence from queue-produced work, not just demos
 
-## First-Deal Decision Ownership
+## The Real Buyer Alternatives
 
-The first deals will usually have four distinct decision owners, even if a
-smaller company compresses them into two people:
+Buyers do not wake up choosing between abstract agent frameworks. They compare
+Aragora against whatever already gets the job done well enough today.
 
-| Role | Owns this decision | What Aragora must prove |
-|------|--------------------|-------------------------|
-| Buyer | Is this worth budget and organizational attention right now? | Clear ROI wedge, narrow pilot, fast time-to-first-receipt |
-| Daily user | Will I actually run this workflow every week? | Low-friction operator path, useful summaries, precise next actions |
-| Evaluator | Do the receipts, dissent, and controls meet the bar for consequential work? | Provenance, review evidence, explicit gates, truthful stopping |
-| Blocker | Is there any security, legal, procurement, or policy issue that still stops rollout? | Exact blocker handling, deployment answers, audit/export story |
+| Alternative buyers use today | Why it wins initially | Where it breaks | Aragora position |
+|-----------|---------|------------------|-------------|
+| Status quo coordination: Slack, email, docs, meetings, checklists | Already deployed, flexible, no new procurement, humans absorb ambiguity | Decisions disappear into chat and docs, handoffs are slow, audit trails are incomplete, repeatability is weak | Replace only the recurring consequential workflows where missing provenance or repeated rework is already expensive |
+| Generic agents: Codex, Claude Code, OpenCode, Pi, ChatGPT, similar single-agent tools | Fastest time to useful draft, low ceremony, strong local productivity | Review burden stays hidden, provenance is weak, blocker handling is uneven, one answer often looks more certain than it is | Treat them as worker runtimes under Aragora's review, receipts, routing, and bounded delegation layer |
+| Bespoke internal workflows: scripts, prompt chains, GitHub Actions, MCP glue, eval harnesses | Tailored to one team's stack and one narrow workflow | Brittle ownership, scattered logic, hard-to-audit prompts, expensive to extend across teams and workflows | Replace patchwork governance with a standard control plane for policy, receipts, review, and outcome tracking |
+| Human-only review and approval | Highest immediate trust, easiest answer for regulated or politically sensitive work | Slow, expensive, inconsistent, and still poorly documented unless someone captures the reasoning manually | Keep the human gate, but let Aragora compress pre-review work and preserve the evidence package |
 
-If Aragora collapses these roles into a generic "champion," the team will
-misread where a deal is stuck. Product and GTM should track them separately and
-build artifacts for each.
+This is why Aragora should not pitch "more agents." It should pitch
+"AI-assisted work with explicit governance" that can sit above or alongside the
+buyer's current default.
 
 ## Competitor Map
 
@@ -144,6 +144,18 @@ build artifacts for each.
 
 Aragora should not compete on generic orchestration breadth. It should compete
 on decision quality, provenance, and accountable execution.
+
+## Buyer Switching Triggers
+
+Aragora becomes the better default when most of these are true:
+
+- the workflow repeats often enough that rework and review latency matter
+- multiple humans or models are already involved, even if informally
+- the cost of an unexplainable decision is non-trivial
+- someone will later ask why the work advanced, stopped, or was approved
+
+If none of those are true, the buyer should probably stay with the simpler
+alternative.
 
 ## ERC-8004 And Cryptoeconomic Accountability
 
