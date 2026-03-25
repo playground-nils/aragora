@@ -58,7 +58,14 @@ Aragora has shipped the closed-loop backbone (CLB) infrastructure, the 14/14 iss
 - Prepare for design partner outreach with repeatable live demo and evidence pack
 - Keep pentest / SOC 2 preparation warm, after design partner validation ([#273](https://github.com/synaptent/aragora/issues/273), [#274](https://github.com/synaptent/aragora/issues/274), [#509](https://github.com/synaptent/aragora/issues/509))
 
-**Founder risk register:** See [docs/plans/FOUNDER_RISK_REGISTER_2026_03.md](docs/plans/FOUNDER_RISK_REGISTER_2026_03.md) for the current PMF, trust, onboarding, ops, and technical cohesion tripwires and direct mitigations.
+**Decision-integrity proof status:**
+- **Proven now:** repeatable live founder loop, visible receipts on product
+  surfaces, adversarial review with explicit dissent, and receipt-gated bounded
+  execution that can stop truthfully instead of bluffing past blockers.
+- **Still incomplete:** published single-model vs Aragora quality deltas on real
+  work, one repeatable external end-to-end partner journey, live proof for
+  routing and KM visibility, and stricter external-verification defenses for
+  correlated high-impact failure modes.
 
 **EU AI Act enforcement date: August 2, 2026** — the compliance CLI and audit trail infrastructure
 position Aragora as a natural adoption path for enterprises facing this deadline.
