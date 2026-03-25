@@ -47,6 +47,22 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
    Slack, the terminal, and existing worker runtimes instead of forcing a stack
    replacement.
 
+## Canonical Terms For Partner Conversations
+
+Use these phrases consistently in outreach and sales conversations. The full
+internal glossary lives in
+[`docs/strategy/TERMINOLOGY_GLOSSARY.md`](../strategy/TERMINOLOGY_GLOSSARY.md).
+
+- **Debate** = structured adversarial review, not generic multi-agent chatter.
+- **Receipt** = the audit artifact that records evidence, dissent, confidence,
+  and the reason an action did or did not happen.
+- **Trust wedge** = the first narrow workflow where receipt-before-action earns
+  trust. Today that is inbox triage.
+- **Founder loop** = the repeatable live dogfood path the founder runs to prove
+  the product on real work.
+- **Control plane** = the governance layer above worker runtimes that routes
+  work, enforces policy, preserves receipts, and stops truthfully.
+
 ## What Works End-to-End Today (March 23, 2026)
 
 The product loop is **structurally closed** on `main`. The complete path:
