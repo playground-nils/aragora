@@ -14,7 +14,7 @@ receipts, provenance, and truthful gates.
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll have a working debate in under a minute. For a deeper overview, see [Start Here](docs/START_HERE.md). For strategic framing, see [Competitive Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md), [When To Use Aragora Vs Execution Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md), and [Human-In-The-Loop Boundaries](docs/strategy/HUMAN_IN_THE_LOOP_BOUNDARIES.md).
+**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll have a working debate in under a minute. For a deeper overview, see [Start Here](docs/START_HERE.md). For strategic framing, see [Competitive Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md), [Why Not Generic Agents](docs/strategy/WHY_NOT_GENERIC_AGENTS.md), and [When To Use Aragora Vs Execution Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md).
 
 | I want to... | Install |
 |--------------|---------|
@@ -37,6 +37,11 @@ Why teams adopt Aragora:
 - **Every consequential action has a receipt.** Review, provenance, confidence, and next steps stay inspectable.
 - **Execution is bounded and truthful.** Approval gates and blocker handling are explicit.
 - **It fits above existing tools.** Use Aragora when review and governance matter; keep direct runtimes when raw speed is enough.
+
+Aragora is not trying to be another generic agent platform. Worker runtimes and
+orchestration frameworks already cover model access, tool use, and lightweight
+multi-agent execution. Aragora's job is to govern consequential execution with
+explicit review, receipts, provenance, and truthful stopping behavior.
 
 ## Try It Now
 
@@ -165,9 +170,14 @@ Aragora is useful to a 5-person startup on day one and scales to regulated enter
 
 Single agents lose context. Aragora's 4-tier Continuum Memory (fast / medium / slow / glacial) and Knowledge Mound with 42 registered adapter specs give every debate access to institutional history, cross-session learning, and evidence provenance. The RLM (Recursive Language Models) system compresses and structures context to reduce prompt bloat, enabling debates that sustain coherence across long multi-round sessions and large document sets where individual models would degrade.
 
-### 3. Extensible and Modular
+### 3. Control Plane Above Worker Runtimes
 
-Connectors for Slack, Teams, Discord, Telegram, WhatsApp, email, voice, Kafka, RabbitMQ, GitHub, Jira, Salesforce, healthcare HL7/FHIR, and dozens more. SDKs in Python and TypeScript (186 Python / 185 TypeScript namespaces). 3,000+ API operations across 2,900+ paths and 270+ WebSocket event types. OpenClaw integration for portable agent governance. A workflow engine with DAG execution and 60+ templates. A marketplace for agent personas, debate templates, and workflow patterns. Aragora adapts to your stack -- not the other way around.
+Codex, Claude Code, OpenCode, Pi, and similar tools are useful execution
+substrates. Aragora sits above them when the work needs governance: bounded
+delegation, explicit review, receipt generation, merge and publish gates, and
+truthful blocker handling. Provider breadth, connectors, SDKs, and workflow
+surfaces matter because they let Aragora fit into your stack, but they are
+supporting infrastructure, not the primary moat.
 
 ### 4. Multi-Agent Robustness
 
@@ -376,7 +386,7 @@ Costs vary by model mix. Use `aragora decide --dry-run` to preview costs before 
 | Adversarial debate protocol | Built-in (propose/critique/revise) | Manual | No | No |
 | Decision receipts with audit trail | Cryptographic, SHA-256 | No | No | No |
 | Agent calibration (ELO + Brier) | Built-in | No | No | No |
-| Multi-model consensus | 43 agent types, 10+ providers | Single-provider | Single-provider | Multi-provider |
+| Multi-model consensus | Heterogeneous by design, with adversarial review and receipts | Single-provider | Single-provider | Multi-provider |
 | Gauntlet stress testing | Built-in CLI | No | No | No |
 | Enterprise security (SSO, RBAC, encryption) | Production-ready | No | No | No |
 | Self-improvement (Nomic Loop) | Autonomous with safety gates | No | No | No |
