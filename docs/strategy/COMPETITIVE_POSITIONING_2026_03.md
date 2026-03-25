@@ -4,7 +4,9 @@
 > [CANONICAL_GOALS](../CANONICAL_GOALS.md),
 > [WHY_ARAGORA](../WHY_ARAGORA.md), and
 > [COMMERCIAL_OVERVIEW](../COMMERCIAL_OVERVIEW.md). It adds competitive
-> context and priority ordering based on the current agent-tool landscape.
+> context and priority ordering based on the current agent-tool landscape. The
+> explicit product boundary is tracked in the
+> [Non-Goals Ledger](NON_GOALS_LEDGER.md).
 
 ## The Landscape Shift
 
@@ -19,6 +21,12 @@ Tools like OpenCode, Pi, and model-routing plugin ecosystems already provide:
 - lightweight multi-agent coordination
 
 Aragora should not try to win on those dimensions alone.
+
+## Category Boundary
+
+Aragora is not a generic autonomous-agent platform. It is the governance and
+truthfulness layer used when AI-assisted execution needs receipts, review,
+provenance, and explicit terminal states.
 
 ## What Aragora Should Actually Be
 

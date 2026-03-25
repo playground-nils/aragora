@@ -69,6 +69,18 @@ position Aragora as a natural adoption path for enterprises facing this deadline
 
 Aragora is the control plane for multi-agent vetted decisionmaking across organizational knowledge and channels. We orchestrate heterogeneous AI agents to debate, synthesize, and deliver defensible decisions through structured vetted decisionmaking—building institutional memory with full audit trails.
 
+## Explicit Non-Goals
+
+Aragora is not a generic autonomous-agent platform. The roadmap is constrained
+by the [Non-Goals Ledger](docs/strategy/NON_GOALS_LEDGER.md): we do not try to
+replace worker runtimes, we do not treat agent-count inflation as strategy, and
+we do not sell unattended autonomy as the default story.
+
+Roadmap work is in scope when it improves receipts, review quality,
+provenance, bounded delegation, or truthful terminalization. Roadmap work is
+out of scope when its main effect is making Aragora look like a generic agent
+substrate.
+
 ---
 
 ## Stop-Doing Ledger (March 2026)
@@ -202,7 +214,7 @@ Default stop-doing calls:
 
 ## 2027 Vision
 
-### Autonomous Agents
+### Governed Automation And Research
 - [x] Self-improving debate protocols (Nomic Loop, operational as of Q1 2026)
 - [x] Autonomous knowledge acquisition (Knowledge Mound Phase A2)
 - [ ] Proactive insight generation

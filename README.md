@@ -14,13 +14,7 @@ receipts, provenance, and truthful gates.
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll
-have a working debate in under a minute. For a deeper overview, see [Start
-Here](docs/START_HERE.md). For strategic framing, see [Message Architecture
-(March 2026)](docs/strategy/MESSAGE_ARCHITECTURE_2026_03.md), [Competitive
-Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md),
-and [When To Use Aragora Vs Execution
-Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md).
+**New here?** Start with the [Quickstart Guide](docs/quickstart.md) -- you'll have a working debate in under a minute. For a deeper overview, see [Start Here](docs/START_HERE.md). For strategic framing, see [Competitive Positioning (March 2026)](docs/strategy/COMPETITIVE_POSITIONING_2026_03.md), [When To Use Aragora Vs Execution Substrates](docs/strategy/WHEN_TO_USE_ARAGORA_VS_EXECUTION_SUBSTRATES.md), and the [Non-Goals Ledger](docs/strategy/NON_GOALS_LEDGER.md).
 
 | I want to... | Install |
 |--------------|---------|
@@ -43,6 +37,22 @@ Why teams adopt Aragora:
 - **Every consequential action has a receipt.** Review, provenance, confidence, and next steps stay inspectable.
 - **Execution is bounded and truthful.** Approval gates and blocker handling are explicit.
 - **It fits above existing tools.** Use Aragora when review and governance matter; keep direct runtimes when raw speed is enough.
+
+## Product Boundary
+
+Aragora is not a generic autonomous-agent platform or a replacement for worker
+runtimes like Codex, Claude Code, OpenCode, or Pi. It is the control plane used
+when AI-assisted work becomes consequential enough to require receipts, review,
+provenance, bounded delegation, and truthful stopping behavior.
+
+The explicit product non-goals are tracked in the
+[Non-Goals Ledger](docs/strategy/NON_GOALS_LEDGER.md). In practice that means:
+
+- we do not try to win on raw agent breadth or generic orchestration alone
+- we do not sell lights-out autonomy as the default story
+- we do not replace execution substrates; we govern work that runs through them
+- we do not treat bigger swarms as a product goal unless they improve truthfulness
+- we do not advance work without evidence, review, and clear terminal states
 
 ## Try It Now
 
@@ -124,7 +134,9 @@ aragora serve
 
 ### Self-Improving Pipeline
 
-Aragora can improve itself -- decompose a vague goal, assign subtasks to isolated worktrees, execute with gauntlet validation, and merge passing branches:
+Aragora can improve itself under explicit supervision -- decompose a vague goal,
+assign subtasks to isolated worktrees, execute with gauntlet validation, and
+merge passing branches:
 
 ```bash
 # Preview what the pipeline will do
@@ -134,7 +146,10 @@ aragora self-improve "Maximize utility for SME businesses" --dry-run
 aragora self-improve "Harden security" --require-approval --budget-limit 20 --receipt
 ```
 
-Each subtask gets an isolated git worktree, cross-agent review, sandbox validation, and a receipt trail before merge or truthful escalation.
+Each subtask gets an isolated git worktree, cross-agent review, sandbox
+validation, and a receipt trail before merge or truthful escalation. This is a
+governed execution path, not a claim that Aragora is a generic autonomous-agent
+runtime.
 
 ### Add to Your CI Pipeline (1 minute)
 
