@@ -49,7 +49,7 @@ docker compose version    # Docker Compose v2+
 ### One-Command Install
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 bash scripts/install.sh
 ```
@@ -156,7 +156,7 @@ docker compose -f deploy/docker-compose.production.yml logs --tail 100 aragora
 | Service | Purpose | Image |
 |---------|---------|-------|
 | nginx | TLS termination, rate limiting, reverse proxy | `nginx:1.25-alpine` |
-| aragora | API server + WebSocket server | `ghcr.io/an0mium/aragora:latest` |
+| aragora | API server + WebSocket server | `ghcr.io/synaptent/aragora:latest` |
 | postgres | Primary database | `postgres:16-alpine` |
 | redis | Caching, session store, pub/sub | `redis:7-alpine` |
 | debate-worker | Async debate processing (optional) | Same as aragora |

@@ -882,7 +882,7 @@ export ARAGORA_DB_POOL_TIMEOUT=30
 
 ### Support Contacts
 
-- GitHub Issues: https://github.com/an0mium/aragora/issues
+- GitHub Issues: https://github.com/synaptent/aragora/issues
 - Documentation: https://docs.aragora.ai
 - Status Page: https://status.aragora.ai
 

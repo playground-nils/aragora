@@ -249,5 +249,5 @@ aragora gauntlet spec.md --output receipt.html
 ## Getting Help
 
 - **Full Documentation:** [GETTING_STARTED.md](../guides/GETTING_STARTED.md)
-- **GitHub Issues:** https://github.com/an0mium/aragora/issues
-- **GitHub Discussions:** https://github.com/an0mium/aragora/discussions
+- **GitHub Issues:** https://github.com/synaptent/aragora/issues
+- **GitHub Discussions:** https://github.com/synaptent/aragora/discussions

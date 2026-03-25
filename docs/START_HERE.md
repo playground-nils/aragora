@@ -142,7 +142,7 @@ Best for: running the full Aragora platform with REST API, WebSocket streaming, 
 ### Quick start with Docker (5 minutes)
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 cp .env.example .env
 # Edit .env: add at least ANTHROPIC_API_KEY or OPENAI_API_KEY
@@ -179,7 +179,7 @@ docker compose -f deploy/demo/docker-compose.yml up --build
 ## Path 4: Contribute to Aragora
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 pip install -e ".[dev]"
 pytest tests/ -x -q --timeout=10  # Run a quick subset

@@ -17,7 +17,7 @@ Aragora orchestrates 43 AI agents to adversarially challenge every important dec
 
 ### CTA
 
-[Get started in 5 minutes](guides/GETTING_STARTED.md) | [View on GitHub](https://github.com/an0mium/aragora)
+[Get started in 5 minutes](guides/GETTING_STARTED.md) | [View on GitHub](https://github.com/synaptent/aragora)
 
 ### Hero code snippet
 
@@ -222,7 +222,7 @@ pip install aragora-debate
 
 ### Secondary
 
-[View pricing](PRICING_PAGE.md) | [Read the docs](SDK_GUIDE.md) | [GitHub](https://github.com/an0mium/aragora)
+[View pricing](PRICING_PAGE.md) | [Read the docs](SDK_GUIDE.md) | [GitHub](https://github.com/synaptent/aragora)
 
 ---
 
@@ -232,6 +232,6 @@ pip install aragora-debate
 - [Documentation](SDK_GUIDE.md)
 - [API Reference](api/API_REFERENCE.md)
 - [Pricing](PRICING_PAGE.md)
-- [GitHub](https://github.com/an0mium/aragora)
+- [GitHub](https://github.com/synaptent/aragora)
 - [Sales: sales@aragora.ai](mailto:sales@aragora.ai)
 - [Support: support@aragora.ai](mailto:support@aragora.ai)

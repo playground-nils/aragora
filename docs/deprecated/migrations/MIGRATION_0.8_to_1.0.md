@@ -436,7 +436,7 @@ POST /api/v2/auth/mfa/enable
 ## Getting Help
 
 - **Documentation:** https://aragora.ai/docs
-- **GitHub Issues:** https://github.com/an0mium/aragora/issues
+- **GitHub Issues:** https://github.com/synaptent/aragora/issues
 - **Migration Support:** Create an issue with label `migration`
 
 ---

@@ -348,7 +348,7 @@ If issues persist:
 
 1. Collect debug logs: `tar -czf nomic_debug.tar.gz .nomic/logs/`
 2. Note the exact error message
-3. Open an issue: [github.com/an0mium/aragora/issues](https://github.com/an0mium/aragora/issues)
+3. Open an issue: [github.com/synaptent/aragora/issues](https://github.com/synaptent/aragora/issues)
 
 ---
 

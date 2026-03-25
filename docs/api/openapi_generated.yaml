@@ -470,7 +470,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/connect:
@@ -512,7 +512,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/customers:
@@ -554,7 +554,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/disconnect:
@@ -596,7 +596,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/callback:
@@ -666,7 +666,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/connect:
@@ -708,7 +708,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/disconnect:
@@ -750,7 +750,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/employees:
@@ -797,7 +797,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/payrolls:
@@ -880,7 +880,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/payrolls/{payroll_id}:
@@ -944,7 +944,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/payrolls/{payroll_id}/journal-entry:
@@ -1030,7 +1030,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/gusto/status:
@@ -1072,7 +1072,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/report:
@@ -1165,7 +1165,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/status:
@@ -1207,7 +1207,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/accounting/transactions:
@@ -1249,7 +1249,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/admin/emergency/activate:
@@ -2284,7 +2284,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/agent/{name}/reputation:
@@ -4987,7 +4987,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/auth/oauth/github/callback:
@@ -5063,7 +5063,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/auth/oauth/google:
@@ -5151,7 +5151,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/auth/oauth/google/callback:
@@ -5233,7 +5233,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/auth/oauth/link:
@@ -7161,7 +7161,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/quick-scan/{scan_id}:
@@ -7225,7 +7225,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/quick-scans:
@@ -7267,7 +7267,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/symbols:
@@ -7405,7 +7405,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/{repo}/audit:
@@ -7509,7 +7509,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/{repo}/audit/{audit_id}:
@@ -7578,7 +7578,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/{repo}/callgraph:
@@ -7626,7 +7626,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/{repo}/deadcode:
@@ -7674,7 +7674,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/{repo}/impact:
@@ -7770,7 +7770,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/{repo}/symbols:
@@ -7818,7 +7818,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/codebase/{repo}/understand:
@@ -7914,7 +7914,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/consensus:
@@ -8534,7 +8534,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
     post:
@@ -8709,7 +8709,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
     delete:
@@ -8862,7 +8862,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/audit:
@@ -9051,7 +9051,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/deliberations/{request_id}:
@@ -9157,7 +9157,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/deliberations/{request_id}/status:
@@ -9247,7 +9247,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/health:
@@ -9331,7 +9331,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/health/detailed:
@@ -9465,7 +9465,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/metrics:
@@ -9549,7 +9549,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/notifications:
@@ -9753,7 +9753,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/queue/metrics:
@@ -9853,7 +9853,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/tasks:
@@ -9993,7 +9993,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/tasks/claim:
@@ -10095,7 +10095,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/tasks/history:
@@ -10220,7 +10220,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/tasks/{task_id}/cancel:
@@ -10334,7 +10334,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/tasks/{task_id}/complete:
@@ -10461,7 +10461,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/control-plane/tasks/{task_id}/fail:
@@ -10588,7 +10588,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/costs:
@@ -10681,7 +10681,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/costs/alerts:
@@ -10770,7 +10770,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
     post:
@@ -10887,7 +10887,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/costs/analytics/budget-utilization:
@@ -11098,7 +11098,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/costs/budget:
@@ -11216,7 +11216,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/costs/budgets:
@@ -11620,7 +11620,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/costs/usage:
@@ -17389,7 +17389,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/discord/install:
@@ -17473,7 +17473,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/discord/uninstall:
@@ -17518,7 +17518,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/slack/callback:
@@ -17596,7 +17596,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/slack/install:
@@ -17688,7 +17688,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/slack/preview:
@@ -17756,7 +17756,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/slack/uninstall:
@@ -17821,7 +17821,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/slack/workspaces:
@@ -17894,7 +17894,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/slack/workspaces/{param}:
@@ -18000,7 +18000,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/teams/disconnect:
@@ -18106,7 +18106,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/teams/refresh:
@@ -18172,7 +18172,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/integrations/teams/tenants:
@@ -26338,7 +26338,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -26499,7 +26499,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -26840,7 +26840,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/connect:
     get:
@@ -26882,7 +26882,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/customers:
     get:
@@ -26924,7 +26924,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/accounting/disconnect:
     post:
@@ -26966,7 +26966,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/accounting/expenses:
     delete:
@@ -27561,7 +27561,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/gusto/connect:
     get:
@@ -27603,7 +27603,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/gusto/disconnect:
     post:
@@ -27645,7 +27645,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/gusto/employees:
     get:
@@ -27692,7 +27692,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/accounting/gusto/payrolls:
     get:
@@ -27775,7 +27775,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/accounting/gusto/payrolls/{payroll_id}:
     get:
@@ -27839,7 +27839,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/gusto/payrolls/{payroll_id}/journal-entry:
     post:
@@ -27925,7 +27925,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/gusto/status:
     get:
@@ -27967,7 +27967,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/accounting/invoices:
     get:
@@ -28388,7 +28388,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/accounting/reports:
     get:
@@ -28451,7 +28451,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/accounting/transactions:
     get:
@@ -28493,7 +28493,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/admin/circuit-breakers:
     get:
@@ -29288,7 +29288,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -29458,7 +29458,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -29662,7 +29662,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -29820,7 +29820,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -31970,7 +31970,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/agent/{agent_id}/opponent-briefing/{opponent_id}:
     get:
@@ -32063,7 +32063,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/agent/{name}/accuracy:
     get:
@@ -32920,7 +32920,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/agent/{name}/reputation:
     get:
@@ -36491,7 +36491,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -36620,7 +36620,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -36708,7 +36708,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/sessions/{session_id}/events:
     get:
@@ -36772,7 +36772,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/sessions/{session_id}/findings:
     get:
@@ -36840,7 +36840,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/sessions/{session_id}/intervene:
     post:
@@ -36955,7 +36955,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/sessions/{session_id}/pause:
     post:
@@ -37019,7 +37019,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/sessions/{session_id}/report:
     get:
@@ -37087,7 +37087,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/sessions/{session_id}/resume:
     post:
@@ -37151,7 +37151,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/sessions/{session_id}/start:
     post:
@@ -37215,7 +37215,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/audit/types:
     get:
@@ -38291,7 +38291,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/auth/oauth/github/callback:
     get:
@@ -38367,7 +38367,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/auth/oauth/google:
     get:
@@ -38455,7 +38455,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/auth/oauth/google/callback:
     get:
@@ -38537,7 +38537,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/auth/oauth/link:
     post:
@@ -42792,7 +42792,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/convert/workflow:
     post:
@@ -42867,7 +42867,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/pipeline/advance:
     post:
@@ -42955,7 +42955,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/pipeline/extract-goals:
     post:
@@ -43055,7 +43055,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/pipeline/from-debate:
     post:
@@ -43155,7 +43155,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/pipeline/from-ideas:
     post:
@@ -43238,7 +43238,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/pipeline/from-template:
     post:
@@ -43320,7 +43320,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/canvas/pipeline/run:
     post:
@@ -43379,7 +43379,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/pipeline/templates:
     get:
@@ -43485,7 +43485,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/canvas/pipeline/{id}/approve-transition:
     post:
@@ -43912,7 +43912,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/chat/knowledge/channel/{param}:
     post:
@@ -44034,7 +44034,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/chat/knowledge/search:
     post:
@@ -44129,7 +44129,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/chat/knowledge/store:
     post:
@@ -44229,7 +44229,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/checkpoints:
     get:
@@ -44996,7 +44996,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/codebase/audit:
     get:
@@ -45177,7 +45177,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/codebase/clear-cache:
     post:
@@ -45261,7 +45261,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/codebase/dashboard:
     get:
@@ -45563,7 +45563,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/quick-scan:
     post:
@@ -45664,7 +45664,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/quick-scan/{scan_id}:
     get:
@@ -45728,7 +45728,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/quick-scans:
     get:
@@ -45770,7 +45770,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/sast:
     get:
@@ -45909,7 +45909,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/codebase/scan:
     get:
@@ -46048,7 +46048,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/codebase/scan/{scan_id}:
     get:
@@ -46254,7 +46254,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/audit:
     post:
@@ -46358,7 +46358,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/audit/{audit_id}:
     get:
@@ -46427,7 +46427,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/callgraph:
     get:
@@ -46475,7 +46475,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/deadcode:
     get:
@@ -46523,7 +46523,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/duplicates:
     get:
@@ -46623,7 +46623,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/hotspots:
     get:
@@ -46723,7 +46723,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/impact:
     post:
@@ -46819,7 +46819,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/metrics:
     get:
@@ -46925,7 +46925,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/metrics/analyze:
     post:
@@ -47068,7 +47068,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/metrics/file/{file_path}:
     get:
@@ -47179,7 +47179,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/metrics/history:
     get:
@@ -47279,7 +47279,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/metrics/{analysis_id}:
     get:
@@ -47390,7 +47390,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/sast/findings:
     get:
@@ -47498,7 +47498,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/sast/owasp-summary:
     get:
@@ -47588,7 +47588,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan:
     post:
@@ -47723,7 +47723,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan/latest:
     get:
@@ -47829,7 +47829,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan/sast:
     post:
@@ -47964,7 +47964,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan/sast/{scan_id}:
     get:
@@ -48075,7 +48075,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan/secrets:
     post:
@@ -48199,7 +48199,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan/secrets/latest:
     get:
@@ -48305,7 +48305,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan/secrets/{scan_id}:
     get:
@@ -48416,7 +48416,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scan/{scan_id}:
     get:
@@ -48527,7 +48527,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scans:
     get:
@@ -48631,7 +48631,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/scans/secrets:
     get:
@@ -48721,7 +48721,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/secrets:
     get:
@@ -48811,7 +48811,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/symbols:
     get:
@@ -48859,7 +48859,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/understand:
     post:
@@ -48955,7 +48955,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/codebase/{repo}/vulnerabilities:
     get:
@@ -49067,7 +49067,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/compliance/audit-events:
     get:
@@ -49709,7 +49709,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -49918,7 +49918,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -50120,7 +50120,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -50229,7 +50229,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -50396,7 +50396,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -50505,7 +50505,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -50625,7 +50625,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -50745,7 +50745,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -50829,7 +50829,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -51052,7 +51052,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -51318,7 +51318,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -51569,7 +51569,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -51767,7 +51767,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -52638,7 +52638,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -52813,7 +52813,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -52966,7 +52966,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/agents/{param}/metrics:
     get:
@@ -53196,7 +53196,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/deliberations/{param}/transcript:
     get:
@@ -53330,7 +53330,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/deliberations/{request_id}/status:
     get:
@@ -53420,7 +53420,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/health:
     get:
@@ -53504,7 +53504,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/health/detailed:
     get:
@@ -53643,7 +53643,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/metrics:
     get:
@@ -53727,7 +53727,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/metrics/agents:
     get:
@@ -53901,7 +53901,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/queue/prioritize:
     get:
@@ -54027,7 +54027,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/control-plane/stream:
     get:
@@ -54188,7 +54188,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/tasks/claim:
     post:
@@ -54290,7 +54290,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/tasks/{task_id}:
     get:
@@ -54396,7 +54396,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/tasks/{task_id}/cancel:
     post:
@@ -54510,7 +54510,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/tasks/{task_id}/complete:
     post:
@@ -54637,7 +54637,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/control-plane/tasks/{task_id}/fail:
     post:
@@ -54764,7 +54764,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/coordination/approve/{request_id}:
     post:
@@ -55391,7 +55391,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/agents:
     get:
@@ -55500,7 +55500,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -55636,7 +55636,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/alerts/{alert_id}/dismiss:
     post:
@@ -55742,7 +55742,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/analytics/budget-utilization:
     get:
@@ -55969,7 +55969,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/budget:
     post:
@@ -56087,7 +56087,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/budgets:
     get:
@@ -56181,7 +56181,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -56361,7 +56361,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     get:
       summary: Autogenerated placeholder (spec pending)
@@ -56531,7 +56531,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     get:
       summary: Autogenerated placeholder (spec pending)
@@ -56694,7 +56694,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/forecast/simulate:
     get:
@@ -56854,7 +56854,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/recommendations/{recommendation_id}:
     get:
@@ -57023,7 +57023,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/costs/usage:
     get:
@@ -57129,7 +57129,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/critiques/archive:
     get:
@@ -58231,7 +58231,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/dashboard:
     post:
@@ -58333,7 +58333,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/debates:
     get:
@@ -58486,7 +58486,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/dashboard/export:
     post:
@@ -58683,7 +58683,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/labels:
     get:
@@ -58759,7 +58759,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/overview:
     get:
@@ -58844,7 +58844,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/pending-actions:
     get:
@@ -58925,7 +58925,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/pending-actions/{action_id}/complete:
     post:
@@ -59017,7 +59017,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/dashboard/quality-metrics:
     get:
@@ -59088,7 +59088,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/quick-actions:
     get:
@@ -59164,7 +59164,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/quick-actions/{action_id}:
     post:
@@ -59255,7 +59255,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/dashboard/search:
     get:
@@ -59343,7 +59343,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/stat-cards:
     get:
@@ -59423,7 +59423,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/stats:
     get:
@@ -59496,7 +59496,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/team-performance:
     get:
@@ -59572,7 +59572,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/team-performance/{team_id}:
     get:
@@ -59671,7 +59671,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/dashboard/top-senders:
     get:
@@ -59747,7 +59747,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/urgent:
     get:
@@ -59828,7 +59828,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/dashboard/urgent/{item_id}/dismiss:
     post:
@@ -59917,7 +59917,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/dashboard/{param}:
     post:
@@ -60435,7 +60435,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/debates/active:
     delete:
@@ -63271,7 +63271,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     patch:
       summary: Update debate metadata
@@ -63966,7 +63966,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/debates/{id}/events:
     get:
@@ -66525,7 +66525,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -66773,7 +66773,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/decisions/{request_id}/explain:
     get:
@@ -66857,7 +66857,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/decisions/{request_id}/status:
     get:
@@ -66905,7 +66905,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/deliberations/active:
     get:
@@ -70527,7 +70527,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/explainability/batch:
     post:
@@ -71620,7 +71620,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -71910,7 +71910,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -72140,7 +72140,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     put:
       tags:
@@ -72407,7 +72407,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     post:
       tags:
@@ -72654,7 +72654,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -73022,7 +73022,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -73302,7 +73302,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     put:
       tags:
@@ -74067,7 +74067,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -74178,7 +74178,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/gauntlet/{gauntlet_id}/export:
     get:
@@ -74460,7 +74460,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/genesis/events:
     get:
@@ -74630,7 +74630,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/genesis/lineage:
     get:
@@ -74926,7 +74926,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/github/audit/issues/bulk:
     post:
@@ -75041,7 +75041,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/github/audit/pr:
     post:
@@ -75155,7 +75155,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/github/audit/sync/{session_id}:
     get:
@@ -75239,7 +75239,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     post:
       tags:
@@ -75382,7 +75382,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/github/pr/review/{review_id}:
     get:
@@ -75488,7 +75488,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/github/pr/{pr_number}:
     get:
@@ -75627,7 +75627,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/github/pr/{pr_number}/review:
     post:
@@ -75751,7 +75751,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/github/pr/{pr_number}/reviews:
     get:
@@ -75874,7 +75874,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/auth/callback:
     post:
@@ -76096,7 +76096,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -76268,7 +76268,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     put:
       tags:
@@ -76452,7 +76452,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/filters:
     get:
@@ -76519,7 +76519,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -76691,7 +76691,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/inbox/feedback:
     post:
@@ -76800,7 +76800,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -76990,7 +76990,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     delete:
       tags:
@@ -77108,7 +77108,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/messages/{message_id}/attachments/{attachment_id}:
     get:
@@ -77201,7 +77201,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/messages/{message_id}/labels:
     post:
@@ -77314,7 +77314,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/messages/{message_id}/read:
     post:
@@ -77393,7 +77393,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/messages/{message_id}/star:
     post:
@@ -77472,7 +77472,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/messages/{message_id}/trash:
     post:
@@ -77551,7 +77551,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/messages/{param}:
     delete:
@@ -77899,7 +77899,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/gmail/threads/{thread_id}:
     get:
@@ -77987,7 +77987,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/threads/{thread_id}/archive:
     post:
@@ -78055,7 +78055,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/threads/{thread_id}/labels:
     post:
@@ -78143,7 +78143,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/threads/{thread_id}/trash:
     post:
@@ -78224,7 +78224,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/gmail/triage-rules:
     post:
@@ -79518,7 +79518,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     get:
       tags:
@@ -79694,7 +79694,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     delete:
       tags:
@@ -79860,7 +79860,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/inbox/shared:
     post:
@@ -79978,7 +79978,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     get:
       tags:
@@ -80112,7 +80112,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/inbox/shared/{id}/messages:
     get:
@@ -80238,7 +80238,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/inbox/shared/{id}/messages/{msg_id}/assign:
     post:
@@ -80383,7 +80383,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/inbox/shared/{id}/messages/{msg_id}/status:
     post:
@@ -80528,7 +80528,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/inbox/shared/{id}/messages/{msg_id}/tag:
     post:
@@ -80673,7 +80673,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/inbox/shared/{inbox_id}/activity:
     get:
@@ -81286,7 +81286,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     put:
       tags:
@@ -81466,7 +81466,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/discord/install:
     get:
@@ -81550,7 +81550,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/discord/uninstall:
     post:
@@ -81595,7 +81595,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/integrations/health:
     get:
@@ -82073,7 +82073,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/slack/commands:
     post:
@@ -82207,7 +82207,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/slack/interactive:
     post:
@@ -82296,7 +82296,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/slack/status:
     post:
@@ -82382,7 +82382,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/slack/workspaces:
     get:
@@ -82455,7 +82455,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/slack/workspaces/{param}:
     get:
@@ -82550,7 +82550,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/integrations/teams/callback:
     get:
@@ -82627,7 +82627,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/teams/commands:
     post:
@@ -82833,7 +82833,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/integrations/teams/interactive:
     post:
@@ -83077,7 +83077,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/integrations/teams/status:
     get:
@@ -83584,7 +83584,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     put:
       tags:
@@ -83807,7 +83807,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/introspection/agents:
     get:
@@ -84954,7 +84954,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -85120,7 +85120,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/facts/{fact_id}:
     get:
@@ -85195,7 +85195,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     put:
       tags:
@@ -85363,7 +85363,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/facts/{fact_id}/relations:
     get:
@@ -85422,7 +85422,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -85572,7 +85572,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/jobs:
     delete:
@@ -86038,7 +86038,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/curation/history:
     get:
@@ -86698,7 +86698,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/governance/audit/user:
     get:
@@ -86783,7 +86783,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/governance/permissions:
     get:
@@ -86893,7 +86893,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/governance/permissions/{user_id}:
     get:
@@ -86957,7 +86957,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/governance/roles:
     post:
@@ -87048,7 +87048,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/governance/roles/assign:
     post:
@@ -87144,7 +87144,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/governance/roles/revoke:
     post:
@@ -87233,7 +87233,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/governance/stats:
     get:
@@ -87275,7 +87275,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/graph:
     get:
@@ -87780,7 +87780,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/mound/schedule-revalidation:
     get:
@@ -87998,7 +87998,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/query:
     post:
@@ -88083,7 +88083,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/query-rlm:
     post:
@@ -88209,7 +88209,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/stats:
     get:
@@ -88256,7 +88256,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/knowledge/validate:
     get:
@@ -93428,7 +93428,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/onboarding/complete:
     get:
@@ -93584,7 +93584,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     get:
       summary: Autogenerated placeholder (spec pending)
@@ -93739,7 +93739,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -93998,7 +93998,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     get:
       summary: Autogenerated placeholder (spec pending)
@@ -94164,7 +94164,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     get:
       summary: Autogenerated placeholder (spec pending)
@@ -94307,7 +94307,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/oncall:
     get:
@@ -94602,7 +94602,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/actions/{action_id}:
     get:
@@ -94761,7 +94761,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/actions/{action_id}/cancel:
     post:
@@ -94950,7 +94950,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/approvals:
     get:
@@ -95094,7 +95094,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/approvals/{approval_id}/approve:
     post:
@@ -95287,7 +95287,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/approvals/{approval_id}/deny:
     post:
@@ -95482,7 +95482,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/audit:
     get:
@@ -95632,7 +95632,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/credentials:
     get:
@@ -95776,7 +95776,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -95960,7 +95960,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/credentials/{credential_id}/rotate:
     post:
@@ -96158,7 +96158,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/health:
     get:
@@ -96210,7 +96210,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/metrics:
     get:
@@ -96320,7 +96320,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/policy/rules:
     get:
@@ -96442,7 +96442,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -96637,7 +96637,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/sessions:
     get:
@@ -96798,7 +96798,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     post:
       tags:
@@ -97021,7 +97021,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -97207,7 +97207,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/openclaw/stats:
     get:
@@ -97308,7 +97308,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/orchestration/deliberate:
     post:
@@ -97689,7 +97689,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/outlook/folders:
     get:
@@ -97756,7 +97756,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/outlook/messages:
     get:
@@ -97839,7 +97839,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/outlook/messages/reply:
     get:
@@ -97990,7 +97990,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -98098,7 +98098,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/outlook/messages/{message_id}/read:
     post:
@@ -98179,7 +98179,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/outlook/oauth/callback:
     post:
@@ -98265,7 +98265,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/outlook/oauth/url:
     get:
@@ -98345,7 +98345,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/outlook/reply:
     post:
@@ -98457,7 +98457,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/outlook/search:
     get:
@@ -98528,7 +98528,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/outlook/send:
     post:
@@ -98656,7 +98656,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/outlook/status:
     get:
@@ -98723,7 +98723,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/partners/keys:
     get:
@@ -99817,7 +99817,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     post:
       summary: Autogenerated placeholder (spec pending)
@@ -100283,7 +100283,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -101144,7 +101144,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     put:
       tags:
@@ -103107,7 +103107,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/receipts:
     get:
@@ -103331,7 +103331,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/reconciliation/list:
     get:
@@ -103445,7 +103445,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/reconciliation/status:
     get:
@@ -103569,7 +103569,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/reconciliation/{reconciliation_id}/report:
     get:
@@ -103710,7 +103710,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/redoc:
     get:
@@ -104966,7 +104966,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     put:
       tags:
@@ -109044,7 +109044,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/threat/hash/{hash_value}:
     get:
@@ -109112,7 +109112,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/threat/hashes:
     post:
@@ -109223,7 +109223,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/threat/ip/{ip_address}:
     get:
@@ -109291,7 +109291,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/threat/ips:
     post:
@@ -109396,7 +109396,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/threat/status:
     get:
@@ -109458,7 +109458,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/threat/url:
     post:
@@ -109561,7 +109561,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/threat/urls:
     post:
@@ -109666,7 +109666,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v1/tournaments:
     get:
@@ -109956,7 +109956,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -114953,7 +114953,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v1/workflows/{workflow_id}/simulate:
     post:
@@ -116332,7 +116332,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -116575,7 +116575,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: stable
@@ -116746,7 +116746,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -116892,7 +116892,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -117028,7 +117028,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -117190,7 +117190,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       security:
       - bearerAuth: []
       x-aragora-stability: experimental
@@ -117418,7 +117418,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/integrations/stats:
     get:
@@ -117500,7 +117500,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/integrations/wizard:
     get:
@@ -117566,7 +117566,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/integrations/wizard/providers:
     get:
@@ -117647,7 +117647,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/integrations/wizard/status:
     get:
@@ -117717,7 +117717,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/integrations/wizard/validate:
     post:
@@ -117831,7 +117831,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/integrations/{type}:
     get:
@@ -117962,7 +117962,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
     delete:
       tags:
@@ -118168,7 +118168,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/integrations/{type}/test:
     post:
@@ -118309,7 +118309,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: stable
   /api/v2/learning/calibrate:
     post:
@@ -118523,7 +118523,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/marketplace/status:
     get:
@@ -118673,7 +118673,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     post:
       tags:
@@ -118914,7 +118914,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/marketplace/templates/{template_id}:
     get:
@@ -119028,7 +119028,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     delete:
       tags:
@@ -119188,7 +119188,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/marketplace/templates/{template_id}/ratings:
     get:
@@ -119300,7 +119300,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     post:
       tags:
@@ -119525,7 +119525,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/orchestration/deliberate:
     post:
@@ -119772,7 +119772,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/orchestration/deliberate/sync:
     post:
@@ -120009,7 +120009,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/orchestration/status/{request_id}:
     get:
@@ -120159,7 +120159,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/orchestration/templates:
     get:
@@ -120304,7 +120304,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts:
     get:
@@ -120385,7 +120385,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts/search:
     get:
@@ -120457,7 +120457,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts/stats:
     get:
@@ -120527,7 +120527,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts/{receipt_id}:
     get:
@@ -120625,7 +120625,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts/{receipt_id}/export:
     get:
@@ -120717,7 +120717,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts/{receipt_id}/formatted/{channel_type}:
     get:
@@ -120853,7 +120853,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts/{receipt_id}/send-to-channel:
     post:
@@ -121008,7 +121008,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
         '501':
           description: Channel not available
           content:
@@ -121106,7 +121106,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/receipts/{receipt_id}/verify:
     get:
@@ -121201,7 +121201,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
     post:
       tags:
@@ -121328,7 +121328,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       x-aragora-stability: experimental
   /api/v2/slo/status:
     get:
@@ -123394,7 +123394,7 @@ paths:
                     error: An unexpected error occurred
                     code: INTERNAL_ERROR
                     trace_id: req_abc123xyz
-                    support_url: https://github.com/an0mium/aragora/issues
+                    support_url: https://github.com/synaptent/aragora/issues
       deprecated: true
       x-aragora-stability: deprecated
   /api/workflows/{workflow_id}/versions:

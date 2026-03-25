@@ -27,11 +27,11 @@ Download and copy to `.github/workflows/`:
 ```bash
 # AI Code Review (runs on every PR)
 curl -o .github/workflows/aragora-review.yml \
-  https://raw.githubusercontent.com/an0mium/aragora/main/.github/workflows/templates/aragora-review-template.yml
+  https://raw.githubusercontent.com/synaptent/aragora/main/.github/workflows/templates/aragora-review-template.yml
 
 # Gauntlet Security Audit (scheduled + manual)
 curl -o .github/workflows/aragora-gauntlet.yml \
-  https://raw.githubusercontent.com/an0mium/aragora/main/.github/workflows/templates/aragora-gauntlet-template.yml
+  https://raw.githubusercontent.com/synaptent/aragora/main/.github/workflows/templates/aragora-gauntlet-template.yml
 ```
 
 ### 3. Create PR

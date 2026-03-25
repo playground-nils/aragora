@@ -283,7 +283,7 @@ Customers bring their own LLM provider API keys. Aragora does not mark up LLM co
 
 ### Quick Start (5 minutes)
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 pip install -e .
 export ANTHROPIC_API_KEY=your-key

@@ -337,4 +337,4 @@ To enable feature-flagged components:
 
 - Documentation: `/docs`
 - API Reference: `/api/docs`
-- GitHub Issues: https://github.com/an0mium/aragora/issues
+- GitHub Issues: https://github.com/synaptent/aragora/issues

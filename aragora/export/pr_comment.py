@@ -175,7 +175,7 @@ def format_pr_comment(
         lines.extend(
             [
                 "---",
-                f"*Agreement score: {agreement:.0%} | Powered by [Aragora](https://github.com/an0mium/aragora) - Multi Agent Decision Making*",
+                f"*Agreement score: {agreement:.0%} | Powered by [Aragora](https://github.com/synaptent/aragora) - Multi Agent Decision Making*",
             ]
         )
 

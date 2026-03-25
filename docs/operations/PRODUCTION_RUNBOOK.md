@@ -738,7 +738,7 @@ curl -sf http://localhost:8080/api/v1/status | jq
 
 ```bash
 # 1. Update image tag
-kubectl argo rollouts set image aragora aragora=ghcr.io/an0mium/aragora:v2.8.1 -n aragora
+kubectl argo rollouts set image aragora aragora=ghcr.io/synaptent/aragora:v2.8.1 -n aragora
 
 # 2. Monitor canary progress (from deploy/argo-rollouts/rollout.yaml)
 kubectl argo rollouts get rollout aragora -n aragora --watch
@@ -759,7 +759,7 @@ kubectl argo rollouts abort aragora -n aragora
 docker compose -f deploy/docker-compose.production.yml logs aragora 2>&1 | head -5
 
 # 2. Roll back to a specific image tag
-ARAGORA_IMAGE=ghcr.io/an0mium/aragora:v2.8.0 \
+ARAGORA_IMAGE=ghcr.io/synaptent/aragora:v2.8.0 \
   docker compose -f deploy/docker-compose.production.yml up -d aragora
 
 # 3. Verify

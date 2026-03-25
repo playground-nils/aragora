@@ -527,7 +527,7 @@ All sunset dates and migration URLs are centralized in
 ## Getting Help
 
 - **Documentation:** https://aragora.ai/docs/migration
-- **GitHub Issues:** https://github.com/an0mium/aragora/issues (label: `migration`)
+- **GitHub Issues:** https://github.com/synaptent/aragora/issues (label: `migration`)
 - **API Reference:** https://aragora.ai/api/v2
 
 ## Related Documentation

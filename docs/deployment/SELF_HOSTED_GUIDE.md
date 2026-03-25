@@ -15,7 +15,7 @@ Deploy Aragora on your own infrastructure in under 15 minutes.
 
 ```bash
 # Clone the repository
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 
 # Copy the environment template
@@ -312,5 +312,5 @@ services:
 ## Support
 
 - Documentation: [docs/](../../docs/)
-- Issues: [GitHub Issues](https://github.com/an0mium/aragora/issues)
+- Issues: [GitHub Issues](https://github.com/synaptent/aragora/issues)
 - Security: security@aragora.ai

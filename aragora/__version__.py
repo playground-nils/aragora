@@ -26,7 +26,7 @@ RELEASE_DATE = "2026-02-16"
 PACKAGE_NAME = "aragora"
 AUTHOR = "Agora Contributors"
 LICENSE = "MIT"
-REPOSITORY = "https://github.com/an0mium/aragora"
+REPOSITORY = "https://github.com/synaptent/aragora"
 
 
 def get_version() -> str:

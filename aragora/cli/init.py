@@ -17,7 +17,7 @@ from pathlib import Path
 
 DEFAULT_CONFIG = """\
 # Aragora Configuration
-# Docs: https://github.com/an0mium/aragora
+# Docs: https://github.com/synaptent/aragora
 
 # Agents for debates and reviews
 # Uses whichever API keys are available in your environment
@@ -48,7 +48,7 @@ server:
 
 REVIEW_CONFIG = """\
 # Aragora Configuration - Code Review Preset
-# Docs: https://github.com/an0mium/aragora
+# Docs: https://github.com/synaptent/aragora
 
 # Agents for code review (uses available API keys)
 agents:
@@ -75,7 +75,7 @@ gauntlet:
 
 GITHUB_ACTIONS_WORKFLOW = """\
 # Aragora AI Code Review
-# Docs: https://github.com/an0mium/aragora
+# Docs: https://github.com/synaptent/aragora
 name: Aragora Review
 
 on:
@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: an0mium/aragora@main
+      - uses: synaptent/aragora@main
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

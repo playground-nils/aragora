@@ -237,7 +237,7 @@ OAuth 2.0 is now required for:
   "resource_type": "debate",
   "resource_id": "deb_abc123",
   "trace_id": "req_xyz789",
-  "support_url": "https://github.com/an0mium/aragora/issues"
+  "support_url": "https://github.com/synaptent/aragora/issues"
 }
 ```
 
@@ -321,7 +321,7 @@ npm install @aragora/sdk@^2.0.0
 
 - **Documentation:** https://docs.aragora.ai/migration
 - **Support:** support@aragora.ai
-- **GitHub Issues:** https://github.com/an0mium/aragora/issues
+- **GitHub Issues:** https://github.com/synaptent/aragora/issues
 - **Discord:** https://discord.gg/aragora
 
 ## Usage

@@ -34,7 +34,7 @@ pip install aragora
 Or from source:
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 pip install -e .
 ```

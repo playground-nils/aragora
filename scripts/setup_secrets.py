@@ -523,7 +523,7 @@ def cmd_github() -> None:
     print("GITHUB SECRETS & VARIABLES NEEDED")
     print("=" * 70)
     print()
-    print("These must be added at: https://github.com/an0mium/aragora/settings/secrets/actions")
+    print("These must be added at: https://github.com/synaptent/aragora/settings/secrets/actions")
     print()
     print("SECRETS (Settings > Secrets and variables > Actions > New repository secret):")
     print()
@@ -585,7 +585,7 @@ GITHUB_SYNC_VARIABLES: dict[str, str] = {
     "AWS_CI_ENABLED": "true",
 }
 
-GITHUB_REPO = "an0mium/aragora"
+GITHUB_REPO = "synaptent/aragora"
 
 # GitHub doesn't allow secret names starting with "GITHUB_".
 # Remap to GH_ prefix; workflows must reference ${{ secrets.GH_OAUTH_CLIENT_ID }}.

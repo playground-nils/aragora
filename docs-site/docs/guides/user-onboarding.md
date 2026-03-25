@@ -25,7 +25,7 @@ pip install aragora
 ### Option 2: From Source
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 pip install -e .
 ```
@@ -199,9 +199,9 @@ aragora ask "What could go wrong with this deployment plan?" \
 
 ## Getting Help
 
-- **GitHub Issues**: [github.com/an0mium/aragora/issues](https://github.com/an0mium/aragora/issues)
+- **GitHub Issues**: [github.com/synaptent/aragora/issues](https://github.com/synaptent/aragora/issues)
 - **Documentation**: [docs/](.)
-- **Examples**: https://github.com/an0mium/aragora/tree/main/examples
+- **Examples**: https://github.com/synaptent/aragora/tree/main/examples
 
 ---
 

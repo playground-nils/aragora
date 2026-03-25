@@ -249,4 +249,4 @@ Options:
 
 - Stripe Documentation: https://stripe.com/docs
 - Stripe Support: https://support.stripe.com
-- Aragora Issues: https://github.com/an0mium/aragora/issues
+- Aragora Issues: https://github.com/synaptent/aragora/issues

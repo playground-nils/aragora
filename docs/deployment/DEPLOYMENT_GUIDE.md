@@ -8,7 +8,7 @@ The fastest way to run Aragora locally:
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 cp .env.example .env
 

@@ -139,7 +139,7 @@ The Simple profile uses SQLite for storage, requiring no external dependencies.
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 ```
 

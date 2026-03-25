@@ -593,6 +593,6 @@ If upgrading from an earlier version:
 
 ## Support
 
-- [GitHub Issues](https://github.com/an0mium/aragora/issues)
+- [GitHub Issues](https://github.com/synaptent/aragora/issues)
 - [API Reference](../api/API_REFERENCE.md)
 - [Python SDK Guide](../SDK_GUIDE.md)

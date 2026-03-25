@@ -1204,7 +1204,7 @@ def findings_to_sarif(
         "tool": {
             "driver": {
                 "name": "aragora-pr-reviewer",
-                "informationUri": "https://github.com/an0mium/aragora",
+                "informationUri": "https://github.com/synaptent/aragora",
                 "version": "1.0.0",
                 "rules": rules,
             },

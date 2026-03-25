@@ -279,7 +279,7 @@ GET /api/v1/debates/{debate_id}/receipt/export?format=json|html|markdown|sarif
 
 - Documentation: [docs/START_HERE.md](../START_HERE.md)
 - API Reference: [docs/api/API_REFERENCE.md](../api/API_REFERENCE.md)
-- Issues: [github.com/an0mium/aragora/issues](https://github.com/an0mium/aragora/issues)
+- Issues: [github.com/synaptent/aragora/issues](https://github.com/synaptent/aragora/issues)
 
 ## Next Steps
 

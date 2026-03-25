@@ -183,5 +183,5 @@ No database schema changes in 1.0.0. Existing databases are compatible.
 
 ## Getting Help
 
-- GitHub Issues: https://github.com/an0mium/aragora/issues
+- GitHub Issues: https://github.com/synaptent/aragora/issues
 - Documentation: https://aragora.ai/docs

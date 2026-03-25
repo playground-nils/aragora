@@ -8,7 +8,7 @@ The fastest way to get running. Uses SQLite for storage -- no PostgreSQL or Redi
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 
 # 2. Set your API key (at least one required)

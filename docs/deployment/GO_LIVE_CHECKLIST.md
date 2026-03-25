@@ -20,12 +20,12 @@ Step-by-step operator runbook for first production deployment of Aragora.
 
 ```bash
 # Pull the latest images from ghcr.io
-docker pull ghcr.io/an0mium/aragora/backend:latest
-docker pull ghcr.io/an0mium/aragora/frontend:latest
+docker pull ghcr.io/synaptent/aragora/backend:latest
+docker pull ghcr.io/synaptent/aragora/frontend:latest
 
 # Or pin to a specific version
-docker pull ghcr.io/an0mium/aragora/backend:2.8.0
-docker pull ghcr.io/an0mium/aragora/frontend:2.8.0
+docker pull ghcr.io/synaptent/aragora/backend:2.8.0
+docker pull ghcr.io/synaptent/aragora/frontend:2.8.0
 
 # Verify images downloaded
 docker images | grep aragora
@@ -519,8 +519,8 @@ docker compose --profile postgres up -d postgres
 docker compose exec -T postgres psql -U aragora aragora < backup_pre_deploy.sql
 
 # Start with previous image version
-ARAGORA_BACKEND_IMAGE=ghcr.io/an0mium/aragora/backend:<previous-version> \
-ARAGORA_FRONTEND_IMAGE=ghcr.io/an0mium/aragora/frontend:<previous-version> \
+ARAGORA_BACKEND_IMAGE=ghcr.io/synaptent/aragora/backend:<previous-version> \
+ARAGORA_FRONTEND_IMAGE=ghcr.io/synaptent/aragora/frontend:<previous-version> \
 docker compose up -d
 
 # Verify

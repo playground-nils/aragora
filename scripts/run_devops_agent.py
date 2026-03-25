@@ -7,19 +7,19 @@ policy-controlled execution. Every action is audited.
 
 Usage:
     # Review open PRs (dry run)
-    python scripts/run_devops_agent.py --repo an0mium/aragora --task review-prs --dry-run
+    python scripts/run_devops_agent.py --repo synaptent/aragora --task review-prs --dry-run
 
     # Triage issues
-    python scripts/run_devops_agent.py --repo an0mium/aragora --task triage-issues
+    python scripts/run_devops_agent.py --repo synaptent/aragora --task triage-issues
 
     # Health check
-    python scripts/run_devops_agent.py --repo an0mium/aragora --task health-check
+    python scripts/run_devops_agent.py --repo synaptent/aragora --task health-check
 
     # Watch mode (polls every 5 minutes)
-    python scripts/run_devops_agent.py --repo an0mium/aragora --mode watch
+    python scripts/run_devops_agent.py --repo synaptent/aragora --mode watch
 
     # Prepare release
-    python scripts/run_devops_agent.py --repo an0mium/aragora --task prepare-release
+    python scripts/run_devops_agent.py --repo synaptent/aragora --task prepare-release
 
 Environment variables:
     ARAGORA_DEVOPS_REPO         Default repo (owner/repo)
@@ -48,9 +48,9 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --repo an0mium/aragora --task health-check
-  %(prog)s --repo an0mium/aragora --task review-prs --dry-run
-  %(prog)s --repo an0mium/aragora --mode watch --poll-interval 600
+  %(prog)s --repo synaptent/aragora --task health-check
+  %(prog)s --repo synaptent/aragora --task review-prs --dry-run
+  %(prog)s --repo synaptent/aragora --mode watch --poll-interval 600
 """,
     )
     parser.add_argument("--repo", required=True, help="GitHub repository (owner/repo format)")

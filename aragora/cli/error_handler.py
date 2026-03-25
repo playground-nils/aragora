@@ -349,7 +349,7 @@ class CLIErrorHandler:
                     title="Get help",
                     steps=[
                         "View documentation: aragora --help",
-                        "Report issues: https://github.com/an0mium/aragora/issues",
+                        "Report issues: https://github.com/synaptent/aragora/issues",
                     ],
                 )
             )

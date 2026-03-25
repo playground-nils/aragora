@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: an0mium/aragora@main
+      - uses: synaptent/aragora@main
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -146,7 +146,7 @@ aragora review --focus security,performance
 In the GitHub Action:
 
 ```yaml
-- uses: an0mium/aragora@main
+- uses: synaptent/aragora@main
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     focus: 'security'
@@ -169,7 +169,7 @@ aragora review --sarif findings.sarif
 In the GitHub Action, enable SARIF output:
 
 ```yaml
-- uses: an0mium/aragora@main
+- uses: synaptent/aragora@main
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     output-format: 'sarif'
@@ -181,7 +181,7 @@ In the GitHub Action, enable SARIF output:
 Block PRs that have critical security findings:
 
 ```yaml
-- uses: an0mium/aragora@main
+- uses: synaptent/aragora@main
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     fail-on-critical: 'true'
@@ -202,7 +202,7 @@ aragora review --gauntlet
 More rounds means more thorough review (and higher API cost):
 
 ```yaml
-- uses: an0mium/aragora@main
+- uses: synaptent/aragora@main
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     rounds: '3'

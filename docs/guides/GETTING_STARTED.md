@@ -21,7 +21,7 @@
 ### 1. Install
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 pip install -e .
 ```
@@ -543,7 +543,7 @@ pip install -e .
 
 1. Run diagnostics: `aragora doctor`
 2. Check logs: `tail -f ~/.aragora/logs/aragora.log`
-3. File an issue: https://github.com/an0mium/aragora/issues
+3. File an issue: https://github.com/synaptent/aragora/issues
 
 ---
 

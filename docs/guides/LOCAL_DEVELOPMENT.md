@@ -12,7 +12,7 @@ Get Aragora running locally for development, testing, and debugging.
 ## Clone and Install
 
 ```bash
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 
 # Create and activate a virtual environment

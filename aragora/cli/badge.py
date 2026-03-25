@@ -51,7 +51,7 @@ def generate_badge_markdown(
         Tuple of (markdown, html)
     """
     badge_url = get_badge_url(badge_type, style)
-    link_url = f"https://github.com/{repo}" if repo else "https://github.com/an0mium/aragora"
+    link_url = f"https://github.com/{repo}" if repo else "https://github.com/synaptent/aragora"
 
     markdown = f"[![Aragora]({badge_url})]({link_url})"
     html = f'<a href="{link_url}"><img src="{badge_url}" alt="Aragora"></a>'

@@ -786,6 +786,6 @@ echo $GRAPH_TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | jq .roles
 
 ## Support
 
-- Report issues: [GitHub Issues](https://github.com/an0mium/aragora/issues)
+- Report issues: [GitHub Issues](https://github.com/synaptent/aragora/issues)
 - Documentation: [https://docs.aragora.ai](https://docs.aragora.ai)
 - Discord: [Aragora Community](https://discord.gg/aragora)

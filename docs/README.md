@@ -321,5 +321,5 @@ Found outdated or incorrect documentation?
 
 ## Support
 
-- [GitHub Issues](https://github.com/an0mium/aragora/issues)
-- [Documentation Updates](https://github.com/an0mium/aragora/pulls)
+- [GitHub Issues](https://github.com/synaptent/aragora/issues)
+- [Documentation Updates](https://github.com/synaptent/aragora/pulls)

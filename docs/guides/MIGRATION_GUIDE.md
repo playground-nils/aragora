@@ -298,7 +298,7 @@ await client.debates.create({ task: '...' });
 - **Documentation**: See [SDK_GUIDE.md](../SDK_GUIDE.md) for full API reference
 - **TypeScript SDK**: See [SDK_TYPESCRIPT.md](./SDK_TYPESCRIPT.md)
 - **Examples**: Check `sdk/cookbook/` (Python) and `sdk/typescript/examples/` (TypeScript)
-- **Issues**: Report migration problems at https://github.com/an0mium/aragora/issues
+- **Issues**: Report migration problems at https://github.com/synaptent/aragora/issues
 
 ---
 

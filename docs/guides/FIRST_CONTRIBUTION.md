@@ -6,7 +6,7 @@ Welcome! This guide will help you make your first contribution to Aragora.
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/an0mium/aragora.git
+git clone https://github.com/synaptent/aragora.git
 cd aragora
 
 # 2. Set up environment
@@ -98,7 +98,7 @@ aragora/
 
 ### 1. Find an Issue
 
-- Browse [issues labeled "good first issue"](https://github.com/an0mium/aragora/labels/good%20first%20issue)
+- Browse [issues labeled "good first issue"](https://github.com/synaptent/aragora/labels/good%20first%20issue)
 - Comment that you'd like to work on it
 - Wait for assignment to avoid duplicate work
 
@@ -211,8 +211,8 @@ export function Component({ title, onAction }: Props) {
 
 ## Getting Help
 
-- **Questions**: Open a [Discussion](https://github.com/an0mium/aragora/discussions)
-- **Bugs**: Open an [Issue](https://github.com/an0mium/aragora/issues)
+- **Questions**: Open a [Discussion](https://github.com/synaptent/aragora/discussions)
+- **Bugs**: Open an [Issue](https://github.com/synaptent/aragora/issues)
 - **Docs**: Check [INDEX.md](../INDEX.md) for doc navigation
 
 ## Architecture Decision Tree

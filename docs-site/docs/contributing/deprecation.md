@@ -564,7 +564,7 @@ In exceptional cases:
 ## Contact
 
 For deprecation questions or migration assistance:
-- **GitHub Issues**: https://github.com/an0mium/aragora/issues (tag: `deprecation`)
+- **GitHub Issues**: https://github.com/synaptent/aragora/issues (tag: `deprecation`)
 - **Documentation**: https://docs.aragora.ai/deprecation
 
 ---

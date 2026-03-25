@@ -72,7 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Aragora Review
-        uses: an0mium/aragora/.github/actions/aragora-review@main
+        uses: synaptent/aragora/.github/actions/aragora-review@main
         with:
           api-key: ${{ secrets.ARAGORA_API_KEY }}
           personas: security,performance

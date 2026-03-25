@@ -484,5 +484,5 @@ Thanks to all contributors who made 1.0 possible. Special recognition to the tes
 ## Support
 
 - Documentation: https://aragora.ai/docs
-- Issues: https://github.com/an0mium/aragora/issues
-- Discussions: https://github.com/an0mium/aragora/discussions
+- Issues: https://github.com/synaptent/aragora/issues
+- Discussions: https://github.com/synaptent/aragora/discussions

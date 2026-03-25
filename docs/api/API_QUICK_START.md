@@ -223,5 +223,5 @@ ws.onmessage = (event) => {
 
 ## Support
 
-- GitHub Issues: https://github.com/an0mium/aragora/issues
+- GitHub Issues: https://github.com/synaptent/aragora/issues
 - Documentation: https://aragora.dev/docs

@@ -161,7 +161,7 @@ produced by `format_github_comment()`:
 </details>
 
 ---
-*Agreement score: 78% | Powered by [Aragora](https://github.com/an0mium/aragora) - Multi Agent Decision Making*
+*Agreement score: 78% | Powered by [Aragora](https://github.com/synaptent/aragora) - Multi Agent Decision Making*
 
 ---
 

@@ -61,7 +61,7 @@ result = await Arena(question="Your question", agents=agents).run()
 Multi-agent debate achieves +13.8pp accuracy over single-model baselines [2] and significantly reduces hallucinations [3].
 
 PyPI: https://pypi.org/project/aragora-debate/
-GitHub: https://github.com/an0mium/aragora
+GitHub: https://github.com/synaptent/aragora
 Full platform (web UI, 43 agent types, SDKs): https://aragora.ai
 
 [1] https://arxiv.org/abs/2602.06176
@@ -125,4 +125,4 @@ Works with Claude, GPT, Mistral, Gemini, or any custom LLM.
 Zero required dependencies for the core engine. Built-in hollow consensus detection catches when models agree without evidence.
 
 https://pypi.org/project/aragora-debate/
-https://github.com/an0mium/aragora
+https://github.com/synaptent/aragora

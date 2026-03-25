@@ -1857,9 +1857,9 @@ Run autonomous agents that handle repository operations through
 policy-controlled execution. Every action is audited.
 
 Examples:
-    aragora agent run devops --repo an0mium/aragora --task health-check
-    aragora agent run devops --repo an0mium/aragora --task review-prs --dry-run
-    aragora agent run devops --repo an0mium/aragora --mode watch
+    aragora agent run devops --repo synaptent/aragora --task health-check
+    aragora agent run devops --repo synaptent/aragora --task review-prs --dry-run
+    aragora agent run devops --repo synaptent/aragora --mode watch
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

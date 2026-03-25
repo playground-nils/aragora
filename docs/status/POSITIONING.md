@@ -310,7 +310,7 @@ Before pursuing a prospect, confirm:
 ## Contact
 
 For pilot discussions:
-- GitHub: [an0mium/aragora](https://github.com/an0mium/aragora)
+- GitHub: [synaptent/aragora](https://github.com/synaptent/aragora)
 - Technical documentation: `/docs/`
 
 ---

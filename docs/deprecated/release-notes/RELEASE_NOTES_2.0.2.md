@@ -159,5 +159,5 @@ pip install -e ".[dev]"
 ## Support
 
 - Documentation: https://aragora.ai/docs
-- Issues: https://github.com/an0mium/aragora/issues
+- Issues: https://github.com/synaptent/aragora/issues
 - Status: See `docs/STATUS.md` for feature status

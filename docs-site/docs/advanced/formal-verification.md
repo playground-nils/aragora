@@ -425,6 +425,6 @@ class SandboxResult:
 
 ## See Also
 
-- Verification module source: https://github.com/an0mium/aragora/tree/main/aragora/verification
+- Verification module source: https://github.com/synaptent/aragora/tree/main/aragora/verification
 - [Sandbox Security](../security/overview#proof-sandbox) - Security details
 - [WebSocket Events](../guides/websocket-events) - Streaming events
