@@ -563,10 +563,10 @@ function DetailRow({
     <div
       className="rounded-[14px] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
       style={{
-        padding: compact ? "12px 16px" : "16px 18px",
+        padding: compact ? "10px 14px" : "16px 18px",
         display: "flex",
         flexDirection: "column",
-        gap: compact ? "6px" : "8px",
+        gap: compact ? "4px" : "8px",
       }}
     >
       <dt
@@ -594,12 +594,12 @@ function ResultStateChip({ tone }: { tone: "live" | "fallback" }) {
 
   return (
     <span
-      className={`rounded-full text-[15px] font-medium shadow-[var(--shadow-panel)] ${
+      className={`rounded-full text-[14px] font-medium shadow-[var(--shadow-panel)] ${
         isLive
           ? "bg-[var(--surface)] text-[var(--acid-green)]"
           : "bg-amber-50 text-amber-700"
       }`}
-      style={{ padding: "10px 16px" }}
+      style={{ padding: "9px 14px" }}
     >
       {isLive
         ? "Backend returned a live debate"
@@ -657,8 +657,8 @@ function ExpandableText({
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[15px] font-semibold text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/40 hover:text-[var(--acid-green)]"
-          style={{ padding: "10px 16px" }}
+          className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[14px] font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--acid-green)]/35 hover:text-[var(--acid-green)]"
+          style={{ padding: "9px 14px" }}
         >
           <span>{expanded ? "Show less" : buttonLabel}</span>
           <span
@@ -859,10 +859,10 @@ function LiveResultCard({
             <div
               className="border-t border-[var(--border)]"
               style={{
-                paddingTop: "18px",
+                paddingTop: "16px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "12px",
+                gap: "10px",
               }}
             >
               <div
@@ -875,7 +875,7 @@ function LiveResultCard({
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "12px",
+                  gap: "10px",
                 }}
               >
                 <DetailRow
@@ -1334,11 +1334,11 @@ export default function PublicDemoPage() {
         className="mx-auto flex flex-col"
         style={{
           maxWidth: PAGE_SHELL_MAX_WIDTH,
-          padding: "32px 40px 40px",
-          gap: "34px",
+          padding: "24px 40px 40px",
+          gap: "30px",
         }}
       >
-        <header className="mx-auto w-full max-w-[760px] space-y-2 text-center">
+        <header className="mx-auto w-full max-w-[720px] space-y-1.5 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-[var(--acid-green)] sm:text-4xl text-balance">
             Live Demo
           </h1>
@@ -1372,9 +1372,9 @@ export default function PublicDemoPage() {
             </div>
             <div
               className="flex flex-col gap-3 lg:items-end"
-              style={{ maxWidth: "430px" }}
+              style={{ maxWidth: "410px" }}
             >
-              <div className="flex flex-wrap gap-3.5 lg:justify-end">
+              <div className="flex flex-wrap gap-3 lg:justify-end">
                 <button
                   onClick={() => void runLiveDemo()}
                   disabled={isLoading}
@@ -1394,8 +1394,8 @@ export default function PublicDemoPage() {
               <button
                 onClick={() => setShowRecordedSample((current) => !current)}
                 disabled={recordedSamplePinned}
-                className="rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[13px] font-medium text-[var(--text-muted)] transition-colors hover:border-sky-500/40 hover:text-sky-700"
-                style={{ padding: "10px 16px" }}
+                className="rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] text-[12px] font-medium tracking-[0.01em] text-[var(--text-muted)] transition-colors hover:border-sky-500/35 hover:text-sky-700 lg:self-end"
+                style={{ padding: "8px 14px" }}
               >
                 {recordedSamplePinned
                   ? "Sample Shown"
