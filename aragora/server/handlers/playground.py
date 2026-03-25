@@ -54,11 +54,11 @@ _LIVE_RATE_WINDOW = 600.0  # 10 minutes
 # OpenRouter model diversity for playground debates.
 # Each agent gets a different model architecture for genuine adversarial diversity.
 OPENROUTER_PLAYGROUND_MODELS: list[tuple[str, str]] = [
-    ("analyst", "anthropic/claude-sonnet-4"),
-    ("critic", "openai/gpt-4o"),
-    ("synthesizer", "google/gemini-2.0-flash-001"),
+    ("analyst", "anthropic/claude-opus-4.6"),
+    ("critic", "openai/gpt-5.4"),
+    ("synthesizer", "google/gemini-3.1-pro"),
     ("contrarian", "mistralai/mistral-large-latest"),
-    ("auditor", "deepseek/deepseek-chat"),
+    ("auditor", "deepseek/deepseek-chat-v3-0324"),
 ]
 
 # IP -> list of timestamps

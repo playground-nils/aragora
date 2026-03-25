@@ -71,7 +71,7 @@ const PAGE_SHELL_MAX_WIDTH = "1240px";
 const RECORDED_SAMPLE: RecordedDebate = {
   id: "demo_showcase_001",
   topic: DEMO_TOPIC,
-  agents: ["claude-sonnet", "gpt-4o", "gemini-pro", "mistral-large", "grok-2"],
+  agents: ["claude-opus", "gpt-5", "gemini-pro", "mistral-large", "grok"],
   rounds: 2,
   confidence: 0.82,
   verdict:
@@ -80,8 +80,8 @@ const RECORDED_SAMPLE: RecordedDebate = {
   events: [
     {
       type: "proposal",
-      agent: "claude-sonnet",
-      model: "Claude Sonnet",
+      agent: "claude-opus",
+      model: "Claude Opus 4.6",
       content:
         "Yes, adopt it as mandatory. AI code review catches security vulnerabilities that human reviewers miss 34% of the time. The key is treating it as a complement, not a replacement: flag issues for human judgment, not auto-reject.",
       round: 1,
@@ -89,8 +89,8 @@ const RECORDED_SAMPLE: RecordedDebate = {
     },
     {
       type: "proposal",
-      agent: "gpt-4o",
-      model: "GPT-4o",
+      agent: "gpt-5",
+      model: "GPT-5.4",
       content:
         "Mandatory is too strong. AI review tools have 15-25% false positive rates on complex codebases. Making it mandatory creates alert fatigue and slows velocity. Better as advisory with opt-in enforcement for security-critical paths.",
       round: 1,
@@ -99,7 +99,7 @@ const RECORDED_SAMPLE: RecordedDebate = {
     {
       type: "critique",
       agent: "gemini-pro",
-      model: "Gemini Pro",
+      model: "Gemini 3.1 Pro",
       content:
         "Both proposals miss the cost dimension. AI review at scale costs $0.02-0.15 per PR. For a team doing 200 PRs/week, that is $200-1,500/month. The ROI depends on your current bug escape rate.",
       round: 1,
@@ -116,8 +116,8 @@ const RECORDED_SAMPLE: RecordedDebate = {
     },
     {
       type: "proposal",
-      agent: "grok-2",
-      model: "Grok 2",
+      agent: "grok",
+      model: "Grok 3",
       content:
         "The right framing is path-based enforcement. Security-critical code should require AI review. Lower-risk product code should stay advisory.",
       round: 2,
@@ -125,8 +125,8 @@ const RECORDED_SAMPLE: RecordedDebate = {
     },
     {
       type: "vote",
-      agent: "claude-sonnet",
-      model: "Claude Sonnet",
+      agent: "claude-opus",
+      model: "Claude Opus 4.6",
       content:
         "I revise my position. Path-based mandatory review is the pragmatic middle ground.",
       round: 2,
@@ -135,8 +135,8 @@ const RECORDED_SAMPLE: RecordedDebate = {
     },
     {
       type: "vote",
-      agent: "gpt-4o",
-      model: "GPT-4o",
+      agent: "gpt-5",
+      model: "GPT-5.4",
       content:
         "Tiered enforcement addresses my velocity concern while maintaining security coverage.",
       round: 2,
@@ -175,15 +175,18 @@ function accentForAgent(agent: string): string {
 function formatAgentName(agent: string): string {
   const replacements: Record<string, string> = {
     claude: "Claude",
-    "claude-sonnet": "Claude Sonnet",
+    "claude-opus": "Claude Opus 4.6",
+    "claude-sonnet": "Claude Sonnet 4.6",
     gpt: "GPT",
+    "gpt-5": "GPT-5.4",
     "gpt-4o": "GPT-4o",
-    grok: "Grok",
+    grok: "Grok 3",
     "grok-2": "Grok 2",
     gemini: "Gemini",
-    "gemini-pro": "Gemini Pro",
+    "gemini-pro": "Gemini 3.1 Pro",
     mistral: "Mistral",
     "mistral-large": "Mistral Large",
+    deepseek: "DeepSeek V3",
     system: "Consensus Engine",
   };
 
