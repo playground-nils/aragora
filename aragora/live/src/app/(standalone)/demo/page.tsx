@@ -513,7 +513,7 @@ function DecisionSnapshot({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: "24px",
+        gap: "32px",
       }}
     >
       <h3
@@ -744,18 +744,21 @@ function LiveResultCard({
               padding: "36px",
               display: "flex",
               flexDirection: "column",
-              gap: "24px",
+              gap: "36px",
             }}
           >
             <DecisionSnapshot summary={summary} tone="live" />
-            <div className="border-t border-[var(--border)] pt-10">
+            <div
+              className="border-t border-[var(--border)]"
+              style={{ paddingTop: "48px" }}
+            >
               <h3
                 className="font-semibold uppercase text-[var(--acid-green)]"
                 style={EYEBROW_TEXT_STYLE}
               >
                 Full verdict
               </h3>
-              <div className="mt-6">
+              <div style={{ marginTop: "28px" }}>
                 <ExpandableText
                   text={summary}
                   collapsedLines={4}
@@ -768,7 +771,14 @@ function LiveResultCard({
           </div>
 
           {proposalEntries.length > 0 && (
-            <div className="space-y-5">
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "24px",
+                paddingBottom: "16px",
+              }}
+            >
               <h3
                 className="font-semibold uppercase text-[var(--acid-green)]"
                 style={EYEBROW_TEXT_STYLE}
@@ -1000,18 +1010,21 @@ function RecordedSampleCard({ sample }: { sample: RecordedDebate }) {
               padding: "36px",
               display: "flex",
               flexDirection: "column",
-              gap: "24px",
+              gap: "36px",
             }}
           >
             <DecisionSnapshot summary={sample.verdict} tone="sample" />
-            <div className="border-t border-[var(--border)] pt-10">
+            <div
+              className="border-t border-[var(--border)]"
+              style={{ paddingTop: "48px" }}
+            >
               <h3
                 className="font-semibold uppercase text-sky-700"
                 style={EYEBROW_TEXT_STYLE}
               >
                 Recorded verdict
               </h3>
-              <div className="mt-6">
+              <div style={{ marginTop: "28px" }}>
                 <ExpandableText
                   text={sample.verdict}
                   collapsedLines={4}
