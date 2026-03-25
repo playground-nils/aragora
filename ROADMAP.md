@@ -238,6 +238,8 @@ Execution priority source of truth: [docs/status/NEXT_STEPS_CANONICAL.md](docs/s
 
 The March 2026 product cohesion assessment found ~25% effective feature completeness for actual use. The March 21-24 work stream changed the material facts: the live founder loop is now proven repeatable, receipts are visible on product surfaces, Phase 2 truth-seeking is wired, and the inbox trust wedge is CLI-ready. The near-term roadmap now prioritizes dogfooding the second workflow and design partner outreach.
 
+The external market now matches Aragora's wedge. OpenAI, Anthropic, GitHub, and Google all ship agentic execution surfaces; the scarce layer is increasingly operator control, truthful stopping, and auditable action. Roadmap priority should stay on receipt-before-action workflows and control-plane truthfulness, not generic orchestration breadth.
+
 **EU AI Act enforcement: August 2, 2026.** This remains a real forcing function, but the compliance package only matters commercially if the core PMF loop is usable enough to demo and adopt.
 
 ### Q2 2026 Priorities

@@ -19,6 +19,14 @@ But when something goes wrong, nobody can answer: *why did we decide that?*
 - **Single-model blind spots.** One LLM = one perspective. No adversarial vetting.
 - **Compliance gaps.** Regulators want explainability. You have chat logs. EU AI Act enforcement begins August 2, 2026.
 
+## Why Now
+
+Agentic execution is now mainstream. OpenAI ships agent-building tools, Anthropic ships a terminal agent that edits files and creates commits, GitHub ships a background coding agent that opens pull requests for review, and Google sells centralized agent governance for the enterprise.
+
+That is the market signal: the bottleneck is no longer "can AI take action?" It is "can operators stay in control of what the AI did, why it did it, and whether it should proceed?"
+
+That makes auditable decision-making urgent now, not later. The EU AI Act becomes fully applicable on **August 2, 2026**, with general-purpose AI obligations already in force since **August 2, 2025**. Even before regulation bites, security, legal, and platform teams already want receipts, approvals, and clear stop conditions before AI actions reach production systems.
+
 ## What Aragora Does
 
 Aragora is a **Decision Integrity Platform**. It orchestrates multiple AI agents
@@ -43,9 +51,9 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
    coordination, and explicit blocker handling are first-class parts of the
    system, not afterthoughts.
 
-4. **It fits above the tools you already use.** Aragora complements GitHub,
-   Slack, the terminal, and existing worker runtimes instead of forcing a stack
-   replacement.
+4. **Operator control by default.** Supervisor-backed work orders, receipt gates,
+   `--dry-run`, approval steps, lease-based coordination, and explicit merge policy --
+   not unguarded autonomy.
 
 ## What Works End-to-End Today (March 23, 2026)
 
