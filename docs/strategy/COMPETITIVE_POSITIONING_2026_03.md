@@ -114,21 +114,20 @@ Why this works:
 - receipts and blocker truthfulness are valuable immediately
 - the repo now contains real evidence from queue-produced work, not just demos
 
-## First-Deal Decision Ownership
+## What Makes The Beachhead Urgent Enough To Buy
 
-The first deals will usually have four distinct decision owners, even if a
-smaller company compresses them into two people:
+The first design partner cohort should be recruited around recurring pain plus a
+forcing event, not around abstract excitement about multi-agent systems.
 
-| Role | Owns this decision | What Aragora must prove |
-|------|--------------------|-------------------------|
-| Buyer | Is this worth budget and organizational attention right now? | Clear ROI wedge, narrow pilot, fast time-to-first-receipt |
-| Daily user | Will I actually run this workflow every week? | Low-friction operator path, useful summaries, precise next actions |
-| Evaluator | Do the receipts, dissent, and controls meet the bar for consequential work? | Provenance, review evidence, explicit gates, truthful stopping |
-| Blocker | Is there any security, legal, procurement, or policy issue that still stops rollout? | Exact blocker handling, deployment answers, audit/export story |
+The highest-urgency patterns are:
 
-If Aragora collapses these roles into a generic "champion," the team will
-misread where a deal is stuck. Product and GTM should track them separately and
-build artifacts for each.
+- consequential review bottlenecks after a bad escape, rollback, or rising AI-generated change volume
+- manual triage overload after missed escalations, SLA pressure, or operator bottlenecks
+- bounded execution backlog when the team wants more automation but no longer trusts ungated agents
+- audit-evidence scramble as an urgency amplifier layered onto any of the above
+
+See [DESIGN_PARTNER_PAIN_TAXONOMY_2026_03.md](./DESIGN_PARTNER_PAIN_TAXONOMY_2026_03.md)
+for the full qualification and trigger rubric.
 
 ## Competitor Map
 
