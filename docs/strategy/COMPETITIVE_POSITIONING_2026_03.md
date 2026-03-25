@@ -35,6 +35,22 @@ That means:
 
 This is a different category from "AI coding assistant" or "agent shell."
 
+## First-Time Narrative
+
+For first-time buyers and operators, Aragora should be explained in review
+language, not architecture language.
+
+The plain-English version is:
+
+**Aragora gives each consequential AI decision a receipt: what it recommended,
+what evidence it used, and where disagreement still remains.**
+
+That framing does three things:
+
+- makes the product legible without requiring AI systems knowledge
+- explains why dissent is useful instead of alarming
+- positions Aragora as a governance layer, not just another model router
+
 ## Where Aragora Has A Real Wedge
 
 ### 1. Adversarial disagreement as evidence
@@ -61,6 +77,12 @@ The system should always be able to answer:
 - what evidence was used
 - why the system advanced or stopped
 - what the next human action actually is
+
+For non-technical audiences, the same idea should be rendered as:
+
+- **Receipt:** what happened and what Aragora recommends
+- **Evidence:** why Aragora believes that recommendation is justified
+- **Dissent:** what still needs human judgment before action
 
 ### 3. Control-plane coordination above worker runtimes
 
