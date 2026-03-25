@@ -97,10 +97,11 @@ Default stop-doing calls:
 - ELO-based agent skill tracking and team selection
 
 ### Knowledge & Memory
-- Knowledge Mound for organizational knowledge accumulation
+- Knowledge Mound for organizational knowledge accumulation with provenance,
+  contradiction detection, and confidence-gated writeback
 - Continuum Memory with 4-tier retention (fast/medium/slow/glacial)
 - Evidence collection from 11+ sources (ArXiv, GitHub, Wikipedia, etc.)
-- Cross-debate learning and pattern recognition
+- Cross-debate learning and pattern recognition without auto-promoting low-confidence debate residue
 
 ### Enterprise Features
 - Multi-tenant workspaces with RBAC

@@ -39,9 +39,9 @@ Your input -> multi-agent debate -> consensus + receipt -> KM feedback -> Slack 
    audit-ready decision receipts with provenance, votes, confidence, and the
    explicit next action.
 
-3. **Execution is bounded and truthful.** Approval gates, lease-based
-   coordination, and explicit blocker handling are first-class parts of the
-   system, not afterthoughts.
+3. **Self-improving knowledge loop.** High-confidence outcomes, evidence trails, and
+   recurring resolution patterns feed back into a Knowledge Mound (42 adapters).
+   Low-confidence or conflicting material is flagged instead of silently becoming policy.
 
 4. **It fits above the tools you already use.** Aragora complements GitHub,
    Slack, the terminal, and existing worker runtimes instead of forcing a stack
@@ -108,11 +108,28 @@ only where the risk justifies it.
 
 ## What Partners Get
 
-- A self-improving platform that learns from every decision it vets
+- A self-improving platform that compounds vetted decisions into reusable organizational memory
 - Autonomous repo maintenance under explicit policy and receipt gates
 - Audit-ready decision receipts (SHA-256 signed, exportable, verifiable)
 - Priority support, roadmap influence, and direct access to the team
 - Early access to enterprise features (OIDC/SAML SSO, RBAC, multi-tenancy)
+
+## How Knowledge Mound Actually Learns
+
+**Founder version:** Every strong receipt should make the next decision cheaper and
+better. Knowledge Mound is how Aragora compounds vetted work into institutional
+memory without pretending every model output is true.
+
+**Buyer version:** Aragora stores governed knowledge with provenance. It learns
+high-confidence claims, evidence, and resolution patterns; it does not auto-promote
+raw AI output into policy.
+
+| Gets learned | Does not get learned | Must be reviewed |
+|--------------|----------------------|------------------|
+| High-confidence debate outcomes that clear writeback thresholds | Low-confidence outcomes that do not clear the threshold | Contradictions between new knowledge and existing knowledge |
+| Claims, facts, insights, and references with provenance | Unresolved disagreement as if it were settled truth | Promotion of important claims into verified operating knowledge |
+| Reusable patterns such as decision style, risk tolerance, domain expertise, and resolution patterns | Sensitive cost telemetry unless the opt-in adapter is enabled | Any receipt with low confidence, meaningful dissent, or high-impact side effects |
+| Staleness and contradiction signals so old knowledge can be challenged over time | Stale or superseded items as evergreen truth | Irreversible or policy-setting actions before they execute |
 
 ## What We Need From Partners
 
