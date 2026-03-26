@@ -296,7 +296,8 @@ function cleanPreviewText(text: string): string {
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(/^["'“”]+|["'“”]+$/g, "");
 }
 
 function containsMarkdownSyntax(text: string): boolean {
@@ -435,6 +436,24 @@ function buildDecisionSnapshot(summary: string): {
   caution: string;
   nextStep: string;
 } {
+  if (/^The returned agents (reached|surfaced)/i.test(summary.trim())) {
+    const sentences = splitIntoSentences(summary);
+    return {
+      recommendation: trimInsight(
+        sentences[0] || "The returned agents reached a conditional consensus.",
+        220,
+      ),
+      rationale: trimInsight(
+        sentences[1] ||
+          "The strongest support for the recommendation is captured in the agent positions below.",
+      ),
+      caution: trimInsight(
+        "The returned agents still emphasize different tradeoffs, so the rollout should stay measured and reversible.",
+      ),
+      nextStep: "Compare the agent positions below before turning this into policy.",
+    };
+  }
+
   const sentences = splitIntoSentences(summary);
   const used = new Set<number>();
 
