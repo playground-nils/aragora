@@ -788,7 +788,11 @@ async def get_staleness_analysis(
 
         # Fall back to stats-based analysis
         if hasattr(km, "get_stats"):
-            raw_stats = await _call_km_method(km, "get_stats")
+            try:
+                raw_stats = await _call_km_method(km, "get_stats")
+            except (RuntimeError, OSError, ValueError) as e:
+                logger.debug("KM get_stats unavailable for staleness: %s", e)
+                raw_stats = None
             if isinstance(raw_stats, dict):
                 total_items = raw_stats.get("total_items", raw_stats.get("count", 0))
 
