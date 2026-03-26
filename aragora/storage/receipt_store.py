@@ -186,9 +186,14 @@ class StoredReceipt:
         return result
 
     def to_full_dict(self) -> dict[str, Any]:
-        """Convert to full dictionary including data payload."""
-        result = self.to_dict()
-        result.update(self.data)
+        """Convert to full dictionary including data payload.
+
+        The data blob (from data_json) provides the base, then the
+        authoritative structured DB column values from to_dict() are
+        layered on top so they always win if the blob is stale.
+        """
+        result = dict(self.data)
+        result.update(self.to_dict())
         return result
 
 

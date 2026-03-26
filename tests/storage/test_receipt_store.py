@@ -195,6 +195,47 @@ class TestStoredReceipt:
         assert result["extra_field"] == "value"
         assert result["receipt_id"] == "receipt-001"
 
+    def test_to_full_dict_structured_fields_win_over_stale_data(self):
+        """Authoritative DB column values must override stale data_json blob values.
+
+        When a receipt is signed after initial save, the structured
+        ``verdict``/``confidence`` columns may differ from the original
+        ``data_json`` blob.  ``to_full_dict()`` must prefer the column
+        values so callers always see the authoritative state.
+        """
+        receipt = StoredReceipt(
+            receipt_id="receipt-002",
+            gauntlet_id="gauntlet-002",
+            debate_id="debate-002",
+            created_at=1700000000.0,
+            expires_at=1700086400.0,
+            verdict="APPROVED",  # authoritative column value
+            confidence=0.95,  # updated after initial save
+            risk_level="LOW",
+            risk_score=0.05,
+            checksum="sha256:xyz",
+            data={
+                # Stale blob values from original save
+                "verdict": "NEEDS_REVIEW",
+                "confidence": 0.5,
+                "risk_level": "HIGH",
+                "timestamp": "2023-11-15T00:00:00Z",
+                "input_summary": "Original question",
+            },
+        )
+
+        result = receipt.to_full_dict()
+
+        # Structured fields must win
+        assert result["verdict"] == "APPROVED"
+        assert result["confidence"] == 0.95
+        assert result["risk_level"] == "LOW"
+        assert result["receipt_id"] == "receipt-002"
+        assert result["debate_id"] == "debate-002"
+        # Data-only fields are preserved
+        assert result["timestamp"] == "2023-11-15T00:00:00Z"
+        assert result["input_summary"] == "Original question"
+
 
 class TestSignatureVerificationResult:
     """Tests for SignatureVerificationResult dataclass."""
