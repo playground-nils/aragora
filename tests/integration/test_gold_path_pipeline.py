@@ -153,8 +153,18 @@ class TestDecisionPlanFactory:
         assert plan.status == PlanStatus.AWAITING_APPROVAL
         assert plan.requires_human_approval is True
 
-    def test_never_approval_mode(self):
+    def test_never_approval_mode_rejects_failed_quality(self):
+        """NEVER mode rejects low-quality results to prevent unsafe automation."""
         result = _make_debate_result(confidence=0.3, consensus_reached=False)
+        with pytest.raises(ValueError, match="Cannot create automated plan"):
+            DecisionPlanFactory.from_debate_result(
+                result,
+                approval_mode=ApprovalMode.NEVER,
+            )
+
+    def test_never_approval_mode_accepts_good_quality(self):
+        """NEVER mode proceeds when quality verdict passes."""
+        result = _make_debate_result(confidence=0.95, consensus_reached=True)
         plan = DecisionPlanFactory.from_debate_result(
             result,
             approval_mode=ApprovalMode.NEVER,
