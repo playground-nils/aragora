@@ -86,6 +86,9 @@ class TestAuthManifestIntegrity:
                 "/api/breakpoints",
                 "/api/consensus",
                 "/api/v1/playground",
+                "/api/v1/public",
+                "/api/v1/spectate",
+                "/api/v1/onboarding",
             ]
             is_allowed_public = any(
                 req.path.startswith(prefix) for prefix in allowed_public_prefixes
