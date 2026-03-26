@@ -14,6 +14,7 @@ import {
   useImprovementQueue,
   type SystemOverview,
 } from '@/hooks/useSystemIntelligence';
+import type { SystemOverview } from '@/hooks/useSystemIntelligence';
 import {
   useSystemHealth,
   useAgentPoolHealth,
