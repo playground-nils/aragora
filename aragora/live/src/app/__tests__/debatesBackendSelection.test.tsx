@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 
 import DebatesPage from '../(app)/debates/page';
 import DebateDetailClient from '../(app)/debates/[id]/DebateDetailClient';

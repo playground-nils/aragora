@@ -12,7 +12,6 @@ import {
   useAgentPerformance,
   useInstitutionalMemory,
   useImprovementQueue,
-  type SystemOverview,
 } from '@/hooks/useSystemIntelligence';
 import type { SystemOverview as SystemOverviewData } from '@/hooks/useSystemIntelligence';
 import {

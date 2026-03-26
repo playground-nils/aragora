@@ -125,7 +125,7 @@ function StatusDot({ status }: { status: 'ok' | 'error' | 'checking' }) {
 // Spinner
 // ---------------------------------------------------------------------------
 
-function Spinner({ className = 'w-4 h-4' }: { className?: string }) {
+function _Spinner({ className = 'w-4 h-4' }: { className?: string }) {
   return (
     <svg
       className={`animate-spin ${className}`}
