@@ -38,6 +38,7 @@ Migration Notes:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import re
@@ -484,7 +485,7 @@ async def _call_user_store_method(
 
     sync_method = getattr(user_store, sync_name, None)
     if callable(sync_method):
-        return sync_method(*args, **kwargs)
+        return await asyncio.to_thread(sync_method, *args, **kwargs)
 
     if required:
         raise AttributeError(f"User store does not implement {async_name} or {sync_name}")

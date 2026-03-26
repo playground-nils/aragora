@@ -26,6 +26,8 @@ Migration Notes:
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from typing import Any
 
@@ -245,6 +247,17 @@ async def get_knowledge_mound(request: Request):
         return None
 
 
+async def _call_km_method(km: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
+    """Run Knowledge Mound methods without blocking the FastAPI event loop."""
+    method = getattr(km, method_name)
+    if inspect.iscoroutinefunction(method):
+        return await method(*args, **kwargs)
+    result = await asyncio.to_thread(method, *args, **kwargs)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -343,9 +356,9 @@ async def search_knowledge(
 
         # Try semantic search first, fall back to simple search
         if hasattr(km, "search"):
-            results = km.search(query, **search_kwargs)
+            results = await _call_km_method(km, "search", query, **search_kwargs)
         elif hasattr(km, "query"):
-            results = km.query(query, **search_kwargs)
+            results = await _call_km_method(km, "query", query, **search_kwargs)
         else:
             results = []
 
@@ -408,11 +421,11 @@ async def get_knowledge_stats(
         stats: dict[str, Any] = {}
 
         if hasattr(km, "get_stats"):
-            raw_stats = km.get_stats()
+            raw_stats = await _call_km_method(km, "get_stats")
             if isinstance(raw_stats, dict):
                 stats = raw_stats
         elif hasattr(km, "stats"):
-            raw_stats = km.stats()
+            raw_stats = await _call_km_method(km, "stats")
             if isinstance(raw_stats, dict):
                 stats = raw_stats
 
@@ -420,7 +433,7 @@ async def get_knowledge_stats(
         adapters: list[str] = []
         if hasattr(km, "list_adapters"):
             try:
-                adapters = [str(a) for a in km.list_adapters()]
+                adapters = [str(a) for a in await _call_km_method(km, "list_adapters")]
             except (RuntimeError, TypeError, AttributeError):
                 pass
 
@@ -549,11 +562,11 @@ async def get_knowledge_item(
         item = None
 
         if hasattr(km, "get"):
-            item = km.get(item_id)
+            item = await _call_km_method(km, "get", item_id)
         elif hasattr(km, "get_item"):
-            item = km.get_item(item_id)
+            item = await _call_km_method(km, "get_item", item_id)
         elif hasattr(km, "get_by_id"):
-            item = km.get_by_id(item_id)
+            item = await _call_km_method(km, "get_by_id", item_id)
 
         if not item:
             raise NotFoundError(f"Knowledge item {item_id} not found")
@@ -599,11 +612,11 @@ async def ingest_knowledge_item(
 
         # Try to ingest via the knowledge mound API
         if hasattr(km, "ingest"):
-            km.ingest(item_data)
+            await _call_km_method(km, "ingest", item_data)
         elif hasattr(km, "add"):
-            km.add(item_data)
+            await _call_km_method(km, "add", item_data)
         elif hasattr(km, "store"):
-            km.store(item_data)
+            await _call_km_method(km, "store", item_data)
         else:
             logger.warning("Knowledge Mound has no ingest/add/store method")
 
@@ -648,7 +661,7 @@ async def list_adapters(
         adapters: list[AdapterInfo] = []
 
         if hasattr(km, "list_adapters"):
-            raw_adapters = km.list_adapters()
+            raw_adapters = await _call_km_method(km, "list_adapters")
             for a in raw_adapters:
                 if isinstance(a, str):
                     adapters.append(AdapterInfo(name=a))
@@ -708,9 +721,9 @@ async def structured_query(
 
         # Try structured query, fall back to search
         if hasattr(km, "query"):
-            results = km.query(body.query, **search_kwargs)
+            results = await _call_km_method(km, "query", body.query, **search_kwargs)
         elif hasattr(km, "search"):
-            results = km.search(body.query, **search_kwargs)
+            results = await _call_km_method(km, "search", body.query, **search_kwargs)
         else:
             results = []
 
@@ -753,7 +766,9 @@ async def get_staleness_analysis(
 
         # Try dedicated staleness method
         if hasattr(km, "get_staleness"):
-            raw = km.get_staleness(threshold_days=threshold_days, limit=limit)
+            raw = await _call_km_method(
+                km, "get_staleness", threshold_days=threshold_days, limit=limit
+            )
             if isinstance(raw, dict):
                 return StalenessResponse(
                     total_items=raw.get("total_items", 0),
@@ -773,7 +788,7 @@ async def get_staleness_analysis(
 
         # Fall back to stats-based analysis
         if hasattr(km, "get_stats"):
-            raw_stats = km.get_stats()
+            raw_stats = await _call_km_method(km, "get_stats")
             if isinstance(raw_stats, dict):
                 total_items = raw_stats.get("total_items", raw_stats.get("count", 0))
 
@@ -804,9 +819,9 @@ async def delete_knowledge_item(
         # Verify item exists
         existing = None
         if hasattr(km, "get"):
-            existing = km.get(item_id)
+            existing = await _call_km_method(km, "get", item_id)
         elif hasattr(km, "get_item"):
-            existing = km.get_item(item_id)
+            existing = await _call_km_method(km, "get_item", item_id)
 
         if not existing:
             raise NotFoundError(f"Knowledge item {item_id} not found")
@@ -814,11 +829,11 @@ async def delete_knowledge_item(
         # Attempt deletion
         deleted = False
         if hasattr(km, "delete"):
-            deleted = km.delete(item_id)
+            deleted = await _call_km_method(km, "delete", item_id)
         elif hasattr(km, "delete_item"):
-            deleted = km.delete_item(item_id)
+            deleted = await _call_km_method(km, "delete_item", item_id)
         elif hasattr(km, "remove"):
-            deleted = km.remove(item_id)
+            deleted = await _call_km_method(km, "remove", item_id)
         else:
             raise HTTPException(
                 status_code=501,

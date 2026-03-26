@@ -37,6 +37,7 @@ Migration Notes:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import time
@@ -443,6 +444,17 @@ async def _await_if_needed(result: Any) -> Any:
     return result
 
 
+async def _call_store(store: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
+    """Run FactStore methods without blocking the FastAPI event loop."""
+    method = getattr(store, method_name)
+    if inspect.iscoroutinefunction(method):
+        return await method(*args, **kwargs)
+    result = await asyncio.to_thread(method, *args, **kwargs)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
 # =============================================================================
 # Fact CRUD Endpoints
 # =============================================================================
@@ -478,7 +490,7 @@ async def list_facts(
             offset=offset,
         )
 
-        facts = store.list_facts(filters)
+        facts = await _call_store(store, "list_facts", filters)
         summaries = [_fact_to_summary(f) for f in facts]
 
         return FactListResponse(
@@ -505,7 +517,7 @@ async def get_fact(
     Returns the full details of a fact including evidence and metadata.
     """
     try:
-        fact = store.get_fact(fact_id)
+        fact = await _call_store(store, "get_fact", fact_id)
         if not fact:
             raise NotFoundError(f"Fact not found: {fact_id}")
         return _fact_to_detail(fact)
@@ -529,7 +541,9 @@ async def create_fact(
     topics, and metadata. Requires ``knowledge:write`` permission.
     """
     try:
-        fact = store.add_fact(
+        fact = await _call_store(
+            store,
+            "add_fact",
             statement=body.statement,
             workspace_id=body.workspace_id,
             evidence_ids=body.evidence_ids,
@@ -574,7 +588,7 @@ async def update_fact(
         if body.superseded_by is not None:
             kwargs["superseded_by"] = body.superseded_by
 
-        updated = store.update_fact(fact_id, **kwargs)
+        updated = await _call_store(store, "update_fact", fact_id, **kwargs)
         if not updated:
             raise NotFoundError(f"Fact not found: {fact_id}")
 
@@ -601,7 +615,7 @@ async def delete_fact(
     Requires ``knowledge:delete`` permission.
     """
     try:
-        deleted = store.delete_fact(fact_id)
+        deleted = await _call_store(store, "delete_fact", fact_id)
         if not deleted:
             raise NotFoundError(f"Fact not found: {fact_id}")
         return {"deleted": True, "fact_id": fact_id}
@@ -634,13 +648,15 @@ async def verify_fact(
     Requires ``knowledge:write`` permission.
     """
     try:
-        fact = store.get_fact(fact_id)
+        fact = await _call_store(store, "get_fact", fact_id)
         if not fact:
             raise NotFoundError(f"Fact not found: {fact_id}")
 
         if DatasetQueryEngine is None or not isinstance(engine, DatasetQueryEngine):
             # Queue for later verification
-            store.update_fact(
+            await _call_store(
+                store,
+                "update_fact",
                 fact_id,
                 metadata={
                     **(fact.metadata if hasattr(fact, "metadata") else {}),
@@ -699,11 +715,11 @@ async def get_contradictions(
     contradicting the specified fact.
     """
     try:
-        fact = store.get_fact(fact_id)
+        fact = await _call_store(store, "get_fact", fact_id)
         if not fact:
             raise NotFoundError(f"Fact not found: {fact_id}")
 
-        contradictions = store.get_contradictions(fact_id)
+        contradictions = await _call_store(store, "get_contradictions", fact_id)
         return ContradictionsResponse(
             fact_id=fact_id,
             contradictions=[_fact_to_summary(c) for c in contradictions],
@@ -734,12 +750,14 @@ async def get_relations(
     optionally filtered by relation type.
     """
     try:
-        fact = store.get_fact(fact_id)
+        fact = await _call_store(store, "get_fact", fact_id)
         if not fact:
             raise NotFoundError(f"Fact not found: {fact_id}")
 
         rel_type = FactRelationType(relation_type) if relation_type else None
-        relations = store.get_relations(
+        relations = await _call_store(
+            store,
+            "get_relations",
             fact_id,
             relation_type=rel_type,
             as_source=as_source,
@@ -779,12 +797,14 @@ async def add_relation(
         raise HTTPException(status_code=400, detail=f"Invalid relation_type: {body.relation_type}")
 
     try:
-        if not store.get_fact(fact_id):
+        if not await _call_store(store, "get_fact", fact_id):
             raise NotFoundError(f"Source fact not found: {fact_id}")
-        if not store.get_fact(body.target_fact_id):
+        if not await _call_store(store, "get_fact", body.target_fact_id):
             raise NotFoundError(f"Target fact not found: {body.target_fact_id}")
 
-        relation = store.add_relation(
+        relation = await _call_store(
+            store,
+            "add_relation",
             source_fact_id=fact_id,
             target_fact_id=body.target_fact_id,
             relation_type=rel_type,
@@ -820,7 +840,9 @@ async def add_relation_bulk(
         raise HTTPException(status_code=400, detail=f"Invalid relation_type: {body.relation_type}")
 
     try:
-        relation = store.add_relation(
+        relation = await _call_store(
+            store,
+            "add_relation",
             source_fact_id=body.source_fact_id,
             target_fact_id=body.target_fact_id,
             relation_type=rel_type,
@@ -943,7 +965,7 @@ async def get_stats(
     optionally scoped to a specific workspace.
     """
     try:
-        stats = store.get_statistics(workspace_id)
+        stats = await _call_store(store, "get_statistics", workspace_id)
         return StatsResponse(
             workspace_id=workspace_id,
             **stats,
@@ -981,7 +1003,7 @@ async def export_knowledge_base(
             limit=10000,
             offset=0,
         )
-        facts = store.list_facts(filters)
+        facts = await _call_store(store, "list_facts", filters)
         fact_dicts = [f.to_dict() if hasattr(f, "to_dict") else f for f in facts]
 
         return ExportResponse(
@@ -1025,12 +1047,14 @@ async def import_knowledge_base(
             # Check for existing fact by ID if merge strategy requires it
             fact_id = fact_data.get("id")
             if fact_id and body.merge_strategy == "skip_existing":
-                existing = store.get_fact(fact_id)
+                existing = await _call_store(store, "get_fact", fact_id)
                 if existing:
                     skipped += 1
                     continue
 
-            store.add_fact(
+            await _call_store(
+                store,
+                "add_fact",
                 statement=statement,
                 workspace_id=fact_data.get("workspace_id", body.workspace_id),
                 evidence_ids=fact_data.get("evidence_ids", []),
@@ -1069,7 +1093,7 @@ async def get_sync_status(
     try:
         # Try to get sync info from the store
         if hasattr(store, "get_sync_status"):
-            sync_info = store.get_sync_status()
+            sync_info = await _call_store(store, "get_sync_status")
             if isinstance(sync_info, dict):
                 return SyncStatusResponse(
                     synced=sync_info.get("synced", True),

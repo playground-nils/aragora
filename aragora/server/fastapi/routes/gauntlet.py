@@ -9,7 +9,9 @@ Provides async gauntlet stress-test management endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import logging
 import uuid
 from datetime import datetime
@@ -137,6 +139,17 @@ async def get_gauntlet_storage(request: Request):
         raise HTTPException(status_code=503, detail="Gauntlet storage not available")
 
 
+async def _call_store_method(store: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
+    """Run gauntlet store methods without blocking the FastAPI event loop."""
+    method = getattr(store, method_name)
+    if inspect.iscoroutinefunction(method):
+        return await method(*args, **kwargs)
+    result = await asyncio.to_thread(method, *args, **kwargs)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
 # =============================================================================
 # Endpoints
 # =============================================================================
@@ -188,7 +201,9 @@ async def start_gauntlet(
             store = ctx.get("gauntlet_storage")
             if store and hasattr(store, "save_inflight"):
                 try:
-                    store.save_inflight(
+                    await _call_store_method(
+                        store,
+                        "save_inflight",
                         gauntlet_id=gauntlet_id,
                         status="pending",
                         input_type=body.input_type,
@@ -246,7 +261,7 @@ async def get_gauntlet_status(
 
         # Check persistent storage - inflight
         if hasattr(store, "get_inflight"):
-            inflight = store.get_inflight(run_id)
+            inflight = await _call_store_method(store, "get_inflight", run_id)
             if inflight:
                 inflight_dict = inflight.to_dict() if hasattr(inflight, "to_dict") else inflight
                 return GauntletStatusResponse(
@@ -270,7 +285,7 @@ async def get_gauntlet_status(
 
         # Check completed results
         if hasattr(store, "get"):
-            stored = store.get(run_id)
+            stored = await _call_store_method(store, "get", run_id)
             if stored:
                 return GauntletStatusResponse(
                     gauntlet_id=run_id,
@@ -331,7 +346,7 @@ async def get_gauntlet_findings(
         # Check persistent storage
         if result_data is None:
             if hasattr(store, "get"):
-                stored = store.get(run_id)
+                stored = await _call_store_method(store, "get", run_id)
                 if stored:
                     result_data = (
                         stored

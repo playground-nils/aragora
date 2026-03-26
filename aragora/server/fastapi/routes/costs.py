@@ -30,6 +30,7 @@ Migration Notes:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -499,13 +500,14 @@ async def set_budget(
         raise HTTPException(status_code=503, detail="Cost tracking not available")
 
     try:
-        tracker.set_budget(
+        await asyncio.to_thread(
+            tracker.set_budget,
             workspace_id=body.workspace_id,
             monthly_limit_usd=Decimal(str(body.monthly_limit_usd)),
             alert_threshold=body.alert_threshold,
         )
 
-        budget = tracker.get_budget(workspace_id=body.workspace_id)
+        budget = await asyncio.to_thread(tracker.get_budget, workspace_id=body.workspace_id)
         current_spend = float(budget.current_monthly_spend) if budget else 0.0
         limit = body.monthly_limit_usd
 
@@ -725,7 +727,7 @@ async def list_budgets(
         return {"data": {"budgets": []}}
 
     try:
-        budget = tracker.get_budget(workspace_id=workspace_id)
+        budget = await asyncio.to_thread(tracker.get_budget, workspace_id=workspace_id)
         if not budget:
             return {"data": {"budgets": []}}
 
