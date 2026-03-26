@@ -22,18 +22,53 @@ import subprocess
 import sys
 from pathlib import Path
 
-from aragora.swarm.reporter import build_integrator_view
-from aragora.worktree import (
-    AutopilotRequest,
-    FleetIntegrationWorker,
-    FleetIntegrationWorkerConfig,
-    resolve_repo_root,
-    run_autopilot,
-)
-from aragora.worktree.fleet import (
-    FleetCoordinationStore,
-    build_fleet_rows,
-)
+
+def build_integrator_view(*args, **kwargs):
+    from aragora.swarm.reporter import build_integrator_view as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def resolve_repo_root(*args, **kwargs):
+    from aragora.worktree import resolve_repo_root as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def FleetIntegrationWorker(*args, **kwargs):
+    from aragora.worktree import FleetIntegrationWorker as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def FleetIntegrationWorkerConfig(*args, **kwargs):
+    from aragora.worktree import FleetIntegrationWorkerConfig as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def AutopilotRequest(*args, **kwargs):
+    from aragora.worktree import AutopilotRequest as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def run_autopilot(*args, **kwargs):
+    from aragora.worktree import run_autopilot as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def FleetCoordinationStore(*args, **kwargs):
+    from aragora.worktree.fleet import FleetCoordinationStore as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def build_fleet_rows(*args, **kwargs):
+    from aragora.worktree.fleet import build_fleet_rows as _impl
+
+    return _impl(*args, **kwargs)
 
 
 def add_worktree_parser(subparsers: argparse._SubParsersAction) -> None:
