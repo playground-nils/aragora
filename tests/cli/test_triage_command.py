@@ -21,12 +21,15 @@ def test_add_triage_parser_supports_auth_and_dry_run():
     subparsers = parser.add_subparsers(dest="command")
     triage_cmd.add_triage_parser(subparsers)
 
-    run_args = parser.parse_args(["triage", "run", "--batch", "3", "--dry-run"])
+    run_args = parser.parse_args(
+        ["triage", "run", "--batch", "3", "--dry-run", "--page-token", "next-123"]
+    )
     auth_args = parser.parse_args(["triage", "auth"])
 
     assert run_args.triage_command == "run"
     assert run_args.batch == 3
     assert run_args.dry_run is True
+    assert run_args.page_token == "next-123"
     assert auth_args.triage_command == "auth"
 
 
@@ -81,7 +84,10 @@ async def test_run_triage_dry_run_disables_action_execution(capsys, tmp_path, mo
         receipt_id="receipt-2",
     )
     monkeypatch.setenv("ARAGORA_TRIAGE_DIAGNOSTICS_DIR", str(tmp_path / "triage-runs"))
-    fake_runner = SimpleNamespace(run_triage=AsyncMock(return_value=[decision]))
+    fake_runner = SimpleNamespace(
+        run_triage=AsyncMock(return_value=[decision]),
+        next_page_token="next-page-xyz",
+    )
     fake_service = SimpleNamespace(review_receipt=object())
 
     with (
@@ -95,14 +101,24 @@ async def test_run_triage_dry_run_disables_action_execution(capsys, tmp_path, mo
             return_value=fake_service,
         ),
     ):
-        await triage_cmd._run_triage(batch_size=2, auto_approve=True, dry_run=True)
+        await triage_cmd._run_triage(
+            batch_size=2,
+            auto_approve=True,
+            dry_run=True,
+            page_token="cursor-2",
+        )
 
-    fake_runner.run_triage.assert_awaited_once_with(batch_size=2, auto_approve=False)
+    fake_runner.run_triage.assert_awaited_once_with(
+        batch_size=2,
+        auto_approve=False,
+        page_token="cursor-2",
+    )
     out = capsys.readouterr().out
     assert "[DRY RUN] Fetching up to 2 unread messages" in out
     assert "[DRY RUN] Proposed triage decisions" in out
     assert "archive" in out
     assert "Run summary:" in out
+    assert "Next page token: next-page-xyz" in out
 
 
 @pytest.mark.asyncio
@@ -115,7 +131,7 @@ async def test_run_triage_defaults_to_staged_profile(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("ARAGORA_TRIAGE_DIAGNOSTICS_DIR", str(tmp_path / "triage-runs"))
     monkeypatch.delenv("ARAGORA_TRIAGE_PROFILE", raising=False)
-    fake_runner = SimpleNamespace(run_triage=AsyncMock(return_value=[decision]))
+    fake_runner = SimpleNamespace(run_triage=AsyncMock(return_value=[decision]), next_page_token=None)
     fake_service = SimpleNamespace(review_receipt=object())
     captured: dict[str, object] = {}
 
@@ -146,7 +162,7 @@ async def test_run_triage_footer_shows_diagnostics_path(capsys, tmp_path, monkey
     )
     monkeypatch.setenv("ARAGORA_TRIAGE_DIAGNOSTICS_DIR", str(tmp_path / "triage-runs"))
 
-    async def _run_triage(*, batch_size, auto_approve):
+    async def _run_triage(*, batch_size, auto_approve, page_token=None):
         record_triage_diagnostic(
             code="provider_fallback",
             severity=DiagnosticSeverity.DEGRADED,
@@ -156,7 +172,10 @@ async def test_run_triage_footer_shows_diagnostics_path(capsys, tmp_path, monkey
         )
         return [decision]
 
-    fake_runner = SimpleNamespace(run_triage=AsyncMock(side_effect=_run_triage))
+    fake_runner = SimpleNamespace(
+        run_triage=AsyncMock(side_effect=_run_triage),
+        next_page_token=None,
+    )
     fake_service = SimpleNamespace(review_receipt=object())
 
     with (
@@ -225,7 +244,7 @@ async def test_initialize_triage_storage_bootstraps_shared_pool():
 
 
 @pytest.mark.asyncio
-async def test_shutdown_triage_storage_closes_http_pool():
+async def test_shutdown_triage_storage_closes_http_pool_and_resets_singletons():
     with (
         patch(
             "aragora.server.startup.database.close_postgres_pool",
@@ -243,6 +262,18 @@ async def test_shutdown_triage_storage_closes_http_pool():
             "aragora.storage.connection_factory.close_all_pools",
             AsyncMock(),
         ) as close_all_pools,
+        patch(
+            "aragora.events.dispatcher.shutdown_dispatcher",
+        ) as shutdown_dispatcher,
+        patch(
+            "aragora.storage.webhook_config_store.reset_webhook_config_store",
+        ) as reset_webhook_config_store,
+        patch(
+            "aragora.inbox.trust_wedge.reset_inbox_trust_wedge_service",
+        ) as reset_inbox_trust_wedge_service,
+        patch(
+            "aragora.inbox.trust_wedge.reset_inbox_trust_wedge_store",
+        ) as reset_inbox_trust_wedge_store,
         patch("aragora.cli.commands.triage.asyncio.sleep", AsyncMock()) as sleep,
     ):
         await triage_cmd._shutdown_triage_storage()
@@ -251,6 +282,10 @@ async def test_shutdown_triage_storage_closes_http_pool():
     close_http_pool.assert_awaited_once()
     close_shared_connector.assert_awaited_once()
     close_all_pools.assert_awaited_once()
+    shutdown_dispatcher.assert_called_once_with(wait=True)
+    reset_webhook_config_store.assert_called_once()
+    reset_inbox_trust_wedge_service.assert_called_once()
+    reset_inbox_trust_wedge_store.assert_called_once()
     sleep.assert_awaited_once_with(0.05)
 
 

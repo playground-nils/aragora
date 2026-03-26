@@ -48,6 +48,7 @@ _SUPPORTED_TRIAGE_PROFILES = {"baseline", "staged_v1"}
 _DEFAULT_TRIAGE_PROFILE = "staged_v1"
 _FAST_TIER_CONFIDENCE_THRESHOLD = 0.85
 _FAST_TIER_TIMEOUT_SECONDS = 12.0
+_ESCALATED_TIER_ROUNDS = 1
 _HIGH_RISK_ACTIONS = {InboxWedgeAction.LABEL, InboxWedgeAction.STAR}
 _DEGRADED_DIAGNOSTIC_SEVERITIES = {
     DiagnosticSeverity.BLOCKING.value,
@@ -475,16 +476,23 @@ class InboxTriageRunner:
         self._diagnostics = diagnostics
         self._profile = _normalize_triage_profile(profile or os.getenv("ARAGORA_TRIAGE_PROFILE"))
         self._triaged: list[TriageDecision] = []
+        self._next_page_token: str | None = None
 
     @property
     def triaged(self) -> list[TriageDecision]:
         """Decisions produced by the most recent ``run_triage`` call."""
         return list(self._triaged)
 
+    @property
+    def next_page_token(self) -> str | None:
+        """Pagination token for the next unread-message page, if available."""
+        return self._next_page_token
+
     async def run_triage(
         self,
         batch_size: int = 10,
         auto_approve: bool = False,
+        page_token: str | None = None,
     ) -> list[TriageDecision]:
         """Run the full triage pipeline.
 
@@ -498,7 +506,7 @@ class InboxTriageRunner:
         Returns the list of ``TriageDecision`` objects. Those not
         auto-approved remain in CREATED state for later review.
         """
-        messages = await self._fetch_messages(batch_size)
+        messages = await self._fetch_messages(batch_size, page_token=page_token)
         logger.info("Fetched %d messages for triage", len(messages))
 
         decisions: list[TriageDecision] = []
@@ -533,7 +541,12 @@ class InboxTriageRunner:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _fetch_messages(self, batch_size: int) -> list[dict[str, Any]]:
+    async def _fetch_messages(
+        self,
+        batch_size: int,
+        *,
+        page_token: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch unread messages from Gmail.
 
         Returns a list of message dicts with at least ``id``, ``subject``,
@@ -544,12 +557,15 @@ class InboxTriageRunner:
             return []
 
         try:
-            message_ids, _ = await self._gmail.list_messages(
+            message_ids, next_page_token = await self._gmail.list_messages(
                 query="is:unread",
                 max_results=batch_size,
+                page_token=page_token,
             )
+            self._next_page_token = str(next_page_token) if next_page_token else None
         except (RuntimeError, OSError, ConnectionError) as exc:
             logger.error("Failed to list messages: %s", exc)
+            self._next_page_token = None
             return []
 
         messages: list[dict[str, Any]] = []
@@ -759,7 +775,7 @@ class InboxTriageRunner:
             escalated_result = await self._run_debate_once(
                 msg,
                 tier="escalated",
-                rounds=2,
+                rounds=_ESCALATED_TIER_ROUNDS,
                 max_agents=None,
             )
             return _attach_triage_execution_metadata(
@@ -923,6 +939,7 @@ class InboxTriageRunner:
                         env,
                         agents=agents,
                         protocol=protocol,
+                        enable_introspection=False,
                         enable_belief_guidance=False,
                         enable_knowledge_retrieval=False,
                         use_rlm_limiter=False,

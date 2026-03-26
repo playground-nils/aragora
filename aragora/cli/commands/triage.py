@@ -136,6 +136,11 @@ def add_triage_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Preview triage decisions without executing Gmail actions",
     )
+    run_p.add_argument(
+        "--page-token",
+        default=None,
+        help="Continue from a Gmail nextPageToken returned by a prior dry-run",
+    )
 
     sub.add_parser("auth", help="Authenticate with Gmail via OAuth")
     sub.add_parser("status", help="Show triage session status")
@@ -150,7 +155,15 @@ def cmd_triage(args: argparse.Namespace) -> None:
         batch = getattr(args, "batch", 5)
         auto_approve = getattr(args, "auto_approve", False)
         dry_run = getattr(args, "dry_run", False)
-        asyncio.run(_run_triage(batch_size=batch, auto_approve=auto_approve, dry_run=dry_run))
+        page_token = getattr(args, "page_token", None)
+        asyncio.run(
+            _run_triage(
+                batch_size=batch,
+                auto_approve=auto_approve,
+                dry_run=dry_run,
+                page_token=page_token,
+            )
+        )
     elif command == "auth":
         asyncio.run(_run_gmail_auth())
     elif command == "status":
@@ -205,12 +218,42 @@ async def _shutdown_triage_storage() -> None:
     except Exception as exc:  # noqa: BLE001 - best-effort CLI shutdown
         logger.debug("Triage connection-factory shutdown skipped: %s", exc)
 
+    try:
+        from aragora.events.dispatcher import shutdown_dispatcher
+
+        shutdown_dispatcher(wait=True)
+    except Exception as exc:  # noqa: BLE001 - best-effort CLI shutdown
+        logger.debug("Triage dispatcher shutdown skipped: %s", exc)
+
+    try:
+        from aragora.storage.webhook_config_store import reset_webhook_config_store
+
+        reset_webhook_config_store()
+    except Exception as exc:  # noqa: BLE001 - best-effort CLI shutdown
+        logger.debug("Triage webhook config reset skipped: %s", exc)
+
+    try:
+        from aragora.inbox.trust_wedge import (
+            reset_inbox_trust_wedge_service,
+            reset_inbox_trust_wedge_store,
+        )
+
+        reset_inbox_trust_wedge_service()
+        reset_inbox_trust_wedge_store()
+    except Exception as exc:  # noqa: BLE001 - best-effort CLI shutdown
+        logger.debug("Triage trust wedge reset skipped: %s", exc)
+
     # Give async transports a brief chance to finish their close callbacks
     # before the triage event loop shuts down.
     await asyncio.sleep(0.05)
 
 
-async def _run_triage(batch_size: int, auto_approve: bool, dry_run: bool = False) -> None:
+async def _run_triage(
+    batch_size: int,
+    auto_approve: bool,
+    dry_run: bool = False,
+    page_token: str | None = None,
+) -> None:
     """Run the inbox triage pipeline."""
     try:
         from aragora.inbox.triage_runner import InboxTriageRunner
@@ -271,6 +314,7 @@ async def _run_triage(batch_size: int, auto_approve: bool, dry_run: bool = False
             decisions = await runner.run_triage(
                 batch_size=batch_size,
                 auto_approve=auto_approve and not dry_run,
+                page_token=page_token,
             )
             meta = diagnostics.finalize(decisions)
 
@@ -282,11 +326,21 @@ async def _run_triage(batch_size: int, auto_approve: bool, dry_run: bool = False
             if dry_run:
                 print("\n[DRY RUN] Proposed triage decisions (no actions executed):")
                 _print_decisions(decisions)
-                _print_run_footer(decisions, meta, diagnostics)
+                _print_run_footer(
+                    decisions,
+                    meta,
+                    diagnostics,
+                    next_page_token=getattr(runner, "next_page_token", None),
+                )
                 return
 
             _print_decisions(decisions)
-            _print_run_footer(decisions, meta, diagnostics)
+            _print_run_footer(
+                decisions,
+                meta,
+                diagnostics,
+                next_page_token=getattr(runner, "next_page_token", None),
+            )
 
             if not auto_approve:
                 try:
@@ -454,7 +508,13 @@ def _print_decisions(decisions: list) -> None:
         print(f"  Approved: {approved}  Executed: {executed}")
 
 
-def _print_run_footer(decisions: list, meta: dict[str, object], diagnostics: object) -> None:
+def _print_run_footer(
+    decisions: list,
+    meta: dict[str, object],
+    diagnostics: object,
+    *,
+    next_page_token: str | None = None,
+) -> None:
     """Print a compact diagnostics-aware run footer."""
     print(
         "Run summary: "
@@ -466,6 +526,8 @@ def _print_run_footer(decisions: list, meta: dict[str, object], diagnostics: obj
     )
     if getattr(diagnostics, "has_degraded_or_blocking", lambda: False)():
         print(f"Diagnostics: {meta.get('artifact_dir')}")
+    if next_page_token:
+        print(f"Next page token: {next_page_token}")
 
 
 def _show_status() -> None:
