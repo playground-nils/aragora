@@ -353,7 +353,7 @@ _MOCK_CONFIDENCE: dict[str, float] = {
 _ORACLE_MODEL_ANTHROPIC = "claude-sonnet-4-6"
 _ORACLE_MODEL_OPENAI = "gpt-5.3-chat"
 _ORACLE_MODEL_OPENROUTER = "anthropic/claude-opus-4.6"  # OpenRouter fallback
-_ORACLE_CALL_TIMEOUT = 45.0  # seconds — focused essay + OpenRouter latency
+_ORACLE_CALL_TIMEOUT = 10.0  # seconds — tight timeout to keep playground responsive
 
 
 def _get_api_key(name: str) -> str | None:
@@ -1214,14 +1214,14 @@ def _try_oracle_tentacles(
             model_cfg["model"],
             prompt,
             max_tokens=800,
-            timeout=45.0,
+            timeout=_ORACLE_CALL_TIMEOUT,
             openrouter_model=model_cfg.get("openrouter_model"),
         )
         return model_cfg["name"], text
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(count, 6)) as pool:
         futures = [pool.submit(_call_tentacle, m, r) for m, r in assignments]
-        for future in concurrent.futures.as_completed(futures, timeout=60):
+        for future in concurrent.futures.as_completed(futures, timeout=_ORACLE_CALL_TIMEOUT + 2):
             try:
                 name, text = future.result()
                 if text:
@@ -2366,7 +2366,7 @@ class PlaygroundHandler(BaseHandler):
 # Live debate execution
 # ---------------------------------------------------------------------------
 
-_LIVE_TIMEOUT = 60  # seconds
+_LIVE_TIMEOUT = 15  # seconds — playground must respond quickly
 _LIVE_BUDGET_CAP = 0.05  # USD
 _LIVE_MAX_CONCURRENT = 2
 _LIVE_DEFAULT_AGENTS = ["anthropic-api", "openai-api"]
