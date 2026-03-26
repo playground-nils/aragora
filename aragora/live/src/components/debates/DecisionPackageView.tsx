@@ -12,7 +12,10 @@ interface DecisionPackage {
     tokens: number;
     cost: number;
   }>;
-  next_steps: string[];
+  next_steps: Array<{
+    action: string;
+    priority: 'high' | 'medium' | 'low';
+  }>;
   duration_seconds: number;
 }
 
@@ -103,7 +106,16 @@ export function DecisionPackageView({ pkg }: DecisionPackageViewProps) {
                 <span className="text-xs font-mono text-[var(--acid-cyan)] mt-0.5">
                   {String(i + 1).padStart(2, '0')}.
                 </span>
-                <p className="text-sm font-mono text-[var(--text)]">{step}</p>
+                <span className={`text-[10px] font-mono mt-0.5 px-1 border ${
+                  step.priority === 'high'
+                    ? 'text-[var(--warning)] border-[var(--warning)]/40'
+                    : step.priority === 'low'
+                      ? 'text-[var(--text-muted)] border-[var(--border)]'
+                      : 'text-[var(--acid-cyan)] border-[var(--acid-cyan)]/30'
+                }`}>
+                  {step.priority.toUpperCase()}
+                </span>
+                <p className="text-sm font-mono text-[var(--text)]">{step.action}</p>
               </div>
             ))}
           </div>

@@ -35,7 +35,10 @@ describe('normalizeDecisionPackage', () => {
     );
 
     expect(normalized.agents).toEqual(['claude', 'gpt-5']);
-    expect(normalized.next_steps).toEqual(['step one', 'step two']);
+    expect(normalized.next_steps).toEqual([
+      { action: 'step one', priority: 'medium' },
+      { action: 'step two', priority: 'medium' },
+    ]);
   });
 
   it('normalizes malformed receipt to null', () => {
@@ -91,7 +94,10 @@ describe('normalizeDecisionPackage', () => {
       { agent: 'claude', tokens: 0, cost: 0.002 },
       { agent: 'gpt-4', tokens: 0, cost: 0.0022 },
     ]);
-    expect(normalized.next_steps).toEqual(['Ship the release.', 'Monitor logs.']);
+    expect(normalized.next_steps).toEqual([
+      { action: 'Ship the release.', priority: 'high' },
+      { action: 'Monitor logs.', priority: 'medium' },
+    ]);
     expect(normalized.receipt).toEqual({
       hash: 'abc123',
       timestamp: '2026-03-25T12:34:56Z',

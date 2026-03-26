@@ -25,7 +25,10 @@ export interface DecisionPackage {
     timestamp: string;
     signers: string[];
   } | null;
-  next_steps: string[];
+  next_steps: Array<{
+    action: string;
+    priority: 'high' | 'medium' | 'low';
+  }>;
   created_at: string;
   duration_seconds: number;
 }
@@ -113,15 +116,24 @@ function normalizeReceipt(value: unknown, fallbackTimestamp = ''): DecisionPacka
   };
 }
 
-function normalizeNextSteps(value: unknown): string[] {
+function normalizeNextSteps(value: unknown): DecisionPackage['next_steps'] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {
-      if (typeof item === 'string') return item;
+      if (typeof item === 'string') {
+        return { action: item, priority: 'medium' as const };
+      }
       const obj = asObject(item);
-      return obj ? asString(obj.action) : '';
+      if (!obj) return null;
+      const action = asString(obj.action);
+      if (!action) return null;
+      const rawPriority = asString(obj.priority, 'medium').toLowerCase();
+      const priority = (
+        rawPriority === 'high' || rawPriority === 'low' ? rawPriority : 'medium'
+      ) as 'high' | 'medium' | 'low';
+      return { action, priority };
     })
-    .filter(Boolean);
+    .filter((item): item is DecisionPackage['next_steps'][number] => item !== null);
 }
 
 export function normalizeDecisionPackage(raw: unknown, fallbackId: string): DecisionPackage {
