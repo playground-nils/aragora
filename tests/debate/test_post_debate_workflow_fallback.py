@@ -27,6 +27,7 @@ class _FakeResult:
     confidence: float = 0.85
     predictions: dict = field(default_factory=dict)
     bead_id: str | None = None
+    final_answer: str = "Use rate limiting with token bucket algorithm"
 
 
 @dataclass
