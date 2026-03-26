@@ -64,7 +64,7 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { isAuthenticated, tokens } = useAuth();
   const { config: backendConfig } = useBackend();
-  const apiBase = backendConfig?.api || BACKENDS.production.api;
+  const apiBase = backendConfig?.api ?? BACKENDS.production.api;
   const { markOnboardingComplete } = useDashboardPreferences();
   const {
     setSelectedIndustry,
@@ -145,7 +145,7 @@ export default function OnboardingPage() {
         headers,
         body: JSON.stringify({
           question: question.trim(),
-          agents: 'anthropic-api,openai-api,mistral-api',
+          agents: ['anthropic-api', 'openai-api', 'mistral'],
           rounds: 3,
           enable_receipt_generation: true,
           metadata: {
