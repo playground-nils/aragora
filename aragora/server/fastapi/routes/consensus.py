@@ -27,7 +27,9 @@ Migration Notes:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import logging
 import re
 from datetime import datetime
@@ -266,7 +268,7 @@ async def find_similar_debates(
     semantically similar to the given topic.
     """
     memory = _get_consensus_memory()
-    similar = memory.find_similar_debates(topic.strip(), limit=limit)
+    similar = await asyncio.to_thread(memory.find_similar_debates, topic.strip(), limit=limit)
     return SimilarDebatesResponse(
         query=topic,
         similar=[
@@ -298,19 +300,23 @@ async def get_settled_topics(
     the given threshold, ordered by confidence descending.
     """
     memory = _get_consensus_memory()
-    with _get_db_connection(memory.db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT topic, conclusion, confidence, strength, timestamp
-            FROM consensus
-            WHERE confidence >= ?
-            ORDER BY confidence DESC, timestamp DESC
-            LIMIT ?
-            """,
-            (min_confidence, limit),
-        )
-        rows = cursor.fetchall()
+
+    def _query_settled():
+        with _get_db_connection(memory.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT topic, conclusion, confidence, strength, timestamp
+                FROM consensus
+                WHERE confidence >= ?
+                ORDER BY confidence DESC, timestamp DESC
+                LIMIT ?
+                """,
+                (min_confidence, limit),
+            )
+            return cursor.fetchall()
+
+    rows = await asyncio.to_thread(_query_settled)
 
     return SettledTopicsResponse(
         min_confidence=min_confidence,
@@ -337,21 +343,24 @@ async def get_consensus_stats() -> ConsensusStatsResponse:
     confidence, domain breakdown, and strength distribution.
     """
     memory = _get_consensus_memory()
-    raw_stats = memory.get_statistics()
+    raw_stats = await asyncio.to_thread(memory.get_statistics)
 
-    with _get_db_connection(memory.db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                SUM(CASE WHEN confidence >= 0.7 THEN 1 ELSE 0 END) as high_conf_count,
-                AVG(confidence) as avg_conf
-            FROM consensus
-            """
-        )
-        row = cursor.fetchone()
-        high_confidence_count = row[0] if row and row[0] else 0
-        avg_confidence = row[1] if row and row[1] else 0.0
+    def _query_stats():
+        with _get_db_connection(memory.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN confidence >= 0.7 THEN 1 ELSE 0 END) as high_conf_count,
+                    AVG(confidence) as avg_conf
+                FROM consensus
+                """
+            )
+            return cursor.fetchone()
+
+    row = await asyncio.to_thread(_query_stats)
+    high_confidence_count = row[0] if row and row[0] else 0
+    avg_confidence = row[1] if row and row[1] else 0.0
 
     return ConsensusStatsResponse(
         total_topics=raw_stats.get("total_consensus", 0),
@@ -382,33 +391,36 @@ async def get_recent_dissents(
 
     import json as json_mod
 
-    with _get_db_connection(memory.db_path) as conn:
-        cursor = conn.cursor()
-        conditions: list[str] = []
-        params: list[Any] = []
+    def _query_dissents():
+        with _get_db_connection(memory.db_path) as conn:
+            cursor = conn.cursor()
+            conditions: list[str] = []
+            params: list[Any] = []
 
-        if topic:
-            conditions.append("c.topic LIKE ?")
-            params.append(f"%{topic}%")
-        if domain:
-            conditions.append("c.domain = ?")
-            params.append(domain)
+            if topic:
+                conditions.append("c.topic LIKE ?")
+                params.append(f"%{topic}%")
+            if domain:
+                conditions.append("c.domain = ?")
+                params.append(domain)
 
-        where_clause = ""
-        if conditions:
-            where_clause = "WHERE " + " AND ".join(conditions)
+            where_clause = ""
+            if conditions:
+                where_clause = "WHERE " + " AND ".join(conditions)
 
-        query = f"""
-            SELECT d.data, c.topic, c.conclusion
-            FROM dissent d
-            LEFT JOIN consensus c ON d.debate_id = c.id
-            {where_clause}
-            ORDER BY d.timestamp DESC
-            LIMIT ?
-        """  # noqa: S608 -- dynamic clause from internal state
-        params.append(limit)
-        cursor.execute(query, tuple(params))
-        rows = cursor.fetchall()
+            query = f"""
+                SELECT d.data, c.topic, c.conclusion
+                FROM dissent d
+                LEFT JOIN consensus c ON d.debate_id = c.id
+                {where_clause}
+                ORDER BY d.timestamp DESC
+                LIMIT ?
+            """  # noqa: S608 -- dynamic clause from internal state
+            params.append(limit)
+            cursor.execute(query, tuple(params))
+            return cursor.fetchall()
+
+    rows = await asyncio.to_thread(_query_dissents)
 
     dissents = []
     for row in rows:
@@ -462,21 +474,27 @@ async def get_contrarian_views(
     if topic and DissentRetriever is not None:
         try:
             retriever = DissentRetriever(memory)
-            records = retriever.find_contrarian_views(topic, domain=domain, limit=limit)
+            records = await asyncio.to_thread(
+                retriever.find_contrarian_views, topic, domain=domain, limit=limit
+            )
         except (KeyError, ValueError, OSError, TypeError) as e:
             logger.warning("DissentRetriever.find_contrarian_views failed: %s", e)
             records = []
     else:
-        with _get_db_connection(memory.db_path) as conn:
-            cursor = conn.cursor()
-            query = """
-                SELECT data FROM dissent
-                WHERE dissent_type IN ('fundamental_disagreement', 'alternative_approach')
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """
-            cursor.execute(query, (limit,))
-            rows = cursor.fetchall()
+
+        def _query_contrarian():
+            with _get_db_connection(memory.db_path) as conn:
+                cursor = conn.cursor()
+                query = """
+                    SELECT data FROM dissent
+                    WHERE dissent_type IN ('fundamental_disagreement', 'alternative_approach')
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """
+                cursor.execute(query, (limit,))
+                return cursor.fetchall()
+
+        rows = await asyncio.to_thread(_query_contrarian)
 
         records = []
         for row in rows:
@@ -528,21 +546,27 @@ async def get_risk_warnings(
     if topic and DissentRetriever is not None:
         try:
             retriever = DissentRetriever(memory)
-            records = retriever.find_risk_warnings(topic, domain=domain, limit=limit)
+            records = await asyncio.to_thread(
+                retriever.find_risk_warnings, topic, domain=domain, limit=limit
+            )
         except (KeyError, ValueError, OSError, TypeError) as e:
             logger.warning("DissentRetriever.find_risk_warnings failed: %s", e)
             records = []
     else:
-        with _get_db_connection(memory.db_path) as conn:
-            cursor = conn.cursor()
-            query = """
-                SELECT data FROM dissent
-                WHERE dissent_type IN ('risk_warning', 'edge_case_concern')
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """
-            cursor.execute(query, (limit,))
-            rows = cursor.fetchall()
+
+        def _query_risk_warnings():
+            with _get_db_connection(memory.db_path) as conn:
+                cursor = conn.cursor()
+                query = """
+                    SELECT data FROM dissent
+                    WHERE dissent_type IN ('risk_warning', 'edge_case_concern')
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """
+                cursor.execute(query, (limit,))
+                return cursor.fetchall()
+
+        rows = await asyncio.to_thread(_query_risk_warnings)
 
         records = []
         for row in rows:
@@ -605,7 +629,7 @@ async def get_domain_history(
     """
     domain = _validate_domain(domain)
     memory = _get_consensus_memory()
-    records = memory.get_domain_consensus_history(domain, limit=limit)
+    records = await asyncio.to_thread(memory.get_domain_consensus_history, domain, limit=limit)
     return DomainHistoryResponse(
         domain=domain,
         history=[r.to_dict() for r in records],
@@ -625,7 +649,10 @@ async def get_consensus_status(
     the result, and returns the consensus analysis.
     """
     try:
-        debate_result = storage.get_debate(debate_id)
+        if inspect.iscoroutinefunction(getattr(storage, "get_debate", None)):
+            debate_result = await storage.get_debate(debate_id)
+        else:
+            debate_result = await asyncio.to_thread(storage.get_debate, debate_id)
     except (KeyError, ValueError, OSError) as e:
         logger.debug("Failed to retrieve debate %s: %s", debate_id, e)
         debate_result = None
