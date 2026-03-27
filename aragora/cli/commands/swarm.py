@@ -86,6 +86,7 @@ def _build_runner_report_payload(
     *,
     registrations: list[dict[str, object]],
     routing: dict[str, object],
+    discovered: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     by_type: dict[str, dict[str, int]] = {}
@@ -130,12 +131,14 @@ def _build_runner_report_payload(
         {"cost_class": key, "registered": value}
         for key, value in sorted(by_cost.items(), key=lambda item: item[0])
     ]
+    discovered_rows = [dict(item) for item in discovered or [] if isinstance(item, dict)]
     return {
         "mode": "runner",
         "action": "report",
         "summary": {
             "registered": len(registrations),
             "fresh": fresh_count,
+            "discovered": len(discovered_rows),
             "selected_for_routing": len(
                 [item for item in routing.get("selected_runners", []) if isinstance(item, dict)]
             ),
@@ -143,6 +146,7 @@ def _build_runner_report_payload(
         "by_runner_type": type_rows,
         "by_cost_class": cost_rows,
         "runners": rows,
+        "discovered_runners": discovered_rows,
         "routing": routing,
     }
 
@@ -150,9 +154,10 @@ def _build_runner_report_payload(
 def _render_runner_report(payload: dict[str, object]) -> None:
     summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
     print(
-        "Runner Report registered={registered} fresh={fresh} selected={selected}".format(
+        "Runner Report registered={registered} fresh={fresh} discovered={discovered} selected={selected}".format(
             registered=summary.get("registered", 0),
             fresh=summary.get("fresh", 0),
+            discovered=summary.get("discovered", 0),
             selected=summary.get("selected_for_routing", 0),
         )
     )
@@ -181,6 +186,21 @@ def _render_runner_report(payload: dict[str, object]) -> None:
         ],
         [item for item in payload.get("runners", []) if isinstance(item, dict)],
     )
+    discovered = [item for item in payload.get("discovered_runners", []) if isinstance(item, dict)]
+    if discovered:
+        print()
+        print("Discovered")
+        _print_table(
+            [
+                ("runner_id", "runner_id"),
+                ("runner_type", "runner_type"),
+                ("profile", "profile"),
+                ("auth_mode", "auth_mode"),
+                ("availability", "availability"),
+                ("status_summary", "status"),
+            ],
+            discovered,
+        )
     routing = payload.get("routing", {}) if isinstance(payload.get("routing"), dict) else {}
     selected = [
         str(item.get("runner_id", "")).strip()
@@ -193,6 +213,30 @@ def _render_runner_report(payload: dict[str, object]) -> None:
     next_action = str(routing.get("next_action", "") or "").strip()
     if next_action:
         print(f"Next: {next_action}")
+
+
+def _build_multi_runner_payload(
+    *,
+    subaction: str,
+    runners: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "mode": "runner",
+        "action": subaction,
+        "summary": {
+            "count": len(runners),
+            "available": len(
+                [
+                    item
+                    for item in runners
+                    if str(item.get("availability", "")).strip() == "available"
+                    and bool(item.get("available", True))
+                ]
+            ),
+            "registered": len([item for item in runners if bool(item.get("registered"))]),
+        },
+        "runners": runners,
+    }
 
 
 def _render_tranche_queue_status(payload: dict[str, object]) -> None:
@@ -576,7 +620,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         from aragora.swarm.runner_registry import (
             LocalRunnerRegistry,
             authorization_context_from_env,
-            make_runner_inspector,
+            discover_runner_inspections,
         )
 
         subaction = str(goal or "inspect").strip().lower()
@@ -592,26 +636,42 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             ).strip()
             or "codex"
         )
-        inspection = make_runner_inspector(runner_type).inspect()
+        inspections = discover_runner_inspections(
+            runner_type,
+            env=os.environ,
+            repo_root=Path.cwd(),
+        )
         if subaction == "register":
             owner_context = authorization_context_from_env()
-            payload = (
+            payloads = [
                 LocalRunnerRegistry()
                 .register(
                     inspection,
                     owner_context=owner_context,
                 )
                 .to_dict()
+                for inspection in inspections
+            ]
+            payload = (
+                payloads[0]
+                if len(payloads) == 1
+                else _build_multi_runner_payload(subaction=subaction, runners=payloads)
             )
         elif subaction == "heartbeat":
             owner_context = authorization_context_from_env()
-            payload = (
+            payloads = [
                 LocalRunnerRegistry()
                 .heartbeat(
                     inspection,
                     owner_context=owner_context,
                 )
                 .to_dict()
+                for inspection in inspections
+            ]
+            payload = (
+                payloads[0]
+                if len(payloads) == 1
+                else _build_multi_runner_payload(subaction=subaction, runners=payloads)
             )
         elif subaction == "report":
             registry = LocalRunnerRegistry()
@@ -621,9 +681,15 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                     owner_context=authorization_context_from_env(),
                     requested_runner_type=runner_type,
                 ).to_dict(),
+                discovered=[item.to_dict() for item in inspections],
             )
         else:
-            payload = inspection.to_dict()
+            inspection_payloads = [item.to_dict() for item in inspections]
+            payload = (
+                inspection_payloads[0]
+                if len(inspection_payloads) == 1
+                else _build_multi_runner_payload(subaction=subaction, runners=inspection_payloads)
+            )
 
         payload["mode"] = "runner"
         payload["action"] = subaction
@@ -632,6 +698,24 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         else:
             if subaction == "report":
                 _render_runner_report(payload)
+            elif "runners" in payload:
+                summary = (
+                    payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+                )
+                print(
+                    "Runner {action} count={count} available={available} registered={registered}".format(
+                        action=subaction,
+                        count=summary.get("count", 0),
+                        available=summary.get("available", 0),
+                        registered=summary.get("registered", 0),
+                    )
+                )
+                print()
+                for item in [
+                    entry for entry in payload.get("runners", []) if isinstance(entry, dict)
+                ]:
+                    print(render_runner_registration_text(item))
+                    print()
             else:
                 print(render_runner_registration_text(payload))
         return

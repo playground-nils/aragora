@@ -18,7 +18,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -448,6 +448,59 @@ class TestRunnerFreshness:
 
         assert result.fresh is False
         assert result.blocked_reason == "runner_not_responding"
+
+    def test_runner_freshness_reinspects_selected_claude_profile(self, tmp_path):
+        registry_path = tmp_path / "runners.json"
+        now = datetime.now(UTC).isoformat()
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "registrations": [
+                        {
+                            "runner_id": "claude-runner-1",
+                            "runner_type": "claude",
+                            "profile": "max-01",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "subscription",
+                            "owner_binding": {"user_id": "user-1", "workspace_id": "ws-1"},
+                            "capabilities": {"max_parallel_lanes": 1},
+                            "updated_at": now,
+                            "heartbeat_at": now,
+                            "freshness_status": "fresh",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class _Inspector:
+            def inspect(self) -> MagicMock:
+                inspection = MagicMock()
+                inspection.available = True
+                inspection.auth_mode = "subscription"
+                inspection.runner_id = "claude-runner-1"
+                inspection.to_dict.return_value = {
+                    "runner_id": "claude-runner-1",
+                    "profile": "max-01",
+                    "available": True,
+                    "auth_mode": "subscription",
+                }
+                return inspection
+
+        with patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory:
+            inspector_factory.return_value = _Inspector()
+            result = check_runner_freshness(
+                freshness_ttl_seconds=3600.0,
+                registry_path=str(registry_path),
+                env={"ARAGORA_USER_ID": "user-1", "ARAGORA_WORKSPACE_ID": "ws-1"},
+                requested_runner_type="claude",
+            )
+
+        assert result.fresh is True
+        inspector_factory.assert_called_with("claude", env=ANY, profile="max-01")
 
 
 # ---------------------------------------------------------------------------

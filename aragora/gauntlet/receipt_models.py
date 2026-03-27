@@ -100,6 +100,37 @@ class AgentResponseRecord:
         }
 
 
+def _compute_risk_summary_from_critiques(
+    critiques: list,
+    dissenting_views: list,
+) -> dict[str, int]:
+    """Compute risk_summary from real critique severities.
+
+    Maps critique severity (0.0-1.0) to buckets:
+    - critical: severity >= 0.9
+    - high: 0.7 <= severity < 0.9
+    - medium: 0.4 <= severity < 0.7
+    - low: severity < 0.4
+    """
+    buckets = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for critique in critiques:
+        severity = getattr(critique, "severity", 0.0) or 0.0
+        if severity >= 0.9:
+            buckets["critical"] += 1
+        elif severity >= 0.7:
+            buckets["high"] += 1
+        elif severity >= 0.4:
+            buckets["medium"] += 1
+        else:
+            buckets["low"] += 1
+    total = sum(buckets.values())
+    if total == 0:
+        # Fall back to dissenting views count if no structured critiques
+        total = len(dissenting_views)
+    buckets["total"] = total
+    return buckets
+
+
 @dataclass
 class DecisionReceipt:
     """
@@ -918,6 +949,11 @@ class DecisionReceipt:
             config_used=result.config.to_dict() if result.config else {},
         )
 
+    @staticmethod
+    def _compute_risk_summary(critiques: list, dissenting_views: list) -> dict:
+        """Compute risk_summary from real critique severities instead of hardcoding zeros."""
+        return _compute_risk_summary_from_critiques(critiques, dissenting_views)
+
     @classmethod
     def from_debate_result(
         cls,
@@ -975,7 +1011,7 @@ class DecisionReceipt:
                 ProvenanceRecord(
                     timestamp=timestamp,
                     event_type="vote",
-                    agent=getattr(vote, "voter", None),
+                    agent=getattr(vote, "agent", None),
                     description=f"Voted for {getattr(vote, 'choice', 'unknown')} (confidence: {getattr(vote, 'confidence', 0):.1%})",
                 )
             )
@@ -1074,13 +1110,10 @@ class DecisionReceipt:
             timestamp=timestamp,
             input_summary=task[:500] if task else "",
             input_hash=input_hash,
-            risk_summary={
-                "critical": 0,  # Debates don't have severity-based findings
-                "high": 0,
-                "medium": 0,
-                "low": 0,
-                "total": len(dissenting_views),  # Use dissenting views as "findings"
-            },
+            risk_summary=_compute_risk_summary_from_critiques(
+                list(getattr(result, "critiques", [])),
+                dissenting_views,
+            ),
             attacks_attempted=0,  # Not applicable for debates
             attacks_successful=0,
             probes_run=result.rounds_used,  # Map rounds to probes

@@ -200,6 +200,19 @@ class TestBuildCommand:
         assert cmd[0] == "claude"
         assert "-p" in cmd
 
+    def test_direct_claude_profile_command_when_session_wrapper_disabled(self):
+        launcher = WorkerLauncher(
+            LaunchConfig(
+                use_managed_session_script=False,
+                claude_profile="max-01",
+                claude_profile_script="/repo/scripts/claude_profile.sh",
+            )
+        )
+        cmd = launcher._build_command("claude", "task", "/tmp/wt")
+        assert cmd[:4] == ["/repo/scripts/claude_profile.sh", "exec", "max-01", "--"]
+        assert "claude" in cmd
+        assert "-p" in cmd
+
     def test_codex_adds_worktree_gitdir_to_sandbox(self, tmp_path: Path):
         """Codex in a worktree gets --add-dir pointing to the common .git dir."""
         wt = tmp_path / "wt"

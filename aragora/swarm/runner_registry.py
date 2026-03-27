@@ -142,6 +142,7 @@ class RunnerInspection:
     cost_class: str = "local"
     priority_weight: int = 0
     codex_path: str | None = None  # legacy compatibility for older callers/tests
+    profile: str | None = None
 
     def __post_init__(self) -> None:
         if self.command_path is None and self.codex_path is not None:
@@ -175,6 +176,7 @@ class RunnerInspection:
             "next_action": self.next_action,
             "cost_class": self.cost_class,
             "priority_weight": self.priority_weight,
+            "profile": self.profile,
         }
 
 
@@ -220,19 +222,24 @@ class CLIRunnerInspector:
         runner_type: str = "codex",
         config: LaunchConfig | None = None,
         env: dict[str, str] | None = None,
+        profile: str | None = None,
+        repo_root: str | Path | None = None,
     ) -> None:
         self.config = config or LaunchConfig()
         self.env = dict(os.environ if env is None else env)
         self.spec = _runner_type_spec(runner_type)
+        self.profile = _text(profile) or None
+        self.repo_root = Path(repo_root or Path.cwd()).resolve()
 
     def inspect(self) -> RunnerInspection:
         command_name = self._command_name()
-        command_path = shutil.which(command_name)
+        base_command_path = shutil.which(command_name)
+        command_path = self._launch_command_path(base_command_path)
         runner_id = self._runner_id(command_path, command_name=command_name)
         owner = owner_binding_from_env(self.env)
         stale_after_seconds = self._stale_after_seconds()
 
-        if not command_path:
+        if not base_command_path or not command_path:
             return RunnerInspection(
                 runner_id=runner_id,
                 runner_type=self.spec.runner_type,
@@ -253,11 +260,12 @@ class CLIRunnerInspector:
                 ),
                 cost_class=self.spec.default_cost_class,
                 priority_weight=self.spec.priority_weight,
+                profile=self.profile,
             )
 
-        version_result = self._run_command([command_path, "--version"])
-        help_result = self._run_command([command_path, "--help"])
-        auth_result = self._auth_result(command_path)
+        version_result = self._version_result(base_command_path)
+        help_result = self._help_result(base_command_path)
+        auth_result = self._auth_result(base_command_path)
 
         help_text = "\n".join(
             part for part in (help_result.get("stdout", ""), help_result.get("stderr", "")) if part
@@ -294,6 +302,7 @@ class CLIRunnerInspector:
                 ),
                 cost_class=self.spec.default_cost_class,
                 priority_weight=self.spec.priority_weight,
+                profile=self.profile,
             )
 
         auth_mode = self._classify_auth_mode(auth_text)
@@ -308,7 +317,7 @@ class CLIRunnerInspector:
             auth_mode=auth_mode,
             command_path=command_path,
             version=version or None,
-            status_summary=self._first_line(auth_text) or None,
+            status_summary=self._status_summary(auth_text) or None,
             capabilities=self._capabilities(True, help_text),
             owner_binding=owner,
             freshness_status=self._inspection_freshness(available=True, auth_mode=auth_mode),
@@ -320,6 +329,7 @@ class CLIRunnerInspector:
             ),
             cost_class=self._cost_class(auth_mode),
             priority_weight=self.spec.priority_weight,
+            profile=self.profile,
         )
 
     def _command_name(self) -> str:
@@ -329,6 +339,11 @@ class CLIRunnerInspector:
         return self.spec.cli_name
 
     def _auth_result(self, command_path: str) -> dict[str, Any]:
+        if self.spec.runner_type == "claude" and self.profile:
+            script = self._claude_profile_script()
+            if script is None:
+                return {"returncode": 1, "stdout": "", "stderr": "claude_profile.sh not found"}
+            return self._run_command([script, "status", self.profile])
         if self.spec.auth_probe:
             return self._run_command([command_path, *self.spec.auth_probe])
         return {
@@ -409,10 +424,51 @@ class CLIRunnerInspector:
                 return stripped
         return ""
 
+    @classmethod
+    def _status_summary(cls, text: str) -> str:
+        first = cls._first_line(text)
+        if not first.startswith("{"):
+            return first
+        try:
+            payload = json.loads(first if len(text.splitlines()) == 1 else text)
+        except ValueError:
+            return first
+        if not isinstance(payload, dict):
+            return first
+        parts = []
+        if "loggedIn" in payload:
+            parts.append(f"loggedIn={payload.get('loggedIn')}")
+        auth_method = _text(payload.get("authMethod"))
+        if auth_method:
+            parts.append(f"authMethod={auth_method}")
+        subscription = _text(payload.get("subscriptionType"))
+        if subscription:
+            parts.append(f"subscriptionType={subscription}")
+        return " ".join(parts) or first
+
     def _runner_id(self, command_path: str | None, *, command_name: str) -> str:
         identity = f"{self.spec.runner_type}:{platform.node()}:{command_path or command_name}"
+        if self.profile:
+            identity = f"{identity}:{self.profile}"
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
         return f"{self.spec.runner_type}-runner-{digest}"
+
+    def _launch_command_path(self, base_command_path: str | None) -> str | None:
+        if self.spec.runner_type == "claude" and self.profile:
+            return self._claude_profile_script()
+        return base_command_path
+
+    def _version_result(self, base_command_path: str) -> dict[str, Any]:
+        return self._run_command([base_command_path, "--version"])
+
+    def _help_result(self, base_command_path: str) -> dict[str, Any]:
+        return self._run_command([base_command_path, "--help"])
+
+    def _claude_profile_script(self) -> str | None:
+        script = (self.repo_root / "scripts" / "claude_profile.sh").resolve()
+        if not script.exists():
+            return None
+        return str(script)
 
     @staticmethod
     def _run_command(command: list[str]) -> dict[str, Any]:
@@ -436,6 +492,8 @@ class CLIRunnerInspector:
         self, *, available: bool, auth_mode: str, owner_binding: dict[str, Any]
     ) -> str:
         runner_label = self.spec.runner_type
+        if self.profile:
+            runner_label = f"{runner_label}:{self.profile}"
         if not available:
             return f"Install the {runner_label} CLI or add `{self._command_name()}` to PATH before registering this runner."
         if auth_mode == "unknown":
@@ -459,9 +517,20 @@ class CodexRunnerInspector(CLIRunnerInspector):
 
 class ClaudeRunnerInspector(CLIRunnerInspector):
     def __init__(
-        self, *, config: LaunchConfig | None = None, env: dict[str, str] | None = None
+        self,
+        *,
+        config: LaunchConfig | None = None,
+        env: dict[str, str] | None = None,
+        profile: str | None = None,
+        repo_root: str | Path | None = None,
     ) -> None:
-        super().__init__(runner_type="claude", config=config, env=env)
+        super().__init__(
+            runner_type="claude",
+            config=config,
+            env=env,
+            profile=profile,
+            repo_root=repo_root,
+        )
 
 
 def make_runner_inspector(
@@ -469,13 +538,67 @@ def make_runner_inspector(
     *,
     config: LaunchConfig | None = None,
     env: dict[str, str] | None = None,
+    profile: str | None = None,
+    repo_root: str | Path | None = None,
 ) -> CLIRunnerInspector:
     normalized = _normalized_runner_type(runner_type)
     if normalized == "codex":
         return CodexRunnerInspector(config=config, env=env)
     if normalized == "claude":
-        return ClaudeRunnerInspector(config=config, env=env)
-    return CLIRunnerInspector(runner_type=normalized, config=config, env=env)
+        return ClaudeRunnerInspector(config=config, env=env, profile=profile, repo_root=repo_root)
+    return CLIRunnerInspector(
+        runner_type=normalized,
+        config=config,
+        env=env,
+        profile=profile,
+        repo_root=repo_root,
+    )
+
+
+def configured_claude_runner_profiles(env: dict[str, str] | None = None) -> list[str]:
+    values = dict(os.environ if env is None else env)
+    raw = _text(values.get("ARAGORA_CLAUDE_RUNNER_PROFILES"))
+    if not raw:
+        raw = _text(values.get("ARAGORA_CLAUDE_REVIEW_PROFILES"))
+    if not raw:
+        return []
+    profiles: list[str] = []
+    for item in raw.split(","):
+        normalized = _text(item)
+        if normalized and normalized not in profiles:
+            profiles.append(normalized)
+    return profiles
+
+
+def discover_runner_inspections(
+    runner_type: str,
+    *,
+    config: LaunchConfig | None = None,
+    env: dict[str, str] | None = None,
+    repo_root: str | Path | None = None,
+) -> list[RunnerInspection]:
+    normalized = _normalized_runner_type(runner_type)
+    if normalized == "claude":
+        profiles = configured_claude_runner_profiles(env)
+        if profiles:
+            return [
+                make_runner_inspector(
+                    normalized,
+                    config=config,
+                    env=env,
+                    profile=profile,
+                    repo_root=repo_root,
+                ).inspect()
+                for profile in profiles
+            ]
+    return [
+        make_runner_inspector(
+            normalized,
+            config=config,
+            env=env,
+            repo_root=repo_root,
+        ).inspect()
+    ]
 
 
 class LocalRunnerRegistry:
@@ -723,6 +846,7 @@ class LocalRunnerRegistry:
         return {
             "runner_id": _text(runner.get("runner_id")),
             "runner_type": _text(runner.get("runner_type")),
+            "profile": _text(runner.get("profile")) or None,
             "auth_mode": _text(runner.get("auth_mode")),
             "cost_class": _text(runner.get("cost_class")) or "local",
             "priority_weight": int(runner.get("priority_weight") or 0),

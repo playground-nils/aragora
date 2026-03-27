@@ -545,8 +545,8 @@ class TestSwarmCommand:
             }
         )
 
-        with patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory:
-            inspector_factory.return_value.inspect.return_value = inspection
+        with patch("aragora.swarm.runner_registry.discover_runner_inspections") as discover:
+            discover.return_value = [inspection]
             cmd_swarm(args)
 
         out = capsys.readouterr().out
@@ -1167,11 +1167,11 @@ class TestSwarmCommand:
         )
 
         with (
-            patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory,
+            patch("aragora.swarm.runner_registry.discover_runner_inspections") as discover,
             patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
             patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
         ):
-            inspector_factory.return_value.inspect.return_value = inspection
+            discover.return_value = [inspection]
             auth_ctx.return_value = object()
             registry_cls.return_value.register.return_value = registered
             cmd_swarm(args)
@@ -1223,11 +1223,11 @@ class TestSwarmCommand:
         )
 
         with (
-            patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory,
+            patch("aragora.swarm.runner_registry.discover_runner_inspections") as discover,
             patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
             patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
         ):
-            inspector_factory.return_value.inspect.return_value = inspection
+            discover.return_value = [inspection]
             auth_ctx.return_value = object()
             registry_cls.return_value.heartbeat.return_value = heartbeated
             cmd_swarm(args)
@@ -1275,11 +1275,11 @@ class TestSwarmCommand:
         )
 
         with (
-            patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory,
+            patch("aragora.swarm.runner_registry.discover_runner_inspections") as discover,
             patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
             patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
         ):
-            inspector_factory.return_value.inspect.return_value = inspection
+            discover.return_value = [inspection]
             auth_ctx.return_value = object()
             registry_cls.return_value.list_registrations.return_value = [
                 {
@@ -1299,6 +1299,7 @@ class TestSwarmCommand:
         assert '"mode": "runner"' in out
         assert '"runner_type": "claude"' in out
         assert '"cost_class": "subscription"' in out
+        assert '"discovered_runners": [' in out
         assert '"selected_runner_ids": [' in out
 
     def test_cmd_swarm_requires_goal_or_spec(self, capsys):

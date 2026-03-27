@@ -412,7 +412,11 @@ def check_runner_freshness(
     live_inspections: list[dict[str, Any]] = []
     for selected in routing.selected_runners:
         runner_type = str(selected.get("runner_type", "")).strip() or "codex"
-        live = make_runner_inspector(runner_type, env=env).inspect()
+        live = make_runner_inspector(
+            runner_type,
+            env=env,
+            profile=str(selected.get("profile", "")).strip() or None,
+        ).inspect()
         live_inspections.append(live.to_dict())
         if live.available and live.auth_mode in {"chatgpt_login", "api_key", "subscription"}:
             live_runner_ids.append(live.runner_id)
@@ -682,6 +686,7 @@ async def dispatch_bounded_spec(
     default_target_agent: str | None = None,
     default_reviewer_agent: str | None = None,
     use_managed_session_script: bool = True,
+    selected_runner: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Dispatch one bounded spec via the supervisor-backed Boss path.
 
@@ -722,6 +727,7 @@ async def dispatch_bounded_spec(
             default_target_agent=default_target_agent,
             default_reviewer_agent=default_reviewer_agent,
             use_managed_session_script=use_managed_session_script,
+            default_target_runner=selected_runner,
         )
         run_dict = run.to_dict()
         run_status = str(run_dict.get("status", "")).strip().lower()
@@ -1366,6 +1372,7 @@ class BossLoop:
                 ],
             }
 
+        selected_runner = self._selected_runner_for_dispatch(freshness)
         result = await dispatch_bounded_spec(
             spec,
             target_branch=self.config.target_branch,
@@ -1378,6 +1385,7 @@ class BossLoop:
             # script wrapper is redundant and crashes on bash 3.2 (macOS
             # default) due to ${VAR,,} syntax.  Matches tranche_queue.py.
             use_managed_session_script=False,
+            selected_runner=selected_runner,
         )
         result["receipt_metadata"] = self._receipt_metadata_for_result(
             result,
@@ -1439,11 +1447,35 @@ class BossLoop:
             "actual_reviewer_agent": actual_reviewer_agent,
             "runner_id": selected_runner.get("runner_id"),
             "runner_type": selected_runner.get("runner_type"),
+            "runner_profile": selected_runner.get("profile"),
             "cost_class": selected_runner.get("cost_class"),
             "fallback_reason": routing.get("fallback_reason")
             if isinstance(routing, dict)
             else None,
         }
+
+    def _selected_runner_for_dispatch(
+        self,
+        freshness: RunnerFreshnessResult,
+    ) -> dict[str, Any] | None:
+        details = freshness.details if isinstance(freshness.details, dict) else {}
+        routing = details.get("routing") if isinstance(details, dict) else {}
+        if not isinstance(routing, dict):
+            return None
+        selected_runners = routing.get("selected_runners")
+        if not isinstance(selected_runners, list):
+            return None
+        requested = str(self.config.default_target_agent or "").strip().lower()
+        for item in selected_runners:
+            if not isinstance(item, dict):
+                continue
+            runner_type = str(item.get("runner_type", "")).strip().lower()
+            if requested and runner_type == requested:
+                return dict(item)
+        for item in selected_runners:
+            if isinstance(item, dict):
+                return dict(item)
+        return None
 
     def _collect_needs_human_reasons(self) -> list[str]:
         """Collect all needs-human reasons across iterations."""

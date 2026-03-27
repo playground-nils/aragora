@@ -112,6 +112,8 @@ class LaunchConfig:
     no_progress_timeout_seconds: float = 1800.0
     claude_model: str | None = None
     codex_model: str | None = None
+    claude_profile: str | None = None
+    claude_profile_script: str | None = None
     auto_commit: bool = True
     use_managed_session_script: bool = True
     base_branch: str = "main"
@@ -466,6 +468,11 @@ class WorkerLauncher:
                 cmd.append("--dangerously-skip-permissions")
             if self.config.claude_model:
                 cmd.extend(["--model", self.config.claude_model])
+            if self.config.claude_profile:
+                profile_script = self.config.claude_profile_script or str(
+                    Path(worktree_path).resolve() / "scripts" / "claude_profile.sh"
+                )
+                return [profile_script, "exec", self.config.claude_profile, "--", *cmd]
             return cmd
 
         if agent == "codex":
@@ -481,6 +488,11 @@ class WorkerLauncher:
         cmd = [self.config.claude_path, "-p", prompt]
         if self._should_skip_claude_permissions():
             cmd.append("--dangerously-skip-permissions")
+        if self.config.claude_profile:
+            profile_script = self.config.claude_profile_script or str(
+                Path(worktree_path).resolve() / "scripts" / "claude_profile.sh"
+            )
+            return [profile_script, "exec", self.config.claude_profile, "--", *cmd]
         return cmd
 
     @staticmethod
@@ -930,8 +942,9 @@ class WorkerLauncher:
         running when Python-side cleanup fires.  Polling until the PID is gone
         ensures the trap has completed before we delete those files.
         """
-        deadline = asyncio.get_event_loop().time() + timeout
-        while asyncio.get_event_loop().time() < deadline:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
             if not cls._is_pid_running(pid):
                 return
             await asyncio.sleep(0.1)

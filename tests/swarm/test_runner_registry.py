@@ -11,6 +11,8 @@ from aragora.swarm.runner_registry import (
     CodexRunnerInspector,
     LocalRunnerRegistry,
     authorization_context_from_env,
+    configured_claude_runner_profiles,
+    discover_runner_inspections,
 )
 
 UTC = timezone.utc
@@ -142,6 +144,86 @@ class TestClaudeRunnerInspector:
         assert inspection.auth_mode == "subscription"
         assert inspection.cost_class == "subscription"
         assert inspection.priority_weight > 0
+
+    def test_profile_runner_detected_via_claude_profile_script(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        script = tmp_path / "scripts" / "claude_profile.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text("#!/bin/bash\n", encoding="utf-8")
+        monkeypatch.setattr(
+            "aragora.swarm.runner_registry.shutil.which",
+            lambda _name: "/usr/local/bin/claude",
+        )
+
+        def _run(command: list[str]) -> dict[str, object]:
+            joined = " ".join(command)
+            if joined.endswith("--version"):
+                return {"returncode": 0, "stdout": "claude 2.1.85\n", "stderr": ""}
+            if joined.endswith("--help"):
+                return {"returncode": 0, "stdout": "Commands:\n  review\n  login\n", "stderr": ""}
+            if "claude_profile.sh status max-01" in joined:
+                return {
+                    "returncode": 0,
+                    "stdout": '{"loggedIn":true,"subscriptionType":"max"}\n',
+                    "stderr": "",
+                }
+            return {"returncode": 1, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr(ClaudeRunnerInspector, "_run_command", staticmethod(_run))
+        inspection = ClaudeRunnerInspector(
+            env={},
+            profile="max-01",
+            repo_root=tmp_path,
+        ).inspect()
+
+        assert inspection.available is True
+        assert inspection.profile == "max-01"
+        assert inspection.auth_mode == "subscription"
+        assert inspection.command_path == str(script.resolve())
+        assert inspection.status_summary == "loggedIn=True subscriptionType=max"
+
+    def test_profile_list_prefers_runner_profiles_env(self) -> None:
+        profiles = configured_claude_runner_profiles(
+            {
+                "ARAGORA_CLAUDE_REVIEW_PROFILES": "max-09,max-10",
+                "ARAGORA_CLAUDE_RUNNER_PROFILES": "max-01,max-02",
+            }
+        )
+        assert profiles == ["max-01", "max-02"]
+
+    def test_discover_runner_inspections_expands_configured_profiles(self, monkeypatch) -> None:
+        def _factory(
+            runner_type: str,
+            *,
+            config=None,
+            env=None,
+            profile=None,
+            repo_root=None,
+        ):
+            class _Inspector:
+                def inspect(self_nonlocal) -> CodexRunnerInspection:
+                    return CodexRunnerInspection(
+                        runner_id=f"{runner_type}:{profile}",
+                        runner_type=runner_type,
+                        availability="available",
+                        available=True,
+                        auth_mode="subscription",
+                        command_path="/tmp/fake",
+                        capabilities={"supports_exec": True},
+                        owner_binding={},
+                        profile=profile,
+                    )
+
+            return _Inspector()
+
+        monkeypatch.setattr("aragora.swarm.runner_registry.make_runner_inspector", _factory)
+        inspections = discover_runner_inspections(
+            "claude",
+            env={"ARAGORA_CLAUDE_RUNNER_PROFILES": "max-01,max-02"},
+        )
+
+        assert [item.profile for item in inspections] == ["max-01", "max-02"]
 
 
 class TestLocalRunnerRegistry:

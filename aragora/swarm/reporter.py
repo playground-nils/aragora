@@ -1463,6 +1463,9 @@ def render_runner_registration_text(payload: dict[str, Any]) -> str:
         f"{_text(payload.get('availability'))} auth_mode={_text(payload.get('auth_mode'))}",
         f"runner_type={_text(payload.get('runner_type'))}",
     ]
+    profile = _text(payload.get("profile"))
+    if profile:
+        lines.append(f"profile={profile}")
 
     owner = payload.get("owner_binding", {})
     if isinstance(owner, dict):

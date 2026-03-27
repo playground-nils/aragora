@@ -240,6 +240,7 @@ class SwarmCommander:
         default_target_agent: str | None = None,
         default_reviewer_agent: str | None = None,
         use_managed_session_script: bool = True,
+        default_target_runner: dict[str, Any] | None = None,
     ) -> SupervisorRun:
         """Dispatch a spec through the supervisor-backed Codex/Claude worker pool.
 
@@ -257,6 +258,21 @@ class SwarmCommander:
             config=LaunchConfig(
                 detach=not wait,
                 use_managed_session_script=use_managed_session_script,
+                claude_profile=(
+                    str(default_target_runner.get("profile", "")).strip()
+                    if isinstance(default_target_runner, dict)
+                    and str(default_target_runner.get("runner_type", "")).strip().lower()
+                    == "claude"
+                    else None
+                ),
+                claude_profile_script=(
+                    str(default_target_runner.get("command_path", "")).strip()
+                    if isinstance(default_target_runner, dict)
+                    and str(default_target_runner.get("runner_type", "")).strip().lower()
+                    == "claude"
+                    and str(default_target_runner.get("profile", "")).strip()
+                    else None
+                ),
             )
         )
         supervisor = SwarmSupervisor(repo_root=repo_path or Path.cwd(), launcher=launcher)

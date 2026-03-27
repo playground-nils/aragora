@@ -237,11 +237,11 @@ class SparseSelector(TopologySelector):
 
         num_to_select = max(1, int(len(available) * self._sparsity))
 
-        # Use stable hash for deterministic random selection
+        # Use stable hash for deterministic random selection.
+        # Local Random instance avoids corrupting global state in concurrent debates.
         stable_seed = int(hashlib.sha256(proposal_agent.encode()).hexdigest(), 16) % (2**32)
-        random.seed(stable_seed)
-        selected = random.sample(available, min(num_to_select, len(available)))
-        random.seed()  # Reset seed
+        rng = random.Random(stable_seed)
+        selected = rng.sample(available, min(num_to_select, len(available)))
 
         return selected
 

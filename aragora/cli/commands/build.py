@@ -203,6 +203,17 @@ async def _run_build_pipeline(
         result["elapsed_seconds"] = time.monotonic() - start
         return result
 
+    routing_preflight = _preflight_boss_routing(repo=repo_name, worker_model=worker_model)
+    result["stages"]["routing"] = routing_preflight
+    if routing_preflight.get("blocked"):
+        result["status"] = "blocked_no_runner"
+        result["elapsed_seconds"] = time.monotonic() - start
+        _progress(
+            emit_progress,
+            "  ! Boss-loop routing is blocked; skipping dispatch until a matching runner is available.",
+        )
+        return result
+
     # Stage 4: Dispatch to boss loop
     _progress(emit_progress, f"\n[4/5] Dispatching to boss loop (--autonomy {autonomy_mode})...")
     dispatch_result = await _dispatch_to_boss_loop(
@@ -487,12 +498,14 @@ async def _dispatch_to_boss_loop(
     build_run_id = f"build-{int(time.time())}"
     log_path = Path(".aragora") / "builds" / f"{build_run_id}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    owner_binding = _dispatch_owner_binding(repo=repo)
     cmd = [
         "bash",
         "-lc",
         (
             f"cd {sh_quote(str(Path.cwd()))} && "
-            f"export ARAGORA_USER_ID={sh_quote(os.environ.get('ARAGORA_USER_ID', 'armand'))} && "
+            f"export ARAGORA_USER_ID={sh_quote(owner_binding['user_id'])} && "
+            f"export ARAGORA_WORKSPACE_ID={sh_quote(owner_binding['workspace_id'])} && "
             "exec python3 -u -m aragora.cli.main swarm boss-loop "
             f"--boss-repo {sh_quote(repo)} "
             f"--boss-issue-list {sh_quote(','.join(str(num) for num in issue_numbers))} "
@@ -516,6 +529,51 @@ async def _dispatch_to_boss_loop(
         "pid": proc.pid,
         "issues": issue_numbers,
         "log": str(log_path),
+        "owner_binding": owner_binding,
+    }
+
+
+def _dispatch_owner_binding(*, repo: str) -> dict[str, str]:
+    repo_name = str(repo or "").strip()
+    workspace_default = repo_name.rsplit("/", 1)[-1].strip() or "aragora"
+    user_id = (
+        str(os.environ.get("ARAGORA_USER_ID") or os.environ.get("ARAGORA_ACTOR_ID") or "").strip()
+        or str(os.environ.get("USER") or "").strip()
+        or "armand"
+    )
+    workspace_id = (
+        str(
+            os.environ.get("ARAGORA_WORKSPACE_ID") or os.environ.get("ARAGORA_WORKSPACE") or ""
+        ).strip()
+        or workspace_default
+    )
+    return {
+        "user_id": user_id,
+        "workspace_id": workspace_id,
+    }
+
+
+def _preflight_boss_routing(*, repo: str, worker_model: str) -> dict[str, Any]:
+    from aragora.swarm.runner_registry import LocalRunnerRegistry, authorization_context_from_env
+
+    owner_binding = _dispatch_owner_binding(repo=repo)
+    env = {
+        **os.environ,
+        "ARAGORA_USER_ID": owner_binding["user_id"],
+        "ARAGORA_WORKSPACE_ID": owner_binding["workspace_id"],
+    }
+    routing = (
+        LocalRunnerRegistry()
+        .resolve_boss_routing(
+            owner_context=authorization_context_from_env(env),
+            requested_runner_type=worker_model,
+        )
+        .to_dict()
+    )
+    return {
+        "owner_binding": owner_binding,
+        "blocked": bool(routing.get("blocked_reason")),
+        "routing": routing,
     }
 
 

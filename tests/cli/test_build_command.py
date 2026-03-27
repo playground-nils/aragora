@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aragora.cli.commands.build import (
     _create_issues,
+    _dispatch_owner_binding,
     _dispatch_to_boss_loop,
     _generate_spec,
+    _preflight_boss_routing,
     _queueable_tasks_from_review,
     _run_build_pipeline,
     cmd_build,
@@ -147,6 +149,63 @@ def test_run_build_pipeline_dry_run_returns_tasks() -> None:
     assert "server/auth/oidc.py" in result["stages"]["tasks"][0]["file_scope_hints"]
 
 
+def test_run_build_pipeline_blocks_before_dispatch_when_routing_is_blocked() -> None:
+    with (
+        patch(
+            "aragora.cli.commands.build._generate_spec",
+            AsyncMock(return_value={"title": "Spec", "sections": [], "raw": "spec"}),
+        ),
+        patch(
+            "aragora.cli.commands.build._plan_reviewed_tasks",
+            AsyncMock(
+                return_value={
+                    "brief": {"clarification_completeness_status": "decision_complete"},
+                    "handoffs": [],
+                    "review": {
+                        "status": "approved",
+                        "summary": "",
+                        "findings": [],
+                        "followups": [],
+                    },
+                    "tasks": [
+                        {
+                            "title": "Task A",
+                            "description": "Implement thing",
+                            "acceptance_criteria": ["It works"],
+                            "verification": "pytest tests/a.py -q",
+                        }
+                    ],
+                }
+            ),
+        ),
+        patch("aragora.cli.commands.build._create_issues", AsyncMock(return_value=[11])),
+        patch(
+            "aragora.cli.commands.build._preflight_boss_routing",
+            return_value={
+                "owner_binding": {"user_id": "armand", "workspace_id": "aragora"},
+                "blocked": True,
+                "routing": {"blocked_reason": "no_eligible_registered_runners"},
+            },
+        ),
+        patch("aragora.cli.commands.build._dispatch_to_boss_loop", AsyncMock()) as dispatch,
+    ):
+        result = asyncio.run(
+            _run_build_pipeline(
+                idea="Ship thing",
+                dry_run=False,
+                skip_clarify=True,
+                repo="synaptent/aragora",
+                worker_model="claude",
+                review_model="codex",
+                emit_progress=False,
+            )
+        )
+
+    assert result["status"] == "blocked_no_runner"
+    assert result["stages"]["routing"]["blocked"] is True
+    dispatch.assert_not_awaited()
+
+
 def test_generate_spec_reads_conductor_result() -> None:
     conductor_result = ConductorResult(
         specification=Specification(
@@ -173,6 +232,22 @@ def test_generate_spec_reads_conductor_result() -> None:
     assert spec["clarification_status"] == "decision_complete"
     assert spec["user_goal"] == "Ship realtime debate streaming to the frontend."
     assert "Stream agent output incrementally" in spec["raw"]
+
+
+def test_preflight_boss_routing_uses_dispatch_owner_binding(monkeypatch) -> None:
+    monkeypatch.setenv("ARAGORA_USER_ID", "founder-1")
+    monkeypatch.setenv("ARAGORA_WORKSPACE_ID", "workspace-9")
+    registry = MagicMock()
+    registry.resolve_boss_routing.return_value.to_dict.return_value = {
+        "blocked_reason": None,
+        "selected_runner_ids": ["claude-runner-1"],
+    }
+
+    with patch("aragora.swarm.runner_registry.LocalRunnerRegistry", return_value=registry):
+        payload = _preflight_boss_routing(repo="synaptent/aragora", worker_model="claude")
+
+    assert payload["blocked"] is False
+    assert payload["owner_binding"] == {"user_id": "founder-1", "workspace_id": "workspace-9"}
 
 
 def test_generate_spec_marks_unanswered_questions_as_needing_clarification() -> None:
@@ -326,6 +401,7 @@ def test_queueable_tasks_from_review_prefers_followups_and_unblocked_handoffs() 
 
 def test_dispatch_to_boss_loop_uses_scoped_issue_list(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("USER", "armand")
     popen = MagicMock()
     popen.return_value.pid = 4242
 
@@ -341,9 +417,33 @@ def test_dispatch_to_boss_loop_uses_scoped_issue_list(tmp_path, monkeypatch) -> 
         )
 
     command = popen.call_args.args[0][2]
+    assert "export ARAGORA_USER_ID=armand" in command
+    assert "export ARAGORA_WORKSPACE_ID=aragora" in command
     assert "--boss-issue-list 11,12" in command
     assert "--worker-model claude" in command
     assert "--review-model codex" in command
     assert "--boss-repo synaptent/aragora" in command
     assert result["pid"] == 4242
     assert result["issues"] == [11, 12]
+    assert result["owner_binding"] == {"user_id": "armand", "workspace_id": "aragora"}
+
+
+def test_dispatch_owner_binding_prefers_explicit_env(monkeypatch) -> None:
+    monkeypatch.setenv("ARAGORA_USER_ID", "founder-1")
+    monkeypatch.setenv("ARAGORA_WORKSPACE_ID", "workspace-9")
+
+    binding = _dispatch_owner_binding(repo="synaptent/aragora")
+
+    assert binding == {"user_id": "founder-1", "workspace_id": "workspace-9"}
+
+
+def test_dispatch_owner_binding_defaults_workspace_from_repo(monkeypatch) -> None:
+    monkeypatch.delenv("ARAGORA_USER_ID", raising=False)
+    monkeypatch.delenv("ARAGORA_ACTOR_ID", raising=False)
+    monkeypatch.delenv("ARAGORA_WORKSPACE_ID", raising=False)
+    monkeypatch.delenv("ARAGORA_WORKSPACE", raising=False)
+    monkeypatch.setenv("USER", "armand")
+
+    binding = _dispatch_owner_binding(repo="synaptent/aragora")
+
+    assert binding == {"user_id": "armand", "workspace_id": "aragora"}

@@ -132,11 +132,11 @@ class CritiquePhase:
         sparsity = getattr(self.protocol, "topology_sparsity", 0.5)
         num_to_select = max(1, int(len(available_critics) * sparsity))
 
-        # Deterministic random based on proposal_agent for reproducibility
+        # Deterministic random based on proposal_agent for reproducibility.
+        # Use a local Random instance to avoid corrupting global state in concurrent debates.
         stable_seed = int(hashlib.sha256(proposal_agent.encode()).hexdigest(), 16) % (2**32)
-        random.seed(stable_seed)
-        selected = random.sample(available_critics, min(num_to_select, len(available_critics)))
-        random.seed()  # Reset seed
+        rng = random.Random(stable_seed)
+        selected = rng.sample(available_critics, min(num_to_select, len(available_critics)))
         return selected
 
     def aggregate_critiques(
