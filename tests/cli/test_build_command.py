@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aragora.cli.commands.build import (
     _create_issues,
-    _dispatch_owner_binding,
+    _decompose_tasks,
     _dispatch_to_boss_loop,
     _generate_spec,
     _preflight_boss_routing,
@@ -278,6 +278,38 @@ def test_generate_spec_marks_unanswered_questions_as_needing_clarification() -> 
 
     assert spec["clarification_status"] == "needs_clarification"
     assert spec["open_questions"] == ["Should this create a GitHub issue automatically?"]
+
+
+def test_decompose_tasks_uses_subtask_success_criteria() -> None:
+    subtask = SimpleNamespace(
+        title="Harden onboarding queueing",
+        description="Carry founder review validation into queueable tasks.",
+        success_criteria={
+            "acceptance_criteria": ["Queue item preserves validation details"],
+            "tests": ["pytest tests/cli/test_build_command.py -q"],
+        },
+    )
+
+    with patch.dict(
+        "sys.modules",
+        {
+            "aragora.nomic.task_decomposer": SimpleNamespace(
+                TaskDecomposer=lambda: SimpleNamespace(
+                    analyze=lambda _text: SimpleNamespace(subtasks=[subtask])
+                )
+            )
+        },
+    ):
+        tasks = asyncio.run(_decompose_tasks({"raw": "demo spec"}))
+
+    assert tasks == [
+        {
+            "title": "Harden onboarding queueing",
+            "description": "Carry founder review validation into queueable tasks.",
+            "acceptance_criteria": ["Queue item preserves validation details"],
+            "verification": "pytest tests/cli/test_build_command.py -q",
+        }
+    ]
 
 
 def test_create_issues_includes_queue_metadata() -> None:
