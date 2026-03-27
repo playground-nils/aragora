@@ -129,26 +129,22 @@ async def _run_pipeline(
     """Run the prompt engine pipeline, emitting events at each stage."""
     from aragora.prompt_engine import (
         ConductorConfig,
+        PROMPT_ENGINE_TARGET_DURATION_MS,
         PromptConductor,
+        PipelineTiming,
         SpecValidator,
     )
-    from aragora.prompt_engine.timing import PipelineTiming, elapsed_ms, start_timer
+    from aragora.prompt_engine.timing import elapsed_ms, start_timer
 
     try:
         config = ConductorConfig.from_profile(profile)
         conductor = PromptConductor(config=config)
         pipeline_start = start_timer()
-        operation_timings: list[Any] = []
         stage_durations_ms: dict[str, float] = {}
         stages_completed: list[str] = []
 
-        def _latest_stage_operations(stage: str) -> list[Any]:
-            stage_operation_timings = getattr(conductor, "stage_operation_timings", {})
-            if not isinstance(stage_operation_timings, dict):
-                return []
-            return list(stage_operation_timings.get(stage, []))
-
         # Stage 1: Decompose
+        stage_start = start_timer()
         await emitter.emit(
             session_id,
             "prompt_engine_stage",
@@ -160,27 +156,19 @@ async def _run_pipeline(
         stage_start = start_timer()
         intent = await conductor.decompose_only(prompt, context)
         stage_durations_ms["decompose"] = elapsed_ms(stage_start)
-        operation_timings.extend(_latest_stage_operations("decompose"))
         stages_completed.append("decompose")
-        await emitter.emit(
-            session_id,
-            "prompt_engine_stage",
-            {
-                "stage": "decompose",
-                "status": "completed",
-                "duration_ms": round(stage_durations_ms["decompose"], 2),
-            },
-        )
         await emitter.emit(
             session_id,
             "prompt_engine_intent",
             {
                 "intent": intent.to_dict(),
+                "stage_duration_ms": round(stage_durations_ms["decompose"], 2),
             },
         )
 
         # Stage 2: Interrogate
         if intent.needs_clarification and not config.skip_interrogation:
+            stage_start = start_timer()
             await emitter.emit(
                 session_id,
                 "prompt_engine_stage",
@@ -192,22 +180,13 @@ async def _run_pipeline(
             stage_start = start_timer()
             questions = await conductor.interrogate_only(intent)
             stage_durations_ms["interrogate"] = elapsed_ms(stage_start)
-            operation_timings.extend(_latest_stage_operations("interrogate"))
             stages_completed.append("interrogate")
-            await emitter.emit(
-                session_id,
-                "prompt_engine_stage",
-                {
-                    "stage": "interrogate",
-                    "status": "completed",
-                    "duration_ms": round(stage_durations_ms["interrogate"], 2),
-                },
-            )
             await emitter.emit(
                 session_id,
                 "prompt_engine_questions",
                 {
                     "questions": [q.to_dict() for q in questions],
+                    "stage_duration_ms": round(stage_durations_ms["interrogate"], 2),
                 },
             )
         else:
@@ -215,6 +194,7 @@ async def _run_pipeline(
 
         # Stage 3: Research
         if not config.skip_research:
+            stage_start = start_timer()
             await emitter.emit(
                 session_id,
                 "prompt_engine_stage",
@@ -226,28 +206,20 @@ async def _run_pipeline(
             stage_start = start_timer()
             research = await conductor.research_only(intent, questions or None)
             stage_durations_ms["research"] = elapsed_ms(stage_start)
-            operation_timings.extend(_latest_stage_operations("research"))
             stages_completed.append("research")
-            await emitter.emit(
-                session_id,
-                "prompt_engine_stage",
-                {
-                    "stage": "research",
-                    "status": "completed",
-                    "duration_ms": round(stage_durations_ms["research"], 2),
-                },
-            )
             await emitter.emit(
                 session_id,
                 "prompt_engine_research",
                 {
                     "research": research.to_dict(),
+                    "stage_duration_ms": round(stage_durations_ms["research"], 2),
                 },
             )
         else:
             research = None
 
         # Stage 4: Specify
+        stage_start = start_timer()
         await emitter.emit(
             session_id,
             "prompt_engine_stage",
@@ -259,34 +231,27 @@ async def _run_pipeline(
         stage_start = start_timer()
         spec = await conductor.specify_only(intent, questions or None, research)
         stage_durations_ms["specify"] = elapsed_ms(stage_start)
-        operation_timings.extend(_latest_stage_operations("specify"))
         stages_completed.append("specify")
-        await emitter.emit(
-            session_id,
-            "prompt_engine_stage",
-            {
-                "stage": "specify",
-                "status": "completed",
-                "duration_ms": round(stage_durations_ms["specify"], 2),
-            },
-        )
         await emitter.emit(
             session_id,
             "prompt_engine_spec",
             {
                 "specification": spec.to_dict(),
+                "stage_duration_ms": round(stage_durations_ms["specify"], 2),
             },
         )
 
         # Validation
         validator = SpecValidator()
         validation = validator.validate_heuristic(spec)
-        validation_timing = PipelineTiming(
-            total_duration_ms=sum(item.duration_ms for item in validator.last_operation_timings),
-            stage_durations_ms={
-                "validate": sum(item.duration_ms for item in validator.last_operation_timings)
-            },
-            operation_timings=validator.last_operation_timings,
+        latency_target_ms = getattr(config, "latency_target_ms", PROMPT_ENGINE_TARGET_DURATION_MS)
+        if not isinstance(latency_target_ms, (int, float)):
+            latency_target_ms = PROMPT_ENGINE_TARGET_DURATION_MS
+
+        timing = PipelineTiming(
+            total_duration_ms=elapsed_ms(pipeline_start),
+            stage_durations_ms=stage_durations_ms,
+            target_duration_ms=latency_target_ms,
         )
         await emitter.emit(
             session_id,

@@ -840,7 +840,17 @@ class TestPromptConductor:
             "research",
             "specify",
         }
+        assert result.timing.slowest_stage_name in {
+            "decompose",
+            "interrogate",
+            "research",
+            "specify",
+        }
         assert result.timing.top_operations(limit=1)[0].operation.endswith(".agent_generate")
+        serialized_timing = result.timing.to_dict()
+        assert serialized_timing["slowest_stage"]["stage"] == result.timing.slowest_stage_name
+        assert serialized_timing["top_operations"][0]["operation"].endswith(".agent_generate")
+        assert "llm" in serialized_timing["category_durations_ms"]
 
     @pytest.mark.asyncio()
     async def test_full_pipeline_reports_bottlenecks_against_target(self) -> None:
@@ -876,6 +886,7 @@ class TestPromptConductor:
             "research.agent_generate",
             "specify.agent_generate",
         ]
+        assert result.timing.slowest_stage_name == "research"
 
     @pytest.mark.asyncio()
     async def test_skip_interrogation(self, mock_agent: AsyncMock) -> None:

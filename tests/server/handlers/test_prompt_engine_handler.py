@@ -287,7 +287,13 @@ class TestRunPipeline:
         mock_result.research = None
         mock_result.auto_approved = False
         mock_result.stages_completed = ["decompose", "specify"]
-        mock_result.timing = _FakeTiming()
+        mock_timing = MagicMock()
+        mock_timing.to_dict.return_value = {
+            "total_duration_ms": 61.2,
+            "slowest_stage": {"stage": "specify", "duration_ms": 31.0},
+            "top_operations": [{"operation": "specify.agent_generate", "duration_ms": 29.5}],
+        }
+        mock_result.timing = mock_timing
 
         instance = mock_conductor_cls.return_value
         instance.run = AsyncMock(return_value=mock_result)
@@ -313,8 +319,7 @@ class TestRunPipeline:
         assert "spec_bundle" in parsed["data"]
         assert parsed["data"]["validation"]["passed"] is True
         assert "stages_completed" in parsed["data"]
-        assert parsed["data"]["timing"]["total_duration_ms"] == 250.0
-        assert "post_pipeline" in parsed["data"]["timing"]
+        assert parsed["data"]["timing"]["slowest_stage"]["stage"] == "specify"
 
     @patch("aragora.pipeline.executor.store_plan")
     @patch("aragora.pipeline.plan_store.get_plan_store")
@@ -362,6 +367,11 @@ class TestRunPipeline:
             stages_completed=["decompose", "specify"],
             timing=_FakeTiming(),
         )
+        mock_result.timing.to_dict.return_value = {
+            "total_duration_ms": 92.0,
+            "slowest_stage": {"stage": "specify", "duration_ms": 44.0},
+            "top_operations": [{"operation": "specify.agent_generate", "duration_ms": 41.0}],
+        }
         mock_conductor_cls.return_value.run = AsyncMock(return_value=mock_result)
 
         validation = ValidationResult(
@@ -398,6 +408,7 @@ class TestRunPipeline:
         assert parsed["status"] == 200
         assert parsed["data"]["decision_plan"]["status"] == PlanStatus.APPROVED.value
         assert parsed["data"]["execution"]["status"] == "scheduled"
+        assert parsed["data"]["timing"]["slowest_stage"]["stage"] == "specify"
         mock_get_plan_store.return_value.create.assert_called_once()
         mock_store_plan.assert_called_once()
         mock_get_execution_bridge.return_value.schedule_execution.assert_called_once()
@@ -431,6 +442,11 @@ class TestRunPipeline:
             stages_completed=["decompose", "specify"],
             timing=_FakeTiming(),
         )
+        mock_result.timing.to_dict.return_value = {
+            "total_duration_ms": 40.0,
+            "slowest_stage": {"stage": "specify", "duration_ms": 19.0},
+            "top_operations": [{"operation": "specify.agent_generate", "duration_ms": 18.0}],
+        }
         mock_conductor_cls.return_value.run = AsyncMock(return_value=mock_result)
 
         validation = ValidationResult(

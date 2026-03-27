@@ -174,10 +174,15 @@ class TestRunPipeline:
         assert "prompt_engine_spec" in event_types
         assert "prompt_engine_validation" in event_types
         assert "prompt_engine_complete" in event_types
-        validation_event = next(event for event in events if event[1] == "prompt_engine_validation")
+        intent_event = next(event for event in events if event[1] == "prompt_engine_intent")
+        assert "stage_duration_ms" in intent_event[2]
         complete_event = next(event for event in events if event[1] == "prompt_engine_complete")
-        assert "timing" in validation_event[2]
         assert "timing" in complete_event[2]
+        assert complete_event[2]["timing"]["slowest_stage"]["stage"] in {
+            "decompose",
+            "research",
+            "specify",
+        }
 
     @pytest.mark.asyncio
     @patch("aragora.prompt_engine.PromptConductor")

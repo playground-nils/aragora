@@ -96,7 +96,14 @@ class _FakePromptConductor:
             questions=[_FakeRecord(question="What should improve first?")],
             stages_completed=["decompose", "specify"],
             auto_approved=False,
-            timing=_FakeTiming(),
+            timing=_FakeRecord(
+                total_duration_ms=42.5,
+                slowest_stage={"stage": "specify", "duration_ms": 20.0},
+                top_operations=[
+                    {"operation": "specify.agent_generate", "duration_ms": 19.0},
+                    {"operation": "decompose.agent_generate", "duration_ms": 14.0},
+                ],
+            ),
         )
 
 
@@ -191,7 +198,7 @@ class TestRunSpecPipeline:
         assert result["specification"]["problem_statement"] == "Need a better onboarding flow."
         assert result["questions"] == [{"question": "What should improve first?"}]
         assert result["stages_completed"] == ["decompose", "specify"]
-        assert result["timing"]["total_duration_ms"] == 123.0
+        assert result["timing"]["slowest_stage"]["stage"] == "specify"
 
 
 class TestCmdSpec:
@@ -230,19 +237,10 @@ class TestCmdSpec:
             },
             "research": {"evidence_links": ["km://onboarding"]},
             "timing": {
-                "total_duration_ms": 123.0,
-                "target_duration_ms": 15_000.0,
-                "tracking_coverage_pct": 100.0,
-                "stage_breakdown": [
-                    {"stage": "specify", "duration_ms": 70.0, "share_of_total_pct": 56.9}
-                ],
-                "optimization_targets": [
-                    {
-                        "operation": "specify.agent_generate",
-                        "duration_ms": 70.0,
-                        "share_of_total_pct": 56.9,
-                        "optimization_hint": "Reduce prompt size, model latency, or round trips.",
-                    }
+                "total_duration_ms": 84.0,
+                "slowest_stage": {"stage": "specify", "duration_ms": 41.0},
+                "top_operations": [
+                    {"operation": "specify.agent_generate", "duration_ms": 39.0},
                 ],
             },
         }
@@ -267,6 +265,8 @@ class TestCmdSpec:
         out = capsys.readouterr().out
         assert "ARAGORA SPEC" in out
         assert "Elapsed:" in out
+        assert "Latency Total: 84.0ms" in out
+        assert "Slowest Stage: specify (41.0ms)" in out
         assert "Spec saved to:" in out
         assert '"total_duration_ms": 123.0' in out
         run_spec.assert_awaited_once_with(

@@ -78,20 +78,37 @@ class PipelineTiming:
         """How far beyond the target the pipeline ran."""
         return max(0.0, self.total_duration_ms - self.target_duration_ms)
 
-    @property
-    def tracked_duration_ms(self) -> float:
-        """How much of the run is covered by explicit operation timings."""
-        return sum(item.duration_ms for item in self.operation_timings)
+    def top_stages(self, limit: int = 5) -> list[tuple[str, float]]:
+        """Return the slowest measured stages."""
+        return sorted(self.stage_durations_ms.items(), key=lambda item: item[1], reverse=True)[
+            :limit
+        ]
 
     @property
-    def untracked_duration_ms(self) -> float:
-        """How much wall-clock time still lacks explicit operation coverage."""
-        return max(0.0, self.total_duration_ms - self.tracked_duration_ms)
+    def slowest_stage_name(self) -> str | None:
+        """Name of the slowest measured stage."""
+        top_stage = self.top_stages(limit=1)
+        return top_stage[0][0] if top_stage else None
 
     @property
-    def tracking_coverage(self) -> float:
-        """Fraction of total run time covered by operation timings."""
-        return _share(self.tracked_duration_ms, self.total_duration_ms)
+    def slowest_stage_duration_ms(self) -> float:
+        """Duration of the slowest measured stage."""
+        top_stage = self.top_stages(limit=1)
+        return top_stage[0][1] if top_stage else 0.0
+
+    @property
+    def category_durations_ms(self) -> dict[str, float]:
+        """Aggregate operation timings by category."""
+        durations: dict[str, float] = {}
+        for item in self.operation_timings:
+            durations[item.category] = durations.get(item.category, 0.0) + item.duration_ms
+        return durations
+
+    def top_categories(self, limit: int = 5) -> list[tuple[str, float]]:
+        """Return the slowest timing categories."""
+        return sorted(self.category_durations_ms.items(), key=lambda item: item[1], reverse=True)[
+            :limit
+        ]
 
     def top_operations(self, limit: int = 5) -> list[OperationTiming]:
         """Return the slowest measured operations."""
@@ -181,6 +198,27 @@ class PipelineTiming:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the timing summary."""
+        stage_rankings = [
+            {
+                "stage": stage,
+                "duration_ms": round(duration, 2),
+                "share_of_total": round(duration / self.total_duration_ms, 4)
+                if self.total_duration_ms
+                else 0.0,
+            }
+            for stage, duration in self.top_stages(limit=len(self.stage_durations_ms))
+        ]
+        slowest_stage = stage_rankings[0] if stage_rankings else None
+        category_rankings = [
+            {
+                "category": category,
+                "duration_ms": round(duration, 2),
+                "share_of_total": round(duration / self.total_duration_ms, 4)
+                if self.total_duration_ms
+                else 0.0,
+            }
+            for category, duration in self.top_categories(limit=len(self.category_durations_ms))
+        ]
         return {
             "total_duration_ms": round(self.total_duration_ms, 2),
             "target_duration_ms": round(self.target_duration_ms, 2),
@@ -192,12 +230,15 @@ class PipelineTiming:
             "stage_durations_ms": {
                 name: round(duration, 2) for name, duration in self.stage_durations_ms.items()
             },
-            "stage_breakdown": self.stage_breakdown(),
-            "operation_timings": [
-                self._serialize_operation(item) for item in self.operation_timings
-            ],
-            "bottlenecks": [self._serialize_operation(item) for item in self.bottlenecks()],
-            "optimization_targets": self.optimization_targets(),
+            "stage_rankings": stage_rankings,
+            "slowest_stage": slowest_stage,
+            "category_durations_ms": {
+                name: round(duration, 2) for name, duration in self.category_durations_ms.items()
+            },
+            "category_rankings": category_rankings,
+            "operation_timings": [item.to_dict() for item in self.operation_timings],
+            "top_operations": [item.to_dict() for item in self.top_operations()],
+            "bottlenecks": [item.to_dict() for item in self.bottlenecks()],
         }
 
 

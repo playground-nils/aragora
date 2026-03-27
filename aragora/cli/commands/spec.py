@@ -68,7 +68,7 @@ async def _run_spec_pipeline(
         "questions": [q.to_dict() if hasattr(q, "to_dict") else q for q in result.questions],
         "stages_completed": result.stages_completed,
         "auto_approved": result.auto_approved,
-        "timing": timing.to_dict() if hasattr(timing, "to_dict") else timing,
+        "timing": result.timing.to_dict() if hasattr(result, "timing") else None,
     }
 
 
@@ -113,6 +113,7 @@ def _print_spec_result(result: dict[str, Any], output_format: str = "text") -> N
     spec = result.get("specification")
     intent = result.get("intent")
     research = result.get("research")
+    timing = result.get("timing") or {}
 
     print("\n" + "=" * 60)
     print("  SPECIFICATION")
@@ -172,9 +173,24 @@ def _print_spec_result(result: dict[str, Any], output_format: str = "text") -> N
         if evidence:
             print(f"\n  Evidence: {len(evidence)} source(s) found")
 
-    timing = result.get("timing")
-    if isinstance(timing, dict):
-        _print_timing_summary(timing)
+    if timing:
+        total_duration_ms = timing.get("total_duration_ms")
+        if total_duration_ms is not None:
+            print(f"\n  Latency Total: {total_duration_ms:.1f}ms")
+
+        slowest_stage = timing.get("slowest_stage") or {}
+        slowest_stage_name = slowest_stage.get("stage")
+        if slowest_stage_name:
+            print(
+                "  Slowest Stage: "
+                f"{slowest_stage_name} ({slowest_stage.get('duration_ms', 0.0):.1f}ms)"
+            )
+
+        top_operations = timing.get("top_operations", [])
+        if top_operations:
+            print("  Slowest Operations:")
+            for item in top_operations[:3]:
+                print(f"    - {item['operation']}: {item['duration_ms']:.1f}ms")
 
     print("\n" + "=" * 60)
 
