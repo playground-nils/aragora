@@ -65,14 +65,19 @@ def client(app, mock_receipt_store, mock_receipt_share_store):
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _override_auth(client: TestClient) -> None:
+def _override_auth(
+    client: TestClient,
+    *,
+    roles: set[str] | None = None,
+    permissions: set[str] | None = None,
+) -> None:
     """Override auth dependency with a minimal authenticated context."""
     auth_ctx = AuthorizationContext(
         user_id="user-1",
         org_id="org-1",
         workspace_id="ws-1",
-        roles={"member"},
-        permissions=set(),
+        roles=roles if roles is not None else {"member"},
+        permissions=permissions if permissions is not None else set(),
     )
     client.app.dependency_overrides[require_authenticated] = lambda: auth_ctx
 
@@ -495,18 +500,17 @@ class TestShareReceipt:
         response = client.post("/api/v2/receipts/rcpt_test123/share", json={})
         assert response.status_code == 401
 
-    def test_share_receipt_not_found(self, client):
-        from aragora.rbac.models import AuthorizationContext
-        from aragora.server.fastapi.dependencies.auth import require_authenticated
+    def test_share_receipt_requires_permission(
+        self, client, mock_receipt_store, sample_receipt_dict
+    ):
+        mock_receipt_store.get.return_value = sample_receipt_dict
+        _override_auth(client, roles=set(), permissions=set())
+        response = client.post("/api/v2/receipts/rcpt_test123/share", json={})
+        client.app.dependency_overrides.clear()
+        assert response.status_code == 403
 
-        auth_ctx = AuthorizationContext(
-            user_id="user-1",
-            org_id="org-1",
-            workspace_id="ws-1",
-            roles={"member"},
-            permissions={"receipts:share"},
-        )
-        client.app.dependency_overrides[require_authenticated] = lambda: auth_ctx
+    def test_share_receipt_not_found(self, client):
+        _override_auth(client, permissions={"receipts:share"})
         response = client.post("/api/v2/receipts/missing/share", json={})
         client.app.dependency_overrides.clear()
         assert response.status_code == 404
@@ -518,14 +522,7 @@ class TestShareReceipt:
         from aragora.server.fastapi.dependencies.auth import require_authenticated
 
         mock_receipt_store.get.return_value = sample_receipt_dict
-        auth_ctx = AuthorizationContext(
-            user_id="user-1",
-            org_id="org-1",
-            workspace_id="ws-1",
-            roles={"member"},
-            permissions={"receipts:share"},
-        )
-        client.app.dependency_overrides[require_authenticated] = lambda: auth_ctx
+        _override_auth(client, permissions={"receipts:share"})
 
         response = client.post(
             "/api/v2/receipts/rcpt_test123/share",

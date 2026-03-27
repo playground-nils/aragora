@@ -335,6 +335,10 @@ class TestAuthConsistency:
 
         # Permission endpoints should return their permission
         assert get_required_permission("/api/plugins", "post") == "plugins:install"
+        assert (
+            get_required_permission("/api/v2/receipts/rcpt_test123/share", "post")
+            == "receipts:share"
+        )
 
         # Non-permission endpoints should return None
         assert get_required_permission("/api/health", "get") is None
