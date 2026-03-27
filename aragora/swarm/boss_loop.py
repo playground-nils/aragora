@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -688,6 +690,18 @@ async def dispatch_bounded_spec(
     use_managed_session_script: bool = True,
     selected_runner: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    # Auto-detect Claude profile from environment if no runner specified
+    if selected_runner is None:
+        profile = os.environ.get("ARAGORA_CLAUDE_PROFILE", "").strip()
+        if profile:
+            repo_root = repo_path or Path.cwd()
+            selected_runner = {
+                "runner_type": "claude",
+                "profile": profile,
+                "command_path": str(Path(repo_root) / "scripts" / "claude_profile.sh"),
+                "cost_class": "subscription",
+            }
+            logger.info("Using Claude profile %r from ARAGORA_CLAUDE_PROFILE", profile)
     """Dispatch one bounded spec via the supervisor-backed Boss path.
 
     This reuses the Boss loop's concrete-deliverable gate so higher-level
