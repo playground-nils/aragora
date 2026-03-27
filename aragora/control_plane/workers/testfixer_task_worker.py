@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from aragora.control_plane.integration import ControlPlaneIntegration  # type: ignore[attr-defined]
+from aragora.control_plane.integration import IntegratedControlPlane  # type: ignore[attr-defined]
 from aragora.control_plane.testfixer import TESTFIXER_TASK_TYPE, TestFixerControlPlane
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class TestFixerTaskWorker:
     """Worker that claims TestFixer tasks from the control plane scheduler."""
 
-    def __init__(self, integration: ControlPlaneIntegration, worker_id: str = "testfixer-worker"):
+    def __init__(self, integration: IntegratedControlPlane, worker_id: str = "testfixer-worker"):
         self._integration = integration
         self._worker_id = worker_id
         self._running = False

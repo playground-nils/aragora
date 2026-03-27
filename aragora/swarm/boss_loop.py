@@ -513,6 +513,10 @@ class BossLoopConfig:
     budget_limit_usd: float = 5.0
     dispatch_enabled: bool = True
 
+    # Autonomy: when True, treat needs_human with a deliverable as completed
+    # instead of stopping the loop. Only stop when there's genuinely no output.
+    auto_continue_on_needs_human: bool = False
+
     # Reporting
     status_report_interval: int = 5  # every N iterations
 
@@ -1104,7 +1108,51 @@ class BossLoop:
             )
 
         if worker_result.get("status") == "needs_human":
+            has_deliverable = bool(worker_result.get("deliverable"))
+            if self.config.auto_continue_on_needs_human and has_deliverable:
+                # Treat as completed — the worker produced output, just needs
+                # review which can happen asynchronously.
+                self._completed_issues.append(issue_dict)
+                self._consecutive_failures = 0
+                self._emit_lane_receipt(worker_result, issue_dict, elapsed)
+                logger.info(
+                    "boss_loop_auto_continue issue=#%s (needs_human with deliverable → treating as completed)",
+                    issue_dict.get("number", "?"),
+                )
+                return BossIterationStatus(
+                    iteration=iteration,
+                    run_id=self.run_id,
+                    timestamp=now,
+                    runner_freshness=freshness_dict,
+                    selected_issue=issue_dict,
+                    worker_status="completed",
+                    stop_reason=None,
+                    needs_human_reasons=[],
+                    next_actions=["Auto-continuing: deliverable created, review can happen async."],
+                    elapsed_seconds=elapsed,
+                )
             self._failed_issues.append(issue_dict)
+            if self.config.auto_continue_on_needs_human:
+                # No deliverable but auto-continue is on — don't stop, just skip this issue
+                self._consecutive_failures += 1
+                logger.warning(
+                    "boss_loop_skip issue=#%s (needs_human, no deliverable, auto-continue on)",
+                    issue_dict.get("number", "?"),
+                )
+                return BossIterationStatus(
+                    iteration=iteration,
+                    run_id=self.run_id,
+                    timestamp=now,
+                    runner_freshness=freshness_dict,
+                    selected_issue=issue_dict,
+                    worker_status="needs_human",
+                    stop_reason=None,  # Don't stop — continue to next issue
+                    needs_human_reasons=worker_result.get(
+                        "reasons", ["Worker requires human input."]
+                    ),
+                    next_actions=["Skipping to next issue (auto-continue mode)."],
+                    elapsed_seconds=elapsed,
+                )
             next_actions = [
                 str(item).strip()
                 for item in worker_result.get("next_actions", [])

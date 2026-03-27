@@ -658,6 +658,9 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         label_filter = cli_labels[0] if cli_labels else None
         require_labels = set(cli_labels) if cli_labels else None
 
+        # When --autonomy full-auto, continue past needs_human states
+        auto_continue = autonomy_str in {"full-auto", "fire_and_forget"}
+
         boss_loop_config = BossLoopConfig(
             max_iterations=int(getattr(args, "max_ticks", None) or 50),
             iteration_interval_seconds=float(getattr(args, "interval_seconds", 30.0) or 30.0),
@@ -673,6 +676,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                 getattr(args, "allow_missing_validation_contract", False)
             ),
             dispatch_enabled=not no_dispatch,
+            auto_continue_on_needs_human=auto_continue,
         )
         loop = BossLoop(config=boss_loop_config)
 
