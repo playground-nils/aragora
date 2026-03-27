@@ -369,8 +369,11 @@ class TestArchiveMessage:
     @pytest.mark.asyncio
     async def test_archive_message_success(self, mock_service):
         """Should archive message successfully."""
-        with patch.object(
-            email_actions, "get_email_actions_service_instance", return_value=mock_service
+        with (
+            patch.object(
+                email_actions, "get_email_actions_service_instance", return_value=mock_service
+            ),
+            patch.object(email_actions, "_maybe_handle_wedge_action", return_value=None),
         ):
             result = await email_actions.handle_archive_message(
                 data={},
@@ -575,8 +578,11 @@ class TestStarMessage:
     @pytest.mark.asyncio
     async def test_star_message_success(self, mock_service):
         """Should star message successfully."""
-        with patch.object(
-            email_actions, "get_email_actions_service_instance", return_value=mock_service
+        with (
+            patch.object(
+                email_actions, "get_email_actions_service_instance", return_value=mock_service
+            ),
+            patch.object(email_actions, "_maybe_handle_wedge_action", return_value=None),
         ):
             result = await email_actions.handle_star_message(
                 data={},
@@ -661,8 +667,11 @@ class TestAddLabel:
     @pytest.mark.asyncio
     async def test_add_label_success(self, mock_service):
         """Should add labels to message."""
-        with patch.object(
-            email_actions, "get_email_actions_service_instance", return_value=mock_service
+        with (
+            patch.object(
+                email_actions, "get_email_actions_service_instance", return_value=mock_service
+            ),
+            patch.object(email_actions, "_maybe_handle_wedge_action", return_value=None),
         ):
             result = await email_actions.handle_add_label(
                 data={"labels": ["Important", "Work"]},
@@ -677,8 +686,11 @@ class TestAddLabel:
     @pytest.mark.asyncio
     async def test_add_label_empty_labels(self, mock_service):
         """Should return 400 when labels is empty."""
-        with patch.object(
-            email_actions, "get_email_actions_service_instance", return_value=mock_service
+        with (
+            patch.object(
+                email_actions, "get_email_actions_service_instance", return_value=mock_service
+            ),
+            patch.object(email_actions, "_maybe_handle_wedge_action", return_value=None),
         ):
             result = await email_actions.handle_add_label(
                 data={"labels": []},

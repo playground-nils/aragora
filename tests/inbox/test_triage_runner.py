@@ -1128,3 +1128,26 @@ async def test_triage_message_carries_execution_and_diagnostics_metadata(tmp_pat
     assert decision.escalation_reasons == ["low_confidence"]
     assert decision.suppressed_diagnostics_count == 1
     assert decision.blocked_by_policy is True
+
+
+@pytest.mark.asyncio
+async def test_debate_dispatch_error_produces_blocked_decision_not_silent_skip():
+    """When _triage_message raises, run_triage must produce a blocked
+    TriageDecision instead of silently dropping the message."""
+    gmail = _DummyGmail()
+    wedge_service = SimpleNamespace()
+    wedge_service.execute_receipt = AsyncMock()
+    wedge_service.create_receipt = MagicMock()
+
+    runner = InboxTriageRunner(gmail_connector=gmail, wedge_service=wedge_service)
+    runner._run_debate = AsyncMock(side_effect=RuntimeError("provider unreachable"))
+
+    decisions = await runner.run_triage(batch_size=1, auto_approve=False)
+
+    assert len(decisions) == 1, "Failed triage must still produce a decision"
+    decision = decisions[0]
+    assert decision.blocked_by_policy is True
+    assert decision.confidence == 0.0
+    assert decision.receipt_state == "blocked"
+    assert "RuntimeError" in decision.dissent_summary
+    assert decision.final_action == InboxWedgeAction.IGNORE

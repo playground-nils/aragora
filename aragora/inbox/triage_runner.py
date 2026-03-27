@@ -521,11 +521,20 @@ class InboxTriageRunner:
                     await self._execute_action(decision)
                 decisions.append(decision)
             except (RuntimeError, OSError, ValueError, TypeError) as exc:
-                logger.warning(
+                message_id = msg.get("id", "?")
+                logger.error(
                     "Triage failed for message %s: %s",
-                    msg.get("id", "?"),
+                    message_id,
                     exc,
                 )
+                blocked_decision = TriageDecision(
+                    final_action=InboxWedgeAction.IGNORE,
+                    confidence=0.0,
+                    dissent_summary=f"Triage dispatch error: {type(exc).__name__}",
+                    blocked_by_policy=True,
+                    receipt_state="blocked",
+                )
+                decisions.append(blocked_decision)
 
         self._triaged = decisions
         auto_count = sum(1 for d in decisions if d.receipt_state == ReceiptState.APPROVED.value)
