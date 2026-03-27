@@ -69,10 +69,16 @@ def _make_manifest(*lanes: TrancheLane) -> SimpleNamespace:
 class _FakeArtifactStore:
     def __init__(self, artifacts: dict[str, TrancheLaneArtifact]) -> None:
         self._artifacts = dict(artifacts)
+        self.saved: list[tuple[str, TrancheLaneArtifact]] = []
 
     def load(self, manifest_id: str, lane_id: str) -> TrancheLaneArtifact | None:
         assert manifest_id == "m1"
         return self._artifacts.get(lane_id)
+
+    def save(self, manifest_id: str, artifact: TrancheLaneArtifact) -> None:
+        assert manifest_id == "m1"
+        self._artifacts[artifact.lane_id] = artifact
+        self.saved.append((manifest_id, artifact))
 
 
 def test_discover_pr_from_artifact_metadata():
@@ -342,8 +348,46 @@ def test_assess_low_risk_protected_paths_fail_closed_to_needs_human() -> None:
         autonomy_mode="fire_and_forget",
     )
 
-    assert result["recommendation"] == "needs_human"
-    assert result["low_risk_policy"]["protected_paths"] == [".github/workflows/test.yml"]
+    assert result["recommendation"] == "merge"
+    assert result["executed"] is False
+    assert result["merge_class"] == "manual"
+    assert result["autonomy_mode"] == "checkpoint"
+    assert result["low_risk_policy"] is None
+    assert result["delivery_policy"]["policy_reasons"] == ["sensitive_scope:deployment_infra"]
+
+
+def test_assess_sensitive_scope_downgrades_to_manual_checkpoint() -> None:
+    manifest = _make_manifest(
+        _make_lane(
+            "lane-a",
+            metadata={"merge_class": "low_risk", "merge_policy": "auto"},
+        )
+    )
+    artifact = _make_artifact(
+        metadata={
+            "review": {
+                "status": "passed",
+                "tier": 1,
+                "changed_files": ["server/auth/oidc.py"],
+            }
+        }
+    )
+
+    result = assess_lane_integration(
+        artifact=artifact,
+        manifest=manifest,
+        checks="checks_passed",
+        review_status="passed",
+        autonomy_mode="fire_and_forget",
+        approve=True,
+    )
+
+    assert result["merge_class"] == "manual"
+    assert result["autonomy_mode"] == "checkpoint"
+    assert result["executed"] is False
+    assert result["delivery_policy"]["downgraded"] is True
+    assert result["delivery_policy"]["policy_reasons"] == ["sensitive_scope:auth_rbac"]
+    assert "Sensitive scope requires manual checkpoint before merge" in result["rationale"]
 
 
 def test_assess_low_risk_missing_changed_files_fails_closed() -> None:
@@ -990,6 +1034,71 @@ async def test_integrate_lane_uses_manifest_low_risk_metadata_for_auto_merge() -
     assert result["recommendation"] == "merge"
     assert result["executed"] is True
     assert result["merge_result"]["merged"] is True
+
+
+@pytest.mark.asyncio
+async def test_integrate_lane_sensitive_scope_does_not_auto_merge_even_when_approved() -> None:
+    manifest = _make_manifest(
+        _make_lane(
+            "lane-a",
+            metadata={
+                "merge_class": "low_risk",
+                "merge_policy": "auto",
+                "enforce_cross_model_review": True,
+            },
+        )
+    )
+    artifact = _make_artifact(
+        metadata={
+            "branch": "feat-a",
+            "review": {
+                "status": "passed",
+                "tier": 1,
+                "changed_files": ["server/auth/oidc.py"],
+            },
+            "receipt_id": "receipt-a",
+            "lease_id": "lease-a",
+            "deliverable": {"pr_url": "https://github.com/org/repo/pull/42"},
+        }
+    )
+    github = MagicMock()
+    github.fetch_gate_snapshot.return_value = SimpleNamespace(
+        required_checks=[{"name": "lint", "conclusion": "SUCCESS", "required": True}],
+        advisory_checks=[],
+        required_checks_green=True,
+        to_dict=lambda: {"required_checks_green": True},
+        state="OPEN",
+        base_branch="main",
+        merge_state_status="CLEAN",
+    )
+    github.merge_pr.return_value = SimpleNamespace(
+        to_dict=lambda: {
+            "merged": True,
+            "action": "merge",
+            "used_admin": False,
+            "detail": "merged",
+        }
+    )
+    store = MagicMock()
+
+    result = await integrate_lane(
+        manifest=manifest,
+        artifact=artifact,
+        approve=True,
+        github=github,
+        registry=MagicMock(spec=PullRequestRegistry),
+        store=store,
+        artifact_store=_FakeArtifactStore({}),
+        target_branch="main",
+        autonomy_mode="fire_and_forget",
+    )
+
+    assert result["merge_class"] == "manual"
+    assert result["executed"] is False
+    assert result["merge_result"] is None
+    assert result["delivery_policy"]["policy_reasons"] == ["sensitive_scope:auth_rbac"]
+    github.merge_pr.assert_not_called()
+    store.record_integration_decision.assert_called_once()
 
 
 @pytest.mark.asyncio

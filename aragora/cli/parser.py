@@ -198,6 +198,7 @@ Examples:
     _add_ralph_parser(subparsers)
     _add_assess_parser(subparsers)
     _add_spec_parser(subparsers)
+    _add_idea_parser(subparsers)
     _add_build_parser(subparsers)
 
     return parser
@@ -2458,6 +2459,11 @@ def _add_swarm_parser(subparsers) -> None:
         help="Target one specific GitHub issue number in boss-loop instead of selecting from the feed",
     )
     swarm_parser.add_argument(
+        "--boss-issue-list",
+        default=None,
+        help="Comma-separated GitHub issue numbers for boss-loop scoped dispatch",
+    )
+    swarm_parser.add_argument(
         "--max-consecutive-failures",
         type=int,
         default=3,
@@ -2494,12 +2500,17 @@ def _add_swarm_parser(subparsers) -> None:
     swarm_parser.add_argument(
         "--worker-model",
         default="codex",
-        help="Worker model for campaign execution (default: codex)",
+        help="Worker model for campaign or boss-loop execution (default: codex)",
     )
     swarm_parser.add_argument(
         "--review-model",
         default="claude",
-        help="Review model for campaign cross-check/review (default: claude)",
+        help="Review model for campaign or boss-loop cross-check/review (default: claude)",
+    )
+    swarm_parser.add_argument(
+        "--runner-type",
+        default=None,
+        help="Runner type for 'swarm runner' actions (for example: claude, codex, gemini-cli)",
     )
     swarm_parser.add_argument(
         "--allow-same-model-review",
@@ -2795,5 +2806,250 @@ def _add_build_parser(subparsers) -> None:
     build_parser.add_argument(
         "--max-tasks", type=int, default=5, help="Maximum tasks to create (default: 5)"
     )
+    build_parser.add_argument(
+        "--repo",
+        default=None,
+        help="GitHub repository for issue creation and dispatch (default: synaptent/aragora)",
+    )
+    build_parser.add_argument(
+        "--worker-model",
+        default="claude",
+        help="Preferred worker model for dispatched boss-loop tasks (default: claude)",
+    )
+    build_parser.add_argument(
+        "--review-model",
+        default="codex",
+        help="Preferred reviewer model for dispatched boss-loop tasks (default: codex)",
+    )
+    build_parser.add_argument(
+        "--risk",
+        choices=("low", "medium", "high"),
+        default="medium",
+        help="Risk level to stamp onto generated queue items (default: medium)",
+    )
+    build_parser.add_argument(
+        "--merge-class",
+        choices=("manual", "low_risk"),
+        default="manual",
+        help="Merge class to stamp onto generated queue items (default: manual)",
+    )
+    build_parser.add_argument(
+        "--autonomy-mode",
+        choices=("full-auto", "checkpoint", "adaptive", "fire_and_forget"),
+        default="full-auto",
+        help="Autonomy mode to stamp onto generated queue items and dispatch (default: full-auto)",
+    )
     build_parser.add_argument("--json", action="store_true", help="Output as JSON")
     build_parser.set_defaults(func=_lazy("aragora.cli.commands.build", "cmd_build"))
+
+
+def _add_idea_parser(subparsers) -> None:
+    """Add the 'idea' subcommand parser."""
+    idea_parser = subparsers.add_parser(
+        "idea",
+        help="Clarify a vague idea into a structured initiative brief",
+    )
+    sub = idea_parser.add_subparsers(dest="idea_command")
+
+    intake_parser = sub.add_parser(
+        "intake",
+        help="Turn a founder note or vague brief into a machine-readable initiative brief",
+    )
+    intake_parser.add_argument("idea", nargs="?", help="Idea in plain language")
+    intake_parser.add_argument("--from-file", help="Read idea text from a file")
+    intake_parser.add_argument(
+        "--skip-clarify",
+        action="store_true",
+        help="Skip clarification questions and use the conductor's default assumptions",
+    )
+    intake_parser.add_argument(
+        "--priority",
+        choices=("low", "medium", "high", "critical"),
+        default="medium",
+        help="Sequencing priority to assign to the initiative brief (default: medium)",
+    )
+    intake_parser.add_argument(
+        "--track",
+        choices=("1", "2", "3", "4", "5", "6", "7"),
+        default="1",
+        help="Roadmap track label to stamp onto persisted artifacts (default: 1)",
+    )
+    intake_parser.add_argument(
+        "--repo",
+        default=None,
+        help="GitHub repository for optional issue creation (default: synaptent/aragora)",
+    )
+    intake_parser.add_argument(
+        "--risk",
+        choices=("low", "medium", "high"),
+        default="medium",
+        help="Risk level to stamp onto the initiative brief (default: medium)",
+    )
+    intake_parser.add_argument(
+        "--merge-class",
+        choices=("manual", "low_risk"),
+        default="manual",
+        help="Merge class to stamp onto persisted artifacts (default: manual)",
+    )
+    intake_parser.add_argument(
+        "--autonomy-mode",
+        choices=("full-auto", "checkpoint", "adaptive", "fire_and_forget"),
+        default="checkpoint",
+        help="Autonomy mode to stamp onto the initiative brief (default: checkpoint)",
+    )
+    intake_parser.add_argument(
+        "--worker-model",
+        default="claude",
+        help="Preferred worker model for eventual execution planning (default: claude)",
+    )
+    intake_parser.add_argument(
+        "--review-model",
+        default="codex",
+        help="Preferred reviewer model for eventual execution planning (default: codex)",
+    )
+    intake_parser.add_argument(
+        "--create-issue",
+        action="store_true",
+        help="Persist the initiative brief as a GitHub issue",
+    )
+    intake_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    triage_parser = sub.add_parser(
+        "triage",
+        help="Decompose an initiative into structured founder handoffs and queue-ready tasks",
+    )
+    triage_parser.add_argument("idea", nargs="?", help="Idea in plain language")
+    triage_parser.add_argument("--from-file", help="Read idea text from a file")
+    triage_parser.add_argument(
+        "--skip-clarify",
+        action="store_true",
+        help="Skip clarification questions and use the conductor's default assumptions",
+    )
+    triage_parser.add_argument(
+        "--priority",
+        choices=("low", "medium", "high", "critical"),
+        default="medium",
+        help="Sequencing priority to assign to generated handoffs (default: medium)",
+    )
+    triage_parser.add_argument(
+        "--track",
+        choices=("1", "2", "3", "4", "5", "6", "7"),
+        default="1",
+        help="Roadmap track label to stamp onto persisted artifacts (default: 1)",
+    )
+    triage_parser.add_argument(
+        "--repo",
+        default=None,
+        help="GitHub repository for optional issue creation (default: synaptent/aragora)",
+    )
+    triage_parser.add_argument(
+        "--max-tasks",
+        type=int,
+        default=4,
+        help="Maximum founder handoffs to emit (default: 4)",
+    )
+    triage_parser.add_argument(
+        "--risk",
+        choices=("low", "medium", "high"),
+        default="medium",
+        help="Default risk level to stamp onto generated handoffs (default: medium)",
+    )
+    triage_parser.add_argument(
+        "--merge-class",
+        choices=("manual", "low_risk"),
+        default="manual",
+        help="Default merge class to stamp onto generated handoffs (default: manual)",
+    )
+    triage_parser.add_argument(
+        "--autonomy-mode",
+        choices=("full-auto", "checkpoint", "adaptive", "fire_and_forget"),
+        default="checkpoint",
+        help="Default autonomy mode for generated handoffs (default: checkpoint)",
+    )
+    triage_parser.add_argument(
+        "--worker-model",
+        default="claude",
+        help="Preferred worker model for generated handoffs (default: claude)",
+    )
+    triage_parser.add_argument(
+        "--review-model",
+        default="codex",
+        help="Preferred reviewer model for generated handoffs (default: codex)",
+    )
+    triage_parser.add_argument(
+        "--create-issues",
+        action="store_true",
+        help="Persist generated handoffs as boss-ready GitHub issues",
+    )
+    triage_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    review_parser = sub.add_parser(
+        "review",
+        help="Apply founder-review checks to generated handoffs and emit follow-up tasks",
+    )
+    review_parser.add_argument("idea", nargs="?", help="Idea in plain language")
+    review_parser.add_argument("--from-file", help="Read idea text from a file")
+    review_parser.add_argument(
+        "--skip-clarify",
+        action="store_true",
+        help="Skip clarification questions and use the conductor's default assumptions",
+    )
+    review_parser.add_argument(
+        "--priority",
+        choices=("low", "medium", "high", "critical"),
+        default="medium",
+        help="Sequencing priority to assign to generated handoffs (default: medium)",
+    )
+    review_parser.add_argument(
+        "--track",
+        choices=("1", "2", "3", "4", "5", "6", "7"),
+        default="1",
+        help="Roadmap track label to stamp onto persisted artifacts (default: 1)",
+    )
+    review_parser.add_argument(
+        "--repo",
+        default=None,
+        help="GitHub repository for optional issue creation (default: synaptent/aragora)",
+    )
+    review_parser.add_argument(
+        "--max-tasks",
+        type=int,
+        default=4,
+        help="Maximum founder handoffs to review (default: 4)",
+    )
+    review_parser.add_argument(
+        "--risk",
+        choices=("low", "medium", "high"),
+        default="medium",
+        help="Default risk level to stamp onto generated handoffs (default: medium)",
+    )
+    review_parser.add_argument(
+        "--merge-class",
+        choices=("manual", "low_risk"),
+        default="manual",
+        help="Default merge class to stamp onto generated handoffs (default: manual)",
+    )
+    review_parser.add_argument(
+        "--autonomy-mode",
+        choices=("full-auto", "checkpoint", "adaptive", "fire_and_forget"),
+        default="checkpoint",
+        help="Default autonomy mode for generated handoffs (default: checkpoint)",
+    )
+    review_parser.add_argument(
+        "--worker-model",
+        default="claude",
+        help="Preferred worker model for generated handoffs (default: claude)",
+    )
+    review_parser.add_argument(
+        "--review-model",
+        default="codex",
+        help="Preferred reviewer model for founder review output (default: codex)",
+    )
+    review_parser.add_argument(
+        "--create-issues",
+        action="store_true",
+        help="Persist founder-review follow-up tasks as boss-ready GitHub issues",
+    )
+    review_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    idea_parser.set_defaults(func=_lazy("aragora.cli.commands.idea", "cmd_idea"))

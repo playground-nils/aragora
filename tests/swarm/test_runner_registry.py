@@ -6,6 +6,7 @@ from pathlib import Path
 
 from aragora.swarm.runner_registry import (
     BossRoutingDecision,
+    ClaudeRunnerInspector,
     CodexRunnerInspection,
     CodexRunnerInspector,
     LocalRunnerRegistry,
@@ -24,7 +25,7 @@ class TestCodexRunnerInspector:
         assert inspection.availability == "unavailable"
         assert inspection.auth_mode == "unavailable"
         assert inspection.freshness_status == "unavailable"
-        assert "Install the Codex CLI" in str(inspection.next_action)
+        assert "Install the codex CLI" in str(inspection.next_action)
 
     def test_api_key_runner_detected_from_login_status(self, monkeypatch):
         monkeypatch.setattr(
@@ -93,7 +94,7 @@ class TestCodexRunnerInspector:
 
         assert inspection.auth_mode == "unknown"
         assert inspection.freshness_status == "unknown"
-        assert "Confirm the local Codex CLI login state" in str(inspection.next_action)
+        assert "Confirm the local codex CLI login state" in str(inspection.next_action)
 
     def test_openai_api_key_env_alone_does_not_prove_api_key_auth(self, monkeypatch):
         monkeypatch.setattr(
@@ -116,6 +117,31 @@ class TestCodexRunnerInspector:
 
         assert inspection.auth_mode == "unknown"
         assert inspection.freshness_status == "unknown"
+
+
+class TestClaudeRunnerInspector:
+    def test_subscription_runner_detected(self, monkeypatch):
+        monkeypatch.setattr(
+            "aragora.swarm.runner_registry.shutil.which",
+            lambda _name: "/usr/local/bin/claude",
+        )
+
+        def _run(command: list[str]) -> dict[str, object]:
+            joined = " ".join(command)
+            if joined.endswith("--version"):
+                return {"returncode": 0, "stdout": "claude 2.1.81\n", "stderr": ""}
+            if joined.endswith("--help"):
+                return {"returncode": 0, "stdout": "Commands:\n  review\n  login\n", "stderr": ""}
+            return {"returncode": 0, "stdout": "Logged in with Max subscription\n", "stderr": ""}
+
+        monkeypatch.setattr(ClaudeRunnerInspector, "_run_command", staticmethod(_run))
+        inspection = ClaudeRunnerInspector(env={}).inspect()
+
+        assert inspection.available is True
+        assert inspection.runner_type == "claude"
+        assert inspection.auth_mode == "subscription"
+        assert inspection.cost_class == "subscription"
+        assert inspection.priority_weight > 0
 
 
 class TestLocalRunnerRegistry:
@@ -186,7 +212,7 @@ class TestLocalRunnerRegistry:
         assert registered.registered is False
         assert registered.registry_path is not None
         assert registered.registered_at is None
-        assert "Registration blocked: Codex auth mode is unknown" in str(registered.next_action)
+        assert "Registration blocked: codex auth mode is unknown" in str(registered.next_action)
         assert not (tmp_path / "swarm-runners.json").exists()
 
     def test_heartbeat_refreshes_registered_runner(self, tmp_path: Path) -> None:
@@ -302,6 +328,7 @@ class TestLocalRunnerRegistry:
         assert decision.is_blocked is False
         assert decision.selected_runner_ids == ["codex-runner-1"]
         assert decision.selected_runners[0]["freshness_status"] == "fresh"
+        assert decision.selected_runners[0]["runner_type"] == "codex"
 
     def test_resolve_boss_routing_rejects_stale_runner(self, tmp_path: Path) -> None:
         stale_heartbeat = (datetime.now(UTC) - timedelta(hours=3)).isoformat()
@@ -375,13 +402,167 @@ class TestLocalRunnerRegistry:
         assert decision == BossRoutingDecision(
             owner_binding={"user_id": None, "workspace_id": None, "org_id": None},
             selection_basis=(
-                "registered=true, freshness_status=fresh, availability=available, auth_mode in "
-                "{chatgpt_login, api_key}, owner_binding user/workspace compatible with current "
-                "Aragora context"
+                "registered=true, freshness_status=fresh, availability=available, auth_mode "
+                "verified, owner_binding compatible, capacity available, ordered by requested "
+                "runner type then priority_weight and cost preference"
             ),
             blocked_reason="missing_owner_context",
             next_action=(
                 "Set `ARAGORA_USER_ID` and `ARAGORA_WORKSPACE_ID` before running Boss mode so "
-                "Aragora can route only onto authorized registered Codex runners."
+                "Aragora can route only onto authorized registered runners."
             ),
         )
+
+    def test_resolve_boss_routing_prefers_claude_by_default(self, tmp_path: Path) -> None:
+        now = datetime.now(UTC).isoformat()
+        registry_path = tmp_path / "swarm-runners.json"
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "registrations": [
+                        {
+                            "runner_id": "codex-runner-1",
+                            "runner_type": "codex",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "chatgpt_login",
+                            "cost_class": "subscription",
+                            "priority_weight": 80,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now,
+                            "stale_after_seconds": 3600,
+                            "capabilities": {"max_parallel_lanes": 1, "active_lanes": 0},
+                        },
+                        {
+                            "runner_id": "claude-runner-1",
+                            "runner_type": "claude",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "subscription",
+                            "cost_class": "subscription",
+                            "priority_weight": 100,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now,
+                            "stale_after_seconds": 3600,
+                            "capabilities": {"max_parallel_lanes": 2, "active_lanes": 0},
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        decision = LocalRunnerRegistry(path=registry_path).resolve_boss_routing(
+            owner_context=authorization_context_from_env(
+                {"ARAGORA_USER_ID": "user-123", "ARAGORA_WORKSPACE_ID": "ws-456"}
+            )
+        )
+
+        assert decision.is_blocked is False
+        assert decision.selected_runner_ids[:2] == ["claude-runner-1", "codex-runner-1"]
+        assert decision.selected_runners[0]["runner_type"] == "claude"
+
+    def test_resolve_boss_routing_prefers_requested_runner_type(self, tmp_path: Path) -> None:
+        now = datetime.now(UTC).isoformat()
+        registry_path = tmp_path / "swarm-runners.json"
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "registrations": [
+                        {
+                            "runner_id": "claude-runner-1",
+                            "runner_type": "claude",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "subscription",
+                            "cost_class": "subscription",
+                            "priority_weight": 100,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now,
+                            "stale_after_seconds": 3600,
+                            "capabilities": {"max_parallel_lanes": 2, "active_lanes": 0},
+                        },
+                        {
+                            "runner_id": "codex-runner-1",
+                            "runner_type": "codex",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "chatgpt_login",
+                            "cost_class": "subscription",
+                            "priority_weight": 80,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now,
+                            "stale_after_seconds": 3600,
+                            "capabilities": {"max_parallel_lanes": 1, "active_lanes": 0},
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        decision = LocalRunnerRegistry(path=registry_path).resolve_boss_routing(
+            owner_context=authorization_context_from_env(
+                {"ARAGORA_USER_ID": "user-123", "ARAGORA_WORKSPACE_ID": "ws-456"}
+            ),
+            requested_runner_type="codex",
+        )
+
+        assert decision.is_blocked is False
+        assert decision.selected_runner_ids[0] == "codex-runner-1"
+        assert decision.requested_runner_type == "codex"
+
+    def test_resolve_boss_routing_falls_back_when_requested_type_is_capacity_exhausted(
+        self, tmp_path: Path
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        registry_path = tmp_path / "swarm-runners.json"
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "registrations": [
+                        {
+                            "runner_id": "claude-runner-1",
+                            "runner_type": "claude",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "subscription",
+                            "cost_class": "subscription",
+                            "priority_weight": 100,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now,
+                            "stale_after_seconds": 3600,
+                            "capabilities": {"max_parallel_lanes": 1, "active_lanes": 1},
+                        },
+                        {
+                            "runner_id": "codex-runner-1",
+                            "runner_type": "codex",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "chatgpt_login",
+                            "cost_class": "subscription",
+                            "priority_weight": 80,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now,
+                            "stale_after_seconds": 3600,
+                            "capabilities": {"max_parallel_lanes": 1, "active_lanes": 0},
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        decision = LocalRunnerRegistry(path=registry_path).resolve_boss_routing(
+            owner_context=authorization_context_from_env(
+                {"ARAGORA_USER_ID": "user-123", "ARAGORA_WORKSPACE_ID": "ws-456"}
+            ),
+            requested_runner_type="claude",
+        )
+
+        assert decision.is_blocked is False
+        assert decision.selected_runner_ids == ["codex-runner-1"]
+        assert decision.fallback_reason == "requested_runner_type_unavailable"

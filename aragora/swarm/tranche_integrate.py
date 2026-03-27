@@ -12,6 +12,7 @@ from aragora.ralph.github_control import (
     _check_is_green,
     _partition_checks,
 )
+from aragora.swarm.delivery_policy import apply_delivery_policy
 from aragora.swarm.pr_registry import PullRequestRegistry
 from aragora.swarm.tranche import TrancheArtifactStore
 from aragora.swarm.tranche_state import (
@@ -155,13 +156,36 @@ def assess_lane_integration(
         key="merge_policy",
         fallback=str(merge_policy or "confirm").strip().lower() or "confirm",
     )
-    normalized_autonomy = str(autonomy_mode or "adaptive").strip().lower()
-    merge_class = _lane_policy_value(manifest, artifact, key="merge_class", fallback="manual")
+    requested_risk = _lane_policy_value(manifest, artifact, key="risk", fallback="medium")
+    requested_merge_class = _lane_policy_value(
+        manifest,
+        artifact,
+        key="merge_class",
+        fallback="manual",
+    )
+    requested_autonomy = _lane_policy_value(
+        manifest,
+        artifact,
+        key="autonomy_mode",
+        fallback=str(autonomy_mode or "adaptive").strip().lower() or "adaptive",
+    )
+    delivery_policy = _evaluate_delivery_policy(
+        manifest=manifest,
+        artifact=artifact,
+        requested_risk=requested_risk,
+        requested_merge_class=requested_merge_class,
+        requested_autonomy_mode=requested_autonomy,
+    )
+    normalized_autonomy = str(delivery_policy.get("effective_autonomy_mode", "adaptive")).strip()
+    merge_class = str(delivery_policy.get("effective_merge_class", "manual")).strip()
     low_risk_policy = (
         _evaluate_low_risk_merge_policy(manifest=manifest, artifact=artifact)
         if merge_class == "low_risk"
         else None
     )
+    policy_reasons = [
+        str(item).strip() for item in delivery_policy.get("policy_reasons", []) if str(item).strip()
+    ]
 
     recommendation = "request_changes"
     executed = False
@@ -208,7 +232,11 @@ def assess_lane_integration(
     else:
         recommendation = "merge"
         rationale = "Review passed and required checks are green."
-        if normalized_policy == "manual":
+        if bool(delivery_policy.get("downgraded")) and policy_reasons:
+            rationale = "Sensitive scope requires manual checkpoint before merge: " + ", ".join(
+                policy_reasons
+            )
+        elif normalized_policy == "manual":
             rationale = "Manual merge policy requires a human merge."
         elif normalized_autonomy == "fire_and_forget" and normalized_policy == "auto":
             executed = True
@@ -224,11 +252,13 @@ def assess_lane_integration(
         "executed": executed,
         "checks": normalized_checks,
         "review_status": normalized_review,
+        "risk": str(delivery_policy.get("effective_risk", requested_risk)).strip() or "medium",
         "merge_class": merge_class,
         "merge_policy": normalized_policy,
         "autonomy_mode": normalized_autonomy,
         "rationale": rationale,
         "low_risk_policy": low_risk_policy,
+        "delivery_policy": delivery_policy,
         "lane_id": str(getattr(artifact, "lane_id", "") or "").strip() or None,
     }
 
@@ -879,6 +909,22 @@ def _evaluate_low_risk_merge_policy(*, manifest: Any | None, artifact: Any) -> d
     }
 
 
+def _evaluate_delivery_policy(
+    *,
+    manifest: Any | None,
+    artifact: Any,
+    requested_risk: str,
+    requested_merge_class: str,
+    requested_autonomy_mode: str,
+) -> dict[str, Any]:
+    return apply_delivery_policy(
+        file_scope=_artifact_policy_scope(manifest, artifact),
+        requested_risk=requested_risk,
+        requested_merge_class=requested_merge_class,
+        requested_autonomy_mode=requested_autonomy_mode,
+    )
+
+
 def _format_low_risk_reasons(policy: dict[str, Any] | None) -> str:
     if not isinstance(policy, dict):
         return "low-risk policy details are unavailable."
@@ -899,6 +945,44 @@ def _protected_paths(paths: list[str]) -> list[str]:
             seen.add(normalized)
             protected.append(normalized)
     return protected
+
+
+def _artifact_policy_scope(manifest: Any | None, artifact: Any) -> list[str]:
+    scope: list[str] = []
+    scope.extend(_artifact_changed_files(artifact))
+
+    metadata = getattr(artifact, "metadata", {})
+    if isinstance(metadata, dict):
+        scope.extend(
+            _normalize_repo_path(item)
+            for item in metadata.get("file_scope", [])
+            if _normalize_repo_path(item)
+        )
+        deliverable = metadata.get("deliverable", {})
+        if isinstance(deliverable, dict):
+            scope.extend(
+                _normalize_repo_path(item)
+                for item in deliverable.get("changed_paths", [])
+                if _normalize_repo_path(item)
+            )
+
+    lane = _manifest_lane(manifest, str(getattr(artifact, "lane_id", "") or "").strip())
+    if lane is not None:
+        scope.extend(
+            _normalize_repo_path(item)
+            for item in getattr(lane, "allowed_write_scope", []) or []
+            if _normalize_repo_path(item)
+        )
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in scope:
+        normalized = _normalize_repo_path(item)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def _is_protected_path(path: str) -> bool:

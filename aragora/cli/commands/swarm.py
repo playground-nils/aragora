@@ -19,6 +19,7 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -79,6 +80,119 @@ def _print_table(
     print("  ".join("-" * widths[key] for key, _label in headers))
     for row in rows:
         print("  ".join(str(row.get(key, "") or "").ljust(widths[key]) for key, _label in headers))
+
+
+def _build_runner_report_payload(
+    *,
+    registrations: list[dict[str, object]],
+    routing: dict[str, object],
+) -> dict[str, object]:
+    rows: list[dict[str, object]] = []
+    by_type: dict[str, dict[str, int]] = {}
+    by_cost: dict[str, int] = {}
+    fresh_count = 0
+    for item in registrations:
+        runner_type = str(item.get("runner_type", "") or "").strip() or "unknown"
+        cost_class = str(item.get("cost_class", "") or "").strip() or "local"
+        freshness = str(item.get("freshness_status", "") or "").strip() or "unknown"
+        capabilities = dict(item.get("capabilities") or {})
+        max_parallel = int(capabilities.get("max_parallel_lanes") or 1)
+        active_lanes = int(capabilities.get("active_lanes") or item.get("active_lanes") or 0)
+        available_capacity = max(0, max_parallel - active_lanes)
+        if freshness == "fresh":
+            fresh_count += 1
+        by_type.setdefault(
+            runner_type,
+            {"registered": 0, "fresh": 0, "active_lanes": 0, "available_capacity": 0},
+        )
+        by_type[runner_type]["registered"] += 1
+        if freshness == "fresh":
+            by_type[runner_type]["fresh"] += 1
+        by_type[runner_type]["active_lanes"] += active_lanes
+        by_type[runner_type]["available_capacity"] += available_capacity
+        by_cost[cost_class] = by_cost.get(cost_class, 0) + 1
+        rows.append(
+            {
+                "runner_id": str(item.get("runner_id", "") or "").strip(),
+                "runner_type": runner_type,
+                "freshness_status": freshness,
+                "cost_class": cost_class,
+                "active_lanes": active_lanes,
+                "available_capacity": available_capacity,
+            }
+        )
+    rows.sort(key=lambda row: (str(row["runner_type"]), str(row["runner_id"])))
+    type_rows = [
+        {"runner_type": key, **value}
+        for key, value in sorted(by_type.items(), key=lambda item: item[0])
+    ]
+    cost_rows = [
+        {"cost_class": key, "registered": value}
+        for key, value in sorted(by_cost.items(), key=lambda item: item[0])
+    ]
+    return {
+        "mode": "runner",
+        "action": "report",
+        "summary": {
+            "registered": len(registrations),
+            "fresh": fresh_count,
+            "selected_for_routing": len(
+                [item for item in routing.get("selected_runners", []) if isinstance(item, dict)]
+            ),
+        },
+        "by_runner_type": type_rows,
+        "by_cost_class": cost_rows,
+        "runners": rows,
+        "routing": routing,
+    }
+
+
+def _render_runner_report(payload: dict[str, object]) -> None:
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    print(
+        "Runner Report registered={registered} fresh={fresh} selected={selected}".format(
+            registered=summary.get("registered", 0),
+            fresh=summary.get("fresh", 0),
+            selected=summary.get("selected_for_routing", 0),
+        )
+    )
+    print()
+    print("By runner type")
+    _print_table(
+        [
+            ("runner_type", "runner_type"),
+            ("registered", "registered"),
+            ("fresh", "fresh"),
+            ("active_lanes", "active"),
+            ("available_capacity", "available"),
+        ],
+        [item for item in payload.get("by_runner_type", []) if isinstance(item, dict)],
+    )
+    print()
+    print("Runners")
+    _print_table(
+        [
+            ("runner_id", "runner_id"),
+            ("runner_type", "runner_type"),
+            ("freshness_status", "freshness"),
+            ("cost_class", "cost"),
+            ("active_lanes", "active"),
+            ("available_capacity", "available"),
+        ],
+        [item for item in payload.get("runners", []) if isinstance(item, dict)],
+    )
+    routing = payload.get("routing", {}) if isinstance(payload.get("routing"), dict) else {}
+    selected = [
+        str(item.get("runner_id", "")).strip()
+        for item in routing.get("selected_runners", [])
+        if isinstance(item, dict) and str(item.get("runner_id", "")).strip()
+    ]
+    if selected:
+        print()
+        print(f"Routing preview: {', '.join(selected)}")
+    next_action = str(routing.get("next_action", "") or "").strip()
+    if next_action:
+        print(f"Next: {next_action}")
 
 
 def _render_tranche_queue_status(payload: dict[str, object]) -> None:
@@ -226,11 +340,18 @@ def _build_boss_payload(
     )
 
 
-def _resolve_boss_routing() -> dict[str, object]:
+def _resolve_boss_routing(*, requested_runner_type: str | None = None) -> dict[str, object]:
     from aragora.swarm.runner_registry import LocalRunnerRegistry, authorization_context_from_env
 
     owner_context = authorization_context_from_env()
-    return LocalRunnerRegistry().resolve_boss_routing(owner_context=owner_context).to_dict()
+    return (
+        LocalRunnerRegistry()
+        .resolve_boss_routing(
+            owner_context=owner_context,
+            requested_runner_type=requested_runner_type,
+        )
+        .to_dict()
+    )
 
 
 def _blocked_boss_payload(
@@ -453,17 +574,25 @@ def cmd_swarm(args: argparse.Namespace) -> None:
     if action == "runner":
         from aragora.swarm.reporter import render_runner_registration_text
         from aragora.swarm.runner_registry import (
-            CodexRunnerInspector,
             LocalRunnerRegistry,
             authorization_context_from_env,
+            make_runner_inspector,
         )
 
         subaction = str(goal or "inspect").strip().lower()
-        if subaction not in {"inspect", "register", "heartbeat"}:
-            print("Error: swarm runner action must be 'inspect', 'register', or 'heartbeat'")
+        if subaction not in {"inspect", "register", "heartbeat", "report"}:
+            print(
+                "Error: swarm runner action must be 'inspect', 'register', 'heartbeat', or 'report'"
+            )
             return
 
-        inspection = CodexRunnerInspector().inspect()
+        runner_type = (
+            str(
+                getattr(args, "runner_type", None) or os.environ.get("ARAGORA_RUNNER_TYPE", "codex")
+            ).strip()
+            or "codex"
+        )
+        inspection = make_runner_inspector(runner_type).inspect()
         if subaction == "register":
             owner_context = authorization_context_from_env()
             payload = (
@@ -484,6 +613,15 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                 )
                 .to_dict()
             )
+        elif subaction == "report":
+            registry = LocalRunnerRegistry()
+            payload = _build_runner_report_payload(
+                registrations=registry.list_registrations(),
+                routing=registry.resolve_boss_routing(
+                    owner_context=authorization_context_from_env(),
+                    requested_runner_type=runner_type,
+                ).to_dict(),
+            )
         else:
             payload = inspection.to_dict()
 
@@ -492,7 +630,10 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         if as_json:
             print(json.dumps(payload, indent=2))
         else:
-            print(render_runner_registration_text(payload))
+            if subaction == "report":
+                _render_runner_report(payload)
+            else:
+                print(render_runner_registration_text(payload))
         return
 
     if action == "integrator":
@@ -660,6 +801,13 @@ def cmd_swarm(args: argparse.Namespace) -> None:
 
         # When --autonomy full-auto, continue past needs_human states
         auto_continue = autonomy_str in {"full-auto", "fire_and_forget"}
+        issue_list = [
+            int(item.strip())
+            for item in str(getattr(args, "boss_issue_list", "") or "").split(",")
+            if item.strip()
+        ]
+        default_target_agent = str(getattr(args, "worker_model", "") or "").strip() or None
+        default_reviewer_agent = str(getattr(args, "review_model", "") or "").strip() or None
 
         boss_loop_config = BossLoopConfig(
             max_iterations=int(getattr(args, "max_ticks", None) or 50),
@@ -669,6 +817,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             label_filter=label_filter,
             require_labels=require_labels,
             issue_number=getattr(args, "boss_issue_number", None),
+            issue_numbers=issue_list or None,
             target_branch=target_branch,
             budget_limit_usd=budget_limit,
             max_consecutive_failures=int(getattr(args, "max_consecutive_failures", 3) or 3),
@@ -676,6 +825,8 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                 getattr(args, "allow_missing_validation_contract", False)
             ),
             dispatch_enabled=not no_dispatch,
+            default_target_agent=default_target_agent,
+            default_reviewer_agent=default_reviewer_agent,
             auto_continue_on_needs_human=auto_continue,
         )
         loop = BossLoop(config=boss_loop_config)
@@ -924,8 +1075,6 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         return
 
     if action == "tranche":
-        import os
-
         from aragora.nomic.dev_coordination import DevCoordinationStore
         from aragora.ralph.github_control import GitHubControl
         from aragora.swarm.pr_registry import PullRequestRegistry
@@ -1507,7 +1656,9 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         return
 
     if boss_mode:
-        boss_routing = _resolve_boss_routing()
+        boss_routing = _resolve_boss_routing(
+            requested_runner_type=str(getattr(args, "worker_model", "") or "").strip() or None
+        )
         blocked_reason = boss_routing.get("blocked_reason")
         if isinstance(blocked_reason, str) and blocked_reason.strip():
             from aragora.swarm.reporter import render_boss_text

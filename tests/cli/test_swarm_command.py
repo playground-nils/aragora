@@ -164,11 +164,26 @@ class TestSwarmParser:
         from aragora.cli.parser import build_parser
 
         parser = build_parser()
-        args = parser.parse_args(["swarm", "runner", "register", "--json"])
+        args = parser.parse_args(
+            ["swarm", "runner", "register", "--runner-type", "claude", "--json"]
+        )
         assert args.command == "swarm"
         assert args.swarm_action_or_goal == "runner"
         assert args.swarm_goal == "register"
+        assert args.runner_type == "claude"
         assert args.json is True
+
+    def test_swarm_boss_parser_accepts_issue_list(self):
+        from aragora.cli.parser import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(
+            ["swarm", "boss-loop", "--boss-issue-list", "101,102", "--worker-model", "claude"]
+        )
+        assert args.command == "swarm"
+        assert args.swarm_action_or_goal == "boss-loop"
+        assert args.boss_issue_list == "101,102"
+        assert args.worker_model == "claude"
 
     def test_swarm_integrator_parser(self):
         from aragora.cli.parser import build_parser
@@ -530,8 +545,8 @@ class TestSwarmCommand:
             }
         )
 
-        with patch("aragora.swarm.runner_registry.CodexRunnerInspector") as inspector_cls:
-            inspector_cls.return_value.inspect.return_value = inspection
+        with patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory:
+            inspector_factory.return_value.inspect.return_value = inspection
             cmd_swarm(args)
 
         out = capsys.readouterr().out
@@ -1152,11 +1167,11 @@ class TestSwarmCommand:
         )
 
         with (
-            patch("aragora.swarm.runner_registry.CodexRunnerInspector") as inspector_cls,
+            patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory,
             patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
             patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
         ):
-            inspector_cls.return_value.inspect.return_value = inspection
+            inspector_factory.return_value.inspect.return_value = inspection
             auth_ctx.return_value = object()
             registry_cls.return_value.register.return_value = registered
             cmd_swarm(args)
@@ -1208,11 +1223,11 @@ class TestSwarmCommand:
         )
 
         with (
-            patch("aragora.swarm.runner_registry.CodexRunnerInspector") as inspector_cls,
+            patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory,
             patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
             patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
         ):
-            inspector_cls.return_value.inspect.return_value = inspection
+            inspector_factory.return_value.inspect.return_value = inspection
             auth_ctx.return_value = object()
             registry_cls.return_value.heartbeat.return_value = heartbeated
             cmd_swarm(args)
@@ -1221,6 +1236,70 @@ class TestSwarmCommand:
         assert '"action": "heartbeat"' in out
         assert '"freshness_status": "fresh"' in out
         assert '"heartbeat_at": "2026-03-09T12:05:00+00:00"' in out
+
+    def test_cmd_swarm_runner_report_json(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="runner",
+            swarm_goal="report",
+            runner_type="claude",
+            json=True,
+        )
+        inspection = SimpleNamespace(
+            to_dict=lambda: {
+                "runner_id": "claude-runner-123",
+                "runner_type": "claude",
+                "auth_mode": "subscription",
+                "availability": "available",
+                "available": True,
+                "freshness_status": "fresh",
+                "heartbeat_at": "2026-03-09T12:05:00+00:00",
+                "stale_after_seconds": 3600,
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "capabilities": {"supports_exec": True, "max_parallel_lanes": 2},
+            }
+        )
+        routing = SimpleNamespace(
+            to_dict=lambda: {
+                "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                "selected_runner_ids": ["claude-runner-123"],
+                "selected_runners": [
+                    {
+                        "runner_id": "claude-runner-123",
+                        "runner_type": "claude",
+                        "freshness_status": "fresh",
+                    }
+                ],
+                "blocked_reason": None,
+                "next_action": "Route through the selected Claude runner set.",
+            }
+        )
+
+        with (
+            patch("aragora.swarm.runner_registry.make_runner_inspector") as inspector_factory,
+            patch("aragora.swarm.runner_registry.authorization_context_from_env") as auth_ctx,
+            patch("aragora.swarm.runner_registry.LocalRunnerRegistry") as registry_cls,
+        ):
+            inspector_factory.return_value.inspect.return_value = inspection
+            auth_ctx.return_value = object()
+            registry_cls.return_value.list_registrations.return_value = [
+                {
+                    "runner_id": "claude-runner-123",
+                    "runner_type": "claude",
+                    "cost_class": "subscription",
+                    "freshness_status": "fresh",
+                    "active_lanes": 1,
+                    "capabilities": {"max_parallel_lanes": 3, "active_lanes": 1},
+                }
+            ]
+            registry_cls.return_value.resolve_boss_routing.return_value = routing
+            cmd_swarm(args)
+
+        out = capsys.readouterr().out
+        assert '"action": "report"' in out
+        assert '"mode": "runner"' in out
+        assert '"runner_type": "claude"' in out
+        assert '"cost_class": "subscription"' in out
+        assert '"selected_runner_ids": [' in out
 
     def test_cmd_swarm_requires_goal_or_spec(self, capsys):
         args = argparse.Namespace(

@@ -23,10 +23,14 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
+
+from aragora.swarm.delivery_policy import apply_delivery_policy
+from aragora.swarm.spec import SwarmSpec
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +43,17 @@ def cmd_build(args: argparse.Namespace) -> None:
     skip_clarify = getattr(args, "skip_clarify", False)
     max_tasks = getattr(args, "max_tasks", 5)
     as_json = getattr(args, "json", False)
+    repo = str(getattr(args, "repo", None) or "").strip() or None
+    worker_model = str(getattr(args, "worker_model", "claude") or "claude").strip() or "claude"
+    review_model = str(getattr(args, "review_model", "codex") or "codex").strip() or "codex"
+    risk = str(getattr(args, "risk", "medium") or "medium").strip().lower() or "medium"
+    merge_class = (
+        str(getattr(args, "merge_class", "manual") or "manual").strip().lower() or "manual"
+    )
+    autonomy_mode = (
+        str(getattr(args, "autonomy_mode", "full-auto") or "full-auto").strip().lower()
+        or "full-auto"
+    )
 
     if from_file:
         idea = Path(from_file).read_text().strip()
@@ -47,11 +62,18 @@ def cmd_build(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     result = asyncio.run(
-        _run_build_pipeline(
+        _run_build_pipeline_with_cleanup(
             idea=idea,
             dry_run=dry_run,
             skip_clarify=skip_clarify,
             max_tasks=max_tasks,
+            repo=repo,
+            worker_model=worker_model,
+            review_model=review_model,
+            risk=risk,
+            merge_class=merge_class,
+            autonomy_mode=autonomy_mode,
+            emit_progress=not as_json,
         )
     )
 
@@ -61,64 +83,215 @@ def cmd_build(args: argparse.Namespace) -> None:
         _print_result(result)
 
 
+async def _run_build_pipeline_with_cleanup(**kwargs: Any) -> dict[str, Any]:
+    """Run the build pipeline and release shared API connectors before exit."""
+    try:
+        return await _run_build_pipeline(**kwargs)
+    finally:
+        await _close_shared_agent_connector()
+
+
 async def _run_build_pipeline(
     *,
     idea: str,
     dry_run: bool = False,
     skip_clarify: bool = False,
     max_tasks: int = 5,
+    repo: str | None = None,
+    worker_model: str = "claude",
+    review_model: str = "codex",
+    risk: str = "medium",
+    merge_class: str = "manual",
+    autonomy_mode: str = "full-auto",
+    emit_progress: bool = True,
 ) -> dict[str, Any]:
     """Execute the full build pipeline."""
+    repo_name = repo or _default_repo()
     result: dict[str, Any] = {
         "idea": idea,
         "dry_run": dry_run,
+        "repo": repo_name,
+        "routing_defaults": {
+            "worker_model": worker_model,
+            "review_model": review_model,
+        },
+        "queue_policy": {
+            "risk": risk,
+            "merge_class": merge_class,
+            "autonomy_mode": autonomy_mode,
+        },
         "stages": {},
         "status": "running",
     }
     start = time.monotonic()
 
     # Stage 1: Specification
-    print("\n[1/5] Generating specification from idea...")
-    print(f"  Idea: {idea[:100]}{'...' if len(idea) > 100 else ''}")
+    _progress(emit_progress, "\n[1/5] Generating specification from idea...")
+    _progress(emit_progress, f"  Idea: {idea[:100]}{'...' if len(idea) > 100 else ''}")
     spec = await _generate_spec(idea, skip_clarify=skip_clarify)
     result["stages"]["spec"] = spec
-    print(f"  ✓ Spec generated ({len(spec.get('sections', []))} sections)")
+    _progress(emit_progress, f"  ✓ Spec generated ({len(spec.get('sections', []))} sections)")
 
-    # Stage 2: Task decomposition
-    print("\n[2/5] Decomposing into bounded tasks...")
-    tasks = await _decompose_tasks(spec, max_tasks=max_tasks)
+    # Stage 2: Founder triage and review
+    _progress(emit_progress, "\n[2/5] Running founder triage and review...")
+    planning = await _plan_reviewed_tasks(
+        idea=idea,
+        spec=spec,
+        repo=repo_name,
+        risk=risk,
+        merge_class=merge_class,
+        autonomy_mode=autonomy_mode,
+        max_tasks=max_tasks,
+        worker_model=worker_model,
+        review_model=review_model,
+    )
+    result["stages"]["brief"] = planning["brief"]
+    result["stages"]["handoffs"] = planning["handoffs"]
+    result["stages"]["review"] = planning["review"]
+    tasks = list(planning.get("tasks", []) or [])
+
+    if planning["brief"]["clarification_completeness_status"] != "decision_complete":
+        result["status"] = "needs_clarification"
+        result["elapsed_seconds"] = time.monotonic() - start
+        _progress(
+            emit_progress,
+            "  ! Clarification is incomplete. Capture the open questions before queue dispatch.",
+        )
+        return result
+
+    if not tasks:
+        _progress(
+            emit_progress,
+            "  ! Founder review produced no queueable tasks, falling back to bounded task decomposition.",
+        )
+        fallback_tasks = await _decompose_tasks(spec, max_tasks=max_tasks)
+        tasks = _annotate_tasks(
+            fallback_tasks,
+            spec=spec,
+            idea=idea,
+            repo=repo_name,
+            risk=risk,
+            merge_class=merge_class,
+            autonomy_mode=autonomy_mode,
+            worker_model=worker_model,
+            review_model=review_model,
+        )
+
     result["stages"]["tasks"] = tasks
-    print(f"  ✓ {len(tasks)} tasks identified")
+    _progress(emit_progress, f"  ✓ {len(tasks)} tasks identified")
     for i, task in enumerate(tasks, 1):
-        print(f"    {i}. {task['title']}")
+        _progress(emit_progress, f"    {i}. {task['title']}")
 
     if dry_run:
         result["status"] = "dry_run_complete"
         result["elapsed_seconds"] = time.monotonic() - start
-        print(f"\n[DRY RUN] Would create {len(tasks)} issues and dispatch to boss loop.")
-        print("  Run without --dry-run to execute.")
+        _progress(
+            emit_progress,
+            f"\n[DRY RUN] Would create {len(tasks)} issues and dispatch to boss loop.",
+        )
+        _progress(emit_progress, "  Run without --dry-run to execute.")
         return result
 
     # Stage 3: Create GitHub issues
-    print("\n[3/5] Creating GitHub issues...")
-    issues = await _create_issues(tasks)
+    _progress(emit_progress, "\n[3/5] Creating GitHub issues...")
+    issues = await _create_issues(tasks, repo=repo_name)
     result["stages"]["issues"] = issues
-    print(f"  ✓ {len(issues)} issues created")
+    _progress(emit_progress, f"  ✓ {len(issues)} issues created")
+
+    if not issues:
+        result["status"] = "issue_creation_failed"
+        result["elapsed_seconds"] = time.monotonic() - start
+        return result
 
     # Stage 4: Dispatch to boss loop
-    print("\n[4/5] Dispatching to boss loop (--autonomy full-auto)...")
-    dispatch_result = await _dispatch_to_boss_loop(issues)
+    _progress(emit_progress, f"\n[4/5] Dispatching to boss loop (--autonomy {autonomy_mode})...")
+    dispatch_result = await _dispatch_to_boss_loop(
+        issues,
+        repo=repo_name,
+        worker_model=worker_model,
+        review_model=review_model,
+        autonomy_mode=autonomy_mode,
+    )
     result["stages"]["dispatch"] = dispatch_result
-    print(f"  ✓ Boss loop started (PID: {dispatch_result.get('pid', '?')})")
+    _progress(emit_progress, f"  ✓ Boss loop started (PID: {dispatch_result.get('pid', '?')})")
 
     # Stage 5: Summary
     result["status"] = "dispatched"
     result["elapsed_seconds"] = time.monotonic() - start
-    print("\n[5/5] Pipeline complete!")
-    print(f"  Issues: {', '.join(f'#{i}' for i in issues)}")
-    print("  Monitor: tail -f .aragora/overnight/code-improvements.log")
+    _progress(emit_progress, "\n[5/5] Pipeline complete!")
+    _progress(emit_progress, f"  Issues: {', '.join(f'#{i}' for i in issues)}")
+    _progress(
+        emit_progress,
+        f"  Monitor: tail -f {dispatch_result.get('log', '.aragora/overnight/code-improvements.log')}",
+    )
 
     return result
+
+
+async def _plan_reviewed_tasks(
+    *,
+    idea: str,
+    spec: dict[str, Any],
+    repo: str,
+    risk: str,
+    merge_class: str,
+    autonomy_mode: str,
+    max_tasks: int,
+    worker_model: str,
+    review_model: str,
+) -> dict[str, Any]:
+    """Generate founder handoffs, review them, and select queueable tasks."""
+    from aragora.cli.commands.idea import (
+        _compose_initiative_brief,
+        _generate_founder_handoffs,
+        _review_founder_handoffs,
+    )
+
+    brief = _compose_initiative_brief(
+        idea=idea,
+        spec=spec,
+        priority="medium",
+        track="1",
+        risk=risk,
+        merge_class=merge_class,
+        autonomy_mode=autonomy_mode,
+        worker_model=worker_model,
+        review_model=review_model,
+    )
+    if brief["clarification_completeness_status"] != "decision_complete":
+        return {
+            "brief": brief,
+            "handoffs": [],
+            "review": {
+                "status": "blocked",
+                "summary": "Clarification incomplete; founder review skipped.",
+                "findings": [],
+                "followups": [],
+            },
+            "tasks": [],
+        }
+
+    handoffs = await _generate_founder_handoffs(
+        brief=brief,
+        spec=spec,
+        max_tasks=max_tasks,
+        worker_model=worker_model,
+        review_model=review_model,
+    )
+    review = _review_founder_handoffs(
+        brief=brief,
+        handoffs=handoffs,
+        review_model=review_model,
+    )
+    tasks = _queueable_tasks_from_review(
+        brief=brief, spec=spec, handoffs=handoffs, review=review, repo=repo
+    )
+    return {
+        "brief": brief,
+        "handoffs": handoffs,
+        "review": review,
+        "tasks": tasks,
+    }
 
 
 async def _generate_spec(idea: str, *, skip_clarify: bool = False) -> dict[str, Any]:
@@ -131,16 +304,56 @@ async def _generate_spec(idea: str, *, skip_clarify: bool = False) -> dict[str, 
             skip_research=True,  # Fast mode for build pipeline
         )
         conductor = PromptConductor(config=config)
-        spec = await conductor.run(prompt=idea)
+        timeout_seconds = float(os.environ.get("ARAGORA_BUILD_SPEC_TIMEOUT_SECONDS", "180") or 180)
+        result = await asyncio.wait_for(conductor.run(prompt=idea), timeout=timeout_seconds)
+        specification = result.specification
+        intent = result.intent
+        questions = list(result.questions or [])
+        unanswered_questions = [
+            q.question.strip()
+            for q in questions
+            if getattr(q, "question", "").strip() and not getattr(q, "is_answered", False)
+        ]
+        success_criteria = [
+            c.get("description", "") if isinstance(c, dict) else getattr(c, "description", str(c))
+            for c in getattr(specification, "success_criteria", [])
+        ]
+        raw_sections = [
+            getattr(specification, "title", "").strip(),
+            getattr(specification, "problem_statement", "").strip(),
+            getattr(specification, "proposed_solution", "").strip(),
+        ]
+        if success_criteria:
+            raw_sections.append(
+                "Success criteria:\n"
+                + "\n".join(f"- {criterion}" for criterion in success_criteria)
+            )
+        raw_text = "\n\n".join(section for section in raw_sections if section)
         return {
-            "title": getattr(spec, "title", idea[:80]),
+            "title": getattr(specification, "title", idea[:80]),
             "sections": [
-                {"name": s.name, "content": s.content[:200]} for s in getattr(spec, "sections", [])
-            ]
-            if hasattr(spec, "sections")
-            else [],
-            "confidence": getattr(spec, "confidence", 0.0),
-            "raw": str(spec)[:500],
+                {
+                    "name": "problem_statement",
+                    "content": getattr(specification, "problem_statement", "")[:200],
+                },
+                {
+                    "name": "proposed_solution",
+                    "content": getattr(specification, "proposed_solution", "")[:200],
+                },
+                {
+                    "name": "success_criteria",
+                    "content": "; ".join(item for item in success_criteria if item)[:200],
+                },
+            ],
+            "confidence": getattr(specification, "confidence", 0.0),
+            "raw": raw_text or idea,
+            "user_goal": getattr(intent, "summary", "") or idea,
+            "desired_outcome": getattr(specification, "proposed_solution", "")[:500],
+            "success_criteria": [criterion for criterion in success_criteria if criterion],
+            "clarification_status": (
+                "needs_clarification" if unanswered_questions else "decision_complete"
+            ),
+            "open_questions": unanswered_questions,
         }
     except Exception as exc:
         logger.warning("Spec generation failed: %s", exc)
@@ -183,13 +396,35 @@ async def _decompose_tasks(spec: dict[str, Any], *, max_tasks: int = 5) -> list[
         ]
 
 
-async def _create_issues(tasks: list[dict[str, Any]]) -> list[int]:
+async def _create_issues(tasks: list[dict[str, Any]], *, repo: str) -> list[int]:
     """Create GitHub issues for each task."""
     import subprocess
 
     issue_numbers = []
     for task in tasks:
-        body = f"""## Acceptance Criteria
+        labels = [
+            "boss-ready",
+            *[str(item).strip() for item in task.get("labels", []) if str(item).strip()],
+        ]
+        deduped_labels = list(dict.fromkeys(labels))
+        body = f"""## Initiative Brief
+- User goal: {task.get("user_goal", "")[:200]}
+- Desired outcome: {task.get("desired_outcome", "")[:200]}
+- Affected surfaces: {", ".join(task.get("affected_surfaces", [])) or "unknown"}
+- File scope hints: {", ".join(task.get("file_scope_hints", [])) or "none"}
+- Proof/evidence expected: {task.get("proof_expected", "")[:200]}
+- Clarification completeness: {task.get("clarification_status", "draft")}
+- Open questions: {", ".join(task.get("open_questions", [])) or "none"}
+
+## Queue Metadata
+- Risk: {task.get("risk", "medium")}
+- Merge Class: {task.get("merge_class", "manual")}
+- Autonomy Mode: {task.get("autonomy_mode", "full-auto")}
+- Preferred Worker Agent: {task.get("preferred_worker_agent", "claude")}
+- Preferred Reviewer Agent: {task.get("preferred_reviewer_agent", "codex")}
+- Policy Notes: {", ".join(task.get("policy_reasons", [])) or "none"}
+
+## Acceptance Criteria
 {chr(10).join(f"- [ ] {c}" for c in task.get("acceptance_criteria", ["Implementation complete"]))}
 - [ ] All tests pass (no new failures)
 - [ ] Ruff clean on modified files
@@ -206,20 +441,20 @@ async def _create_issues(tasks: list[dict[str, Any]]) -> list[int]:
 Implementation complete, tests pass, PR opened with evidence.
 """
         try:
+            cmd = [
+                "gh",
+                "issue",
+                "create",
+                "--repo",
+                repo,
+                "--title",
+                task["title"],
+            ]
+            for label in deduped_labels:
+                cmd.extend(["--label", label])
+            cmd.extend(["--body", body])
             result = subprocess.run(
-                [
-                    "gh",
-                    "issue",
-                    "create",
-                    "--repo",
-                    "synaptent/aragora",
-                    "--title",
-                    task["title"],
-                    "--label",
-                    "boss-ready",
-                    "--body",
-                    body,
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -238,29 +473,41 @@ Implementation complete, tests pass, PR opened with evidence.
     return issue_numbers
 
 
-async def _dispatch_to_boss_loop(issue_numbers: list[int]) -> dict[str, Any]:
+async def _dispatch_to_boss_loop(
+    issue_numbers: list[int],
+    *,
+    repo: str,
+    worker_model: str,
+    review_model: str,
+    autonomy_mode: str,
+) -> dict[str, Any]:
     """Launch the boss loop against the created issues."""
     import subprocess
 
+    build_run_id = f"build-{int(time.time())}"
+    log_path = Path(".aragora") / "builds" / f"{build_run_id}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "bash",
         "-lc",
         (
-            "cd /Users/armand/Development/aragora && "
-            "export ARAGORA_USER_ID=armand && "
+            f"cd {sh_quote(str(Path.cwd()))} && "
+            f"export ARAGORA_USER_ID={sh_quote(os.environ.get('ARAGORA_USER_ID', 'armand'))} && "
             "exec python3 -u -m aragora.cli.main swarm boss-loop "
-            "--boss-repo synaptent/aragora "
-            "--label boss-ready "
+            f"--boss-repo {sh_quote(repo)} "
+            f"--boss-issue-list {sh_quote(','.join(str(num) for num in issue_numbers))} "
             f"--max-ticks {len(issue_numbers) * 2} "
             "--interval 30 "
             "--max-consecutive-failures 5 "
-            "--autonomy full-auto "
+            f"--autonomy {sh_quote(autonomy_mode)} "
+            f"--worker-model {sh_quote(worker_model)} "
+            f"--review-model {sh_quote(review_model)} "
             "--max-hours 10"
         ),
     ]
     proc = subprocess.Popen(
         cmd,
-        stdout=open(".aragora/overnight/code-improvements.log", "w"),
+        stdout=open(log_path, "w"),  # noqa: SIM115
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
         start_new_session=True,
@@ -268,8 +515,184 @@ async def _dispatch_to_boss_loop(issue_numbers: list[int]) -> dict[str, Any]:
     return {
         "pid": proc.pid,
         "issues": issue_numbers,
-        "log": ".aragora/overnight/code-improvements.log",
+        "log": str(log_path),
     }
+
+
+def _queueable_tasks_from_review(
+    *,
+    brief: dict[str, Any],
+    spec: dict[str, Any],
+    handoffs: list[dict[str, Any]],
+    review: dict[str, Any],
+    repo: str,
+) -> list[dict[str, Any]]:
+    """Select the queue tasks that should proceed after founder review."""
+    findings = [item for item in review.get("findings", []) if isinstance(item, dict)]
+    blocked_handoff_ids = {
+        str(handoff_id).strip()
+        for finding in findings
+        if str(finding.get("severity", "")).strip().lower() in {"high", "medium"}
+        for handoff_id in finding.get("handoff_ids", [])
+        if str(handoff_id).strip()
+    }
+    followups = [item for item in review.get("followups", []) if isinstance(item, dict)]
+    approved_handoffs = [
+        handoff
+        for handoff in handoffs
+        if str(handoff.get("handoff_id", "")).strip() not in blocked_handoff_ids
+    ]
+
+    queueable: list[dict[str, Any]] = []
+    for item in [*followups, *approved_handoffs]:
+        queueable.append(_handoff_to_build_task(item, brief=brief, spec=spec, repo=repo))
+    return queueable
+
+
+def _handoff_to_build_task(
+    handoff: dict[str, Any],
+    *,
+    brief: dict[str, Any],
+    spec: dict[str, Any],
+    repo: str,
+) -> dict[str, Any]:
+    """Normalize a founder handoff or review follow-up into a build queue task."""
+    validation = [str(item).strip() for item in handoff.get("validation", []) if str(item).strip()]
+    file_scope = [str(item).strip() for item in handoff.get("file_scope", []) if str(item).strip()]
+    return {
+        "title": str(handoff.get("task_title", "Untitled task")).strip(),
+        "description": str(handoff.get("description", "")).strip(),
+        "acceptance_criteria": [
+            str(item).strip()
+            for item in handoff.get("acceptance_criteria", [])
+            if str(item).strip()
+        ],
+        "verification": "\n".join(validation) if validation else "python3 -m pytest tests/ -q",
+        "user_goal": str(brief.get("user_goal", "")).strip()
+        or str(spec.get("user_goal", "")).strip(),
+        "desired_outcome": str(brief.get("desired_business_outcome", "")).strip()
+        or str(spec.get("desired_outcome", "")).strip(),
+        "affected_surfaces": list(brief.get("affected_surfaces", []) or []),
+        "file_scope_hints": file_scope,
+        "proof_expected": str(brief.get("proof_evidence_expected", "")).strip(),
+        "clarification_status": str(brief.get("clarification_completeness_status", "")).strip()
+        or "draft",
+        "open_questions": list(brief.get("open_questions", []) or []),
+        "risk": str(handoff.get("risk", "medium")).strip() or "medium",
+        "merge_class": str(handoff.get("merge_class", "manual")).strip() or "manual",
+        "autonomy_mode": str(handoff.get("autonomy_mode", "checkpoint")).strip() or "checkpoint",
+        "policy_reasons": list(handoff.get("policy_reasons", []) or []),
+        "labels": list(handoff.get("labels", []) or []),
+        "preferred_worker_agent": str(handoff.get("preferred_worker_agent", "claude")).strip()
+        or "claude",
+        "preferred_reviewer_agent": str(handoff.get("preferred_reviewer_agent", "codex")).strip()
+        or "codex",
+        "repo": repo,
+    }
+
+
+def _annotate_tasks(
+    tasks: list[dict[str, Any]],
+    *,
+    spec: dict[str, Any],
+    idea: str,
+    repo: str,
+    risk: str,
+    merge_class: str,
+    autonomy_mode: str,
+    worker_model: str,
+    review_model: str,
+) -> list[dict[str, Any]]:
+    annotated: list[dict[str, Any]] = []
+    for task in tasks:
+        item = dict(task)
+        file_scope_hints = SwarmSpec.infer_file_scope_hints(
+            "\n".join(
+                [
+                    str(item.get("title", "")),
+                    str(item.get("description", "")),
+                    str(item.get("verification", "")),
+                ]
+            )
+        )
+        policy = apply_delivery_policy(
+            file_scope=file_scope_hints,
+            requested_risk=risk,
+            requested_merge_class=merge_class,
+            requested_autonomy_mode=autonomy_mode,
+        )
+        item.setdefault("user_goal", str(spec.get("user_goal", "")).strip() or idea[:500])
+        item.setdefault(
+            "desired_outcome",
+            str(spec.get("desired_outcome", "")).strip()
+            or item.get("description", "")[:300]
+            or item.get("title", ""),
+        )
+        item.setdefault("affected_surfaces", _infer_surfaces(item))
+        item.setdefault("file_scope_hints", file_scope_hints)
+        item.setdefault("proof_expected", item.get("verification", ""))
+        item.setdefault(
+            "clarification_status",
+            str(spec.get("clarification_status", "")).strip() or "draft",
+        )
+        item.setdefault("open_questions", list(spec.get("open_questions", []) or []))
+        item.setdefault("risk", policy["effective_risk"])
+        item.setdefault("merge_class", policy["effective_merge_class"])
+        item.setdefault("autonomy_mode", policy["effective_autonomy_mode"])
+        item.setdefault("policy_reasons", list(policy.get("policy_reasons", []) or []))
+        item.setdefault("preferred_worker_agent", worker_model)
+        item.setdefault("preferred_reviewer_agent", review_model)
+        item.setdefault("repo", repo)
+        annotated.append(item)
+    return annotated
+
+
+def _infer_surfaces(task: dict[str, Any]) -> list[str]:
+    text = "\n".join(
+        [
+            str(task.get("title", "")),
+            str(task.get("description", "")),
+            str(task.get("verification", "")),
+        ]
+    ).lower()
+    surfaces: list[str] = []
+    if "front" in text or "live" in text or "ui" in text:
+        surfaces.append("frontend")
+    if "api" in text or "handler" in text or "route" in text or "server" in text:
+        surfaces.append("server")
+    if "receipt" in text or "storage" in text or "db" in text:
+        surfaces.append("storage")
+    if "test" in text or "pytest" in text or "jest" in text:
+        surfaces.append("testing")
+    return surfaces or ["unknown"]
+
+
+def _default_repo() -> str:
+    return (
+        str(os.environ.get("ARAGORA_BUILD_REPO", "synaptent/aragora")).strip()
+        or "synaptent/aragora"
+    )
+
+
+def _progress(enabled: bool, message: str) -> None:
+    if enabled:
+        print(message)
+
+
+def sh_quote(value: str) -> str:
+    import shlex
+
+    return shlex.quote(str(value))
+
+
+async def _close_shared_agent_connector() -> None:
+    """Best-effort cleanup for shared API connectors used by prompt_engine agents."""
+    try:
+        from aragora.agents.api_agents.common import close_shared_connector
+
+        await close_shared_connector()
+    except Exception as exc:
+        logger.debug("Shared API connector cleanup failed: %s", exc)
 
 
 def _print_result(result: dict[str, Any]) -> None:

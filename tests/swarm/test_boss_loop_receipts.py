@@ -63,6 +63,33 @@ class TestBossLoopOperationalReceipts:
 
         assert result.stop_reason == BossStopReason.NO_SUITABLE_ISSUE.value
 
+    def test_lane_receipt_includes_routing_metadata(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(max_iterations=1, iteration_interval_seconds=0.0))
+        worker_result = {
+            "lease_id": "lease-123",
+            "agent_id": "boss-loop",
+            "head_sha": "abc123",
+            "branch": "codex/example",
+            "receipt_metadata": {
+                "requested_target_agent": "claude",
+                "requested_reviewer_agent": "codex",
+                "actual_target_agent": "claude",
+                "actual_reviewer_agent": "codex",
+                "runner_id": "claude-runner-1",
+                "runner_type": "claude",
+                "cost_class": "subscription",
+                "fallback_reason": None,
+            },
+        }
+
+        with patch("aragora.receipts.lane.emit_lane_receipt") as emit_lane:
+            loop._emit_lane_receipt(worker_result, {"number": 42}, 3.5)
+
+        receipt = emit_lane.call_args.args[0]
+        assert receipt.metadata["requested_target_agent"] == "claude"
+        assert receipt.metadata["runner_id"] == "claude-runner-1"
+        assert receipt.metadata["cost_class"] == "subscription"
+
 
 class TestLaneCompletionReceiptSchema:
     def test_receipt_roundtrip(self) -> None:

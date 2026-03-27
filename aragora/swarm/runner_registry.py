@@ -1,4 +1,4 @@
-"""Local Codex runner registration and Boss routing eligibility helpers."""
+"""Generic local runner registration and Boss routing helpers."""
 
 from __future__ import annotations
 
@@ -17,8 +17,76 @@ from aragora.rbac.models import AuthorizationContext
 from aragora.swarm.worker_launcher import LaunchConfig
 
 UTC = timezone.utc
-VERIFIED_AUTH_MODES = {"chatgpt_login", "api_key"}
+VERIFIED_AUTH_MODES = {"chatgpt_login", "api_key", "subscription"}
 DEFAULT_RUNNER_STALE_AFTER_SECONDS = 3600
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerTypeSpec:
+    runner_type: str
+    cli_name: str
+    path_attr: str | None
+    auth_probe: tuple[str, ...] | None
+    env_auth_keys: tuple[str, ...]
+    default_cost_class: str
+    priority_weight: int
+    supports_review: bool = True
+    supports_login_status: bool = True
+
+
+RUNNER_TYPE_SPECS: dict[str, RunnerTypeSpec] = {
+    "claude": RunnerTypeSpec(
+        runner_type="claude",
+        cli_name="claude",
+        path_attr="claude_path",
+        auth_probe=("login", "status"),
+        env_auth_keys=("ANTHROPIC_API_KEY",),
+        default_cost_class="subscription",
+        priority_weight=100,
+    ),
+    "codex": RunnerTypeSpec(
+        runner_type="codex",
+        cli_name="codex",
+        path_attr="codex_path",
+        auth_probe=("login", "status"),
+        env_auth_keys=("OPENAI_API_KEY",),
+        default_cost_class="subscription",
+        priority_weight=80,
+    ),
+    "gemini-cli": RunnerTypeSpec(
+        runner_type="gemini-cli",
+        cli_name="gemini",
+        path_attr=None,
+        auth_probe=None,
+        env_auth_keys=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        default_cost_class="api",
+        priority_weight=50,
+        supports_review=False,
+        supports_login_status=False,
+    ),
+    "openai": RunnerTypeSpec(
+        runner_type="openai",
+        cli_name="openai",
+        path_attr=None,
+        auth_probe=None,
+        env_auth_keys=("OPENAI_API_KEY",),
+        default_cost_class="api",
+        priority_weight=45,
+        supports_review=False,
+        supports_login_status=False,
+    ),
+    "grok-cli": RunnerTypeSpec(
+        runner_type="grok-cli",
+        cli_name="grok",
+        path_attr=None,
+        auth_probe=None,
+        env_auth_keys=("XAI_API_KEY", "GROK_API_KEY"),
+        default_cost_class="api",
+        priority_weight=40,
+        supports_review=False,
+        supports_login_status=False,
+    ),
+}
 
 
 def _utcnow() -> str:
@@ -39,16 +107,29 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _normalized_runner_type(value: str | None) -> str:
+    runner_type = _text(value).lower()
+    return runner_type or "codex"
+
+
+def _runner_type_spec(value: str | None) -> RunnerTypeSpec:
+    runner_type = _normalized_runner_type(value)
+    spec = RUNNER_TYPE_SPECS.get(runner_type)
+    if spec is None:
+        raise ValueError(f"Unsupported runner type: {runner_type!r}")
+    return spec
+
+
 @dataclass(slots=True)
-class CodexRunnerInspection:
+class RunnerInspection:
     runner_id: str
     runner_type: str
     availability: str
     available: bool
     auth_mode: str
-    codex_path: str | None
-    version: str | None
-    status_summary: str | None
+    command_path: str | None = None
+    version: str | None = None
+    status_summary: str | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
     owner_binding: dict[str, Any] = field(default_factory=dict)
     registered: bool = False
@@ -58,6 +139,19 @@ class CodexRunnerInspection:
     freshness_status: str = "unknown"
     stale_after_seconds: int = DEFAULT_RUNNER_STALE_AFTER_SECONDS
     next_action: str | None = None
+    cost_class: str = "local"
+    priority_weight: int = 0
+    codex_path: str | None = None  # legacy compatibility for older callers/tests
+
+    def __post_init__(self) -> None:
+        if self.command_path is None and self.codex_path is not None:
+            self.command_path = self.codex_path
+        if (
+            self.codex_path is None
+            and self.runner_type == "codex"
+            and self.command_path is not None
+        ):
+            self.codex_path = self.command_path
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +160,7 @@ class CodexRunnerInspection:
             "availability": self.availability,
             "available": self.available,
             "auth_mode": self.auth_mode,
+            "command_path": self.command_path,
             "codex_path": self.codex_path,
             "version": self.version,
             "status_summary": self.status_summary,
@@ -78,7 +173,12 @@ class CodexRunnerInspection:
             "freshness_status": self.freshness_status,
             "stale_after_seconds": self.stale_after_seconds,
             "next_action": self.next_action,
+            "cost_class": self.cost_class,
+            "priority_weight": self.priority_weight,
         }
+
+
+CodexRunnerInspection = RunnerInspection
 
 
 @dataclass(slots=True)
@@ -90,6 +190,8 @@ class BossRoutingDecision:
     blocked_reason: str | None = None
     rejected_runner_ids: list[str] = field(default_factory=list)
     next_action: str | None = None
+    requested_runner_type: str | None = None
+    fallback_reason: str | None = None
 
     @property
     def is_blocked(self) -> bool:
@@ -104,55 +206,64 @@ class BossRoutingDecision:
             "blocked_reason": self.blocked_reason,
             "rejected_runner_ids": list(self.rejected_runner_ids),
             "next_action": self.next_action,
+            "requested_runner_type": self.requested_runner_type,
+            "fallback_reason": self.fallback_reason,
         }
 
 
-class CodexRunnerInspector:
-    """Inspect local Codex CLI availability and auth state truthfully."""
+class CLIRunnerInspector:
+    """Inspect local CLI runner availability and auth state truthfully."""
 
     def __init__(
         self,
         *,
+        runner_type: str = "codex",
         config: LaunchConfig | None = None,
         env: dict[str, str] | None = None,
     ) -> None:
         self.config = config or LaunchConfig()
         self.env = dict(os.environ if env is None else env)
+        self.spec = _runner_type_spec(runner_type)
 
-    def inspect(self) -> CodexRunnerInspection:
-        codex_path = shutil.which(self.config.codex_path)
-        runner_id = self._runner_id(codex_path)
+    def inspect(self) -> RunnerInspection:
+        command_name = self._command_name()
+        command_path = shutil.which(command_name)
+        runner_id = self._runner_id(command_path, command_name=command_name)
         owner = owner_binding_from_env(self.env)
         stale_after_seconds = self._stale_after_seconds()
 
-        if not codex_path:
-            return CodexRunnerInspection(
+        if not command_path:
+            return RunnerInspection(
                 runner_id=runner_id,
-                runner_type="codex",
+                runner_type=self.spec.runner_type,
                 availability="unavailable",
                 available=False,
                 auth_mode="unavailable",
-                codex_path=None,
+                command_path=None,
                 version=None,
                 status_summary=None,
                 capabilities=self._capabilities(False, None),
                 owner_binding=owner,
                 freshness_status="unavailable",
                 stale_after_seconds=stale_after_seconds,
-                next_action="Install the Codex CLI or add `codex` to PATH before registering this runner.",
+                next_action=self._next_action(
+                    available=False,
+                    auth_mode="unavailable",
+                    owner_binding=owner,
+                ),
+                cost_class=self.spec.default_cost_class,
+                priority_weight=self.spec.priority_weight,
             )
 
-        version_result = self._run_command([codex_path, "--version"])
-        help_result = self._run_command([codex_path, "--help"])
-        login_result = self._run_command([codex_path, "login", "status"])
+        version_result = self._run_command([command_path, "--version"])
+        help_result = self._run_command([command_path, "--help"])
+        auth_result = self._auth_result(command_path)
 
         help_text = "\n".join(
             part for part in (help_result.get("stdout", ""), help_result.get("stderr", "")) if part
         ).strip()
-        login_text = "\n".join(
-            part
-            for part in (login_result.get("stdout", ""), login_result.get("stderr", ""))
-            if part
+        auth_text = "\n".join(
+            part for part in (auth_result.get("stdout", ""), auth_result.get("stderr", "")) if part
         ).strip()
 
         available = bool(
@@ -163,35 +274,41 @@ class CodexRunnerInspector:
             or version_result.get("stderr")
         )
         if not available:
-            return CodexRunnerInspection(
+            return RunnerInspection(
                 runner_id=runner_id,
-                runner_type="codex",
+                runner_type=self.spec.runner_type,
                 availability="unavailable",
                 available=False,
                 auth_mode="unavailable",
-                codex_path=codex_path,
+                command_path=command_path,
                 version=None,
                 status_summary=None,
                 capabilities=self._capabilities(False, None),
                 owner_binding=owner,
                 freshness_status="unavailable",
                 stale_after_seconds=stale_after_seconds,
-                next_action="The local `codex` binary exists but did not respond truthfully; fix the CLI installation before registering this runner.",
+                next_action=self._next_action(
+                    available=False,
+                    auth_mode="unavailable",
+                    owner_binding=owner,
+                ),
+                cost_class=self.spec.default_cost_class,
+                priority_weight=self.spec.priority_weight,
             )
 
-        auth_mode = self._classify_auth_mode(login_text)
+        auth_mode = self._classify_auth_mode(auth_text)
         version = self._first_line(
             version_result.get("stdout") or version_result.get("stderr") or ""
         )
-        return CodexRunnerInspection(
+        return RunnerInspection(
             runner_id=runner_id,
-            runner_type="codex",
+            runner_type=self.spec.runner_type,
             availability="available",
             available=True,
             auth_mode=auth_mode,
-            codex_path=codex_path,
+            command_path=command_path,
             version=version or None,
-            status_summary=self._first_line(login_text) or None,
+            status_summary=self._first_line(auth_text) or None,
             capabilities=self._capabilities(True, help_text),
             owner_binding=owner,
             freshness_status=self._inspection_freshness(available=True, auth_mode=auth_mode),
@@ -201,26 +318,73 @@ class CodexRunnerInspector:
                 auth_mode=auth_mode,
                 owner_binding=owner,
             ),
+            cost_class=self._cost_class(auth_mode),
+            priority_weight=self.spec.priority_weight,
         )
+
+    def _command_name(self) -> str:
+        attr = self.spec.path_attr
+        if attr and hasattr(self.config, attr):
+            return str(getattr(self.config, attr))
+        return self.spec.cli_name
+
+    def _auth_result(self, command_path: str) -> dict[str, Any]:
+        if self.spec.auth_probe:
+            return self._run_command([command_path, *self.spec.auth_probe])
+        return {
+            "returncode": 0
+            if any(_text(self.env.get(key)) for key in self.spec.env_auth_keys)
+            else 1,
+            "stdout": "",
+            "stderr": "",
+        }
 
     def _capabilities(self, available: bool, help_text: str | None) -> dict[str, Any]:
         text = (help_text or "").lower()
+        supports_exec = available and (
+            "exec" in text or self.spec.runner_type in {"claude", "codex"}
+        )
+        supports_review = available and ("review" in text or self.spec.supports_review)
+        max_parallel_key = (
+            f"ARAGORA_{self.spec.runner_type.upper().replace('-', '_')}_RUNNER_MAX_CONCURRENCY"
+        )
         return {
-            "supports_exec": available and "exec" in text,
-            "supports_review": available and "review" in text,
-            "supports_login_status": available and "login" in text,
-            "max_parallel_lanes": _env_flag_int(
-                self.env, "ARAGORA_CODEX_RUNNER_MAX_CONCURRENCY", 1
-            ),
+            "supports_exec": supports_exec,
+            "supports_review": supports_review,
+            "supports_login_status": available and self.spec.supports_login_status,
+            "max_parallel_lanes": _env_flag_int(self.env, max_parallel_key, 1),
+            "active_lanes": _env_flag_int(self.env, f"{max_parallel_key}_ACTIVE", 0),
         }
 
-    def _classify_auth_mode(self, login_text: str) -> str:
-        lowered = login_text.lower()
-        if "chatgpt" in lowered and "logged in" in lowered:
-            return "chatgpt_login"
-        if "api key" in lowered and "logged in" in lowered:
+    def _classify_auth_mode(self, auth_text: str) -> str:
+        lowered = auth_text.lower()
+        if self.spec.runner_type == "codex":
+            if "chatgpt" in lowered and "logged in" in lowered:
+                return "chatgpt_login"
+            if "api key" in lowered and "logged in" in lowered:
+                return "api_key"
+            return "unknown"
+        if self.spec.runner_type == "claude":
+            if "api key" in lowered and ("logged in" in lowered or "authenticated" in lowered):
+                return "api_key"
+            if (
+                "logged in" in lowered
+                or "subscription" in lowered
+                or "max" in lowered
+                or "pro" in lowered
+            ):
+                return "subscription"
+            return "unknown"
+        if any(_text(self.env.get(key)) for key in self.spec.env_auth_keys):
             return "api_key"
         return "unknown"
+
+    def _cost_class(self, auth_mode: str) -> str:
+        if auth_mode == "api_key":
+            return "api"
+        if auth_mode in {"chatgpt_login", "subscription"}:
+            return "subscription"
+        return self.spec.default_cost_class
 
     def _stale_after_seconds(self) -> int:
         return _env_flag_int(
@@ -245,10 +409,10 @@ class CodexRunnerInspector:
                 return stripped
         return ""
 
-    def _runner_id(self, codex_path: str | None) -> str:
-        identity = f"codex:{platform.node()}:{codex_path or self.config.codex_path}"
+    def _runner_id(self, command_path: str | None, *, command_name: str) -> str:
+        identity = f"{self.spec.runner_type}:{platform.node()}:{command_path or command_name}"
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
-        return f"codex-runner-{digest}"
+        return f"{self.spec.runner_type}-runner-{digest}"
 
     @staticmethod
     def _run_command(command: list[str]) -> dict[str, Any]:
@@ -268,12 +432,14 @@ class CodexRunnerInspector:
             "stderr": proc.stderr,
         }
 
-    @staticmethod
-    def _next_action(*, available: bool, auth_mode: str, owner_binding: dict[str, Any]) -> str:
+    def _next_action(
+        self, *, available: bool, auth_mode: str, owner_binding: dict[str, Any]
+    ) -> str:
+        runner_label = self.spec.runner_type
         if not available:
-            return "Install the Codex CLI or add `codex` to PATH before registering this runner."
+            return f"Install the {runner_label} CLI or add `{self._command_name()}` to PATH before registering this runner."
         if auth_mode == "unknown":
-            return "Confirm the local Codex CLI login state before relying on this runner for routed work."
+            return f"Confirm the local {runner_label} CLI login state before relying on this runner for routed work."
         if not owner_binding.get("user_id"):
             return (
                 "Set `ARAGORA_USER_ID` and optional `ARAGORA_WORKSPACE_ID` before registering this "
@@ -284,8 +450,36 @@ class CodexRunnerInspector:
         )
 
 
+class CodexRunnerInspector(CLIRunnerInspector):
+    def __init__(
+        self, *, config: LaunchConfig | None = None, env: dict[str, str] | None = None
+    ) -> None:
+        super().__init__(runner_type="codex", config=config, env=env)
+
+
+class ClaudeRunnerInspector(CLIRunnerInspector):
+    def __init__(
+        self, *, config: LaunchConfig | None = None, env: dict[str, str] | None = None
+    ) -> None:
+        super().__init__(runner_type="claude", config=config, env=env)
+
+
+def make_runner_inspector(
+    runner_type: str,
+    *,
+    config: LaunchConfig | None = None,
+    env: dict[str, str] | None = None,
+) -> CLIRunnerInspector:
+    normalized = _normalized_runner_type(runner_type)
+    if normalized == "codex":
+        return CodexRunnerInspector(config=config, env=env)
+    if normalized == "claude":
+        return ClaudeRunnerInspector(config=config, env=env)
+    return CLIRunnerInspector(runner_type=normalized, config=config, env=env)
+
+
 class LocalRunnerRegistry:
-    """Minimal local registry for user-owned Codex runners."""
+    """Minimal local registry for user-owned CLI runners."""
 
     def __init__(self, *, path: str | Path | None = None) -> None:
         raw = (
@@ -297,24 +491,25 @@ class LocalRunnerRegistry:
 
     def register(
         self,
-        inspection: CodexRunnerInspection,
+        inspection: RunnerInspection,
         *,
         owner_context: AuthorizationContext | None,
-    ) -> CodexRunnerInspection:
+    ) -> RunnerInspection:
         registry_path = str(self.path)
+        runner_label = inspection.runner_type
         if not inspection.available:
             inspection.registered = False
             inspection.registry_path = registry_path
             inspection.next_action = inspection.next_action or (
-                "Restore local Codex runner availability before registering this runner."
+                f"Restore local {runner_label} runner availability before registering this runner."
             )
             return inspection
         if inspection.auth_mode == "unknown":
             inspection.registered = False
             inspection.registry_path = registry_path
             inspection.next_action = (
-                "Registration blocked: Codex auth mode is unknown. Confirm the local Codex login state "
-                "before registering this runner for Boss-mode routing."
+                f"Registration blocked: {runner_label} auth mode is unknown. Confirm the local "
+                f"{runner_label} login state before registering this runner for Boss-mode routing."
             )
             return inspection
         if owner_context is None:
@@ -353,16 +548,16 @@ class LocalRunnerRegistry:
         inspection.heartbeat_at = now
         inspection.freshness_status = freshness_status
         inspection.next_action = (
-            "Runner registered. Future Boss-mode routing can target this owner-bound Codex runner."
+            "Runner registered. Future Boss-mode routing can target this owner-bound runner."
         )
         return inspection
 
     def heartbeat(
         self,
-        inspection: CodexRunnerInspection,
+        inspection: RunnerInspection,
         *,
         owner_context: AuthorizationContext | None,
-    ) -> CodexRunnerInspection:
+    ) -> RunnerInspection:
         registry_path = str(self.path)
         inspection.registry_path = registry_path
         if owner_context is None:
@@ -389,7 +584,7 @@ class LocalRunnerRegistry:
         if existing is None:
             inspection.registered = False
             inspection.next_action = (
-                "Register this Codex runner for the current Aragora user/workspace context before "
+                "Register this runner for the current Aragora user/workspace context before "
                 "refreshing its heartbeat."
             )
             return inspection
@@ -418,7 +613,9 @@ class LocalRunnerRegistry:
         inspection.registered_at = _text(existing.get("registered_at")) or None
         inspection.heartbeat_at = now
         inspection.freshness_status = freshness_status
-        inspection.next_action = self._heartbeat_next_action(freshness_status)
+        inspection.next_action = self._heartbeat_next_action(
+            freshness_status, runner_type=inspection.runner_type
+        )
         return inspection
 
     def list_registrations(self) -> list[dict[str, Any]]:
@@ -430,12 +627,16 @@ class LocalRunnerRegistry:
         self,
         *,
         owner_context: AuthorizationContext | None,
+        requested_runner_type: str | None = None,
     ) -> BossRoutingDecision:
         owner_binding = owner_binding_from_context(owner_context)
+        requested = (
+            _normalized_runner_type(requested_runner_type) if requested_runner_type else None
+        )
         selection_basis = (
-            "registered=true, freshness_status=fresh, availability=available, auth_mode in "
-            "{chatgpt_login, api_key}, owner_binding user/workspace compatible with current "
-            "Aragora context"
+            "registered=true, freshness_status=fresh, availability=available, auth_mode verified, "
+            "owner_binding compatible, capacity available, ordered by requested runner type then "
+            "priority_weight and cost preference"
         )
         if owner_context is None or not _text(owner_context.user_id):
             return BossRoutingDecision(
@@ -444,39 +645,27 @@ class LocalRunnerRegistry:
                 blocked_reason="missing_owner_context",
                 next_action=(
                     "Set `ARAGORA_USER_ID` and `ARAGORA_WORKSPACE_ID` before running Boss mode so "
-                    "Aragora can route only onto authorized registered Codex runners."
+                    "Aragora can route only onto authorized registered runners."
                 ),
+                requested_runner_type=requested,
             )
 
         eligible: list[dict[str, Any]] = []
         rejected_runner_ids: list[str] = []
         saw_compatible_nonfresh = False
+        saw_requested_type = False
         for runner in self.list_registrations():
             if self._is_owner_compatible(runner, owner_context=owner_context):
-                if (
-                    _text(runner.get("runner_type")) == "codex"
-                    and bool(runner.get("registered"))
-                    and self._freshness_status(runner) != "fresh"
-                ):
+                if bool(runner.get("registered")) and self._freshness_status(runner) != "fresh":
                     saw_compatible_nonfresh = True
+                if requested and _text(runner.get("runner_type")) == requested:
+                    saw_requested_type = True
             if not self._is_runner_eligible(runner, owner_context=owner_context):
                 runner_id = _text(runner.get("runner_id"))
                 if runner_id:
                     rejected_runner_ids.append(runner_id)
                 continue
-            eligible.append(
-                {
-                    "runner_id": _text(runner.get("runner_id")),
-                    "auth_mode": _text(runner.get("auth_mode")),
-                    "freshness_status": self._freshness_status(runner),
-                    "heartbeat_at": _text(runner.get("heartbeat_at")) or None,
-                    "stale_after_seconds": int(
-                        runner.get("stale_after_seconds") or DEFAULT_RUNNER_STALE_AFTER_SECONDS
-                    ),
-                    "owner_binding": dict(runner.get("owner_binding") or {}),
-                    "capabilities": dict(runner.get("capabilities") or {}),
-                }
-            )
+            eligible.append(self._runner_summary(runner))
 
         if not eligible:
             return BossRoutingDecision(
@@ -489,12 +678,31 @@ class LocalRunnerRegistry:
                 ),
                 rejected_runner_ids=sorted(set(rejected_runner_ids)),
                 next_action=(
-                    "Refresh the heartbeat for an available registered Codex runner in this exact "
-                    "Aragora user/workspace context before running Boss mode."
+                    "Refresh the heartbeat for an available registered runner in this exact Aragora "
+                    "user/workspace context before running Boss mode."
                     if saw_compatible_nonfresh
-                    else "Register an available Codex runner for this exact Aragora user/workspace "
-                    "context before running Boss mode."
+                    else "Register an available runner for this exact Aragora user/workspace context "
+                    "before running Boss mode."
                 ),
+                requested_runner_type=requested,
+            )
+
+        eligible.sort(
+            key=lambda item: (
+                0 if requested and item["runner_type"] == requested else 1,
+                -int(item.get("priority_weight", 0)),
+                self._cost_rank(_text(item.get("cost_class"))),
+                -int(item.get("available_capacity", 0)),
+                _text(item.get("runner_id")),
+            )
+        )
+
+        fallback_reason = None
+        if requested and eligible and eligible[0]["runner_type"] != requested:
+            fallback_reason = (
+                "requested_runner_type_unavailable"
+                if saw_requested_type
+                else "requested_runner_type_not_registered"
             )
 
         return BossRoutingDecision(
@@ -503,8 +711,32 @@ class LocalRunnerRegistry:
             selected_runners=eligible,
             selection_basis=selection_basis,
             rejected_runner_ids=sorted(set(rejected_runner_ids)),
-            next_action="Boss mode will route only through the selected registered Codex runner set.",
+            next_action="Boss mode will route only through the selected registered runner set.",
+            requested_runner_type=requested,
+            fallback_reason=fallback_reason,
         )
+
+    def _runner_summary(self, runner: dict[str, Any]) -> dict[str, Any]:
+        capabilities = dict(runner.get("capabilities") or {})
+        max_parallel = int(capabilities.get("max_parallel_lanes") or 1)
+        active_lanes = int(capabilities.get("active_lanes") or runner.get("active_lanes") or 0)
+        return {
+            "runner_id": _text(runner.get("runner_id")),
+            "runner_type": _text(runner.get("runner_type")),
+            "auth_mode": _text(runner.get("auth_mode")),
+            "cost_class": _text(runner.get("cost_class")) or "local",
+            "priority_weight": int(runner.get("priority_weight") or 0),
+            "freshness_status": self._freshness_status(runner),
+            "heartbeat_at": _text(runner.get("heartbeat_at")) or None,
+            "stale_after_seconds": int(
+                runner.get("stale_after_seconds") or DEFAULT_RUNNER_STALE_AFTER_SECONDS
+            ),
+            "owner_binding": dict(runner.get("owner_binding") or {}),
+            "capabilities": capabilities,
+            "available_capacity": max(0, max_parallel - active_lanes),
+            "active_lanes": active_lanes,
+            "command_path": _text(runner.get("command_path") or runner.get("codex_path")) or None,
+        }
 
     def _is_runner_eligible(
         self,
@@ -512,8 +744,6 @@ class LocalRunnerRegistry:
         *,
         owner_context: AuthorizationContext,
     ) -> bool:
-        if _text(runner.get("runner_type")) != "codex":
-            return False
         if not bool(runner.get("registered")):
             return False
         if _text(runner.get("availability")) != "available" or not bool(
@@ -525,6 +755,11 @@ class LocalRunnerRegistry:
         if self._freshness_status(runner) != "fresh":
             return False
         if not self._is_owner_compatible(runner, owner_context=owner_context):
+            return False
+        capabilities = dict(runner.get("capabilities") or {})
+        max_parallel = int(capabilities.get("max_parallel_lanes") or 1)
+        active_lanes = int(capabilities.get("active_lanes") or runner.get("active_lanes") or 0)
+        if active_lanes >= max_parallel:
             return False
         return True
 
@@ -551,7 +786,7 @@ class LocalRunnerRegistry:
         return True
 
     @staticmethod
-    def _freshness_for_inspection(inspection: CodexRunnerInspection) -> str:
+    def _freshness_for_inspection(inspection: RunnerInspection) -> str:
         if not inspection.available:
             return "unavailable"
         if inspection.auth_mode not in VERIFIED_AUTH_MODES:
@@ -582,7 +817,7 @@ class LocalRunnerRegistry:
         return "fresh"
 
     @staticmethod
-    def _heartbeat_next_action(freshness_status: str) -> str:
+    def _heartbeat_next_action(freshness_status: str, *, runner_type: str) -> str:
         if freshness_status == "fresh":
             return (
                 "Runner heartbeat refreshed. Boss mode can route work to this runner while the "
@@ -590,13 +825,18 @@ class LocalRunnerRegistry:
             )
         if freshness_status == "unavailable":
             return (
-                "Runner heartbeat recorded an unavailable Codex runner. Restore the local CLI "
-                "before relying on Boss-mode routing."
+                f"Runner heartbeat recorded an unavailable {runner_type} runner. Restore the local "
+                "CLI before relying on Boss-mode routing."
             )
         return (
-            "Runner heartbeat recorded a non-fresh state. Confirm local Codex availability and auth "
+            "Runner heartbeat recorded a non-fresh state. Confirm local availability and auth "
             "before relying on Boss-mode routing."
         )
+
+    @staticmethod
+    def _cost_rank(cost_class: str) -> int:
+        ranks = {"subscription": 0, "local": 1, "api": 2}
+        return ranks.get(cost_class, 3)
 
     @staticmethod
     def _parse_timestamp(value: str) -> datetime | None:
