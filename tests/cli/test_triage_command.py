@@ -418,7 +418,10 @@ def test_show_status_reports_refresh_token(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("GMAIL_CLIENT_SECRET", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
 
-    with patch.object(triage_cmd, "_get_secret_fallback", return_value=""):
+    with (
+        patch.object(triage_cmd, "_get_secret_fallback", return_value=""),
+        patch.object(triage_cmd, "_load_local_dotenv"),  # Prevent repo .env leaking keys
+    ):
         triage_cmd._show_status()
 
     out = capsys.readouterr().out

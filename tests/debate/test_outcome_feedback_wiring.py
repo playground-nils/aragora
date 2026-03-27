@@ -239,6 +239,12 @@ class TestOutcomeFeedbackStep:
             patch.object(coordinator, "_step_push_calibration", side_effect=track_calibration),
             patch.object(coordinator, "_step_outcome_feedback", side_effect=track_feedback),
             patch.object(coordinator, "_step_execution_bridge", side_effect=track_bridge),
+            patch.object(
+                coordinator,
+                "_step_execution_gate",
+                return_value={"allow_auto_execution": True, "reason_codes": []},
+            ),
+            patch.object(coordinator, "_is_execution_blocked", return_value=False),
         ):
             coordinator.run("d1", mock_result, confidence=0.95, task="test")
 
