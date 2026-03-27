@@ -198,6 +198,7 @@ Examples:
     _add_ralph_parser(subparsers)
     _add_assess_parser(subparsers)
     _add_spec_parser(subparsers)
+    _add_build_parser(subparsers)
 
     return parser
 
@@ -2777,3 +2778,22 @@ Examples:
         help="Preview pipeline steps without executing",
     )
     spec_parser.set_defaults(func=_lazy("aragora.cli.commands.spec", "cmd_spec"))
+
+
+def _add_build_parser(subparsers) -> None:
+    """Add the 'build' subcommand parser."""
+    build_parser = subparsers.add_parser(
+        "build",
+        help="Turn a vague idea into executed, reviewed, merged code",
+    )
+    build_parser.add_argument("idea", nargs="?", help="Your idea in plain language")
+    build_parser.add_argument("--from-file", help="Read idea from a file")
+    build_parser.add_argument("--dry-run", action="store_true", help="Show plan without executing")
+    build_parser.add_argument(
+        "--skip-clarify", action="store_true", help="Skip clarification questions"
+    )
+    build_parser.add_argument(
+        "--max-tasks", type=int, default=5, help="Maximum tasks to create (default: 5)"
+    )
+    build_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    build_parser.set_defaults(func=_lazy("aragora.cli.commands.build", "cmd_build"))
