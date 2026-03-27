@@ -1458,8 +1458,8 @@ class TestCLIAgentModelMapping:
                 agent._get_fallback_agent()
 
                 call_kwargs = mock_or.call_args[1]
-                # Should default to claude-sonnet-4
-                assert call_kwargs["model"] == "anthropic/claude-sonnet-4"
+                # Should default to the current frontier Claude model
+                assert call_kwargs["model"] == "anthropic/claude-sonnet-4.6"
 
 
 # =============================================================================
