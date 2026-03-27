@@ -98,8 +98,8 @@ class ReceiptShareStore:
         conn.commit()
 
     @staticmethod
-    def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-        """Normalize a receipt share row into the API-facing shape."""
+    def _row_to_share_info(row: sqlite3.Row) -> dict[str, Any]:
+        """Convert a receipt share row to a serializable dictionary."""
         return {
             "token": row["token"],
             "receipt_id": row["receipt_id"],
@@ -170,7 +170,7 @@ class ReceiptShareStore:
         if not row:
             return None
 
-        return self._row_to_dict(row)
+        return self._row_to_share_info(row)
 
     def get_by_receipt(self, receipt_id: str) -> list[dict[str, Any]]:
         """
@@ -193,40 +193,46 @@ class ReceiptShareStore:
             (receipt_id,),
         ).fetchall()
 
-        return [self._row_to_dict(row) for row in rows]
+        return [self._row_to_share_info(row) for row in rows]
 
-    def consume_access(self, token: str, now: float | None = None) -> dict[str, Any] | None:
-        """Atomically increment access_count only when the token is still usable."""
+    def consume_access(self, token: str) -> dict[str, Any]:
+        """
+        Atomically consume one access for a share token.
+
+        Returns:
+            A dict with ``status`` and the latest ``share_info`` when available.
+        """
         conn = self._get_connection()
-        now_ts = now if now is not None else datetime.now(timezone.utc).timestamp()
+        share_info = self.get_by_token(token)
+        if not share_info:
+            return {"status": "not_found", "share_info": None}
+
+        now = datetime.now(timezone.utc).timestamp()
+        expires_at = share_info.get("expires_at")
+        if expires_at and expires_at < now:
+            return {"status": "expired", "share_info": share_info}
 
         cursor = conn.execute(
             """
             UPDATE receipt_shares
             SET access_count = access_count + 1
             WHERE token = ?
-              AND (expires_at IS NULL OR expires_at >= ?)
               AND (max_accesses IS NULL OR access_count < max_accesses)
             """,
-            (token, now_ts),
-        )
-        if cursor.rowcount == 0:
-            conn.commit()
-            return None
-
-        row = conn.execute(
-            """
-            SELECT token, receipt_id, created_at, expires_at, max_accesses, access_count, created_by
-            FROM receipt_shares
-            WHERE token = ?
-            """,
             (token,),
-        ).fetchone()
+        )
         conn.commit()
 
-        if not row:
-            return None
-        return self._row_to_dict(row)
+        if cursor.rowcount <= 0:
+            refreshed = self.get_by_token(token)
+            if not refreshed:
+                return {"status": "not_found", "share_info": None}
+            refreshed_expires_at = refreshed.get("expires_at")
+            if refreshed_expires_at and refreshed_expires_at < now:
+                return {"status": "expired", "share_info": refreshed}
+            return {"status": "limit_reached", "share_info": refreshed}
+
+        return {"status": "ok", "share_info": self.get_by_token(token)}
 
     def increment_access(self, token: str) -> bool:
         """
