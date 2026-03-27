@@ -655,7 +655,7 @@ class TestConcurrencyLimits:
         """MAX_CONCURRENT_REVISIONS is configurable via environment."""
         from aragora.config import MAX_CONCURRENT_REVISIONS
 
-        assert MAX_CONCURRENT_REVISIONS == 5  # Default value
+        assert MAX_CONCURRENT_REVISIONS == 10  # Raised for 10+ agent support
 
     def test_max_concurrent_streaming_env_var(self):
         """MAX_CONCURRENT_STREAMING is configurable via environment."""
