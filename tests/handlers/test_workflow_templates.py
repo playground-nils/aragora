@@ -29,6 +29,7 @@ Covers all routes and behavior of the handler classes:
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 from typing import Any
@@ -1944,14 +1945,17 @@ class TestAsyncWorkflowExecution:
         assert saved["status"] == "running"
         assert saved["tenant_id"] == "t1"
         mock_loop.create_task.assert_called_once()
+        scheduled_coro = mock_loop.create_task.call_args.args[0]
+        assert asyncio.iscoroutine(scheduled_coro)
+        scheduled_coro.close()
 
     @patch("aragora.server.handlers.workflow_templates._get_workflow_store")
     @patch("asyncio.get_running_loop", side_effect=RuntimeError("no loop"))
-    @patch("asyncio.create_task")
+    @patch("aragora.server.handlers.workflow_templates._run_workflow_execution_in_thread")
     def test_start_workflow_execution_no_event_loop(
-        self, mock_create, mock_loop_fn, mock_store_fn, handler_module
+        self, mock_thread_runner, mock_loop_fn, mock_store_fn, handler_module
     ):
-        """When no running event loop, should use asyncio.create_task."""
+        """When no running event loop, should use a daemon thread runner."""
         mock_store = MagicMock()
         mock_store_fn.return_value = mock_store
 
@@ -1966,7 +1970,7 @@ class TestAsyncWorkflowExecution:
         )
 
         assert exec_id.startswith("exec_")
-        mock_create.assert_called_once()
+        mock_thread_runner.assert_called_once_with(mock_wf, exec_id, None, "default")
 
 
 # ===========================================================================
@@ -2077,9 +2081,11 @@ class TestEdgeCases:
 
         with patch("aragora.server.handlers.workflow_templates.WorkflowDefinition") as mock_wd:
             mock_wd.from_dict.return_value = MagicMock()
-            with patch("asyncio.run", return_value=mock_result):
-                h = _make_handler(method="POST", body={"template_id": "test"})
-                result = templates_handler.handle("/api/v1/workflow/templates", {}, h)
+            with patch("aragora.workflow.engine.WorkflowEngine") as mock_engine_cls:
+                mock_engine_cls.return_value.execute.return_value = object()
+                with patch("asyncio.run", return_value=mock_result):
+                    h = _make_handler(method="POST", body={"template_id": "test"})
+                    result = templates_handler.handle("/api/v1/workflow/templates", {}, h)
         # Should not crash - uses result directly instead of result.to_dict()
         assert _status(result) == 200
 

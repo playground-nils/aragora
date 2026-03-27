@@ -1139,6 +1139,10 @@ class TestAsyncWorkflowExecution:
                 assert saved["workflow_id"] == "wf_test"
                 assert saved["status"] == "running"
                 assert saved["inputs"] == {"task": "test"}
+                mock_loop.create_task.assert_called_once()
+                scheduled_coro = mock_loop.create_task.call_args.args[0]
+                assert asyncio.iscoroutine(scheduled_coro)
+                scheduled_coro.close()
 
     def test_start_workflow_execution_no_running_loop(self):
         """_start_workflow_execution handles no running event loop."""
@@ -1156,11 +1160,11 @@ class TestAsyncWorkflowExecution:
                 side_effect=RuntimeError("No running loop"),
             ):
                 with patch(
-                    "aragora.server.handlers.workflow_templates.asyncio.create_task"
-                ) as mock_create:
+                    "aragora.server.handlers.workflow_templates._run_workflow_execution_in_thread"
+                ) as mock_thread:
                     exec_id = _start_workflow_execution(mock_workflow)
                     assert exec_id.startswith("exec_")
-                    mock_create.assert_called_once()
+                    mock_thread.assert_called_once_with(mock_workflow, exec_id, None, "default")
 
     @pytest.mark.asyncio
     async def test_execute_workflow_async_success(self):
