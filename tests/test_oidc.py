@@ -455,6 +455,7 @@ class TestTokenExchange:
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock()
             mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.aclose = AsyncMock()  # http_client_pool awaits this
             mock_client_class.return_value = mock_client
 
             await provider._exchange_code("test-code", "test-verifier")
