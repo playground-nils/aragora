@@ -643,13 +643,13 @@ class TestConcurrencyLimits:
         """MAX_CONCURRENT_PROPOSALS is configurable via environment."""
         from aragora.config import MAX_CONCURRENT_PROPOSALS
 
-        assert MAX_CONCURRENT_PROPOSALS == 5  # Default value
+        assert MAX_CONCURRENT_PROPOSALS == 10  # Raised for 10+ agent support
 
     def test_max_concurrent_critiques_env_var(self):
         """MAX_CONCURRENT_CRITIQUES is configurable via environment."""
         from aragora.config import MAX_CONCURRENT_CRITIQUES
 
-        assert MAX_CONCURRENT_CRITIQUES == 15  # Default value
+        assert MAX_CONCURRENT_CRITIQUES == 20  # Raised for 10+ agent support
 
     def test_max_concurrent_revisions_env_var(self):
         """MAX_CONCURRENT_REVISIONS is configurable via environment."""
