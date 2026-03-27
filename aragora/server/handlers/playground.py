@@ -2356,6 +2356,43 @@ class PlaygroundHandler(BaseHandler):
             "upgrade_cta": _build_upgrade_cta(),
         }
 
+        # Persist the debate receipt to KnowledgeMound so it appears in the
+        # receipts page and contributes to organizational memory.
+        try:
+            receipt_hash = hashlib.sha256(
+                json.dumps(response, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            response["receipt_preview"]["receipt_hash"] = receipt_hash[:16]
+            response["receipt_preview"]["receipt_id"] = debate_id
+
+            from aragora.knowledge.mound import get_knowledge_mound
+
+            km = get_knowledge_mound()
+            if km is not None:
+                import asyncio
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _ingest() -> None:
+                    asyncio.run(
+                        km.store(
+                            {
+                                "type": "playground_receipt",
+                                "debate_id": debate_id,
+                                "topic": topic[:200],
+                                "consensus_reached": result.get("consensus_reached", False),
+                                "confidence": result.get("confidence", 0.0),
+                                "receipt_hash": receipt_hash[:16],
+                                "participants": result.get("participants", []),
+                            },
+                            tags=["decision_receipt", "playground"],
+                        )
+                    )
+
+                # Fire-and-forget in background thread to not slow the response
+                ThreadPoolExecutor(max_workers=1).submit(_ingest)
+        except (ImportError, RuntimeError, OSError) as exc:
+            logger.debug("Playground receipt persistence skipped: %s", exc)
+
         return json_response(response)
 
 

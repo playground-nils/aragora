@@ -358,7 +358,10 @@ class TestAuthorizationURL:
         await provider.get_authorization_url(state="test-state")
 
         assert "test-state" in provider._pkce_store
-        assert len(provider._pkce_store["test-state"]) >= 43
+        # _pkce_store stores (verifier, timestamp) tuples
+        stored = provider._pkce_store["test-state"]
+        verifier = stored[0] if isinstance(stored, tuple) else stored
+        assert len(verifier) >= 43
 
 
 # =============================================================================

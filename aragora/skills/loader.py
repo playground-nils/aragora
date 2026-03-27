@@ -220,7 +220,35 @@ class SkillLoader:
             except SkillLoadError as e:
                 logger.debug("Built-in skill module not available: %s: %s", module_path, e)
 
+        # Auto-seed the marketplace so the API/UI shows real content
+        if all_skills:
+            self._seed_marketplace(all_skills)
+
         return all_skills
+
+    def _seed_marketplace(self, skills: list[Skill]) -> None:
+        """Publish loaded builtin skills to the marketplace if not already present."""
+        try:
+            from aragora.skills.marketplace import SkillCategory, SkillMarketplace, SkillTier
+
+            marketplace = SkillMarketplace()
+            import asyncio
+
+            for skill in skills:
+                try:
+                    asyncio.run(
+                        marketplace.publish(
+                            skill,
+                            author_id="aragora",
+                            author_name="Aragora Built-in",
+                            category=SkillCategory.CUSTOM,
+                            tier=SkillTier.FREE,
+                        )
+                    )
+                except (ValueError, RuntimeError, OSError):
+                    pass  # Already published or DB issue
+        except (ImportError, RuntimeError) as exc:
+            logger.debug("Marketplace seeding skipped: %s", exc)
 
     def _extract_skills_from_module(self, module: Any) -> list[Skill]:
         """
