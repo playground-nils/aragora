@@ -20,6 +20,7 @@ from aragora.server.openapi.endpoints.documents import DOCUMENT_ENDPOINTS
 from aragora.server.openapi.endpoints.plugins import PLUGIN_ENDPOINTS
 from aragora.server.openapi.endpoints.additional import ADDITIONAL_ENDPOINTS
 from aragora.server.openapi.endpoints.oauth import OAUTH_ENDPOINTS
+from aragora.server.openapi.endpoints.privacy import PRIVACY_ENDPOINTS
 from aragora.server.openapi.endpoints.workspace import WORKSPACE_ENDPOINTS
 from aragora.server.openapi.endpoints.workflows import WORKFLOW_ENDPOINTS
 from aragora.server.openapi.endpoints.cross_pollination import CROSS_POLLINATION_ENDPOINTS
@@ -118,6 +119,7 @@ ALL_ENDPOINTS = {
     **PLUGIN_ENDPOINTS,
     **ADDITIONAL_ENDPOINTS,
     **OAUTH_ENDPOINTS,
+    **PRIVACY_ENDPOINTS,
     **WORKSPACE_ENDPOINTS,
     **WORKFLOW_ENDPOINTS,
     **CROSS_POLLINATION_ENDPOINTS,
@@ -198,6 +200,7 @@ __all__ = [
     "PLUGIN_ENDPOINTS",
     "ADDITIONAL_ENDPOINTS",
     "OAUTH_ENDPOINTS",
+    "PRIVACY_ENDPOINTS",
     "WORKSPACE_ENDPOINTS",
     "WORKFLOW_ENDPOINTS",
     "CROSS_POLLINATION_ENDPOINTS",
