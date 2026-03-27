@@ -1103,6 +1103,8 @@ def cmd_review(args: argparse.Namespace) -> int:
                 f"Gauntlet complete: verdict={gauntlet_verdict}, vulnerabilities={gauntlet_vulns}",
                 file=sys.stderr,
             )
+            # Re-persist with gauntlet enrichment so findings include vulnerabilities
+            _persist_review_to_km(result, findings, pr_url=getattr(args, "pr_url", None))
         except (OSError, ConnectionError, RuntimeError, ValueError) as e:
             print(f"Warning: Gauntlet stress-test failed: {e}", file=sys.stderr)
             logger.debug("Gauntlet error details", exc_info=True)

@@ -693,6 +693,11 @@ class DebateFactory:
         # Enable performance-aware agent selection (integrates ProviderRouter hints)
         builder = builder.with_agent_selection(use_performance_selection=True)
 
+        # Enable AirlockProxy for mid-debate provider fault tolerance.
+        # When a provider returns 429/500 mid-debate, AirlockProxy transparently
+        # routes to the OpenRouter fallback instead of crashing the debate.
+        builder = builder.with_airlock(enabled=True)
+
         # Pass feature flags from config if specified
         if any(
             v is not None
