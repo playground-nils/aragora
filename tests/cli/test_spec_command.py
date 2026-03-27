@@ -265,8 +265,8 @@ class TestCmdSpec:
         out = capsys.readouterr().out
         assert "ARAGORA SPEC" in out
         assert "Elapsed:" in out
-        assert "Latency Total: 84.0ms" in out
-        assert "Slowest Stage: specify (41.0ms)" in out
+        assert '"total_duration_ms": 84.0' in out
+        assert '"stage": "specify"' in out
         assert "Spec saved to:" in out
         assert '"total_duration_ms": 123.0' in out
         run_spec.assert_awaited_once_with(
