@@ -70,14 +70,24 @@ class GitHubIssueFeed:
         *,
         repo: str | None = None,
         label_filter: str | None = None,
+        issue_numbers: list[int] | None = None,
         limit: int = 25,
     ) -> None:
         self.repo = repo  # "owner/repo" or None for current repo
         self.label_filter = label_filter
+        self.issue_numbers = [int(item) for item in issue_numbers or [] if int(item) > 0]
         self.limit = max(1, min(limit, 100))
 
     def fetch(self) -> list[GitHubIssue]:
         """Fetch open issues from GitHub. Returns empty list on failure."""
+        if self.issue_numbers:
+            issues: list[GitHubIssue] = []
+            for number in self.issue_numbers:
+                issue = self._fetch_issue(number)
+                if issue is not None:
+                    issues.append(issue)
+            return issues
+
         cmd = [
             "gh",
             "issue",
@@ -141,6 +151,66 @@ class GitHubIssueFeed:
                 )
             )
         return issues
+
+    def _fetch_issue(self, number: int) -> GitHubIssue | None:
+        cmd = [
+            "gh",
+            "issue",
+            "view",
+            str(number),
+            "--json",
+            "number,title,body,labels,url,state,createdAt",
+        ]
+        if self.repo:
+            cmd.extend(["--repo", self.repo])
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("gh issue view failed: %s", exc)
+            return None
+
+        if proc.returncode != 0:
+            logger.warning("gh issue view returned %d: %s", proc.returncode, proc.stderr.strip())
+            return None
+
+        try:
+            item = json.loads(proc.stdout)
+        except (json.JSONDecodeError, ValueError):
+            logger.warning("gh issue view produced invalid JSON")
+            return None
+
+        if not isinstance(item, dict):
+            return None
+
+        state = str(item.get("state", "OPEN")).strip().lower()
+        if state != "open":
+            return None
+
+        labels_raw = item.get("labels") or []
+        labels = [
+            str(lbl.get("name", "") if isinstance(lbl, dict) else lbl).strip()
+            for lbl in labels_raw
+            if str(lbl.get("name", "") if isinstance(lbl, dict) else lbl).strip()
+        ]
+        if self.label_filter and self.label_filter not in labels:
+            return None
+
+        return GitHubIssue(
+            number=int(item.get("number", number)),
+            title=str(item.get("title", "")).strip(),
+            body=str(item.get("body", "")).strip(),
+            labels=labels,
+            url=str(item.get("url", "")).strip(),
+            state=state,
+            created_at=str(item.get("createdAt", "")).strip(),
+        )
 
 
 def select_eligible_issue(
@@ -293,20 +363,21 @@ def check_runner_freshness(
     freshness_ttl_seconds: float = 300.0,
     registry_path: str | None = None,
     env: dict[str, str] | None = None,
+    requested_runner_type: str | None = None,
 ) -> RunnerFreshnessResult:
     """Verify that at least one registered runner is fresh and eligible.
 
     Freshness means:
     1. The runner registry resolves to at least one eligible runner
-    2. A live re-inspection of the Codex CLI confirms it is still available
+    2. A live re-inspection of the selected CLI runner confirms it is still available
     3. The runner's registration is not older than ``freshness_ttl_seconds``
 
     This is a synchronous check suitable for calling at each Boss loop iteration.
     """
     from aragora.swarm.runner_registry import (
-        CodexRunnerInspector,
         LocalRunnerRegistry,
         authorization_context_from_env,
+        make_runner_inspector,
     )
 
     now = datetime.now(UTC)
@@ -322,7 +393,10 @@ def check_runner_freshness(
         )
 
     registry = LocalRunnerRegistry(path=registry_path) if registry_path else LocalRunnerRegistry()
-    routing = registry.resolve_boss_routing(owner_context=owner_context)
+    routing = registry.resolve_boss_routing(
+        owner_context=owner_context,
+        requested_runner_type=requested_runner_type,
+    )
 
     if routing.is_blocked:
         return RunnerFreshnessResult(
@@ -333,17 +407,26 @@ def check_runner_freshness(
             details={"routing": routing.to_dict()},
         )
 
-    # Live re-inspection: is the Codex CLI still responding?
-    inspector = CodexRunnerInspector(env=env)
-    live = inspector.inspect()
+    # Live re-inspection: is a selected CLI runner still responding?
+    live_runner_ids: list[str] = []
+    live_inspections: list[dict[str, Any]] = []
+    for selected in routing.selected_runners:
+        runner_type = str(selected.get("runner_type", "")).strip() or "codex"
+        live = make_runner_inspector(runner_type, env=env).inspect()
+        live_inspections.append(live.to_dict())
+        if live.available and live.auth_mode in {"chatgpt_login", "api_key", "subscription"}:
+            live_runner_ids.append(live.runner_id)
 
-    if not live.available:
+    if not live_runner_ids:
         return RunnerFreshnessResult(
             fresh=False,
             runner_ids=routing.selected_runner_ids,
             checked_at=checked_at,
             blocked_reason="runner_not_responding",
-            details={"live_inspection": live.to_dict()},
+            details={
+                "routing": routing.to_dict(),
+                "live_inspections": live_inspections,
+            },
         )
 
     # Check registration age against TTL
@@ -351,7 +434,7 @@ def check_runner_freshness(
     stale_ids: list[str] = []
     for reg in registrations:
         runner_id = str(reg.get("runner_id", "")).strip()
-        if runner_id not in routing.selected_runner_ids:
+        if runner_id not in routing.selected_runner_ids or runner_id not in live_runner_ids:
             continue
         updated_at = str(reg.get("updated_at") or reg.get("registered_at") or "").strip()
         if not updated_at:
@@ -386,8 +469,9 @@ def check_runner_freshness(
         runner_ids=fresh_ids,
         checked_at=checked_at,
         details={
-            "live_available": live.available,
-            "live_auth_mode": live.auth_mode,
+            "routing": routing.to_dict(),
+            "live_runner_ids": live_runner_ids,
+            "live_inspections": live_inspections,
         },
     )
 
@@ -499,6 +583,7 @@ class BossLoopConfig:
     repo: str | None = None
     label_filter: str | None = None
     issue_number: int | None = None
+    issue_numbers: list[int] | None = None
     issue_limit: int = 25
     skip_labels: set[str] = field(default_factory=lambda: {"wontfix", "duplicate", "invalid"})
     require_labels: set[str] | None = None
@@ -512,6 +597,8 @@ class BossLoopConfig:
     target_branch: str = "main"
     budget_limit_usd: float = 5.0
     dispatch_enabled: bool = True
+    default_target_agent: str | None = None
+    default_reviewer_agent: str | None = None
 
     # Autonomy: when True, treat needs_human with a deliverable as completed
     # instead of stopping the loop. Only stop when there's genuinely no output.
@@ -783,6 +870,7 @@ class BossLoop:
         self._feed = issue_feed or GitHubIssueFeed(
             repo=self.config.repo,
             label_filter=self.config.label_filter,
+            issue_numbers=self.config.issue_numbers,
             limit=self.config.issue_limit,
         )
         self._freshness_checker = freshness_checker or check_runner_freshness
@@ -865,6 +953,7 @@ class BossLoop:
                 pr_number=worker_result.get("pr_number"),
                 branch=worker_result.get("branch"),
                 duration_seconds=elapsed,
+                metadata=dict(worker_result.get("receipt_metadata") or {}),
             )
             emit_lane_receipt(receipt)
         except Exception as exc:
@@ -949,6 +1038,7 @@ class BossLoop:
             freshness_ttl_seconds=self.config.freshness_ttl_seconds,
             registry_path=self.config.registry_path,
             env=self._env,
+            requested_runner_type=self.config.default_target_agent,
         )
         freshness_dict = freshness.to_dict() if hasattr(freshness, "to_dict") else dict(freshness)
 
@@ -1282,12 +1372,78 @@ class BossLoop:
             budget_limit_usd=self.config.budget_limit_usd,
             max_ticks=360,
             wait_for_completion=self.config.max_iterations > 1,
+            default_target_agent=self.config.default_target_agent,
+            default_reviewer_agent=self.config.default_reviewer_agent,
+            # The supervisor already provisions the worktree, so the session
+            # script wrapper is redundant and crashes on bash 3.2 (macOS
+            # default) due to ${VAR,,} syntax.  Matches tranche_queue.py.
+            use_managed_session_script=False,
+        )
+        result["receipt_metadata"] = self._receipt_metadata_for_result(
+            result,
+            issue=issue,
+            freshness=freshness,
         )
         if result.get("status") == "failed":
             error = str(result.get("error", "")).strip()
             if error:
                 logger.warning("Boss dispatch failed for issue #%d: %s", issue.number, error)
         return result
+
+    def _receipt_metadata_for_result(
+        self,
+        result: dict[str, Any],
+        *,
+        issue: GitHubIssue,
+        freshness: RunnerFreshnessResult,
+    ) -> dict[str, Any]:
+        details = freshness.details if isinstance(freshness.details, dict) else {}
+        routing = details.get("routing") if isinstance(details, dict) else {}
+        selected_runner: dict[str, Any] = {}
+        if isinstance(routing, dict):
+            selected_runners = routing.get("selected_runners")
+            if isinstance(selected_runners, list) and selected_runners:
+                first = selected_runners[0]
+                if isinstance(first, dict):
+                    selected_runner = dict(first)
+
+        deliverable = (
+            result.get("deliverable") if isinstance(result.get("deliverable"), dict) else {}
+        )
+        actual_target_agent = None
+        actual_reviewer_agent = None
+        run = result.get("run")
+        if isinstance(run, dict):
+            work_orders = run.get("work_orders", [])
+            if isinstance(work_orders, list):
+                for work_order in work_orders:
+                    if not isinstance(work_order, dict):
+                        continue
+                    if (
+                        deliverable
+                        and deliverable.get("work_order_id")
+                        and work_order.get("work_order_id") != deliverable.get("work_order_id")
+                    ):
+                        continue
+                    actual_target_agent = str(work_order.get("target_agent", "")).strip() or None
+                    actual_reviewer_agent = (
+                        str(work_order.get("reviewer_agent", "")).strip() or None
+                    )
+                    break
+
+        return {
+            "issue_number": issue.number,
+            "requested_target_agent": self.config.default_target_agent,
+            "requested_reviewer_agent": self.config.default_reviewer_agent,
+            "actual_target_agent": actual_target_agent,
+            "actual_reviewer_agent": actual_reviewer_agent,
+            "runner_id": selected_runner.get("runner_id"),
+            "runner_type": selected_runner.get("runner_type"),
+            "cost_class": selected_runner.get("cost_class"),
+            "fallback_reason": routing.get("fallback_reason")
+            if isinstance(routing, dict)
+            else None,
+        }
 
     def _collect_needs_human_reasons(self) -> list[str]:
         """Collect all needs-human reasons across iterations."""
@@ -1308,7 +1464,7 @@ class BossLoop:
             ]
         if self._stop_reason == BossStopReason.NO_FRESH_RUNNER.value:
             return [
-                "Re-register or refresh the Codex runner.",
+                "Re-register or refresh an eligible runner.",
                 "Run `aragora swarm runner register` to update registration.",
             ]
         if self._stop_reason == BossStopReason.NO_SUITABLE_ISSUE.value:

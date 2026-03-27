@@ -166,7 +166,7 @@ PY
 fi
 
 if [[ -z "${ORCHESTRATOR}" ]]; then
-    cmd_lc="${SESSION_COMMAND,,}"
+    cmd_lc="$(printf '%s' "$SESSION_COMMAND" | tr '[:upper:]' '[:lower:]')"
     case "${cmd_lc}" in
         *gastown*|*bead*|*molecule*)
             ORCHESTRATOR="gastown"
