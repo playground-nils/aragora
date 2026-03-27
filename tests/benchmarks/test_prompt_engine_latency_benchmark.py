@@ -84,12 +84,12 @@ class _TimedPromptAgent:
         if "technical researcher" in prompt_lower:
             stage = "research"
             response = _RESEARCH_RESPONSE
-        elif "software architect" in prompt_lower or "specification" in prompt_lower:
-            stage = "specify"
-            response = _SPEC_RESPONSE
         elif "clarifying" in prompt_lower:
             stage = "interrogate"
             response = _INTERROGATE_RESPONSE
+        elif "software architect" in prompt_lower or "specification" in prompt_lower:
+            stage = "specify"
+            response = _SPEC_RESPONSE
         else:
             stage = "decompose"
             response = _DECOMPOSE_RESPONSE
