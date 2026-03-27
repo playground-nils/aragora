@@ -390,8 +390,8 @@ async def _decompose_tasks(spec: dict[str, Any], *, max_tasks: int = 5) -> list[
             {
                 "title": t.title if hasattr(t, "title") else str(t)[:80],
                 "description": t.description if hasattr(t, "description") else str(t),
-                "acceptance_criteria": getattr(t, "acceptance_criteria", []),
-                "verification": getattr(t, "verification_command", "pytest tests/ -q"),
+                "acceptance_criteria": _task_acceptance_criteria(t),
+                "verification": _task_verification_command(t),
             }
             for t in (raw_tasks if isinstance(raw_tasks, list) else [raw_tasks])
         ]
@@ -405,6 +405,60 @@ async def _decompose_tasks(spec: dict[str, Any], *, max_tasks: int = 5) -> list[
                 "verification": "python -m pytest tests/ -q -k 'not benchmark'",
             }
         ]
+
+
+def _task_acceptance_criteria(task: Any) -> list[str]:
+    acceptance = _string_list(getattr(task, "acceptance_criteria", []))
+    if acceptance:
+        return acceptance
+
+    success_criteria = getattr(task, "success_criteria", {}) or {}
+    if not isinstance(success_criteria, dict):
+        return []
+
+    acceptance = _string_list(success_criteria.get("acceptance_criteria"))
+    if acceptance:
+        return acceptance
+
+    derived: list[str] = []
+    for key, value in success_criteria.items():
+        if key == "tests":
+            continue
+        values = _string_list(value)
+        if values:
+            derived.extend(f"{key}: {item}" for item in values)
+            continue
+        text = str(value).strip()
+        if text:
+            derived.append(f"{key}: {text}")
+    return derived
+
+
+def _task_verification_command(task: Any) -> str:
+    verification = str(getattr(task, "verification_command", "") or "").strip()
+    if verification:
+        return verification
+
+    verification_commands = _string_list(getattr(task, "verification_commands", []))
+    if verification_commands:
+        return "\n".join(verification_commands)
+
+    success_criteria = getattr(task, "success_criteria", {}) or {}
+    if isinstance(success_criteria, dict):
+        tests = _string_list(success_criteria.get("tests"))
+        if tests:
+            return "\n".join(tests)
+
+    return "pytest tests/ -q"
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, (list, tuple, set)):
+        return [text for item in value if (text := str(item).strip())]
+    return []
 
 
 async def _create_issues(tasks: list[dict[str, Any]], *, repo: str) -> list[int]:
