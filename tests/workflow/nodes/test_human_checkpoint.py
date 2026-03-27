@@ -22,13 +22,26 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def clear_pending_approvals():
-    """Clear pending approvals before each test for isolation."""
-    from aragora.workflow.nodes.human_checkpoint import _pending_approvals
+def clear_pending_approvals(monkeypatch):
+    """Clear pending approvals and reset all module-level state for isolation.
 
-    _pending_approvals.clear()
+    Without resetting ``_governance_store`` and ``_approvals_recovered``, a
+    governance store initialised by an earlier test can leak recovered
+    approvals into later tests, causing order-dependent failures.  We also
+    patch ``_get_governance_store`` to always return ``None`` so that no real
+    database connection (asyncpg) is opened during unit tests — stale
+    connections cause ``InterfaceError`` under ``--timeout`` runs.
+    """
+    import aragora.workflow.nodes.human_checkpoint as _hc
+
+    _hc._pending_approvals.clear()
+    _hc._approvals_recovered = False
+    _hc._governance_store = None
+    monkeypatch.setattr(_hc, "_get_governance_store", lambda: None)
     yield
-    _pending_approvals.clear()
+    _hc._pending_approvals.clear()
+    _hc._approvals_recovered = False
+    _hc._governance_store = None
 
 
 # ============================================================================
