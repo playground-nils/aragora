@@ -545,7 +545,7 @@ async def test_run_debate_uses_fast_agent_subset_and_explicit_action_prompt(monk
 
     monkeypatch.setattr(
         "aragora.inbox.triage_runner._create_triage_agents",
-        lambda: [
+        lambda **kwargs: [
             SimpleNamespace(name="triage-proposer", role="proposer", model_type="anthropic-api"),
             SimpleNamespace(name="triage-critic", role="critic", model_type="openrouter"),
         ],
@@ -596,7 +596,7 @@ async def test_run_debate_disables_trending_and_post_debate_pipeline(monkeypatch
     monkeypatch.delenv("ARAGORA_DISABLE_TRENDING", raising=False)
     monkeypatch.setattr(
         "aragora.inbox.triage_runner._create_triage_agents",
-        lambda: [
+        lambda **kwargs: [
             SimpleNamespace(name="triage-proposer", role="proposer", model_type="openai-api"),
             SimpleNamespace(name="triage-critic", role="critic", model_type="openrouter"),
         ],
@@ -633,7 +633,7 @@ async def test_run_debate_returns_blocked_result_when_fewer_than_two_agents(monk
 
     monkeypatch.setattr(
         "aragora.inbox.triage_runner._create_triage_agents",
-        lambda: [
+        lambda **kwargs: [
             SimpleNamespace(name="triage-proposer", role="proposer", model_type="anthropic-api")
         ],
     )
@@ -765,7 +765,9 @@ async def test_stub_debate_result_is_blocked_instead_of_silent_ignore(monkeypatc
 
     monkeypatch.setattr(
         "aragora.inbox.triage_runner._create_triage_agents",
-        lambda: [SimpleNamespace(name="triage-proposer", role="proposer", model_type="openai-api")],
+        lambda **kwargs: [
+            SimpleNamespace(name="triage-proposer", role="proposer", model_type="openai-api")
+        ],
     )
     monkeypatch.setattr(core_mod, "Environment", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(proto_mod, "DebateProtocol", lambda **kwargs: SimpleNamespace(**kwargs))

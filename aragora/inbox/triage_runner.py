@@ -47,8 +47,12 @@ logger = logging.getLogger(__name__)
 _SUPPORTED_TRIAGE_PROFILES = {"baseline", "staged_v1"}
 _DEFAULT_TRIAGE_PROFILE = "staged_v1"
 _FAST_TIER_CONFIDENCE_THRESHOLD = 0.85
-_FAST_TIER_TIMEOUT_SECONDS = 12.0
+_FAST_TIER_TIMEOUT_SECONDS = 8.0
 _ESCALATED_TIER_ROUNDS = 1
+_TRIAGE_DEBATE_TIMEOUT_SECONDS = 15
+_TRIAGE_ROUND_TIMEOUT_SECONDS = 10
+_TRIAGE_DEBATE_ROUNDS_TIMEOUT_SECONDS = 12
+_TRIAGE_MAX_AGENTS = 2
 _HIGH_RISK_ACTIONS = {InboxWedgeAction.LABEL, InboxWedgeAction.STAR}
 _DEGRADED_DIAGNOSTIC_SEVERITIES = {
     DiagnosticSeverity.BLOCKING.value,
@@ -797,8 +801,8 @@ class InboxTriageRunner:
         baseline_result = await self._run_debate_once(
             msg,
             tier="baseline",
-            rounds=2,
-            max_agents=None,
+            rounds=1,
+            max_agents=_TRIAGE_MAX_AGENTS,
         )
         return _attach_triage_execution_metadata(
             baseline_result,
@@ -908,13 +912,22 @@ class InboxTriageRunner:
                 env = Environment(task=question)
                 protocol = DebateProtocol(
                     rounds=rounds,
-                    consensus="judge",
+                    consensus="majority",
                     enable_research=False,
                     convergence_detection=False,
                     vote_grouping=False,
                     enable_trickster=False,
                     role_rotation=False,
                     role_matching=False,
+                    enable_calibration=False,
+                    enable_rhetorical_observer=False,
+                    enable_evolution=False,
+                    verify_claims_during_consensus=False,
+                    enable_evidence_weighting=False,
+                    enable_breakpoints=False,
+                    timeout_seconds=_TRIAGE_DEBATE_TIMEOUT_SECONDS,
+                    round_timeout_seconds=_TRIAGE_ROUND_TIMEOUT_SECONDS,
+                    debate_rounds_timeout_seconds=_TRIAGE_DEBATE_ROUNDS_TIMEOUT_SECONDS,
                 )
 
                 record_triage_diagnostic(
@@ -927,10 +940,8 @@ class InboxTriageRunner:
                     tier=tier,
                 )
 
-                if max_agents is None:
-                    agents = _create_triage_agents()
-                else:
-                    agents = _create_triage_agents(max_agents=max_agents)
+                effective_max = max_agents if max_agents is not None else _TRIAGE_MAX_AGENTS
+                agents = _create_triage_agents(max_agents=effective_max)
 
                 if len(agents) < 2:
                     logger.warning(
