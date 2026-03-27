@@ -60,20 +60,11 @@ class PrivacyAPI:
         email: str,
         role: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Invite a user.
-
-        Args:
-            email: User email address.
-            role: Optional role to assign.
-
-        Returns:
-            Invitation result.
-        """
-        data: dict[str, Any] = {"email": email}
-        if role:
-            data["role"] = role
-        return self._client.request("POST", "/api/v1/users/invite", json=data)
+        """Deprecated stale alias; use ``client.auth.invite_team_member`` instead."""
+        raise NotImplementedError(
+            "PrivacyAPI.invite_user is not backed by a live privacy endpoint. "
+            "Use client.auth.invite_team_member(email=..., organization_id=..., role=...)."
+        )
 
     def list_platform_users(self, limit: int = 50, offset: int = 0) -> dict[str, Any]:
         """
@@ -94,20 +85,11 @@ class PrivacyAPI:
         email: str,
         role: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Invite a platform user.
-
-        Args:
-            email: User email address.
-            role: Optional role to assign.
-
-        Returns:
-            Invitation result.
-        """
-        data: dict[str, Any] = {"email": email}
-        if role:
-            data["role"] = role
-        return self._client.request("POST", "/api/v1/users/invite", json=data)
+        """Deprecated stale alias; use ``client.auth.invite_team_member`` instead."""
+        raise NotImplementedError(
+            "PrivacyAPI.invite_platform_user is not backed by a live privacy endpoint. "
+            "Use client.auth.invite_team_member(email=..., organization_id=..., role=...)."
+        )
 
     # ===========================================================================
     # Data Export (GDPR Article 15 / CCPA Right to Know)
@@ -259,11 +241,11 @@ class AsyncPrivacyAPI:
         return await self._client.request("GET", "/api/v1/users", params=params)
 
     async def invite_user(self, email: str, role: str | None = None) -> dict[str, Any]:
-        """Invite a user."""
-        data: dict[str, Any] = {"email": email}
-        if role:
-            data["role"] = role
-        return await self._client.request("POST", "/api/v1/users/invite", json=data)
+        """Deprecated stale alias; use ``client.auth.invite_team_member`` instead."""
+        raise NotImplementedError(
+            "AsyncPrivacyAPI.invite_user is not backed by a live privacy endpoint. "
+            "Use client.auth.invite_team_member(email=..., organization_id=..., role=...)."
+        )
 
     async def list_platform_users(self, limit: int = 50, offset: int = 0) -> dict[str, Any]:
         """List platform users."""
@@ -271,11 +253,11 @@ class AsyncPrivacyAPI:
         return await self._client.request("GET", "/api/v1/users", params=params)
 
     async def invite_platform_user(self, email: str, role: str | None = None) -> dict[str, Any]:
-        """Invite a platform user."""
-        data: dict[str, Any] = {"email": email}
-        if role:
-            data["role"] = role
-        return await self._client.request("POST", "/api/v1/users/invite", json=data)
+        """Deprecated stale alias; use ``client.auth.invite_team_member`` instead."""
+        raise NotImplementedError(
+            "AsyncPrivacyAPI.invite_platform_user is not backed by a live privacy endpoint. "
+            "Use client.auth.invite_team_member(email=..., organization_id=..., role=...)."
+        )
 
     # ===========================================================================
     # Data Export

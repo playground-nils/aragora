@@ -225,7 +225,7 @@ class TestCanHandle:
         assert handler.can_handle("/api/v1/users") is True
 
     def test_handles_users_invite_v1(self, handler):
-        assert handler.can_handle("/api/v1/users/invite") is True
+        assert handler.can_handle("/api/v1/users/invite") is False
 
     def test_handles_export_v2(self, handler):
         assert handler.can_handle("/api/v2/users/me/export") is True
