@@ -341,8 +341,8 @@ class TestSharePost:
         body = _body(result)
         assert body["debate_id"] == "my-debate"
         assert body["public_spectate"] is True
-        assert "my-debate" in body["share_url"]
-        assert "spectate/public" in body["share_url"]
+        assert body["share_url"] == "/debate/my-debate"
+        assert body["full_url"] == "https://example.com/debate/my-debate"
 
     def test_share_sets_public_state(self):
         h = DebateShareHandler()
@@ -354,8 +354,7 @@ class TestSharePost:
         handler = _make_http_handler(host="debates.example.org")
         result = h.handle_post("/api/v1/debates/test-1/share", {}, handler)
         body = _body(result)
-        assert "debates.example.org" in body["full_url"]
-        assert body["full_url"].startswith("https://")
+        assert body["full_url"] == "https://debates.example.org/debate/test-1"
 
     def test_full_url_uses_default_host_when_header_missing(self):
         h = DebateShareHandler()
@@ -859,11 +858,10 @@ class TestPublicSpectateSSEGenerator:
         debate_id = "sse-cleanup"
         set_public_spectate(debate_id, True)
 
-        async def collect():
-            async for frame in public_spectate_sse_generator(debate_id):
-                break  # Disconnect immediately after first frame
-
-        await asyncio.wait_for(collect(), timeout=2.0)
+        generator = public_spectate_sse_generator(debate_id)
+        frame = await asyncio.wait_for(generator.__anext__(), timeout=2.0)
+        assert "connected" in frame
+        await generator.aclose()
 
         # After disconnect, the queue should be removed
         collectors = get_public_collectors()
@@ -877,14 +875,10 @@ class TestPublicSpectateSSEGenerator:
         set_public_spectate(debate_id, True)
         assert debate_id not in get_public_collectors()
 
-        frames = []
-
-        async def collect():
-            async for frame in public_spectate_sse_generator(debate_id):
-                frames.append(frame)
-                break  # Disconnect after connected event
-
-        await asyncio.wait_for(collect(), timeout=2.0)
+        generator = public_spectate_sse_generator(debate_id)
+        frame = await asyncio.wait_for(generator.__anext__(), timeout=2.0)
+        assert "connected" in frame
+        await generator.aclose()
         # Queue was registered then cleaned up
         # But the entry may remain as empty set - that's fine
 
@@ -893,11 +887,10 @@ class TestPublicSpectateSSEGenerator:
         debate_id = "sse-qsize"
         set_public_spectate(debate_id, True)
 
-        async def collect():
-            async for frame in public_spectate_sse_generator(debate_id, max_queue_size=10):
-                break
-
-        await asyncio.wait_for(collect(), timeout=2.0)
+        generator = public_spectate_sse_generator(debate_id, max_queue_size=10)
+        frame = await asyncio.wait_for(generator.__anext__(), timeout=2.0)
+        assert "connected" in frame
+        await generator.aclose()
         # Just verifying it doesn't crash with custom queue size
 
 
