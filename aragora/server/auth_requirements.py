@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import re
 
 
 class AuthLevel(Enum):
@@ -151,7 +152,7 @@ PUBLIC_ENDPOINTS = [
         "/api/v2/receipts/share/{token}",
         "get",
         AuthLevel.PUBLIC,
-        description="Public receipt share link access",
+        description="Access a shared receipt via public token",
     ),
 ]
 
@@ -337,6 +338,13 @@ PERMISSION_ENDPOINTS = [
         permission="apikeys:delete",
         description="Revoke API key",
     ),
+    EndpointAuth(
+        "/api/v2/receipts/{receipt_id}/share",
+        "post",
+        AuthLevel.PERMISSION,
+        permission="receipts:share",
+        description="Create a shared receipt link",
+    ),
 ]
 
 # =============================================================================
@@ -443,14 +451,33 @@ def get_all_requirements() -> list[EndpointAuth]:
 
 def get_requirements_by_path(path: str) -> list[EndpointAuth]:
     """Get all requirements for a specific path (all methods)."""
-    return [req for req in get_all_requirements() if req.path == path]
+    return [req for req in get_all_requirements() if _path_matches(req.path, path)]
+
+
+def _normalize_path(path: str) -> str:
+    """Normalize paths before manifest matching."""
+    if not path:
+        return "/"
+    normalized = path.rstrip("/")
+    return normalized or "/"
+
+
+def _path_matches(template: str, path: str) -> bool:
+    """Match concrete API paths against manifest templates with path params."""
+    normalized_template = _normalize_path(template)
+    normalized_path = _normalize_path(path)
+    if normalized_template == normalized_path:
+        return True
+
+    pattern = re.sub(r"\{[^/]+\}", r"[^/]+", normalized_template)
+    return re.fullmatch(pattern, normalized_path) is not None
 
 
 def get_requirement(path: str, method: str) -> EndpointAuth | None:
     """Get the requirement for a specific path and method."""
     method = method.lower()
     for req in get_all_requirements():
-        if req.path == path and req.method.lower() == method:
+        if req.method.lower() == method and _path_matches(req.path, path):
             return req
     return None
 

@@ -314,6 +314,21 @@ class TestAuthConsistency:
         assert requires_auth("/api/admin/users", "get")
         assert requires_auth("/api/v2/receipts/{receipt_id}/share", "post")
 
+    def test_receipt_share_paths_use_template_matching(self) -> None:
+        """Concrete receipt-share paths should resolve against manifest templates."""
+        from aragora.server.auth_requirements import AuthLevel, get_requirement, requires_auth
+
+        post_req = get_requirement("/api/v2/receipts/rcpt_test123/share", "post")
+        assert post_req is not None
+        assert post_req.level == AuthLevel.PERMISSION
+        assert post_req.permission == "receipts:share"
+        assert requires_auth("/api/v2/receipts/rcpt_test123/share", "post")
+
+        get_req = get_requirement("/api/v2/receipts/share/share-token", "get")
+        assert get_req is not None
+        assert get_req.level == AuthLevel.PUBLIC
+        assert not requires_auth("/api/v2/receipts/share/share-token", "get")
+
     def test_get_required_permission_helper(self) -> None:
         """The get_required_permission helper should work correctly."""
         from aragora.server.auth_requirements import get_required_permission
@@ -370,3 +385,30 @@ class TestAuthDocumentation:
             # Soft check - warning only
             if not is_marked:
                 pass  # Consider adding Admin tag or description
+
+    def test_receipt_share_paths_documented(self, openapi_spec: dict) -> None:
+        """Receipt share endpoints should expose the live auth and response contract."""
+        paths = openapi_spec["paths"]
+
+        assert "/api/v2/receipts/{receipt_id}/share" in paths
+        post_op = paths["/api/v2/receipts/{receipt_id}/share"]["post"]
+        assert post_op.get("security")
+        post_props = post_op["responses"]["200"]["content"]["application/json"]["schema"][
+            "properties"
+        ]
+        assert {
+            "success",
+            "receipt_id",
+            "share_url",
+            "token",
+            "expires_at",
+            "max_accesses",
+        } <= set(post_props)
+
+        assert "/api/v2/receipts/share/{token}" in paths
+        get_op = paths["/api/v2/receipts/share/{token}"]["get"]
+        assert not get_op.get("security")
+        get_props = get_op["responses"]["200"]["content"]["application/json"]["schema"][
+            "properties"
+        ]
+        assert {"receipt", "shared", "access_count"} <= set(get_props)

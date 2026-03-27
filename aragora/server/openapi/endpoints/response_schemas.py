@@ -727,11 +727,14 @@ _RECEIPT_ENDPOINTS = {
                         "receipt_id": {"type": "string"},
                         "share_url": {"type": "string"},
                         "token": {"type": "string"},
-                        "expires_at": {"type": "string"},
-                        "max_accesses": {"type": "integer", "nullable": True},
+                        "expires_at": {"type": "string", "format": "date-time"},
+                        "max_accesses": {
+                            "anyOf": [{"type": "integer"}, {"type": "null"}],
+                        },
                     },
                 ),
                 "401": STANDARD_ERRORS["401"],
+                "403": STANDARD_ERRORS["403"],
                 "404": STANDARD_ERRORS["404"],
                 "500": STANDARD_ERRORS["500"],
             },
@@ -742,7 +745,7 @@ _RECEIPT_ENDPOINTS = {
             "tags": ["Receipts", "Sharing"],
             "summary": "Get shared receipt",
             "operationId": "getSharedReceipt",
-            "description": "Access a receipt via public share token.",
+            "description": "Access a shared receipt via public token.",
             "parameters": [
                 {
                     "name": "token",
@@ -754,7 +757,7 @@ _RECEIPT_ENDPOINTS = {
                     "name": "format",
                     "in": "query",
                     "required": False,
-                    "schema": {"type": "string"},
+                    "schema": {"type": "string", "enum": ["html", "json"]},
                 },
             ],
             "responses": {
@@ -769,11 +772,8 @@ _RECEIPT_ENDPOINTS = {
                 "404": STANDARD_ERRORS["404"],
                 "410": {
                     "description": "Share link expired or access limit reached",
-                    "headers": STANDARD_RESPONSE_HEADERS,
-                    "content": {
-                        "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
-                    },
                 },
+                "500": STANDARD_ERRORS["500"],
             },
         }
     },
