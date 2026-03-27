@@ -32,7 +32,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
-ASYNC_RUN_TIMEOUT_SECONDS = float(os.getenv("ARAGORA_POST_DEBATE_ASYNC_TIMEOUT", "30.0"))
+# Per-step timeout for async callables run from the sync coordinator.
+# Reduced from 30s to 10s: the coordinator now runs in a background thread
+# (fire-and-forget) so individual steps should fail fast rather than stall.
+ASYNC_RUN_TIMEOUT_SECONDS = float(os.getenv("ARAGORA_POST_DEBATE_ASYNC_TIMEOUT", "10.0"))
 
 
 @dataclass
