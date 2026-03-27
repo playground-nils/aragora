@@ -47,7 +47,7 @@ class TestWithCallbackTimeout:
 
     @pytest.mark.asyncio
     async def test_default_timeout_value(self):
-        assert DEFAULT_CALLBACK_TIMEOUT == 30.0
+        assert DEFAULT_CALLBACK_TIMEOUT == 10.0
 
 
 # ---------------------------------------------------------------------------

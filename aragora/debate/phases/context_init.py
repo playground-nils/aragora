@@ -293,22 +293,30 @@ class ContextInitializer:
         # 7. Inject trending topic context (provided or auto-fetched)
         self._inject_trending_topic(ctx)
 
-        # 8-9d. Gather independent async context enrichment tasks concurrently
+        # 8-9d. Gather independent async context enrichment tasks concurrently.
         # Each task is wrapped in _safe_async to isolate failures.
+        # Perf: skip KM-dependent tasks when no knowledge_mound is configured
+        # to avoid unnecessary coroutine overhead and timeout waits.
+        _has_km = self.knowledge_mound is not None
         _concurrent_tasks: list[Any] = [
             self._safe_async(self._fetch_historical(ctx), "historical"),
-            self._safe_async(self._inject_knowledge_context(ctx), "knowledge_mound"),
-            self._safe_async(self._inject_receipt_conclusions(ctx), "receipt_conclusions"),
             self._safe_async(self._inject_supermemory_context(ctx), "supermemory"),
-            self._safe_async(self._inject_debate_knowledge(ctx), "debate_knowledge"),
-            self._safe_async(self._inject_cross_adapter_synthesis(ctx), "km_synthesis"),
             self._safe_async(self._inject_insight_patterns(ctx), "insight_patterns"),
         ]
+        if _has_km:
+            _concurrent_tasks.extend(
+                [
+                    self._safe_async(self._inject_knowledge_context(ctx), "knowledge_mound"),
+                    self._safe_async(self._inject_receipt_conclusions(ctx), "receipt_conclusions"),
+                    self._safe_async(self._inject_debate_knowledge(ctx), "debate_knowledge"),
+                    self._safe_async(self._inject_cross_adapter_synthesis(ctx), "km_synthesis"),
+                ]
+            )
         if self.enable_cross_debate_memory:
             _concurrent_tasks.append(
                 self._safe_async(self._inject_cross_debate_context(ctx), "cross_debate"),
             )
-        if self.enable_outcome_context:
+        if self.enable_outcome_context and _has_km:
             _concurrent_tasks.append(
                 self._safe_async(self._inject_outcome_context(ctx), "outcome_context"),
             )
@@ -381,9 +389,10 @@ class ContextInitializer:
             )
             provider = CodebaseContextProvider(config=config)
 
+            # Reduced from 30s to 10s for interactive latency.
             context = await asyncio.wait_for(
                 provider.build_context(ctx.env.task),
-                timeout=30.0,
+                timeout=10.0,
             )
 
             if context and hasattr(ctx, "_prompt_builder") and ctx._prompt_builder:
@@ -502,8 +511,9 @@ class ContextInitializer:
             return
 
         try:
+            # Reduced from 10s to 5s for interactive latency.
             ctx.historical_context_cache = await asyncio.wait_for(
-                self._fetch_historical_context(ctx.env.task, limit=2), timeout=10.0
+                self._fetch_historical_context(ctx.env.task, limit=2), timeout=5.0
             )
         except asyncio.TimeoutError:
             logger.warning("Historical context fetch timed out")
@@ -552,9 +562,11 @@ class ContextInitializer:
                 return
 
             # Fetch fresh knowledge context
+            # Reduced from 10s to 5s for interactive latency (issue #268 follow-up).
+            # If KM is slow, we skip rather than block the debate start.
             knowledge_context = await asyncio.wait_for(
                 self._fetch_knowledge_context(ctx.env.task, limit=10),
-                timeout=10.0,  # 10 second timeout
+                timeout=5.0,
             )
 
             # Cache the result (even if empty, to avoid re-fetching)
@@ -683,9 +695,10 @@ class ContextInitializer:
             topic = ctx.env.task if ctx.env else ""
             domain = getattr(ctx, "domain", "general") or "general"
 
+            # Reduced from 8s to 5s for interactive latency.
             synthesis = await asyncio.wait_for(
                 hub.synthesize_for_debate(topic, domain=domain, max_items=8),
-                timeout=8.0,
+                timeout=5.0,
             )
 
             if synthesis:
@@ -758,13 +771,14 @@ class ContextInitializer:
 
             filters = QueryFilters(tags=["decision_receipt"])
 
+            # Reduced from 8s to 5s for interactive latency.
             results = await asyncio.wait_for(
                 self.knowledge_mound.query(
                     query=task,
                     filters=filters,
                     limit=5,
                 ),
-                timeout=8.0,
+                timeout=5.0,
             )
 
             items = results.items if hasattr(results, "items") else []
@@ -1371,9 +1385,10 @@ class ContextInitializer:
             if not topic:
                 return
 
+            # Reduced from 8s to 5s for interactive latency.
             similar_outcomes = await asyncio.wait_for(
                 adapter.find_similar_outcomes(query=topic, limit=5),
-                timeout=8.0,
+                timeout=5.0,
             )
 
             if not similar_outcomes:
@@ -1487,9 +1502,11 @@ class ContextInitializer:
 
         try:
             logger.info("evidence_collection_start phase=evidence")
+            # Reduced from 15s to 8s -- evidence collection runs as a background
+            # task and the debate proceeds without it if slow.
             evidence_pack = await asyncio.wait_for(
                 self.evidence_collector.collect_evidence(ctx.env.task),
-                timeout=15.0,  # 15 second timeout for evidence collection
+                timeout=8.0,
             )
 
             if evidence_pack and evidence_pack.snippets:
@@ -1642,10 +1659,11 @@ class ContextInitializer:
         logger.info("awaiting_background_context tasks=%s", task_names)
 
         try:
-            # Wait up to 30s for background tasks to complete
+            # Wait for background tasks to complete before round 2.
+            # Reduced from 30s to 10s to avoid stalling the debate.
             await asyncio.wait_for(
                 asyncio.gather(*tasks, return_exceptions=True),
-                timeout=30.0,
+                timeout=10.0,
             )
             logger.info("background_context_complete")
         except asyncio.TimeoutError:

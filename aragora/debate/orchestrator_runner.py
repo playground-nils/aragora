@@ -1176,67 +1176,91 @@ async def handle_debate_completion(
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
             logger.debug("Context taint metadata propagation skipped: %s", e)
     if not getattr(arena, "disable_post_debate_pipeline", False) and ctx.result:
-        try:
-            from aragora.debate.post_debate_coordinator import PostDebateCoordinator
+        # Perf optimization: run the post-debate coordinator pipeline as a
+        # fire-and-forget background task.  The pipeline performs non-critical
+        # enrichment (explanation, canvas, LLM-as-Judge, improvement queueing)
+        # that should not block the debate response.  Receipt persistence is
+        # already handled above via _km_ingest_background and the KM ingestion
+        # task.  Only when `ARAGORA_SYNC_POST_DEBATE=1` is set (e.g. for tests
+        # or CI) do we run it synchronously on the critical path.
+        _sync_post_debate = os.environ.get("ARAGORA_SYNC_POST_DEBATE", "0") == "1"
 
-            settlement_tracker = None
-            if getattr(effective_config, "auto_settlement_tracking", False):
-                try:
-                    settlement_tracker = getattr(arena, "settlement_tracker", None)
-                    if settlement_tracker is None:
-                        from aragora.debate.settlement import SettlementTracker
-                        from aragora.debate.settlement_hooks import (
-                            EventBusSettlementHook,
-                            LoggingSettlementHook,
-                            SettlementHookRegistry,
-                        )
+        def _run_post_debate_pipeline() -> None:
+            try:
+                from aragora.debate.post_debate_coordinator import PostDebateCoordinator
 
-                        hook_registry = SettlementHookRegistry()
-                        hook_registry.register(LoggingSettlementHook())
-                        event_bus = getattr(arena, "event_bus", None)
-                        if event_bus is not None:
-                            hook_registry.register(EventBusSettlementHook(event_bus))
+                settlement_tracker = None
+                if getattr(effective_config, "auto_settlement_tracking", False):
+                    try:
+                        settlement_tracker = getattr(arena, "settlement_tracker", None)
+                        if settlement_tracker is None:
+                            from aragora.debate.settlement import SettlementTracker
+                            from aragora.debate.settlement_hooks import (
+                                EventBusSettlementHook,
+                                LoggingSettlementHook,
+                                SettlementHookRegistry,
+                            )
 
-                        settlement_tracker = SettlementTracker(
-                            elo_system=getattr(arena, "elo_system", None),
-                            calibration_tracker=getattr(arena, "calibration_tracker", None),
-                            knowledge_mound=getattr(arena, "knowledge_mound", None),
-                            hooks=hook_registry,
-                        )
-                        setattr(arena, "settlement_tracker", settlement_tracker)
-                except ImportError:
-                    logger.debug("Settlement tracker wiring unavailable")
-                except (RuntimeError, ValueError, TypeError, AttributeError, OSError) as st_err:
-                    logger.debug("Settlement tracker wiring unavailable: %s", st_err)
-                    settlement_tracker = None
+                            hook_registry = SettlementHookRegistry()
+                            hook_registry.register(LoggingSettlementHook())
+                            event_bus = getattr(arena, "event_bus", None)
+                            if event_bus is not None:
+                                hook_registry.register(EventBusSettlementHook(event_bus))
 
-            coordinator = PostDebateCoordinator(
-                config=effective_config,
-                settlement_tracker=settlement_tracker,
-                knowledge_mound=getattr(arena, "knowledge_mound", None),
-            )
-            task = getattr(ctx.env, "task", "") if ctx.env else ""
-            confidence = getattr(ctx.result, "confidence", 0.0)
-            post_result = coordinator.run(
-                debate_id=state.debate_id,
-                debate_result=ctx.result,
-                agents=arena.agents,
-                confidence=confidence,
-                task=task,
-            )
-            if not post_result.success:
-                logger.warning(
-                    "post_debate_coordinator_errors debate_id=%s errors=%s",
-                    state.debate_id,
-                    post_result.errors,
+                            settlement_tracker = SettlementTracker(
+                                elo_system=getattr(arena, "elo_system", None),
+                                calibration_tracker=getattr(arena, "calibration_tracker", None),
+                                knowledge_mound=getattr(arena, "knowledge_mound", None),
+                                hooks=hook_registry,
+                            )
+                            setattr(arena, "settlement_tracker", settlement_tracker)
+                    except ImportError:
+                        logger.debug("Settlement tracker wiring unavailable")
+                    except (RuntimeError, ValueError, TypeError, AttributeError, OSError) as st_err:
+                        logger.debug("Settlement tracker wiring unavailable: %s", st_err)
+                        settlement_tracker = None
+
+                coordinator = PostDebateCoordinator(
+                    config=effective_config,
+                    settlement_tracker=settlement_tracker,
+                    knowledge_mound=getattr(arena, "knowledge_mound", None),
                 )
-            else:
-                logger.info(
-                    "post_debate_coordinator_complete debate_id=%s",
-                    state.debate_id,
+                task = getattr(ctx.env, "task", "") if ctx.env else ""
+                confidence = getattr(ctx.result, "confidence", 0.0)
+                post_result = coordinator.run(
+                    debate_id=state.debate_id,
+                    debate_result=ctx.result,
+                    agents=arena.agents,
+                    confidence=confidence,
+                    task=task,
                 )
-        except (ImportError, RuntimeError, ValueError, TypeError, AttributeError, OSError) as e:
-            logger.debug("Post-debate coordinator pipeline failed (non-critical): %s", e)
+                if not post_result.success:
+                    logger.warning(
+                        "post_debate_coordinator_errors debate_id=%s errors=%s",
+                        state.debate_id,
+                        post_result.errors,
+                    )
+                else:
+                    logger.info(
+                        "post_debate_coordinator_complete debate_id=%s",
+                        state.debate_id,
+                    )
+            except (ImportError, RuntimeError, ValueError, TypeError, AttributeError, OSError) as e:
+                logger.debug("Post-debate coordinator pipeline failed (non-critical): %s", e)
+
+        if _sync_post_debate:
+            _run_post_debate_pipeline()
+        else:
+            # Fire-and-forget: run in thread pool so it doesn't block the response
+            loop = asyncio.get_running_loop()
+            _post_debate_future = loop.run_in_executor(None, _run_post_debate_pipeline)
+            _post_debate_future.add_done_callback(
+                lambda f: logger.warning(
+                    "[post-debate] Background pipeline error: %s", f.exception()
+                )
+                if not f.cancelled() and f.exception()
+                else None
+            )
 
     # Attach active introspection summary to result
     introspection_tracker = getattr(arena, "active_introspection_tracker", None)

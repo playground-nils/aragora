@@ -18,8 +18,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Timeout for async callbacks (evidence refresh can be slow)
-DEFAULT_CALLBACK_TIMEOUT = 30.0
+# Timeout for async callbacks (evidence refresh can be slow).
+# Reduced from 30s to 10s for interactive latency -- if evidence refresh
+# takes longer than 10s, the debate continues without the extra evidence.
+DEFAULT_CALLBACK_TIMEOUT = 10.0
 
 
 async def _with_callback_timeout(
