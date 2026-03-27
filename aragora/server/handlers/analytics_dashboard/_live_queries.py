@@ -7,15 +7,32 @@ Replaces hardcoded stub responses with real queries against:
 
 Each function returns data in the exact JSON shape the frontend expects,
 or None if the query fails or returns empty data.
+
+Uses a thread-pool executor to run async analytics calls from the
+synchronous handler context, avoiding the asyncio.run-in-running-loop bug.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_THREAD_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="analytics-query")
+
+
+def _run_async(coro: Any) -> Any:
+    """Run an async coroutine from sync context, even inside a running event loop."""
+
+    def _runner() -> Any:
+        return asyncio.run(coro)
+
+    future = _THREAD_POOL.submit(_runner)
+    return future.result(timeout=10.0)
 
 
 def _query_debate_analytics() -> dict[str, Any] | None:
@@ -28,29 +45,19 @@ def _query_debate_analytics() -> dict[str, Any] | None:
 
         analytics = get_debate_analytics()
 
-        import asyncio
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Already in async context, can't use run_until_complete
-                return None
-        except RuntimeError:
-            pass
-
-        stats = asyncio.run(analytics.get_debate_stats(days_back=30))
+        stats = _run_async(analytics.get_debate_stats(days_back=30))
         if stats.total_debates == 0:
             return None
 
-        leaderboard = asyncio.run(analytics.get_agent_leaderboard(limit=10, days_back=30))
-        cost_breakdown = asyncio.run(analytics.get_cost_breakdown(days_back=30))
+        leaderboard = _run_async(analytics.get_agent_leaderboard(limit=10, days_back=30))
+        cost_breakdown = _run_async(analytics.get_cost_breakdown(days_back=30))
         try:
             from aragora.analytics.debate_analytics import DebateMetricType
 
             debate_metric: Any = DebateMetricType.DEBATE_COUNT
         except ImportError:
             debate_metric = "debate_count"
-        debate_trends = asyncio.run(
+        debate_trends = _run_async(
             analytics.get_usage_trends(
                 metric=debate_metric,
                 days_back=7,
@@ -80,9 +87,7 @@ def query_summary() -> dict[str, Any] | None:
 
         analytics = get_debate_analytics()
 
-        import asyncio
-
-        stats = asyncio.run(analytics.get_debate_stats(days_back=30))
+        stats = _run_async(analytics.get_debate_stats(days_back=30))
         if stats.total_debates == 0:
             return None
 
@@ -254,10 +259,9 @@ def query_agents() -> dict[str, Any] | None:
     """
     try:
         from aragora.analytics.debate_analytics import get_debate_analytics
-        import asyncio
 
         analytics = get_debate_analytics()
-        leaderboard = asyncio.run(analytics.get_agent_leaderboard(limit=5, days_back=30))
+        leaderboard = _run_async(analytics.get_agent_leaderboard(limit=5, days_back=30))
 
         if not leaderboard:
             return None
@@ -304,11 +308,10 @@ def query_cost() -> dict[str, Any] | None:
     """
     try:
         from aragora.analytics.debate_analytics import get_debate_analytics
-        import asyncio
         import sqlite3
 
         analytics = get_debate_analytics()
-        breakdown = asyncio.run(analytics.get_cost_breakdown(days_back=30))
+        breakdown = _run_async(analytics.get_cost_breakdown(days_back=30))
 
         if float(breakdown.total_cost) == 0:
             return None
@@ -857,10 +860,9 @@ def query_deliberations() -> dict[str, Any] | None:
     """
     try:
         from aragora.analytics.debate_analytics import get_debate_analytics
-        import asyncio
 
         analytics = get_debate_analytics()
-        stats = asyncio.run(analytics.get_debate_stats(days_back=30))
+        stats = _run_async(analytics.get_debate_stats(days_back=30))
 
         if stats.total_debates == 0:
             return None
@@ -984,10 +986,9 @@ def query_deliberations_performance() -> dict[str, Any] | None:
     """
     try:
         from aragora.analytics.debate_analytics import get_debate_analytics
-        import asyncio
 
         analytics = get_debate_analytics()
-        stats = asyncio.run(analytics.get_debate_stats(days_back=30))
+        stats = _run_async(analytics.get_debate_stats(days_back=30))
 
         if stats.total_debates == 0:
             return None

@@ -17,7 +17,7 @@ class TestForkDebate:
 
     def test_fork_debate_missing_body(self):
         """Should return error when request body is missing."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value=None)
@@ -31,7 +31,7 @@ class TestForkDebate:
 
     def test_fork_debate_not_found(self):
         """Should return 404 when debate doesn't exist."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
         from aragora.server.validation import FORK_REQUEST_SCHEMA
 
         mixin = ForkOperationsMixin()
@@ -49,7 +49,7 @@ class TestForkDebate:
 
     def test_fork_debate_invalid_branch_point(self):
         """Should return error when branch point exceeds message count."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value={"branch_point": 100})
@@ -72,7 +72,7 @@ class TestForkDebate:
 
     def test_fork_debate_success(self):
         """Should successfully create a fork."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         with tempfile.TemporaryDirectory() as tmpdir:
             mixin = ForkOperationsMixin()
@@ -115,7 +115,7 @@ class TestVerifyOutcome:
 
     def test_verify_outcome_missing_body(self):
         """Should return error when request body is missing."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value=None)
@@ -126,7 +126,7 @@ class TestVerifyOutcome:
 
     def test_verify_outcome_with_position_tracker(self):
         """Should verify outcome using position tracker."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(
@@ -148,7 +148,7 @@ class TestVerifyOutcome:
 
     def test_verify_outcome_no_tracker_configured(self):
         """Should return error when position tracking not configured."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value={"correct": True})
@@ -165,7 +165,7 @@ class TestFollowupSuggestions:
 
     def test_get_followup_suggestions_debate_not_found(self):
         """Should return 404 when debate doesn't exist."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.get_storage = MagicMock(
@@ -178,7 +178,7 @@ class TestFollowupSuggestions:
 
     def test_get_followup_suggestions_no_cruxes(self):
         """Should return empty suggestions when no cruxes identified."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.get_storage = MagicMock(
@@ -214,7 +214,7 @@ class TestCreateFollowupDebate:
 
     def test_create_followup_missing_body(self):
         """Should return error when request body is missing."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value=None)
@@ -226,7 +226,7 @@ class TestCreateFollowupDebate:
 
     def test_create_followup_missing_crux_and_task(self):
         """Should return error when neither crux_id nor task provided."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value={})
@@ -240,7 +240,7 @@ class TestCreateFollowupDebate:
 
     def test_create_followup_parent_not_found(self):
         """Should return 404 when parent debate doesn't exist."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value={"task": "Explore X"})
@@ -254,7 +254,7 @@ class TestCreateFollowupDebate:
 
     def test_create_followup_with_custom_task(self):
         """Should create follow-up with custom task."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         with tempfile.TemporaryDirectory() as tmpdir:
             mixin = ForkOperationsMixin()
@@ -282,7 +282,7 @@ class TestCreateFollowupDebate:
 
     def test_create_followup_crux_not_found(self):
         """Should return 404 when specified crux doesn't exist."""
-        from aragora.server.handlers.debates_fork import ForkOperationsMixin
+        from aragora.server.handlers.debates.fork import ForkOperationsMixin
 
         mixin = ForkOperationsMixin()
         mixin.read_json_body = MagicMock(return_value={"crux_id": "nonexistent"})
