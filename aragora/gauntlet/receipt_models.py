@@ -820,6 +820,21 @@ class DecisionReceipt:
         config_used = getattr(result, "config_used", None)
         if not isinstance(config_used, dict):
             config_used = {}
+
+        # Extract structured critique summaries for the audit trail.
+        _critiques = list(getattr(result, "critiques", []) or [])
+        if _critiques:
+            config_used["critique_summaries"] = [
+                {
+                    "critic": getattr(c, "agent", None),
+                    "target": getattr(c, "target_agent", None),
+                    "issues": (getattr(c, "issues", None) or [])[:5],
+                    "severity": getattr(c, "severity", 0.0),
+                }
+                for c in _critiques
+                if getattr(c, "issues", None)
+            ]
+
         result_config = getattr(result, "config", None)
         if not config_used and result_config is not None and hasattr(result_config, "to_dict"):
             try:

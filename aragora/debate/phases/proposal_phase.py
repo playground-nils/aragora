@@ -444,15 +444,43 @@ class ProposalPhase:
             # Emit argument strength based on response length heuristic
             if self._notify_spectator:
                 try:
-                    # Simple heuristic: longer, more detailed proposals score higher
-                    content_len = len(result_or_error)
-                    strength = min(1.0, max(0.3, content_len / 3000))
+                    content = result_or_error
+                    content_len = len(content)
+
+                    # Detail: length-based (existing heuristic)
+                    detail = min(1.0, max(0.3, content_len / 3000))
+
+                    # Completeness: structural markers (headings, bullets, code)
+                    markers = sum(
+                        [
+                            content.count("\n#") * 2,  # Headings
+                            content.count("\n- ") * 1,  # Bullet points
+                            content.count("\n1.") * 1,  # Numbered lists
+                            content.count("```") * 3,  # Code blocks
+                            content.count("**") * 0.5,  # Bold emphasis
+                        ]
+                    )
+                    completeness = min(1.0, max(0.2, markers / 20))
+
+                    # Specificity: numbers, percentages, technical terms
+                    import re
+
+                    specifics = len(re.findall(r"\d+%|\$\d+|\d+\.\d+|e\.g\.|i\.e\.", content))
+                    specificity = min(1.0, max(0.2, specifics / 8))
+
+                    # Composite score from independent signals
+                    strength = round(detail * 0.4 + completeness * 0.35 + specificity * 0.25, 3)
+
                     self._notify_spectator(
                         "argument_strength",
                         agent=agent.name,
-                        argument_summary=result_or_error[:200],
+                        argument_summary=content[:200],
                         strength_score=strength,
-                        factors={"detail": strength, "completeness": strength},
+                        factors={
+                            "detail": round(detail, 3),
+                            "completeness": round(completeness, 3),
+                            "specificity": round(specificity, 3),
+                        },
                         round_num=0,
                     )
                 except (RuntimeError, AttributeError, TypeError):  # noqa: BLE001

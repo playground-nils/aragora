@@ -514,6 +514,58 @@ def cmd_receipt_inspect(args: argparse.Namespace) -> None:
     if data.get("input_hash"):
         print(f"Input Hash:    {data['input_hash'][:40]}...")
 
+    # Verdict reasoning
+    reasoning = data.get("verdict_reasoning", "")
+    if reasoning:
+        print("\n--- Verdict Reasoning ---")
+        print(f"  {reasoning[:500]}")
+
+    # Agent responses
+    agent_responses = data.get("agent_responses", [])
+    if agent_responses:
+        print(f"\n--- Agent Responses ({len(agent_responses)}) ---")
+        for resp in agent_responses[:10]:
+            name = resp.get("agent_name", "unknown")
+            role = resp.get("role", "")
+            model = resp.get("llm_label", "")
+            content = resp.get("content", "")
+            length = len(content)
+            label = f"{name}"
+            if model:
+                label += f" ({model})"
+            if role:
+                label += f" [{role}]"
+            print(f"  {label}: {length} chars")
+
+    # Cost summary
+    cost = data.get("cost_summary")
+    if cost and isinstance(cost, dict):
+        total = cost.get("total_cost", cost.get("total", 0))
+        if total:
+            print("\n--- Cost ---")
+            print(f"  Total: ${float(total):.4f}")
+
+    # Critique summaries (from config_used)
+    config = data.get("config_used", {})
+    critiques = config.get("critique_summaries", [])
+    if critiques:
+        print(f"\n--- Critique Summaries ({len(critiques)}) ---")
+        for c in critiques[:5]:
+            critic = c.get("critic", "unknown")
+            target = c.get("target", "")
+            severity = c.get("severity", 0.0)
+            issues = c.get("issues", [])
+            print(f"  {critic} → {target} (severity: {severity:.1f})")
+            for issue in issues[:3]:
+                print(f"    - {str(issue)[:100]}")
+
+    # Dissenting views
+    dissent = data.get("dissenting_views", [])
+    if dissent:
+        print(f"\n--- Dissenting Views ({len(dissent)}) ---")
+        for view in dissent[:3]:
+            print(f"  - {str(view)[:200]}")
+
     print("\n" + "=" * 60)
 
 
