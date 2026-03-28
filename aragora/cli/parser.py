@@ -3004,6 +3004,11 @@ def _add_idea_parser(subparsers) -> None:
         action="store_true",
         help="Persist generated handoffs as boss-ready GitHub issues",
     )
+    triage_parser.add_argument(
+        "--dispatch",
+        action="store_true",
+        help="After issue creation, preflight runner routing and scoped-dispatch the created issues",
+    )
     triage_parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     review_parser = sub.add_parser(
@@ -3072,6 +3077,11 @@ def _add_idea_parser(subparsers) -> None:
         "--create-issues",
         action="store_true",
         help="Persist founder-review follow-up tasks as boss-ready GitHub issues",
+    )
+    review_parser.add_argument(
+        "--dispatch",
+        action="store_true",
+        help="After issue creation, preflight runner routing and scoped-dispatch the created issues",
     )
     review_parser.add_argument("--json", action="store_true", help="Output as JSON")
 

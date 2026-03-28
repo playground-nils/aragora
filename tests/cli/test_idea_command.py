@@ -36,6 +36,7 @@ def _idea_args(**overrides) -> argparse.Namespace:
         "review_model": "codex",
         "create_issue": False,
         "create_issues": False,
+        "dispatch": False,
         "json": False,
     }
     defaults.update(overrides)
@@ -76,6 +77,7 @@ def test_idea_triage_parser_registers_options() -> None:
             "--max-tasks",
             "3",
             "--create-issues",
+            "--dispatch",
             "--json",
         ]
     )
@@ -84,6 +86,7 @@ def test_idea_triage_parser_registers_options() -> None:
     assert args.idea_command == "triage"
     assert args.max_tasks == 3
     assert args.create_issues is True
+    assert args.dispatch is True
 
 
 def test_idea_review_parser_registers_options() -> None:
@@ -96,6 +99,7 @@ def test_idea_review_parser_registers_options() -> None:
             "--max-tasks",
             "2",
             "--create-issues",
+            "--dispatch",
             "--json",
         ]
     )
@@ -104,6 +108,7 @@ def test_idea_review_parser_registers_options() -> None:
     assert args.idea_command == "review"
     assert args.max_tasks == 2
     assert args.create_issues is True
+    assert args.dispatch is True
 
 
 def test_cmd_idea_json_emits_only_json_for_intake(capsys) -> None:
@@ -217,6 +222,7 @@ def test_run_idea_triage_stops_when_clarification_is_incomplete() -> None:
                 worker_model="claude",
                 review_model="codex",
                 create_issues=False,
+                dispatch=False,
             )
         )
 
@@ -277,6 +283,7 @@ def test_run_idea_triage_returns_handoffs() -> None:
                 worker_model="claude",
                 review_model="codex",
                 create_issues=False,
+                dispatch=False,
             )
         )
 
@@ -356,6 +363,7 @@ def test_run_idea_triage_creates_initiative_and_linked_issues() -> None:
                 worker_model="claude",
                 review_model="codex",
                 create_issues=True,
+                dispatch=False,
             )
         )
 
@@ -369,6 +377,103 @@ def test_run_idea_triage_creates_initiative_and_linked_issues() -> None:
             "number": 700,
             "url": "https://github.com/synaptent/aragora/issues/700",
         },
+    )
+
+
+def test_run_idea_triage_dispatches_created_issues() -> None:
+    with (
+        patch(
+            "aragora.cli.commands.idea._generate_spec",
+            AsyncMock(
+                return_value={
+                    "title": "Founder intake",
+                    "user_goal": "Turn vague founder notes into executable work.",
+                    "desired_outcome": "A structured intake brief exists before coding starts.",
+                    "success_criteria": ["The system asks clarifying questions before execution."],
+                    "clarification_status": "decision_complete",
+                    "open_questions": [],
+                    "raw": "server/intake.py",
+                }
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._generate_founder_handoffs",
+            AsyncMock(
+                return_value=[
+                    {
+                        "task_title": "Implement intake endpoint",
+                        "risk": "medium",
+                        "merge_class": "manual",
+                        "autonomy_mode": "checkpoint",
+                        "preferred_worker_agent": "claude",
+                        "preferred_reviewer_agent": "codex",
+                        "file_scope": ["server/intake.py"],
+                        "acceptance_criteria": ["Done"],
+                        "validation": ["pytest tests/a.py -q"],
+                        "repo_evidence": ["server/intake.py"],
+                        "policy_reasons": [],
+                        "description": "Implement intake endpoint",
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._create_intake_issue",
+            AsyncMock(
+                return_value={
+                    "number": 710,
+                    "url": "https://github.com/synaptent/aragora/issues/710",
+                }
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._create_triage_issues",
+            AsyncMock(
+                return_value=[
+                    {
+                        "number": 711,
+                        "url": "https://github.com/synaptent/aragora/issues/711",
+                        "title": "Implement intake endpoint",
+                        "initiative_issue_number": 710,
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._preflight_boss_routing",
+            return_value={"blocked": False, "selected_runner_ids": ["claude-runner-1"]},
+        ),
+        patch(
+            "aragora.cli.commands.idea._dispatch_to_boss_loop",
+            AsyncMock(return_value={"pid": 4242, "log": ".aragora/builds/triage.log"}),
+        ) as dispatch,
+    ):
+        result = asyncio.run(
+            _run_idea_triage(
+                idea="Turn founder notes into initiatives",
+                skip_clarify=True,
+                priority="high",
+                track="2",
+                repo="synaptent/aragora",
+                max_tasks=3,
+                risk="medium",
+                merge_class="manual",
+                autonomy_mode="checkpoint",
+                worker_model="claude",
+                review_model="codex",
+                create_issues=False,
+                dispatch=True,
+            )
+        )
+
+    assert result["queue_status"] == "dispatched"
+    assert result["dispatch"]["pid"] == 4242
+    dispatch.assert_awaited_once_with(
+        [711],
+        repo="synaptent/aragora",
+        worker_model="claude",
+        review_model="codex",
+        autonomy_mode="checkpoint",
     )
 
 
@@ -436,6 +541,7 @@ def test_run_idea_review_returns_structured_findings_and_followups() -> None:
                 worker_model="claude",
                 review_model="codex",
                 create_issues=False,
+                dispatch=False,
             )
         )
 
@@ -547,6 +653,7 @@ def test_run_idea_review_creates_initiative_and_linked_followup_issues() -> None
                 worker_model="claude",
                 review_model="codex",
                 create_issues=True,
+                dispatch=False,
             )
         )
 
@@ -560,6 +667,112 @@ def test_run_idea_review_creates_initiative_and_linked_followup_issues() -> None
             "number": 800,
             "url": "https://github.com/synaptent/aragora/issues/800",
         },
+    )
+
+
+def test_run_idea_review_dispatches_followup_issues() -> None:
+    followup = {
+        "handoff_id": "review_followup_intake-boundary",
+        "task_title": "Implement intake endpoint: Add non-goal boundary",
+        "description": "Bound backend scope",
+        "acceptance_criteria": ["Boundary is explicit"],
+        "validation": ["pytest tests/api/test_intake.py -q"],
+        "file_scope": ["server/intake.py"],
+        "risk": "medium",
+        "merge_class": "manual",
+        "autonomy_mode": "checkpoint",
+        "policy_reasons": ["founder_review_followup"],
+        "preferred_worker_agent": "claude",
+        "preferred_reviewer_agent": "codex",
+        "labels": ["boss-ready", "review-followup"],
+    }
+    with (
+        patch(
+            "aragora.cli.commands.idea._generate_spec",
+            AsyncMock(
+                return_value={
+                    "title": "Founder intake",
+                    "user_goal": "Turn vague founder notes into executable work.",
+                    "desired_outcome": "A structured intake brief exists before coding starts.",
+                    "success_criteria": ["The system asks clarifying questions before execution."],
+                    "clarification_status": "decision_complete",
+                    "open_questions": [],
+                    "raw": "server/intake.py frontend",
+                }
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._generate_founder_handoffs",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "aragora.cli.commands.idea._review_founder_handoffs",
+            AsyncMock(
+                return_value={
+                    "status": "approved_with_followups",
+                    "summary": "One follow-up remains.",
+                    "findings": [],
+                    "followups": [followup],
+                }
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._create_intake_issue",
+            AsyncMock(
+                return_value={
+                    "number": 810,
+                    "url": "https://github.com/synaptent/aragora/issues/810",
+                }
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._create_triage_issues",
+            AsyncMock(
+                return_value=[
+                    {
+                        "number": 811,
+                        "url": "https://github.com/synaptent/aragora/issues/811",
+                        "title": "Implement intake endpoint: Add non-goal boundary",
+                        "initiative_issue_number": 810,
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "aragora.cli.commands.idea._preflight_boss_routing",
+            return_value={"blocked": False, "selected_runner_ids": ["claude-runner-1"]},
+        ),
+        patch(
+            "aragora.cli.commands.idea._dispatch_to_boss_loop",
+            AsyncMock(return_value={"pid": 5150, "log": ".aragora/builds/review.log"}),
+        ) as dispatch,
+    ):
+        result = asyncio.run(
+            _run_idea_review(
+                idea="Turn founder notes into initiatives",
+                skip_clarify=True,
+                priority="high",
+                track="2",
+                repo="synaptent/aragora",
+                max_tasks=3,
+                risk="medium",
+                merge_class="manual",
+                autonomy_mode="checkpoint",
+                worker_model="claude",
+                review_model="codex",
+                create_issues=False,
+                dispatch=True,
+            )
+        )
+
+    assert result["queue_status"] == "dispatched"
+    assert result["dispatch"]["pid"] == 5150
+    dispatch.assert_awaited_once_with(
+        [811],
+        repo="synaptent/aragora",
+        worker_model="claude",
+        review_model="codex",
+        autonomy_mode="checkpoint",
     )
 
 
@@ -643,6 +856,7 @@ def test_run_idea_review_merges_model_review_findings() -> None:
                 worker_model="claude",
                 review_model="codex",
                 create_issues=False,
+                dispatch=False,
             )
         )
 

@@ -15,8 +15,10 @@ from typing import Any
 from aragora.cli.commands.build import (
     _close_shared_agent_connector,
     _default_repo,
+    _dispatch_to_boss_loop,
     _generate_spec,
     _infer_surfaces,
+    _preflight_boss_routing,
 )
 from aragora.nomic.pipeline_bridge import NomicPipelineBridge
 from aragora.nomic.task_decomposer import TaskDecomposer
@@ -77,6 +79,7 @@ def cmd_idea(args: argparse.Namespace) -> None:
                 worker_model=_text(getattr(args, "worker_model", "claude")) or "claude",
                 review_model=_text(getattr(args, "review_model", "codex")) or "codex",
                 create_issues=bool(getattr(args, "create_issues", False)),
+                dispatch=bool(getattr(args, "dispatch", False)),
             )
         )
     else:
@@ -94,6 +97,7 @@ def cmd_idea(args: argparse.Namespace) -> None:
                 worker_model=_text(getattr(args, "worker_model", "claude")) or "claude",
                 review_model=_text(getattr(args, "review_model", "codex")) or "codex",
                 create_issues=bool(getattr(args, "create_issues", False)),
+                dispatch=bool(getattr(args, "dispatch", False)),
             )
         )
 
@@ -196,6 +200,7 @@ async def _run_idea_triage(
     worker_model: str,
     review_model: str,
     create_issues: bool,
+    dispatch: bool,
 ) -> dict[str, Any]:
     """Convert a clarified initiative into founder handoffs."""
     repo_name = repo or _default_repo()
@@ -233,7 +238,7 @@ async def _run_idea_triage(
         "brief": brief,
         "handoffs": handoffs,
     }
-    if create_issues:
+    if create_issues or dispatch:
         initiative_issue = await _create_intake_issue(brief, repo=repo_name)
         result["initiative_issue"] = initiative_issue
         result["issues"] = await _create_triage_issues(
@@ -241,6 +246,14 @@ async def _run_idea_triage(
             brief=brief,
             repo=repo_name,
             initiative_issue=initiative_issue,
+        )
+    if dispatch:
+        await _attach_dispatch_result(
+            result,
+            repo=repo_name,
+            worker_model=worker_model,
+            review_model=review_model,
+            autonomy_mode=autonomy_mode,
         )
     return result
 
@@ -259,6 +272,7 @@ async def _run_idea_review(
     worker_model: str,
     review_model: str,
     create_issues: bool,
+    dispatch: bool,
 ) -> dict[str, Any]:
     """Review founder handoffs and generate structured follow-up tasks."""
     repo_name = repo or _default_repo()
@@ -304,7 +318,7 @@ async def _run_idea_review(
         "review": review,
     }
     followups = list(review.get("followups", []) or [])
-    if create_issues and followups:
+    if (create_issues or dispatch) and followups:
         initiative_issue = await _create_intake_issue(brief, repo=repo_name)
         result["initiative_issue"] = initiative_issue
         result["issues"] = await _create_triage_issues(
@@ -312,6 +326,14 @@ async def _run_idea_review(
             brief=brief,
             repo=repo_name,
             initiative_issue=initiative_issue,
+        )
+    if dispatch:
+        await _attach_dispatch_result(
+            result,
+            repo=repo_name,
+            worker_model=worker_model,
+            review_model=review_model,
+            autonomy_mode=autonomy_mode,
         )
     return result
 
@@ -1187,6 +1209,47 @@ def _slug(value: str) -> str:
     return text.strip("-") or "item"
 
 
+def _issue_numbers_from_records(issues: list[Any]) -> list[int]:
+    numbers: list[int] = []
+    for item in issues:
+        if isinstance(item, int):
+            numbers.append(int(item))
+            continue
+        if isinstance(item, dict) and str(item.get("number", "")).strip():
+            numbers.append(int(item["number"]))
+    return numbers
+
+
+async def _attach_dispatch_result(
+    result: dict[str, Any],
+    *,
+    repo: str,
+    worker_model: str,
+    review_model: str,
+    autonomy_mode: str,
+) -> None:
+    issue_numbers = _issue_numbers_from_records(list(result.get("issues", []) or []))
+    if not issue_numbers:
+        result["queue_status"] = "no_queueable_issues"
+        return
+
+    routing = _preflight_boss_routing(repo=repo, worker_model=worker_model)
+    result["routing"] = routing
+    if routing.get("blocked"):
+        result["queue_status"] = "blocked_no_runner"
+        return
+
+    dispatch_result = await _dispatch_to_boss_loop(
+        issue_numbers,
+        repo=repo,
+        worker_model=worker_model,
+        review_model=review_model,
+        autonomy_mode=autonomy_mode,
+    )
+    result["dispatch"] = dispatch_result
+    result["queue_status"] = "dispatched"
+
+
 async def _create_intake_issue(brief: dict[str, Any], *, repo: str) -> dict[str, Any]:
     """Persist an initiative brief as a GitHub issue."""
     return await _create_issue_with_optional_labels(
@@ -1503,6 +1566,12 @@ def _print_triage_result(result: dict[str, Any]) -> None:
         print("Created issues:")
         for issue in issues:
             print(f"- #{issue.get('number', '?')} {issue.get('title', 'untitled')}")
+    if result.get("queue_status"):
+        print(f"Queue status: {result.get('queue_status')}")
+    if isinstance(result.get("dispatch"), dict):
+        dispatch = result["dispatch"]
+        print(f"Boss loop PID: {dispatch.get('pid', '?')}")
+        print(f"Boss log: {dispatch.get('log', '?')}")
 
 
 def _print_review_result(result: dict[str, Any]) -> None:
@@ -1538,3 +1607,9 @@ def _print_review_result(result: dict[str, Any]) -> None:
         print("Created issues:")
         for issue in issues:
             print(f"- #{issue.get('number', '?')} {issue.get('title', 'untitled')}")
+    if result.get("queue_status"):
+        print(f"Queue status: {result.get('queue_status')}")
+    if isinstance(result.get("dispatch"), dict):
+        dispatch = result["dispatch"]
+        print(f"Boss loop PID: {dispatch.get('pid', '?')}")
+        print(f"Boss log: {dispatch.get('log', '?')}")
