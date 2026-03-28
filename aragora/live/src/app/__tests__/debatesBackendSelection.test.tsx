@@ -1,4 +1,5 @@
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import DebatesPage from '../(app)/debates/page';
 import DebateDetailClient from '../(app)/debates/[id]/DebateDetailClient';
@@ -235,6 +236,47 @@ describe('runtime backend selection for debate archive surfaces', () => {
         debateId: 'debate-123',
         wsUrl: 'wss://api.aragora.ai/ws',
       }),
+    );
+  });
+
+  it('launches the debate comparison route from two archived selections', async () => {
+    const user = userEvent.setup();
+
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        debates: [
+          {
+            id: 'debate-123',
+            question: 'Should we ship the first configuration?',
+            agents: ['claude'],
+            consensus_reached: true,
+            confidence: 0.94,
+            created_at: '2026-03-26T00:00:00Z',
+          },
+          {
+            id: 'debate-456',
+            question: 'Should we ship the second configuration?',
+            agents: ['codex'],
+            consensus_reached: false,
+            confidence: 0.61,
+            created_at: '2026-03-26T01:00:00Z',
+          },
+        ],
+        has_more: false,
+      }),
+    );
+
+    render(<DebatesPage />);
+
+    await screen.findByText(/should we ship the first configuration/i);
+
+    const compareButtons = screen.getAllByRole('button', { name: /compare [ab]/i });
+    await user.click(compareButtons[0]);
+    await user.click(screen.getByRole('button', { name: /compare b/i }));
+    await user.click(screen.getByRole('button', { name: /compare selected/i }));
+
+    expect(mockPush).toHaveBeenCalledWith(
+      '/debates/compare?left=debate-123&right=debate-456',
     );
   });
 });

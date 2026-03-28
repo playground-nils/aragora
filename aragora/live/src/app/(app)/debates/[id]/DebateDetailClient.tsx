@@ -192,18 +192,24 @@ export default function DebateDetailClient() {
         </div>
       ),
       actionsContent: (
-        <div className="space-y-2">
-          <button
-            onClick={handleShare}
-            className="block w-full px-3 py-2 text-xs font-mono text-center bg-[var(--acid-green)]/10 text-[var(--acid-green)] border border-[var(--acid-green)]/30 hover:bg-[var(--acid-green)]/20 transition-colors"
-          >
-            SHARE LINK
-          </button>
-          <Link
-            href={`/self-improve?from=debate&id=${id}`}
-            className="block w-full px-3 py-2 text-xs font-mono text-center bg-[var(--acid-cyan)]/10 text-[var(--acid-cyan)] border border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/20 transition-colors"
-          >
-            IMPROVE FROM THIS
+            <div className="space-y-2">
+              <button
+                onClick={handleShare}
+                className="block w-full px-3 py-2 text-xs font-mono text-center bg-[var(--acid-green)]/10 text-[var(--acid-green)] border border-[var(--acid-green)]/30 hover:bg-[var(--acid-green)]/20 transition-colors"
+              >
+                SHARE LINK
+              </button>
+              <Link
+                href={`/debates/compare?left=${id}`}
+                className="block w-full px-3 py-2 text-xs font-mono text-center bg-[var(--acid-cyan)]/10 text-[var(--acid-cyan)] border border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/20 transition-colors"
+              >
+                COMPARE RUN
+              </Link>
+              <Link
+                href={`/self-improve?from=debate&id=${id}`}
+                className="block w-full px-3 py-2 text-xs font-mono text-center bg-[var(--acid-cyan)]/10 text-[var(--acid-cyan)] border border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/20 transition-colors"
+              >
+                IMPROVE FROM THIS
           </Link>
           <Link
             href="/debates"
@@ -443,12 +449,20 @@ export default function DebateDetailClient() {
                   </span>
                 </div>
               </div>
-              <button
-                onClick={handleShare}
-                className="px-3 py-2 text-xs font-mono bg-[var(--acid-green)]/10 text-[var(--acid-green)] border border-[var(--acid-green)]/30 hover:bg-[var(--acid-green)]/20 transition-colors flex-shrink-0"
-              >
-                {copied ? 'COPIED!' : 'SHARE'}
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Link
+                  href={`/debates/compare?left=${id}`}
+                  className="px-3 py-2 text-xs font-mono bg-[var(--acid-cyan)]/10 text-[var(--acid-cyan)] border border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/20 transition-colors"
+                >
+                  COMPARE
+                </Link>
+                <button
+                  onClick={handleShare}
+                  className="px-3 py-2 text-xs font-mono bg-[var(--acid-green)]/10 text-[var(--acid-green)] border border-[var(--acid-green)]/30 hover:bg-[var(--acid-green)]/20 transition-colors"
+                >
+                  {copied ? 'COPIED!' : 'SHARE'}
+                </button>
+              </div>
             </div>
 
             {/* Final answer */}
@@ -906,6 +920,12 @@ export default function DebateDetailClient() {
               className="px-4 py-2 text-xs font-mono font-bold bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)] hover:border-[var(--acid-green)]/30 hover:text-[var(--text)] transition-colors"
             >
               VIEW ALL DEBATES
+            </Link>
+            <Link
+              href={`/debates/compare?left=${id}`}
+              className="px-4 py-2 text-xs font-mono font-bold bg-[var(--acid-cyan)]/10 text-[var(--acid-cyan)] border border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/20 transition-colors"
+            >
+              COMPARE SIDE BY SIDE
             </Link>
             <Link
               href="/receipts"

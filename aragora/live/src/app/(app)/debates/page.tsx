@@ -81,6 +81,7 @@ export default function DebatesPage() {
   const [filter, setFilter] = useState<'all' | 'consensus' | 'no-consensus'>('all');
   const [dataSource, setDataSource] = useState<'backend' | 'supabase' | 'none'>('none');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
 
   const { setContext, clearContext } = useRightSidebar();
 
@@ -262,6 +263,28 @@ export default function DebatesPage() {
     }
   };
 
+  const toggleCompareSelection = (debateId: string) => {
+    setSelectedForCompare((current) => {
+      if (current.includes(debateId)) {
+        return current.filter((id) => id !== debateId);
+      }
+      if (current.length === 2) {
+        return [current[1], debateId];
+      }
+      return [...current, debateId];
+    });
+  };
+
+  const launchComparison = () => {
+    if (selectedForCompare.length < 2) return;
+
+    const params = new URLSearchParams({
+      left: selectedForCompare[0],
+      right: selectedForCompare[1],
+    });
+    router.push(`/debates/compare?${params.toString()}`);
+  };
+
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
   };
@@ -289,7 +312,7 @@ export default function DebatesPage() {
                   {'>'} DEBATE ARCHIVE
                 </h1>
                 <p className="text-xs text-[var(--text-muted)] font-mono">
-                  Browse and share past debates with permalinks
+                  Browse, share, and compare past debates side by side
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -344,6 +367,48 @@ export default function DebatesPage() {
 
             {/* Debates by Date */}
             <div className="space-y-6">
+              {selectedForCompare.length > 0 && (
+                <div className="border border-[var(--acid-cyan)]/30 bg-[var(--acid-cyan)]/5 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-mono text-[var(--acid-cyan)] mb-2">
+                        {'>'} SIDE-BY-SIDE COMPARE QUEUE
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                        {selectedForCompare.map((debateId, index) => (
+                          <span
+                            key={debateId}
+                            className="border border-[var(--acid-cyan)]/30 bg-[var(--bg)] px-2 py-1 text-[var(--text)]"
+                          >
+                            {index === 0 ? 'A' : 'B'} {debateId.slice(0, 12)}
+                          </span>
+                        ))}
+                        {selectedForCompare.length === 1 && (
+                          <span className="text-[var(--text-muted)]">
+                            Select one more debate to unlock the comparison view.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={launchComparison}
+                        disabled={selectedForCompare.length < 2}
+                        className="px-3 py-2 text-xs font-mono bg-[var(--acid-cyan)]/10 text-[var(--acid-cyan)] border border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        COMPARE SELECTED
+                      </button>
+                      <button
+                        onClick={() => setSelectedForCompare([])}
+                        className="px-3 py-2 text-xs font-mono bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)] hover:border-[var(--acid-cyan)]/40 transition-colors"
+                      >
+                        CLEAR
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {Object.entries(groupedDebates).map(([date, dateDebates]) => (
                 <div key={date}>
                   <div className="text-xs font-mono text-text-muted mb-2 flex items-center gap-2">
@@ -356,7 +421,11 @@ export default function DebatesPage() {
                     {dateDebates.map((debate) => (
                       <div
                         key={debate.id}
-                        className="bg-surface border border-acid-green/30 p-4 hover:border-acid-green/50 transition-colors"
+                        className={`bg-surface p-4 transition-colors ${
+                          selectedForCompare.includes(debate.id)
+                            ? 'border-[var(--acid-cyan)]/50 border'
+                            : 'border border-acid-green/30 hover:border-acid-green/50'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
@@ -418,6 +487,22 @@ export default function DebatesPage() {
 
                           {/* Actions */}
                           <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => toggleCompareSelection(debate.id)}
+                              className={`px-2 py-1 text-xs font-mono border transition-colors ${
+                                selectedForCompare.includes(debate.id)
+                                  ? 'bg-[var(--acid-cyan)]/15 text-[var(--acid-cyan)] border-[var(--acid-cyan)]/40'
+                                  : 'bg-[var(--surface)] text-[var(--acid-cyan)] border-[var(--acid-cyan)]/30 hover:bg-[var(--acid-cyan)]/10'
+                              }`}
+                            >
+                              {selectedForCompare.includes(debate.id)
+                                ? `REMOVE ${selectedForCompare.indexOf(debate.id) === 0 ? 'A' : 'B'}`
+                                : selectedForCompare.length === 0
+                                  ? 'COMPARE A'
+                                  : selectedForCompare.length === 1
+                                    ? 'COMPARE B'
+                                    : 'REPLACE B'}
+                            </button>
                             <button
                               onClick={() => handleCopyLink(debate.id)}
                               className="px-2 py-1 text-xs font-mono bg-acid-green/10 text-acid-green border border-acid-green/30 hover:bg-acid-green hover:text-bg transition-colors"
