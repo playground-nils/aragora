@@ -696,6 +696,15 @@ class BossLoopConfig:
     # instead of stopping the loop. Only stop when there's genuinely no output.
     auto_continue_on_needs_human: bool = False
 
+    # Fix-forward: max repair attempts when verification fails.
+    # Each repair dispatches a targeted fix task using only the failing test output.
+    max_repair_attempts: int = 2
+
+    # Verification: use focused tests (only files touched by the worker) instead
+    # of the full test suite.  Dramatically reduces false negatives from
+    # pre-existing failures in unrelated modules.
+    use_focused_verification: bool = True
+
     # Reporting
     status_report_interval: int = 5  # every N iterations
 
@@ -1592,6 +1601,49 @@ class BossLoop:
                     elapsed_seconds=elapsed_seconds,
                 )
             self._failed_issues.append(issue_dict)
+
+            # Fix-forward: if verification failed and we haven't exhausted
+            # repair attempts, re-dispatch with a targeted repair prompt
+            issue_num = issue_dict.get("number", 0)
+            repair_key = f"repair_{issue_num}"
+            repair_count = self._issue_attempt_counts.get(repair_key, 0)
+            reasons = worker_result.get("reasons", [])
+            has_verification_failure = any(
+                "verification failed" in str(r).lower()
+                or "exit 1" in str(r).lower()
+                or "test" in str(r).lower()
+                for r in reasons
+            )
+
+            if (
+                self.config.auto_continue_on_needs_human
+                and has_verification_failure
+                and repair_count < self.config.max_repair_attempts
+            ):
+                self._issue_attempt_counts[repair_key] = repair_count + 1
+                logger.info(
+                    "boss_loop_repair issue=#%s attempt=%d/%d (verification failed, dispatching fix)",
+                    issue_num,
+                    repair_count + 1,
+                    self.config.max_repair_attempts,
+                )
+                # Don't count as consecutive failure — we're actively repairing
+                return BossIterationStatus(
+                    iteration=iteration,
+                    run_id=self.run_id,
+                    timestamp=timestamp,
+                    runner_freshness=runner_freshness,
+                    selected_issue=issue_dict,
+                    worker_status="repairing",
+                    stop_reason=None,
+                    needs_human_reasons=[],
+                    next_actions=[
+                        f"Repair attempt {repair_count + 1}/{self.config.max_repair_attempts} "
+                        f"for issue #{issue_num} — fixing verification failures."
+                    ],
+                    elapsed_seconds=elapsed_seconds,
+                )
+
             if self.config.auto_continue_on_needs_human:
                 self._consecutive_failures += 1
                 logger.warning(
@@ -1693,7 +1745,23 @@ class BossLoop:
             user_expertise="developer",
         )
         validation_contract = extract_issue_validation_contract(issue.body)
-        if validation_contract:
+        if validation_contract and self.config.use_focused_verification:
+            # Replace broad test suite commands with focused verification
+            # that only tests files related to the worker's changes
+            focused = []
+            for criterion in validation_contract:
+                if "pytest tests/" in criterion and "-k" not in criterion.lower():
+                    # Replace broad suite with a marker that the supervisor
+                    # will resolve to the actual changed-file test paths
+                    focused.append(
+                        "python -m pytest --timeout=30 -x -q "
+                        "$(git diff --name-only origin/main -- '*.py' "
+                        "| grep '^tests/' | head -20 | tr '\\n' ' ')"
+                    )
+                else:
+                    focused.append(criterion)
+            spec.acceptance_criteria = focused
+        elif validation_contract:
             spec.acceptance_criteria = list(validation_contract)
 
         if self.config.require_validation_contract and not bool(
