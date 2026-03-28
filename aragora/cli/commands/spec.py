@@ -55,6 +55,7 @@ async def _run_spec_pipeline(
 
     conductor = PromptConductor(config=config, agent=agent)
     result = await conductor.run(prompt)
+    timing = getattr(result, "timing", None)
 
     return {
         "specification": result.specification.to_dict()
@@ -67,7 +68,7 @@ async def _run_spec_pipeline(
         "questions": [q.to_dict() if hasattr(q, "to_dict") else q for q in result.questions],
         "stages_completed": result.stages_completed,
         "auto_approved": result.auto_approved,
-        "timing": result.timing.to_dict() if hasattr(result, "timing") else None,
+        "timing": timing.to_dict() if hasattr(timing, "to_dict") else timing,
     }
 
 

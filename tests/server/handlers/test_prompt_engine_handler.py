@@ -47,23 +47,25 @@ def _parse(result: tuple[int, dict[str, str], str]) -> dict[str, Any]:
 
 
 class _FakeTiming:
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "total_duration_ms": 250.0,
-            "target_duration_ms": 15_000.0,
-            "tracking_coverage_pct": 98.0,
-            "stage_breakdown": [
-                {"stage": "research", "duration_ms": 120.0, "share_of_total_pct": 48.0}
-            ],
-            "optimization_targets": [
-                {
-                    "operation": "research.agent_generate",
-                    "duration_ms": 120.0,
-                    "share_of_total_pct": 48.0,
-                    "optimization_hint": "Reduce prompt size, model latency, or round trips.",
-                }
-            ],
-        }
+    def __init__(self) -> None:
+        self.to_dict = MagicMock(
+            return_value={
+                "total_duration_ms": 250.0,
+                "target_duration_ms": 15_000.0,
+                "tracking_coverage_pct": 98.0,
+                "stage_breakdown": [
+                    {"stage": "research", "duration_ms": 120.0, "share_of_total_pct": 48.0}
+                ],
+                "optimization_targets": [
+                    {
+                        "operation": "research.agent_generate",
+                        "duration_ms": 120.0,
+                        "share_of_total_pct": 48.0,
+                        "optimization_hint": "Reduce prompt size, model latency, or round trips.",
+                    }
+                ],
+            }
+        )
 
 
 # ---------------------------------------------------------------------------

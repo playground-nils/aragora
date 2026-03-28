@@ -243,23 +243,18 @@ async def _run_pipeline(
 
         # Validation
         validator = SpecValidator()
+        validation_start = start_timer()
         validation = validator.validate_heuristic(spec)
-        operation_timings = []
-        for stage in ("decompose", "interrogate", "research", "specify"):
-            operation_timings.extend(conductor.stage_operation_timings.get(stage, []))
-        validation_timing = PipelineTiming(
-            total_duration_ms=0.0,
-            stage_durations_ms={},
-            operation_timings=list(validator.last_operation_timings),
-            target_duration_ms=PROMPT_ENGINE_TARGET_DURATION_MS,
-        )
+        validator_operation_timings = list(getattr(validator, "last_operation_timings", None) or [])
+        validation_duration_ms = elapsed_ms(validation_start)
         latency_target_ms = getattr(config, "latency_target_ms", PROMPT_ENGINE_TARGET_DURATION_MS)
         if not isinstance(latency_target_ms, (int, float)):
             latency_target_ms = PROMPT_ENGINE_TARGET_DURATION_MS
 
-        timing = PipelineTiming(
-            total_duration_ms=elapsed_ms(pipeline_start),
-            stage_durations_ms=stage_durations_ms,
+        validation_timing = PipelineTiming(
+            total_duration_ms=validation_duration_ms,
+            stage_durations_ms={"validate": validation_duration_ms},
+            operation_timings=validator_operation_timings,
             target_duration_ms=latency_target_ms,
         )
         await emitter.emit(
@@ -277,6 +272,16 @@ async def _run_pipeline(
         if not isinstance(target_duration_ms, int | float):
             target_duration_ms = PipelineTiming().target_duration_ms
 
+        stage_operation_timings = getattr(conductor, "stage_operation_timings", {})
+        if not isinstance(stage_operation_timings, dict):
+            stage_operation_timings = {}
+        operation_timings = [
+            timing
+            for timings in stage_operation_timings.values()
+            if isinstance(timings, list | tuple)
+            for timing in timings
+        ]
+        operation_timings.extend(validator_operation_timings)
         timing = PipelineTiming(
             total_duration_ms=elapsed_ms(pipeline_start),
             stage_durations_ms=stage_durations_ms,
