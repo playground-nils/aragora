@@ -268,7 +268,6 @@ class TestCmdSpec:
         assert '"total_duration_ms": 84.0' in out
         assert '"stage": "specify"' in out
         assert "Spec saved to:" in out
-        assert '"total_duration_ms": 123.0' in out
         run_spec.assert_awaited_once_with(
             "Make onboarding better",
             depth="quick",

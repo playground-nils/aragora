@@ -110,6 +110,22 @@ class PipelineTiming:
             :limit
         ]
 
+    @property
+    def tracked_duration_ms(self) -> float:
+        """Total measured time captured by operation timings."""
+        tracked = sum(item.duration_ms for item in self.operation_timings)
+        return min(tracked, self.total_duration_ms)
+
+    @property
+    def untracked_duration_ms(self) -> float:
+        """Portion of total duration not covered by operation timings."""
+        return max(0.0, self.total_duration_ms - self.tracked_duration_ms)
+
+    @property
+    def tracking_coverage(self) -> float:
+        """Share of total duration covered by operation timings."""
+        return _share(self.tracked_duration_ms, self.total_duration_ms)
+
     def top_operations(self, limit: int = 5) -> list[OperationTiming]:
         """Return the slowest measured operations."""
         return sorted(self.operation_timings, key=lambda item: item.duration_ms, reverse=True)[
@@ -239,6 +255,8 @@ class PipelineTiming:
             "operation_timings": [item.to_dict() for item in self.operation_timings],
             "top_operations": [item.to_dict() for item in self.top_operations()],
             "bottlenecks": [item.to_dict() for item in self.bottlenecks()],
+            "stage_breakdown": self.stage_breakdown(),
+            "optimization_targets": self.optimization_targets(),
         }
 
 
