@@ -1733,10 +1733,30 @@ class BossLoop:
         """
         from aragora.swarm.spec import SwarmSpec
 
+        # Refine the prompt with codebase context before dispatch
         goal = f"[Issue #{issue.number}] {issue.title}"
         body_context = issue.body[:500] if issue.body else ""
         if body_context:
             goal = f"{goal}\n\n{body_context}"
+
+        try:
+            from aragora.swarm.prompt_refiner import refine_worker_prompt
+
+            refinement = await refine_worker_prompt(
+                issue.title,
+                issue.body or "",
+                repo_path=Path.cwd(),
+            )
+            if refinement.get("context_gathered"):
+                goal = refinement["refined_prompt"]
+                logger.info(
+                    "Refined prompt for #%s: %d relevant files, %d test patterns",
+                    issue.number,
+                    len(refinement.get("files_to_change", [])),
+                    len(refinement.get("test_patterns", [])),
+                )
+        except Exception as exc:
+            logger.debug("Prompt refinement skipped: %s", exc)
 
         spec = SwarmSpec.from_direct_goal(
             goal,
