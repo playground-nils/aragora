@@ -680,7 +680,7 @@ class BossLoopConfig:
 
     # Retry / self-correction
     max_consecutive_failures: int = 3
-    max_retries_per_issue: int = 2
+    max_retries_per_issue: int = 5  # Generous: allows initial attempt + 2 repairs + 2 retries
 
     # Dispatch
     target_branch: str = "main"
