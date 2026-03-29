@@ -150,18 +150,23 @@ class TestIntegrationGateWorkflow:
         assert "needs" in summary_job
 
 
-class TestLiveDeployModeGateWorkflow:
-    """Validate live-deploy-mode-gate.yml runner policy."""
+class TestReleaseReadinessWorkflow:
+    """Validate release-readiness.yml structure and installer policy."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.path = WORKFLOWS_DIR / "live-deploy-mode-gate.yml"
+        self.path = WORKFLOWS_DIR / "release-readiness.yml"
 
-    def test_gate_uses_linux_hetzner_runner_pool(self):
+    def test_workflow_file_exists(self):
+        assert self.path.exists(), "release-readiness.yml does not exist"
+
+    def test_workflow_uses_shared_ci_installer(self):
         data = _load_yaml(self.path)
-        job = data["jobs"]["gate"]
-        runs_on = job["runs-on"]
-        assert runs_on == ["self-hosted", "Linux", "X64", "aragora", "hetzner"]
+        job = data["jobs"]["release-readiness"]
+        install_step = next(step for step in job["steps"] if step.get("name") == "Install (dev)")
+        run = install_step.get("run", "")
+        assert "scripts/ci_install_project.sh" in run
+        assert "--extras dev,test" in run
 
 
 class TestAragoraReviewGateWorkflow:
@@ -280,6 +285,18 @@ class TestReleaseWorkflow:
         assert any("status" in n.lower() for n in step_names), (
             "release-checks should include STATUS.md validation"
         )
+
+
+class TestTestTiersScript:
+    """Validate stable smoke-tier collection policy."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.path = PROJECT_ROOT / "scripts" / "test_tiers.sh"
+
+    def test_smoke_tier_skips_optional_demo_command_imports(self):
+        content = self.path.read_text()
+        assert "--ignore=tests/cli/test_demo_command.py" in content
 
 
 # ---------------------------------------------------------------------------
