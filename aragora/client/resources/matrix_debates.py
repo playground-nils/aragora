@@ -27,6 +27,8 @@ class MatrixDebatesAPI:
         task: str,
         agents: list[str] | None = None,
         scenarios: list[dict[str, Any]] | None = None,
+        agent_combinations: list[dict[str, Any]] | None = None,
+        model_combinations: list[dict[str, Any]] | None = None,
         max_rounds: int = 3,
     ) -> MatrixDebateCreateResponse:
         """
@@ -40,11 +42,16 @@ class MatrixDebatesAPI:
             agents: List of agent IDs to participate.
             scenarios: List of scenario configurations.
                 Each scenario can have: name, parameters, constraints, is_baseline.
+            agent_combinations: Explicit model/team combinations to compare.
+            model_combinations: Alias for agent_combinations that matches the public API wording.
             max_rounds: Maximum rounds per scenario (1-10).
 
         Returns:
             MatrixDebateCreateResponse with matrix_id.
         """
+        if agent_combinations and model_combinations:
+            raise ValueError("Use either agent_combinations or model_combinations, not both")
+
         scenario_models = []
         if scenarios:
             for s in scenarios:
@@ -54,6 +61,8 @@ class MatrixDebatesAPI:
             task=task,
             agents=agents or ["anthropic-api", "openai-api"],
             scenarios=scenario_models,
+            agent_combinations=agent_combinations or [],
+            model_combinations=model_combinations or [],
             max_rounds=max_rounds,
         )
 
@@ -65,9 +74,14 @@ class MatrixDebatesAPI:
         task: str,
         agents: list[str] | None = None,
         scenarios: list[dict[str, Any]] | None = None,
+        agent_combinations: list[dict[str, Any]] | None = None,
+        model_combinations: list[dict[str, Any]] | None = None,
         max_rounds: int = 3,
     ) -> MatrixDebateCreateResponse:
         """Async version of create()."""
+        if agent_combinations and model_combinations:
+            raise ValueError("Use either agent_combinations or model_combinations, not both")
+
         scenario_models = []
         if scenarios:
             for s in scenarios:
@@ -77,6 +91,8 @@ class MatrixDebatesAPI:
             task=task,
             agents=agents or ["anthropic-api", "openai-api"],
             scenarios=scenario_models,
+            agent_combinations=agent_combinations or [],
+            model_combinations=model_combinations or [],
             max_rounds=max_rounds,
         )
 

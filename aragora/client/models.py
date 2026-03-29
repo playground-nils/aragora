@@ -473,6 +473,8 @@ class MatrixDebateCreateRequest(BaseModel):
     task: str
     agents: list[str] = Field(default_factory=lambda: ["anthropic-api", "openai-api"])
     scenarios: list[MatrixScenario] = Field(default_factory=list)
+    agent_combinations: list[dict[str, Any]] = Field(default_factory=list)
+    model_combinations: list[dict[str, Any]] = Field(default_factory=list)
     max_rounds: int = Field(default=3, ge=1, le=10)
 
 
@@ -483,7 +485,10 @@ class MatrixDebateCreateResponse(BaseModel):
     status: str = "completed"
     task: str | None = None
     scenario_count: int | None = None
+    combination_count: int | None = None
     results: list[dict[str, Any]] = Field(default_factory=list)
+    best_result: dict[str, Any] | None = None
+    selection_strategy: str | None = None
     universal_conclusions: list[str] = Field(default_factory=list)
     conditional_conclusions: dict[str, list[str]] | list[dict[str, Any]] = Field(
         default_factory=dict
