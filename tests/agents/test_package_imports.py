@@ -19,8 +19,8 @@ def test_aragora_agents_import_survives_missing_api_agent_deps() -> None:
         real_import = builtins.__import__
 
         def selective_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "aragora.agents.api_agents" or name.startswith("aragora.agents.api_agents"):
-                raise ImportError("api agent deps unavailable")
+            if name == "aiohttp":
+                raise ImportError("aiohttp unavailable")
             return real_import(name, globals, locals, fromlist, level)
 
         builtins.__import__ = selective_import
