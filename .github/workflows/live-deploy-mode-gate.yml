@@ -84,7 +84,12 @@ jobs:
         run: |
           npx tsc --noEmit
           npm run build
-          npx playwright install --with-deps chromium
+          if command -v apt-get >/dev/null 2>&1; then
+            npx playwright install --with-deps chromium
+          else
+            echo "::notice::apt-get unavailable on runner; installing Chromium without OS package bootstrap"
+            npx playwright install chromium
+          fi
           npx playwright test \
             e2e/debate-viewing.spec.ts \
             e2e/debate-intervention-live.spec.ts \
