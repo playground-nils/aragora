@@ -34,8 +34,7 @@ class TestGrokAgentInitialization:
         spec = AgentRegistry.get_spec("grok")
 
         assert agent.name == "grok"
-        assert spec is not None
-        assert agent.model == spec.default_model
+        assert agent.model == "grok-4.2"
         assert agent.role == "proposer"
         assert agent.timeout == 120
         assert agent.agent_type == "grok"
@@ -111,7 +110,7 @@ class TestGrokAgentInitialization:
         spec = AgentRegistry.get_spec("grok")
 
         assert spec is not None
-        assert spec.default_model == GrokAgent().model
+        assert spec.default_model == "grok-4.2"
         assert spec.agent_type == "API"
 
     def test_base_url_is_xai_endpoint(self, mock_env_with_api_keys):

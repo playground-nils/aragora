@@ -167,7 +167,7 @@ class TestEmitMatchRecordedEvent:
         elo = MagicMock()
         elo.get_ratings_batch.return_value = {}  # No ratings
         emitter = MagicMock()
-        ef = EloFeedback(elo_system=elo, event_emitter=emitter)
+        ef = EloFeedback(elo_system=elo, event_emitter=emitter, loop_id="loop-1")
         ctx = _make_ctx()
 
         with (
