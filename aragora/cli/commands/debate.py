@@ -2234,9 +2234,10 @@ def cmd_ask(args: argparse.Namespace) -> None:
         )
         return await _post_consensus_quality_pipeline(debate_result)
 
+    run_coro = _run_with_timeout()
     try:
         with _strict_wall_clock_timeout(debate_timeout):
-            result = asyncio.run(_run_with_timeout())
+            result = asyncio.run(run_coro)
     except _StrictWallClockTimeout:
         elapsed = time.monotonic() - start_time
         cleanup = _cleanup_cli_subprocesses_for_timeout()
@@ -2274,6 +2275,8 @@ def cmd_ask(args: argparse.Namespace) -> None:
     except RuntimeError as e:
         print(f"Debate failed quality gate: {e}", file=sys.stderr)
         raise SystemExit(1)
+    finally:
+        run_coro.close()
 
     print("\n" + "=" * 60)
     print("FINAL ANSWER:")
