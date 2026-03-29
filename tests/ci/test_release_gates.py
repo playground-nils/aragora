@@ -247,6 +247,23 @@ class TestAutopilotWorktreeE2EWorkflow:
         assert "scripts/ci_install_project.sh --extras dev,test" in command
 
 
+class TestDocsBuildWorkflow:
+    """Validate docs-build workflow bootstrap policy."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.path = WORKFLOWS_DIR / "docs-build.yml"
+
+    def test_docs_build_uses_shared_ci_installer(self):
+        data = _load_yaml(self.path)
+        workflow = data["jobs"]["build"]
+        install_step = next(
+            step for step in workflow["steps"] if step.get("name") == "Install Python dependencies"
+        )
+        command = install_step["run"]
+        assert "scripts/ci_install_project.sh --extras dev" in command
+
+
 class TestFrontendE2EWorkflow:
     """Validate frontend E2E workflow backend bootstrap policy."""
 
