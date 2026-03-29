@@ -25,9 +25,17 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from aragora.swarm.terminal_truth import (
+    extract_run_deliverable,
+    extract_run_worker_outcome,
+    qualify_run_terminal_state,
+)
+from aragora.swarm.lane_telemetry import LaneTelemetryCollector, LaneTelemetryRecord
+
 logger = logging.getLogger(__name__)
 
 UTC = timezone.utc
+_LANE_TELEMETRY = LaneTelemetryCollector()
 
 
 # ---------------------------------------------------------------------------
@@ -763,61 +771,8 @@ class BossLoopConfig:
 
 
 def _classify_terminal_run_outcome(run_dict: dict[str, Any]) -> str:
-    """Map a supervisor run dict to a stable outcome classification.
-
-    Uses LLM classification for ambiguous cases, falling back to keyword
-    matching if the LLM is unavailable.
-    """
-    status = str(run_dict.get("status", "")).strip().lower()
-    if status == "completed":
-        deliverable = _extract_deliverable(run_dict)
-        if deliverable is None:
-            return "clean_exit_no_deliverable"
-        if deliverable.get("type") == "adopted_pr":
-            return "pr_adopted"
-        return "deliverable_created"
-    if status == "needs_human":
-        # A run can be "needs_human" overall (e.g. one lane blocked) but still
-        # have deliverables from other lanes.  Prioritize the deliverable so
-        # the campaign can extract branch/commit info for PR creation.
-        deliverable = _extract_deliverable(run_dict)
-        if deliverable is not None:
-            if deliverable.get("type") == "adopted_pr":
-                return "pr_adopted"
-            return "deliverable_created"
-        return "needs_human"
-
-    # --- LLM classification for ambiguous terminal states ---
-    try:
-        from aragora.ralph.llm_classifier import LLMBlockerClassifier
-
-        import asyncio
-
-        classifier = LLMBlockerClassifier()
-        verdict = asyncio.run(classifier.classify_run_outcome(run_dict))
-        # Only trust the LLM verdict if it actually ran (not a fallback default)
-        if verdict.reasoning != "LLM call failed":
-            logger.info(
-                "LLM run outcome classification: %s (reasoning: %s)",
-                verdict.outcome,
-                verdict.reasoning,
-            )
-            return verdict.outcome
-    except Exception:
-        logger.debug("LLM run outcome classification failed, using keyword fallback", exc_info=True)
-
-    # --- keyword fallback ---
-    return _keyword_classify_terminal_run(run_dict)
-
-
-def _keyword_classify_terminal_run(run_dict: dict[str, Any]) -> str:
-    """Keyword-based fallback for terminal run classification."""
-    details = json.dumps(run_dict, sort_keys=True).lower()
-    if "timeout" in details:
-        return "timeout"
-    if "exit_code" in details or "traceback" in details or "crash" in details:
-        return "crash"
-    return "blocked"
+    """Map a supervisor run dict to a stable, shared terminal outcome."""
+    return qualify_run_terminal_state(run_dict).terminal_outcome
 
 
 async def dispatch_bounded_spec(
@@ -895,8 +850,13 @@ async def dispatch_bounded_spec(
                 "run": run_dict,
                 "run_id": run_dict.get("run_id"),
             }
-        outcome = _classify_terminal_run_outcome(run_dict)
-        deliverable = _extract_deliverable(run_dict)
+        qualification = qualify_run_terminal_state(run_dict)
+        outcome = qualification.terminal_outcome
+        deliverable = qualification.deliverable
+        reasons = qualification.reasons or (
+            [qualification.blocked_reason] if qualification.blocked_reason else []
+        )
+        worker_receipt_id = _first_receipt_id_from_run(run_dict)
         if outcome in {"deliverable_created", "pr_adopted"}:
             return {
                 "status": "completed",
@@ -904,6 +864,7 @@ async def dispatch_bounded_spec(
                 "run": run_dict,
                 "run_id": run_dict.get("run_id"),
                 "deliverable": deliverable,
+                "receipt_id": worker_receipt_id,
             }
         if outcome == "clean_exit_no_deliverable":
             return {
@@ -911,27 +872,27 @@ async def dispatch_bounded_spec(
                 "outcome": outcome,
                 "run": run_dict,
                 "run_id": run_dict.get("run_id"),
-                "reasons": [
+                "deliverable": deliverable,
+                "receipt_id": worker_receipt_id,
+                "reasons": reasons
+                or [
                     "Run reported completed but produced no concrete deliverable "
                     "(no pushed branch, no PR, no committed artifact)."
                 ],
             }
-        if outcome == "needs_human":
-            reasons: list[str] = []
-            for wo in run_dict.get("work_orders", []):
-                if isinstance(wo, dict):
-                    for blocker in wo.get("blockers", []):
-                        reasons.append(str(blocker))
-                    err = wo.get("dispatch_error")
-                    if err:
-                        reasons.append(str(err))
+        if outcome in {"needs_human", "blocked", "crash", "timeout"}:
             return {
                 "status": "needs_human",
                 "outcome": outcome,
                 "run": run_dict,
                 "run_id": run_dict.get("run_id"),
                 "deliverable": deliverable,
-                "reasons": reasons or ["Worker reached needs_human state."],
+                "receipt_id": worker_receipt_id,
+                "reasons": reasons
+                or [
+                    qualification.blocked_reason
+                    or "Worker requires human review before integration."
+                ],
             }
         return {
             "status": "failed",
@@ -948,61 +909,22 @@ async def dispatch_bounded_spec(
 
 
 def _extract_deliverable(run_dict: dict[str, Any]) -> dict[str, Any] | None:
-    """Check a completed run for a concrete deliverable.
-
-    A run is only considered to have produced a real deliverable if at least
-    one work order has:
-    - A non-empty ``pr_url``, OR
-    - A non-empty ``branch`` with at least one ``commit_sha``, OR
-    - An explicit ``adopted_pr`` reference
-
-    Returns a summary dict describing the deliverable, or ``None`` if the run
-    produced only a dirty local worktree with no pushed/committed artifact.
-    """
-    work_orders = run_dict.get("work_orders", [])
-    for wo in work_orders:
-        if not isinstance(wo, dict):
-            continue
-        wo_status = str(wo.get("status", "")).strip()
-        if wo_status not in {"completed", "merged"}:
-            continue
-
-        pr_url = str(wo.get("pr_url", "")).strip()
-        if pr_url:
-            return {"type": "pr", "pr_url": pr_url, "work_order_id": wo.get("work_order_id")}
-
-        adopted_pr = str(wo.get("adopted_pr", "")).strip()
-        if adopted_pr:
-            return {
-                "type": "adopted_pr",
-                "adopted_pr": adopted_pr,
-                "work_order_id": wo.get("work_order_id"),
-            }
-
-        branch = str(wo.get("branch", "")).strip()
-        commit_shas = [s for s in wo.get("commit_shas", []) if str(s).strip()]
-        if branch and commit_shas:
-            return {
-                "type": "branch",
-                "branch": branch,
-                "commit_shas": commit_shas,
-                "work_order_id": wo.get("work_order_id"),
-            }
-
-    return None
+    """Return the first concrete deliverable on the run, if any."""
+    return extract_run_deliverable(run_dict)
 
 
 def _extract_worker_outcome(run_dict: dict[str, Any]) -> str | None:
-    """Extract the first non-empty ``worker_outcome`` from a completed run.
+    """Extract the first non-empty ``worker_outcome`` from a run."""
+    return extract_run_worker_outcome(run_dict)
 
-    Returns None if no work order carries a ``worker_outcome`` field.
-    """
-    for wo in run_dict.get("work_orders", []):
-        if not isinstance(wo, dict):
+
+def _first_receipt_id_from_run(run_dict: dict[str, Any]) -> str | None:
+    for work_order in run_dict.get("work_orders", []):
+        if not isinstance(work_order, dict):
             continue
-        outcome = str(wo.get("worker_outcome", "")).strip()
-        if outcome:
-            return outcome
+        receipt_id = str(work_order.get("receipt_id", "")).strip()
+        if receipt_id:
+            return receipt_id
     return None
 
 
@@ -1099,14 +1021,15 @@ class BossLoop:
         worker_status: str,
         elapsed_seconds: float,
     ) -> None:
-        """Log outcome for value-per-cost calibration."""
+        """Log outcome for value-per-cost calibration and cross-loop signals."""
+        issue_num = issue_dict.get("number", 0)
         try:
             from aragora.swarm.value_estimator import OutcomeRecord, log_outcome
 
             log_outcome(
                 OutcomeRecord(
-                    issue_number=issue_dict.get("number", 0),
-                    predicted_score=0.0,  # TODO: pass from ranking step
+                    issue_number=issue_num,
+                    predicted_score=0.0,
                     predicted_p_success=0.0,
                     did_merge=worker_status == "completed",
                     needed_human_rescue=worker_status == "needs_human",
@@ -1117,14 +1040,47 @@ class BossLoop:
         except Exception as exc:
             logger.debug("Value outcome logging skipped: %s", exc)
 
+        # Emit cross-loop outcome signal
+        try:
+            from aragora.swarm.outcome_signals import OutcomeSignal, get_signal_bus
+
+            get_signal_bus().emit(
+                OutcomeSignal(
+                    source_loop="boss",
+                    signal_type="completed" if worker_status == "completed" else "failed",
+                    entity_id=str(issue_num),
+                    entity_title=issue_dict.get("title", ""),
+                    elapsed_seconds=elapsed_seconds,
+                    did_merge=worker_status == "completed",
+                    needed_human_rescue=worker_status == "needs_human",
+                    failure_reason=worker_status if worker_status != "completed" else "",
+                )
+            )
+        except Exception as exc:
+            logger.debug("Outcome signal emission skipped: %s", exc)
+
     def _emit_lane_receipt(
         self,
         worker_result: dict[str, Any],
         issue_dict: dict[str, Any],
         elapsed: float,
-    ) -> None:
+    ) -> str | None:
         try:
             from aragora.receipts.lane import LaneCompletionReceipt, emit_lane_receipt
+
+            terminal_outcome = str(worker_result.get("outcome", "")).strip().lower()
+            deliverable = worker_result.get("deliverable")
+            deliverable_present = isinstance(deliverable, dict) and bool(deliverable)
+            if terminal_outcome in {"deliverable_created", "pr_adopted"}:
+                receipt_outcome = "pass"
+            elif deliverable_present and terminal_outcome in {"crash", "timeout"}:
+                receipt_outcome = "blocked"
+            elif terminal_outcome in {"needs_human", "blocked", "clean_exit_no_deliverable"}:
+                receipt_outcome = "blocked"
+            elif terminal_outcome in {"crash", "timeout"}:
+                receipt_outcome = "fail"
+            else:
+                receipt_outcome = "unknown"
 
             receipt = LaneCompletionReceipt(
                 task_id=str(issue_dict.get("number", "")),
@@ -1134,17 +1090,96 @@ class BossLoop:
                 head_sha=worker_result.get("head_sha"),
                 changed_files=list(worker_result.get("changed_files", [])),
                 validations_run=list(worker_result.get("validations_run", [])),
-                outcome="pass",
+                outcome=receipt_outcome,
                 risks=list(worker_result.get("risks", [])),
                 pr_url=worker_result.get("pr_url"),
                 pr_number=worker_result.get("pr_number"),
                 branch=worker_result.get("branch"),
                 duration_seconds=elapsed,
-                metadata=dict(worker_result.get("receipt_metadata") or {}),
+                metadata={
+                    **dict(worker_result.get("receipt_metadata") or {}),
+                    "terminal_outcome": terminal_outcome or None,
+                    "worker_receipt_id": worker_result.get("receipt_id"),
+                    "blocked_reasons": list(worker_result.get("reasons", [])),
+                },
             )
-            emit_lane_receipt(receipt)
+            receipt_id = emit_lane_receipt(receipt)
+            self._record_lane_telemetry(worker_result, issue_dict, elapsed, receipt_id)
+            return receipt_id
         except Exception as exc:
             logger.debug("Lane receipt emission skipped: %s", exc)
+            self._record_lane_telemetry(worker_result, issue_dict, elapsed, None)
+            return None
+
+    def _record_lane_telemetry(
+        self,
+        worker_result: dict[str, Any],
+        issue_dict: dict[str, Any],
+        elapsed: float,
+        lane_receipt_id: str | None,
+    ) -> None:
+        terminal_outcome = str(worker_result.get("outcome", "")).strip().lower()
+        deliverable = worker_result.get("deliverable")
+        deliverable_type = ""
+        pr_url = ""
+        pr_number: int | None = None
+        if isinstance(deliverable, dict):
+            deliverable_type = str(deliverable.get("type", "")).strip()
+            pr_url = str(
+                deliverable.get("pr_url")
+                or worker_result.get("pr_url")
+                or deliverable.get("adopted_pr")
+                or ""
+            ).strip()
+        if isinstance(worker_result.get("pr_number"), int):
+            pr_number = int(worker_result["pr_number"])
+        if not terminal_outcome:
+            if deliverable_type == "adopted_pr":
+                terminal_outcome = "pr_adopted"
+            elif deliverable_type in {"pr", "branch"}:
+                terminal_outcome = "deliverable_created"
+            else:
+                terminal_outcome = str(worker_result.get("status", "")).strip().lower() or "unknown"
+        receipt_id = str(lane_receipt_id or worker_result.get("receipt_id") or "").strip()
+        false_success_candidate = (
+            terminal_outcome
+            in {
+                "deliverable_created",
+                "pr_adopted",
+            }
+            and not deliverable_type
+        )
+        try:
+            _LANE_TELEMETRY.record_lane(
+                LaneTelemetryRecord(
+                    lane_kind="boss_dispatch",
+                    lane_id=str(
+                        worker_result.get("run_id")
+                        or worker_result.get("lease_id")
+                        or issue_dict.get("number")
+                        or ""
+                    ).strip(),
+                    run_id=str(worker_result.get("run_id", "")).strip(),
+                    task_id=str(issue_dict.get("number", "")).strip(),
+                    terminal_outcome=terminal_outcome,
+                    worker_outcome=str(worker_result.get("worker_outcome", "")).strip(),
+                    deliverable_type=deliverable_type,
+                    receipt_id=receipt_id,
+                    human_intervention_required=terminal_outcome
+                    not in {"deliverable_created", "pr_adopted"},
+                    duration_seconds=float(elapsed or 0.0),
+                    pr_url=pr_url,
+                    pr_number=pr_number,
+                    false_success_candidate=false_success_candidate,
+                    metadata={
+                        "issue_title": str(issue_dict.get("title", "")).strip() or None,
+                        "worker_status": str(worker_result.get("status", "")).strip() or None,
+                        "reasons": list(worker_result.get("reasons", []) or []),
+                    },
+                )
+            )
+        except Exception:
+            logger.debug("Boss lane telemetry emission skipped", exc_info=True)
 
     async def run(
         self,
@@ -1654,12 +1689,12 @@ class BossLoop:
 
         if worker_result.get("status") == "needs_human":
             has_deliverable = bool(worker_result.get("deliverable"))
+            self._emit_lane_receipt(worker_result, issue_dict, elapsed_seconds)
             if self.config.auto_continue_on_needs_human and has_deliverable:
-                self._completed_issues.append(issue_dict)
+                self._failed_issues.append(issue_dict)
                 self._consecutive_failures = 0
-                self._emit_lane_receipt(worker_result, issue_dict, elapsed_seconds)
                 logger.info(
-                    "boss_loop_auto_continue issue=#%s (needs_human with deliverable → treating as completed)",
+                    "boss_loop_auto_continue issue=#%s (recoverable deliverable still blocked)",
                     issue_dict.get("number", "?"),
                 )
                 return BossIterationStatus(
@@ -1668,11 +1703,17 @@ class BossLoop:
                     timestamp=timestamp,
                     runner_freshness=runner_freshness,
                     selected_issue=issue_dict,
-                    worker_status="completed",
+                    worker_status="needs_human",
                     stop_reason=None,
-                    needs_human_reasons=[],
-                    next_actions=["Auto-continuing: deliverable created, review can happen async."],
+                    needs_human_reasons=worker_result.get(
+                        "reasons",
+                        ["Recovered deliverable requires human review before integration."],
+                    ),
+                    next_actions=[
+                        "Auto-continuing: recovered deliverable is receipt-backed but still blocked on human review."
+                    ],
                     elapsed_seconds=elapsed_seconds,
+                    worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
                 )
             self._failed_issues.append(issue_dict)
             self._log_value_outcome(issue_dict, "needs_human", elapsed_seconds)
@@ -1717,6 +1758,7 @@ class BossLoop:
                         f"for issue #{issue_num} — fixing verification failures."
                     ],
                     elapsed_seconds=elapsed_seconds,
+                    worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
                 )
 
             if self.config.auto_continue_on_needs_human:
@@ -1738,6 +1780,7 @@ class BossLoop:
                     ),
                     next_actions=["Skipping to next issue (auto-continue mode)."],
                     elapsed_seconds=elapsed_seconds,
+                    worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
                 )
             next_actions = [
                 str(item).strip()
@@ -1755,10 +1798,12 @@ class BossLoop:
                 needs_human_reasons=worker_result.get("reasons", ["Worker requires human input."]),
                 next_actions=next_actions,
                 elapsed_seconds=elapsed_seconds,
+                worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
             )
 
         self._failed_issues.append(issue_dict)
         self._consecutive_failures += 1
+        self._emit_lane_receipt(worker_result, issue_dict, elapsed_seconds)
         if self._consecutive_failures >= self.config.max_consecutive_failures:
             return BossIterationStatus(
                 iteration=iteration,
@@ -1777,6 +1822,7 @@ class BossLoop:
                 ],
                 elapsed_seconds=elapsed_seconds,
                 error=worker_result.get("error"),
+                worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
             )
 
         return BossIterationStatus(
@@ -1795,6 +1841,7 @@ class BossLoop:
             ],
             elapsed_seconds=elapsed_seconds,
             error=worker_result.get("error"),
+            worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
         )
 
     async def _dispatch_issue(
