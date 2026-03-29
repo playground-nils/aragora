@@ -176,6 +176,12 @@ class WorkerLauncher:
             if (codex_home / "auth.json").exists():
                 worker_env = {**os.environ, "CODEX_HOME": str(codex_home)}
 
+        # Codex uses "-" as prompt arg and reads from stdin to avoid OS
+        # ARG_MAX limits on long prompts with issue bodies + file lists.
+        use_stdin_prompt = agent == "codex"
+        stdin_mode = asyncio.subprocess.PIPE if use_stdin_prompt else asyncio.subprocess.DEVNULL
+        prompt_bytes = prompt.encode("utf-8") if use_stdin_prompt else None
+
         if self.config.detach:
             log_dir = Path(worktree_path)
             stdout_file = open(log_dir / ".swarm_worker_stdout.log", "w")  # noqa: SIM115
@@ -184,12 +190,15 @@ class WorkerLauncher:
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=worktree_path,
-                    stdin=asyncio.subprocess.DEVNULL,
+                    stdin=stdin_mode,
                     stdout=stdout_file,
                     stderr=stderr_file,
                     start_new_session=True,
                     env=worker_env,
                 )
+                if prompt_bytes is not None and proc.stdin is not None:
+                    proc.stdin.write(prompt_bytes)
+                    proc.stdin.close()
             finally:
                 # The subprocess inherits its own descriptors; close the
                 # parent-side handles immediately to avoid ResourceWarning.
@@ -199,11 +208,14 @@ class WorkerLauncher:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=worktree_path,
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=stdin_mode,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=worker_env,
             )
+            if prompt_bytes is not None and proc.stdin is not None:
+                proc.stdin.write(prompt_bytes)
+                proc.stdin.close()
             self._start_live_log_capture(work_order_id, worktree_path, proc)
 
         worker = WorkerProcess(
@@ -485,7 +497,9 @@ class WorkerLauncher:
             return cmd
 
         if agent == "codex":
-            cmd = [self.config.codex_path, "exec", prompt, "--full-auto"]
+            # Use stdin ("-") for prompts to avoid OS arg length limits.
+            # Long prompts with issue bodies + file lists can exceed ARG_MAX.
+            cmd = [self.config.codex_path, "exec", "-", "--full-auto"]
             if self.config.codex_model:
                 cmd.extend(["--model", self.config.codex_model])
             git_dir = self._resolve_worktree_gitdir(worktree_path)
