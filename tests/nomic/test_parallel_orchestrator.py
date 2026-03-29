@@ -755,7 +755,6 @@ class TestSemaphoreEnforcement:
             task_decomposer=_mock_decomposer(_make_decomposition(subtasks)),
             branch_coordinator=bc,
             max_parallel_tasks=2,
-            branch_coordinator=None,
         )
 
         await orch.execute_goal(goal="Test", max_cycles=1)
