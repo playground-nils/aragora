@@ -38,10 +38,9 @@ SESSION_ARTIFACTS: frozenset[str] = frozenset(
 )
 
 # Exit codes where the worker likely completed its work but the process was
-# terminated by a transport-level signal (e.g. broken pipe). These codes are
-# eligible for auto-commit salvage for all worker types. Codex lanes also get
-# a best-effort salvage path when they exit non-zero after producing a real
-# commit so review/verification can still judge the recovered deliverable.
+# terminated by a transport-level signal (e.g. broken pipe). Only these codes
+# are eligible for salvage. Other non-zero exits must preserve raw exit truth
+# even if they left behind a recoverable artifact.
 _SALVAGEABLE_EXIT_CODES: frozenset[int] = frozenset(
     {
         141,  # SIGPIPE — stdout pipe closed before process finished writing
@@ -317,8 +316,7 @@ class WorkerLauncher:
             if worker.commit_shas:
                 await self._auto_push(worker)
 
-            self._promote_salvaged_codex_exit(worker)
-            if worker.exit_code == 0 and worker.expected_tests:
+            if self._should_run_verification(worker):
                 worker.verification_results = await self._run_verification_commands(
                     worker.worktree_path,
                     worker.expected_tests,
@@ -851,8 +849,7 @@ class WorkerLauncher:
             if worker.commit_shas:
                 await cls._auto_push(worker)
 
-            cls._promote_salvaged_codex_exit(worker)
-            if worker.exit_code == 0 and worker.expected_tests:
+            if cls._should_run_verification(worker):
                 worker.verification_results = await cls._run_verification_commands(
                     worktree_path,
                     worker.expected_tests,
@@ -1040,34 +1037,19 @@ class WorkerLauncher:
 
     @staticmethod
     def _can_query_dirty_tree(worker: WorkerProcess) -> bool:
-        return (
-            worker.exit_code == 0
-            or worker.exit_code in _SALVAGEABLE_EXIT_CODES
-            or worker.agent == "codex"
-        )
+        return worker.exit_code == 0 or worker.exit_code in _SALVAGEABLE_EXIT_CODES
 
     @staticmethod
     def _should_attempt_auto_commit(worker: WorkerProcess, *, has_changes: bool) -> bool:
         if not has_changes:
             return False
-        if worker.exit_code == 0 or worker.exit_code in _SALVAGEABLE_EXIT_CODES:
-            return True
-        return worker.agent == "codex"
+        return worker.exit_code == 0 or worker.exit_code in _SALVAGEABLE_EXIT_CODES
 
     @staticmethod
-    def _promote_salvaged_codex_exit(worker: WorkerProcess) -> None:
-        if worker.agent != "codex":
-            return
-        if worker.exit_code in (None, 0):
-            return
-        if not worker.commit_shas:
-            return
-        note = (
-            f"Codex exited {worker.exit_code} after producing a salvageable commit; "
-            "verification continued on the recovered deliverable."
-        )
-        worker.stderr = "\n".join(part for part in (worker.stderr.strip(), note) if part).strip()
-        worker.exit_code = 0
+    def _should_run_verification(worker: WorkerProcess) -> bool:
+        if not worker.expected_tests:
+            return False
+        return worker.exit_code == 0 or worker.exit_code in _SALVAGEABLE_EXIT_CODES
 
     @staticmethod
     def _read_log_file(worktree_path: str, stream: str) -> str:

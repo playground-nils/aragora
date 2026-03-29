@@ -123,3 +123,36 @@ def test_sparse_body_lowers_success():
         * 5,
     )
     assert detailed.p_success > sparse.p_success
+
+
+def test_cross_loop_calibration_applies_damper():
+    from aragora.swarm.value_estimator import apply_cross_loop_calibration
+
+    est = estimate_from_issue(
+        issue_number=1,
+        title="Fix receipt query",
+        body="pytest tests/ -x -q",
+    )
+    original_p = est.p_success
+
+    adjusted = apply_cross_loop_calibration(
+        est,
+        calibration_adjustments={
+            "global_p_success_damper": 0.2,
+            "agent_penalty_codex": 0.8,
+            "blocker_penalty_worker_context_overflow": 0.3,
+        },
+    )
+    # Damper should pull p_success down
+    assert adjusted.p_success < original_p
+    # Blocker penalty should reduce value
+    assert adjusted.priority_score > 0  # Still positive
+
+
+def test_cross_loop_calibration_noop_without_adjustments():
+    from aragora.swarm.value_estimator import apply_cross_loop_calibration
+
+    est = estimate_from_issue(issue_number=1, title="Test", body="body")
+    original_score = est.priority_score
+    adjusted = apply_cross_loop_calibration(est, calibration_adjustments=None)
+    assert adjusted.priority_score == original_score

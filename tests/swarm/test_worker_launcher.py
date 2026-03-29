@@ -574,12 +574,11 @@ class TestWait:
         ):
             result = await launcher.wait("wo-timeout-salvage")
 
-        assert result.exit_code == 0
-        assert result.commit_shas == ["abc123"]
-        assert "salvageable commit" in result.stderr
+        assert result.exit_code == -1
+        assert "salvageable commit" not in result.stderr
         mock_proc.kill.assert_called_once()
-        mock_commit.assert_awaited_once()
-        mock_verify.assert_awaited_once_with("/tmp/wt", [expected_test])
+        mock_commit.assert_not_awaited()
+        mock_verify.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_wait_unknown_raises(self):

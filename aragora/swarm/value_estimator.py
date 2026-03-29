@@ -352,3 +352,133 @@ def log_prediction(
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "a") as f:
         f.write(json.dumps(estimate.to_dict()) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# LLM-assisted second scoring pass
+# ---------------------------------------------------------------------------
+
+_LLM_SCORING_PROMPT = """\
+You are evaluating a GitHub issue for autonomous worker dispatch.
+Score each factor from 0.0 to 1.0. Be calibrated — most issues are 0.3-0.7.
+
+Issue #{number}: {title}
+
+{body}
+
+Respond with ONLY a JSON object (no markdown, no explanation):
+{{
+  "expected_value": <float 0-1, product/user value if completed>,
+  "p_success": <float 0-1, chance an AI worker produces a mergeable deliverable>,
+  "proof_weight": <float 0-1, does this advance a proving path or audit gate>,
+  "unblock_weight": <float 0-1, does this unblock other work>,
+  "expected_tokens": <int, estimated token cost>,
+  "reasoning": "<one sentence explaining your scoring>"
+}}
+"""
+
+
+async def estimate_with_llm(
+    issue_number: int,
+    title: str,
+    body: str,
+    *,
+    heuristic_estimate: ValueEstimate | None = None,
+    model: str = "claude-sonnet-4-20250514",
+) -> ValueEstimate:
+    """Refine a value estimate using a frontier LLM.
+
+    Only call this for high-uncertainty issues (heuristic score in 0.3-0.7
+    range) or when the queue has fewer than 5 issues. This costs ~1k tokens.
+
+    Falls back to heuristic estimate on any failure.
+    """
+    fallback = heuristic_estimate or estimate_from_issue(
+        issue_number=issue_number, title=title, body=body
+    )
+
+    try:
+        import anthropic
+
+        client = anthropic.AsyncAnthropic()
+        prompt = _LLM_SCORING_PROMPT.format(
+            number=issue_number,
+            title=title,
+            body=(body or "")[:2000],
+        )
+        response = await client.messages.create(
+            model=model,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        # Strip markdown fences if present
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        data = json.loads(text)
+
+        est = ValueEstimate(
+            issue_number=issue_number,
+            title=title,
+            expected_value=max(0.05, min(1.0, float(data.get("expected_value", 0.5)))),
+            p_success=max(0.05, min(0.95, float(data.get("p_success", 0.5)))),
+            proof_weight=max(0.0, min(1.0, float(data.get("proof_weight", 0.5)))),
+            unblock_weight=max(0.0, min(1.0, float(data.get("unblock_weight", 0.5)))),
+            expected_tokens=int(data.get("expected_tokens", 50_000)),
+            estimation_method="llm",
+            reasoning=str(data.get("reasoning", "")),
+            estimated_at=datetime.now(UTC).isoformat(),
+        )
+
+        # Blend LLM estimate with heuristic (60/40 LLM-favored)
+        if heuristic_estimate:
+            est.expected_value = 0.6 * est.expected_value + 0.4 * heuristic_estimate.expected_value
+            est.p_success = 0.6 * est.p_success + 0.4 * heuristic_estimate.p_success
+            est.estimation_method = "llm_blended"
+
+        est.compute_score()
+        return est
+
+    except Exception as exc:
+        logger.debug("LLM value estimation failed, using heuristic: %s", exc)
+        return fallback
+
+
+# ---------------------------------------------------------------------------
+# Cross-loop calibration integration
+# ---------------------------------------------------------------------------
+
+
+def apply_cross_loop_calibration(
+    estimate: ValueEstimate,
+    *,
+    calibration_adjustments: dict[str, Any] | None = None,
+) -> ValueEstimate:
+    """Apply cross-loop calibration adjustments to a value estimate.
+
+    Takes adjustments from ``outcome_signals.apply_calibration_to_estimator()``
+    and uses them to refine the estimate.
+    """
+    if not calibration_adjustments:
+        return estimate
+
+    # Global merge rate damper
+    damper = calibration_adjustments.get("global_p_success_damper")
+    if damper is not None and isinstance(damper, (int, float)):
+        # Blend current estimate with observed global rate
+        estimate.p_success = 0.7 * estimate.p_success + 0.3 * float(damper)
+
+    # Agent-specific penalties
+    for key, penalty in calibration_adjustments.items():
+        if key.startswith("agent_penalty_") and isinstance(penalty, (int, float)):
+            # If the likely runner agent has a penalty, reduce p_success
+            estimate.p_success *= max(0.3, 1.0 - float(penalty) * 0.3)
+
+    # Blocker-specific penalties
+    for key, penalty in calibration_adjustments.items():
+        if key.startswith("blocker_penalty_") and isinstance(penalty, (int, float)):
+            # Reduce expected_value if related blockers are common
+            estimate.expected_value *= max(0.5, 1.0 - float(penalty))
+
+    estimate.compute_score()
+    return estimate
