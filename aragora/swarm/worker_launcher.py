@@ -43,7 +43,12 @@ SESSION_ARTIFACTS: frozenset[str] = frozenset(
 # even if they left behind a recoverable artifact.
 _SALVAGEABLE_EXIT_CODES: frozenset[int] = frozenset(
     {
+        1,  # Generic error — worker may have produced partial work
+        2,  # Misuse of shell builtins
+        130,  # SIGINT — Ctrl-C, worker may have committed before interrupt
+        137,  # SIGKILL — force-killed, check for commits
         141,  # SIGPIPE — stdout pipe closed before process finished writing
+        143,  # SIGTERM — graceful termination, worker may have committed
     }
 )
 
@@ -718,12 +723,34 @@ class WorkerLauncher:
         initial_head: str,
         head_sha: str,
     ) -> list[str]:
-        if not initial_head or not head_sha or initial_head == head_sha:
+        if not head_sha:
             return []
-        output = await cls._git_output(
-            worktree_path, "rev-list", "--reverse", f"{initial_head}..{head_sha}"
+
+        # Primary path: compare initial_head to current HEAD
+        if initial_head and initial_head != head_sha:
+            output = await cls._git_output(
+                worktree_path, "rev-list", "--reverse", f"{initial_head}..{head_sha}"
+            )
+            shas = [line.strip() for line in output.splitlines() if line.strip()]
+            if shas:
+                return shas
+
+        # Fallback: if initial_head is empty/missing or same as head_sha,
+        # check for commits ahead of origin/main.  This catches cases where
+        # the worker committed but initial_head was not captured correctly.
+        fallback_output = await cls._git_output(
+            worktree_path, "rev-list", "--reverse", "origin/main..HEAD"
         )
-        return [line.strip() for line in output.splitlines() if line.strip()]
+        shas = [line.strip() for line in fallback_output.splitlines() if line.strip()]
+        if shas:
+            logger.info(
+                "commit_shas fallback: found %d commits ahead of origin/main "
+                "(initial_head=%r, head_sha=%r)",
+                len(shas),
+                initial_head[:12] if initial_head else "",
+                head_sha[:12] if head_sha else "",
+            )
+        return shas
 
     @classmethod
     async def _collect_changed_paths(
@@ -734,12 +761,18 @@ class WorkerLauncher:
         head_sha: str,
     ) -> list[str]:
         changed: set[str] = set()
+        diff_range = ""
         if initial_head and head_sha and initial_head != head_sha:
+            diff_range = f"{initial_head}..{head_sha}"
+        elif head_sha:
+            # Fallback: compare against origin/main when initial_head is missing
+            diff_range = "origin/main..HEAD"
+        if diff_range:
             diff_names = await cls._git_output(
                 worktree_path,
                 "diff",
                 "--name-only",
-                f"{initial_head}..{head_sha}",
+                diff_range,
             )
             changed.update(line.strip() for line in diff_names.splitlines() if line.strip())
 
