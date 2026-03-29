@@ -32,6 +32,13 @@ for _import_root in _MONOREPO_IMPORT_ROOTS:
         if _import_root_str not in sys.path:
             sys.path.insert(0, _import_root_str)
 
+# Ensure local aragora-debate sources resolve during checkout-based test collection.
+_DEBATE_SRC_ROOT = _PROJECT_ROOT / "aragora-debate" / "src"
+if _DEBATE_SRC_ROOT.is_dir():
+    _debate_src = str(_DEBATE_SRC_ROOT)
+    if _debate_src not in sys.path:
+        sys.path.insert(0, _debate_src)
+
 # Register skip governance plugin for expiry checking
 pytest_plugins = ["tests.plugins.skip_governance"]
 

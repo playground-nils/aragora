@@ -21,20 +21,35 @@ from aragora.agents.config_loader import (
     ConfigValidationError,
     load_agent_configs,
 )
-from aragora.agents.api_agents import (
-    AnthropicAPIAgent,
-    DeepSeekAgent,
-    DeepSeekReasonerAgent,
-    DeepSeekV3Agent,
-    GeminiAgent,
-    GrokAgent,
-    LlamaAgent,
-    LMStudioAgent,
-    MistralAgent,
-    OllamaAgent,
-    OpenAIAPIAgent,
-    OpenRouterAgent,
-)
+
+try:
+    from aragora.agents.api_agents import (
+        AnthropicAPIAgent,
+        DeepSeekAgent,
+        DeepSeekReasonerAgent,
+        DeepSeekV3Agent,
+        GeminiAgent,
+        GrokAgent,
+        LlamaAgent,
+        LMStudioAgent,
+        MistralAgent,
+        OllamaAgent,
+        OpenAIAPIAgent,
+        OpenRouterAgent,
+    )
+except ImportError:
+    AnthropicAPIAgent = None  # type: ignore[assignment,misc]
+    DeepSeekAgent = None  # type: ignore[assignment,misc]
+    DeepSeekReasonerAgent = None  # type: ignore[assignment,misc]
+    DeepSeekV3Agent = None  # type: ignore[assignment,misc]
+    GeminiAgent = None  # type: ignore[assignment,misc]
+    GrokAgent = None  # type: ignore[assignment,misc]
+    LlamaAgent = None  # type: ignore[assignment,misc]
+    LMStudioAgent = None  # type: ignore[assignment,misc]
+    MistralAgent = None  # type: ignore[assignment,misc]
+    OllamaAgent = None  # type: ignore[assignment,misc]
+    OpenAIAPIAgent = None  # type: ignore[assignment,misc]
+    OpenRouterAgent = None  # type: ignore[assignment,misc]
 from aragora.agents.base import create_agent, list_available_agents
 from aragora.agents.calibration import (
     CalibrationBucket,
