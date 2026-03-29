@@ -387,6 +387,68 @@ def extract_issue_validation_contract(issue_body: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Focused Test Discovery
+# ---------------------------------------------------------------------------
+
+
+def discover_focused_tests(
+    repo_path: Path,
+    *,
+    base_ref: str = "origin/main",
+) -> list[str]:
+    """Discover test files corresponding to source files changed since *base_ref*.
+
+    Uses the ``tests/`` mirror convention: a source file at
+    ``aragora/swarm/boss_loop.py`` maps to ``tests/swarm/test_boss_loop.py``.
+
+    Returns a list of relative paths (strings) for test files that actually
+    exist on disk.  Returns an empty list when ``git`` is unavailable or the
+    diff is empty.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", base_ref + "..HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_path),
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            logger.debug("git diff failed (rc=%d): %s", proc.returncode, proc.stderr.strip())
+            return []
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        logger.debug("discover_focused_tests: git unavailable: %s", exc)
+        return []
+
+    changed = [line.strip() for line in proc.stdout.strip().splitlines() if line.strip()]
+
+    test_paths: list[str] = []
+    seen: set[str] = set()
+
+    for filepath in changed:
+        parts = Path(filepath).parts
+        if not filepath.endswith(".py"):
+            continue
+
+        # Source files under aragora/ → mirror in tests/
+        if parts and parts[0] == "aragora" and len(parts) >= 2:
+            test_relative = Path("tests") / Path(*parts[1:])
+            test_candidate = test_relative.parent / f"test_{test_relative.stem}.py"
+            candidate_str = str(test_candidate)
+            if candidate_str not in seen and (repo_path / test_candidate).exists():
+                seen.add(candidate_str)
+                test_paths.append(candidate_str)
+
+        # Changed files already under tests/ → include directly
+        elif parts and parts[0] == "tests" and Path(filepath).name.startswith("test_"):
+            if filepath not in seen and (repo_path / filepath).exists():
+                seen.add(filepath)
+                test_paths.append(filepath)
+
+    return test_paths
+
+
+# ---------------------------------------------------------------------------
 # Runner Freshness
 # ---------------------------------------------------------------------------
 
@@ -1897,16 +1959,17 @@ class BossLoop:
         if validation_contract and self.config.use_focused_verification:
             # Replace broad test suite commands with focused verification
             # that only tests files related to the worker's changes
+            focused_tests = discover_focused_tests(Path.cwd())
             focused = []
             for criterion in validation_contract:
                 if "pytest tests/" in criterion and "-k" not in criterion.lower():
-                    # Replace broad suite with a marker that the supervisor
-                    # will resolve to the actual changed-file test paths
-                    focused.append(
-                        "python -m pytest --timeout=30 -x -q "
-                        "$(git diff --name-only origin/main -- '*.py' "
-                        "| grep '^tests/' | head -20 | tr '\\n' ' ')"
-                    )
+                    if focused_tests:
+                        test_list = " ".join(focused_tests[:20])
+                        focused.append(f"python -m pytest --timeout=30 -x -q {test_list}")
+                    else:
+                        # No focused tests found — keep the original criterion
+                        # rather than running an empty pytest invocation
+                        focused.append(criterion)
                 else:
                     focused.append(criterion)
             spec.acceptance_criteria = focused

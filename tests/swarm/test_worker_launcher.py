@@ -163,7 +163,8 @@ class TestBuildCommand:
         cmd = launcher._build_command("codex", "fix bug", "/tmp/wt")
         assert cmd[0] == "bash"
         assert "exec" in cmd
-        assert "fix bug" in cmd
+        # Prompt is piped via stdin using "-" to avoid ARG_MAX limits
+        assert "-" in cmd
         assert "--full-auto" in cmd
         assert "--model" in cmd
         assert "o3" in cmd
@@ -333,11 +334,12 @@ class TestLaunch:
         assert call_kwargs.kwargs.get("stdin") == asyncio.subprocess.DEVNULL
 
     @pytest.mark.asyncio
-    async def test_launch_detached_sets_stdin_devnull(self, tmp_path: Path):
-        """Detached workers also close stdin."""
+    async def test_launch_detached_codex_uses_stdin_pipe(self, tmp_path: Path):
+        """Codex workers pipe prompt via stdin to avoid ARG_MAX limits."""
         launcher = WorkerLauncher(LaunchConfig(detach=True))
         mock_proc = AsyncMock()
         mock_proc.pid = 100
+        mock_proc.stdin = AsyncMock()
         worktree = tmp_path / "wt"
         (worktree / "scripts").mkdir(parents=True)
         (worktree / "scripts" / "codex_session.sh").write_text(
@@ -358,7 +360,7 @@ class TestLaunch:
             await launcher.launch(wo, worktree_path=str(worktree), branch="feat")
 
         call_kwargs = mock_exec.call_args
-        assert call_kwargs.kwargs.get("stdin") == asyncio.subprocess.DEVNULL
+        assert call_kwargs.kwargs.get("stdin") == asyncio.subprocess.PIPE
 
     @pytest.mark.asyncio
     async def test_launch_detached_closes_parent_log_handles(self, tmp_path: Path):

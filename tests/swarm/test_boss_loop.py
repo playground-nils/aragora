@@ -33,6 +33,7 @@ from aragora.swarm.boss_loop import (
     GitHubIssueFeed,
     RunnerFreshnessResult,
     check_runner_freshness,
+    discover_focused_tests,
     dispatch_bounded_spec,
     extract_issue_validation_contract,
     select_eligible_issue,
@@ -1544,3 +1545,147 @@ class TestClassifyTerminalRunOutcome:
         assert deliverable["type"] == "branch"
         assert deliverable["branch"] == "codex/swarm-abc-subtask_1"
         assert deliverable["commit_shas"] == ["abc123"]
+
+
+# ---------------------------------------------------------------------------
+# Focused test discovery
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoverFocusedTests:
+    """Tests for discover_focused_tests — keyed with 'focused'."""
+
+    def test_focused_maps_source_to_test(self, tmp_path, monkeypatch):
+        """Source file under aragora/ maps to tests/ mirror."""
+        # Create the test file so the existence check passes
+        test_dir = tmp_path / "tests" / "swarm"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_boss_loop.py").write_text("# test")
+
+        def _run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "aragora/swarm/boss_loop.py\n"
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert paths == ["tests/swarm/test_boss_loop.py"]
+
+    def test_focused_includes_changed_test_files(self, tmp_path, monkeypatch):
+        """Changed test files under tests/ are included directly."""
+        test_dir = tmp_path / "tests" / "swarm"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_queue.py").write_text("# test")
+
+        def _run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "tests/swarm/test_queue.py\n"
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert paths == ["tests/swarm/test_queue.py"]
+
+    def test_focused_skips_nonexistent_test(self, tmp_path, monkeypatch):
+        """When the mapped test file doesn't exist, it is omitted."""
+
+        # Do NOT create the test file
+        def _run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "aragora/swarm/boss_loop.py\n"
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert paths == []
+
+    def test_focused_skips_non_python_files(self, tmp_path, monkeypatch):
+        """Non-.py files (docs, configs) are ignored."""
+
+        def _run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "docs/STATUS.md\nREADME.md\nsetup.cfg\n"
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert paths == []
+
+    def test_focused_deduplicates(self, tmp_path, monkeypatch):
+        """Same test file mapped from two source files appears only once."""
+        test_dir = tmp_path / "tests" / "swarm"
+        test_dir.mkdir(parents=True)
+        (test_dir / "test_boss_loop.py").write_text("# test")
+
+        def _run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            # Two different source files that map to the same test
+            result.stdout = "aragora/swarm/boss_loop.py\ntests/swarm/test_boss_loop.py\n"
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert paths == ["tests/swarm/test_boss_loop.py"]
+
+    def test_focused_returns_empty_on_git_failure(self, tmp_path, monkeypatch):
+        """Non-zero git exit code returns empty list gracefully."""
+
+        def _run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 128
+            result.stdout = ""
+            result.stderr = "fatal: not a git repository"
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert paths == []
+
+    def test_focused_returns_empty_on_missing_git(self, tmp_path, monkeypatch):
+        """FileNotFoundError from git binary returns empty list."""
+
+        def _run(cmd, **kwargs):
+            raise FileNotFoundError("git not found")
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert paths == []
+
+    def test_focused_respects_base_ref(self, tmp_path, monkeypatch):
+        """Custom base_ref is passed through to git diff."""
+        captured: list[list[str]] = []
+
+        def _run(cmd, **kwargs):
+            captured.append(list(cmd))
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        discover_focused_tests(tmp_path, base_ref="origin/develop")
+        assert any("origin/develop..HEAD" in c for c in captured[0])
+
+    def test_focused_multiple_source_files(self, tmp_path, monkeypatch):
+        """Multiple source files each map to their own test file."""
+        (tmp_path / "tests" / "swarm").mkdir(parents=True)
+        (tmp_path / "tests" / "cli").mkdir(parents=True)
+        (tmp_path / "tests" / "swarm" / "test_boss_loop.py").write_text("# t")
+        (tmp_path / "tests" / "cli" / "test_parser.py").write_text("# t")
+
+        def _run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "aragora/swarm/boss_loop.py\naragora/cli/parser.py\n"
+            return result
+
+        monkeypatch.setattr("aragora.swarm.boss_loop.subprocess.run", _run)
+        paths = discover_focused_tests(tmp_path)
+        assert "tests/swarm/test_boss_loop.py" in paths
+        assert "tests/cli/test_parser.py" in paths
+        assert len(paths) == 2
