@@ -1735,9 +1735,16 @@ class BossLoop:
 
         # Refine the prompt with codebase context before dispatch
         goal = f"[Issue #{issue.number}] {issue.title}"
-        body_context = issue.body[:500] if issue.body else ""
+        body_context = issue.body[:2000] if issue.body else ""
         if body_context:
             goal = f"{goal}\n\n{body_context}"
+        # Ensure workers always commit — this is the #1 reason for needs_human failures
+        goal += (
+            "\n\n## CRITICAL: You MUST commit your changes\n"
+            "After making changes, run:\n"
+            "```\ngit add -A && git commit -m 'fix: description of changes'\n```\n"
+            "If you do not commit, your work will be lost."
+        )
 
         try:
             from aragora.swarm.prompt_refiner import refine_worker_prompt
