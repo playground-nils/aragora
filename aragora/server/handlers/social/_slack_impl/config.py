@@ -223,7 +223,7 @@ def resolve_workspace(team_id: str) -> Any:
     if store:
         try:
             return store.get(team_id)
-        except (KeyError, OSError, RuntimeError) as e:
+        except Exception as e:
             logger.debug("Failed to get workspace %s: %s", team_id, e)
 
     return None
