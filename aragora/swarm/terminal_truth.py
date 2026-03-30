@@ -374,12 +374,61 @@ def receipt_expected_for_lane(
     lane_in_flight: bool,
     decision_type: str,
     terminal_outcome: str | None,
+    lease_id: str,
+    lease_status: str,
+    deliverable_present: bool,
+    blockers: list[str] | None = None,
 ) -> bool:
     """Return whether a lane should already have an authoritative receipt."""
     normalized_status = _text(status).lower()
     normalized_queue_status = _text(queue_status).lower()
     normalized_decision = _text(decision_type).lower()
     normalized_outcome = _text(terminal_outcome).lower()
+    normalized_lease_id = _text(lease_id)
+    normalized_lease_status = _text(lease_status).lower()
+    normalized_blockers = {_text(item).lower() for item in blockers or [] if _text(item)}
+
+    if deliverable_present:
+        return True
+    if (
+        not normalized_decision
+        and normalized_queue_status in {"", "queued"}
+        and normalized_lease_status not in {"active"}
+        and normalized_outcome
+        in {
+            "clean_exit_no_deliverable",
+            "needs_human",
+            "blocked",
+            "crash",
+            "timeout",
+        }
+    ):
+        return False
+    if (
+        not normalized_decision
+        and normalized_queue_status in {"", "queued"}
+        and (
+            normalized_status == "scope_violation"
+            or normalized_blockers.intersection(
+                {
+                    "stale_lease_reaped",
+                    "expired_lease_reaped",
+                    "work_order_leasing_failed",
+                }
+            )
+        )
+    ):
+        return False
+    if normalized_lease_id and normalized_outcome and normalized_outcome != "unknown":
+        if (
+            normalized_outcome in {"needs_human", "blocked", "crash", "timeout"}
+            and normalized_lease_status in {"expired", "released"}
+            and normalized_blockers.intersection(
+                {"stale_lease_reaped", "expired_lease_reaped", "work_order_leasing_failed"}
+            )
+        ):
+            return False
+        return True
 
     if (
         lane_in_flight
@@ -393,7 +442,7 @@ def receipt_expected_for_lane(
     if normalized_decision:
         return True
     if normalized_outcome and normalized_outcome != "unknown":
-        return True
+        return bool(normalized_lease_id)
     return normalized_status in {
         "completed",
         "merged",
@@ -404,7 +453,7 @@ def receipt_expected_for_lane(
         "changes_requested",
         "salvage",
         "stalled",
-    }
+    } and bool(normalized_lease_id)
 
 
 def _default_blocked_reason(

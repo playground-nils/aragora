@@ -123,6 +123,52 @@ class TestLaneTelemetryCollector:
         assert collector.get_success_rate(window_days=7) == 0.5
         assert collector.get_human_intervention_rate(window_days=7) == 0.5
 
+    def test_rates_ignore_legacy_noncanonical_terminal_outcomes(self) -> None:
+        collector = LaneTelemetryCollector(db_path=":memory:")
+        now = datetime.now(UTC).timestamp()
+
+        collector.record_lane(
+            LaneTelemetryRecord(
+                lane_kind="boss_dispatch",
+                lane_id="boss-success",
+                terminal_outcome="deliverable_created",
+                deliverable_type="branch",
+                false_success_candidate=False,
+                timestamp=now,
+            )
+        )
+        collector.record_lane(
+            LaneTelemetryRecord(
+                lane_kind="boss_dispatch",
+                lane_id="boss-human",
+                terminal_outcome="needs_human",
+                human_intervention_required=True,
+                timestamp=now,
+            )
+        )
+        collector.record_lane(
+            LaneTelemetryRecord(
+                lane_kind="boss_dispatch",
+                lane_id="boss-legacy-completed",
+                terminal_outcome="completed",
+                human_intervention_required=True,
+                timestamp=now,
+            )
+        )
+        collector.record_lane(
+            LaneTelemetryRecord(
+                lane_kind="boss_dispatch",
+                lane_id="boss-legacy-failed",
+                terminal_outcome="failed",
+                human_intervention_required=True,
+                timestamp=now,
+            )
+        )
+
+        assert collector.get_throughput(window_days=7) == 4
+        assert collector.get_success_rate(window_days=7) == 0.5
+        assert collector.get_human_intervention_rate(window_days=7) == 0.5
+
 
 class TestBossDispatchTelemetry:
     def test_emit_lane_receipt_records_boss_dispatch_terminal_event(self) -> None:
@@ -181,6 +227,27 @@ class TestBossDispatchTelemetry:
         assert len(records) == 1
         assert records[0].terminal_outcome == "deliverable_created"
         assert records[0].deliverable_type == "branch"
+
+    def test_missing_outcome_completed_without_deliverable_becomes_clean_exit_no_deliverable(
+        self,
+    ) -> None:
+        collector = LaneTelemetryCollector(db_path=":memory:")
+        loop = BossLoop(config=BossLoopConfig(max_iterations=1, iteration_interval_seconds=0.0))
+        worker_result = {
+            "run_id": "run-125",
+            "status": "completed",
+        }
+
+        with patch("aragora.swarm.boss_loop._LANE_TELEMETRY", collector):
+            loop._record_lane_telemetry(
+                worker_result, {"number": 44, "title": "No deliverable lane"}, 2.0, None
+            )
+
+        records = collector.get_recent_lanes()
+        assert len(records) == 1
+        assert records[0].terminal_outcome == "clean_exit_no_deliverable"
+        assert records[0].deliverable_type == ""
+        assert records[0].human_intervention_required is True
 
     def test_preview_only_outcome_is_excluded_from_human_intervention(self) -> None:
         collector = LaneTelemetryCollector(db_path=":memory:")

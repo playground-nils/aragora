@@ -28,6 +28,7 @@ from typing import Any
 from aragora.swarm.terminal_truth import (
     extract_run_deliverable,
     extract_run_worker_outcome,
+    qualify_work_order_terminal_state,
     qualify_run_terminal_state,
 )
 from aragora.swarm.lane_telemetry import LaneTelemetryCollector, LaneTelemetryRecord
@@ -851,6 +852,32 @@ def _classify_terminal_run_outcome(run_dict: dict[str, Any]) -> str:
     return qualify_run_terminal_state(run_dict).terminal_outcome
 
 
+def _qualify_worker_result_terminal_state(worker_result: dict[str, Any]) -> tuple[str, str]:
+    """Normalize legacy flat worker_result payloads into canonical terminal truth."""
+    deliverable = worker_result.get("deliverable")
+    adapted: dict[str, Any] = {
+        "status": worker_result.get("status"),
+        "worker_outcome": worker_result.get("worker_outcome"),
+        "failure_reason": worker_result.get("error"),
+        "blockers": list(worker_result.get("reasons", []) or []),
+    }
+    if isinstance(deliverable, dict):
+        deliverable_type = str(deliverable.get("type", "")).strip().lower()
+        if deliverable_type == "branch":
+            adapted["branch"] = deliverable.get("branch")
+            adapted["commit_shas"] = deliverable.get("commit_shas") or []
+        elif deliverable_type == "pr":
+            adapted["pr_url"] = deliverable.get("pr_url") or worker_result.get("pr_url")
+        elif deliverable_type == "adopted_pr":
+            adapted["adopted_pr"] = (
+                deliverable.get("adopted_pr")
+                or deliverable.get("pr_url")
+                or worker_result.get("pr_url")
+            )
+    qualification = qualify_work_order_terminal_state(adapted)
+    return qualification.terminal_outcome, qualification.deliverable_type or ""
+
+
 async def dispatch_bounded_spec(
     spec: Any,
     *,
@@ -1364,12 +1391,13 @@ class BossLoop:
         if isinstance(worker_result.get("pr_number"), int):
             pr_number = int(worker_result["pr_number"])
         if not terminal_outcome:
-            if deliverable_type == "adopted_pr":
-                terminal_outcome = "pr_adopted"
-            elif deliverable_type in {"pr", "branch"}:
-                terminal_outcome = "deliverable_created"
-            else:
-                terminal_outcome = str(worker_result.get("status", "")).strip().lower() or "unknown"
+            terminal_outcome, normalized_deliverable_type = _qualify_worker_result_terminal_state(
+                worker_result
+            )
+            if normalized_deliverable_type:
+                deliverable_type = normalized_deliverable_type
+            if not terminal_outcome:
+                terminal_outcome = "unknown"
         receipt_id = str(lane_receipt_id or worker_result.get("receipt_id") or "").strip()
         false_success_candidate = (
             terminal_outcome

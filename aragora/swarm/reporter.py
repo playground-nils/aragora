@@ -403,9 +403,13 @@ def _lane_health(
     scope_violation: bool,
     superseded: bool,
     collisions: list[str],
+    blockers: list[str],
 ) -> str:
     if superseded or status == "discarded":
         return "superseded"
+    lowered_blockers = {_text(item).lower() for item in blockers if _text(item)}
+    if lowered_blockers.intersection({"stale_lease_reaped", "expired_lease_reaped"}):
+        return "expired"
     if lease_status == "expired" or status == "timed_out":
         return "expired"
     if stale_heartbeat or status in {"dispatch_failed", "failed"}:
@@ -794,6 +798,13 @@ def build_integrator_view(
             work_order.get("work_order_id"),
             work_order.get("task_id"),
         )
+        lease_id = _first_text(
+            task.get("lease_id"),
+            lease.get("lease_id"),
+            receipt.get("lease_id"),
+            work_order.get("lease_id"),
+            work_order_meta.get("lease_id"),
+        )
         receipt_id = _first_text(
             task.get("receipt_id"),
             receipt.get("receipt_id"),
@@ -859,9 +870,9 @@ def build_integrator_view(
         heartbeat_age_seconds = _age_seconds(heartbeat_source, now=now)
         lease_status = _text(lease.get("status")).lower()
         lane_in_flight = (
-            status in {"queued", "leased", "dispatched", "active", "integrating"}
+            status in {"leased", "dispatched", "active", "integrating"}
             or lease_status == "active"
-            or queue_status in {"queued", "validating", "integrating"}
+            or queue_status in {"validating", "integrating"}
         )
         stale_heartbeat = bool(
             (
@@ -987,6 +998,10 @@ def build_integrator_view(
             lane_in_flight=lane_in_flight,
             decision_type=decision_type,
             terminal_outcome=terminal_outcome if terminal_outcome != "unknown" else None,
+            lease_id=lease_id,
+            lease_status=lease_status,
+            deliverable_present=qualification.deliverable is not None,
+            blockers=qualification.reasons,
         )
         missing_receipt = _explicit_missing_receipt(work_order, queue_item) or (
             receipt_expected and not receipt_id
@@ -1076,12 +1091,6 @@ def build_integrator_view(
             else ""
         )
 
-        lease_id = _first_text(
-            task.get("lease_id"),
-            lease.get("lease_id"),
-            work_order.get("lease_id"),
-            work_order_meta.get("lease_id"),
-        )
         scope_violation_record = (
             scope_violation_by_lease.get(lease_id)
             if lease_id
@@ -1160,6 +1169,7 @@ def build_integrator_view(
             scope_violation=scope_violation,
             superseded=superseded,
             collisions=collision_reasons,
+            blockers=qualification.reasons,
         )
 
         title = _first_text(

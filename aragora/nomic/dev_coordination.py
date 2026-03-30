@@ -1563,6 +1563,7 @@ class DevCoordinationStore:
         pr_number: int | None = None,
         confidence: float = 0.0,
         metadata: dict[str, Any] | None = None,
+        require_session_ownership: bool = True,
     ) -> CompletionReceipt:
         normalized_changed_paths = [
             _normalize_claim(item) for item in changed_paths or [] if str(item).strip()
@@ -1625,6 +1626,7 @@ class DevCoordinationStore:
                 changed_paths=receipt.changed_paths,
                 owner_session_id=owner_session_id,
                 branch=branch,
+                require_session_ownership=require_session_ownership,
             )
             if violations:
                 metadata = {
@@ -2302,6 +2304,7 @@ class DevCoordinationStore:
         changed_paths: list[str],
         owner_session_id: str,
         branch: str,
+        require_session_ownership: bool = True,
     ) -> list[dict[str, Any]]:
         scope_patterns = list(dict.fromkeys([*lease.claimed_paths, *lease.allowed_globs]))
         protected_patterns = list(
@@ -2345,24 +2348,25 @@ class DevCoordinationStore:
                     }
                 )
 
-        audit = self.fleet_store.audit_session_paths(
-            session_id=owner_session_id,
-            paths=changed_paths,
-            branch=branch,
-        )
-        for path in audit["unowned_paths"]:
-            violations.append({"type": "unowned_path", "path": path})
-        for conflict in audit["conflicts"]:
-            violations.append(
-                {
-                    "type": "conflicting_claim",
-                    "path": str(conflict.get("path", "")),
-                    "conflicting_path": str(conflict.get("conflicting_path", "")),
-                    "session_id": str(conflict.get("session_id", "")),
-                    "branch": str(conflict.get("branch", "")),
-                    "mode": str(conflict.get("mode", "")),
-                }
+        if require_session_ownership:
+            audit = self.fleet_store.audit_session_paths(
+                session_id=owner_session_id,
+                paths=changed_paths,
+                branch=branch,
             )
+            for path in audit["unowned_paths"]:
+                violations.append({"type": "unowned_path", "path": path})
+            for conflict in audit["conflicts"]:
+                violations.append(
+                    {
+                        "type": "conflicting_claim",
+                        "path": str(conflict.get("path", "")),
+                        "conflicting_path": str(conflict.get("conflicting_path", "")),
+                        "session_id": str(conflict.get("session_id", "")),
+                        "branch": str(conflict.get("branch", "")),
+                        "mode": str(conflict.get("mode", "")),
+                    }
+                )
         return violations
 
     def mark_supervisor_run_merged(

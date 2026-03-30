@@ -17,6 +17,19 @@ from aragora.persistence.db_config import get_default_data_dir
 
 logger = logging.getLogger(__name__)
 
+_CANONICAL_RATE_OUTCOMES: frozenset[str] = frozenset(
+    {
+        "deliverable_created",
+        "pr_adopted",
+        "clean_exit_no_deliverable",
+        "needs_human",
+        "blocked",
+        "crash",
+        "timeout",
+        "stalled",
+    }
+)
+
 
 @dataclass(slots=True)
 class LaneTelemetryRecord:
@@ -238,6 +251,9 @@ class LaneTelemetryCollector:
         return int(row or 0)
 
     def get_success_rate(self, window_days: int = 7) -> float:
+        canonical_outcomes = ", ".join(
+            f"'{outcome}'" for outcome in sorted(_CANONICAL_RATE_OUTCOMES)
+        )
         row = self._aggregate_row(
             """
             SELECT COUNT(*) AS total,
@@ -246,8 +262,8 @@ class LaneTelemetryCollector:
                             THEN 1 ELSE 0 END) AS successes
             FROM lane_telemetry
             WHERE timestamp >= ?
-              AND COALESCE(TRIM(terminal_outcome), '') NOT IN ('', 'unknown', 'preview_only')
-            """,
+              AND terminal_outcome IN ({canonical_outcomes})
+            """.format(canonical_outcomes=canonical_outcomes),
             window_days,
         )
         total = int(row["total"] or 0)
@@ -266,14 +282,17 @@ class LaneTelemetryCollector:
         return int(row or 0)
 
     def get_human_intervention_rate(self, window_days: int = 7) -> float:
+        canonical_outcomes = ", ".join(
+            f"'{outcome}'" for outcome in sorted(_CANONICAL_RATE_OUTCOMES)
+        )
         row = self._aggregate_row(
             """
             SELECT COUNT(*) AS total,
                    SUM(human_intervention_required) AS human_required
             FROM lane_telemetry
             WHERE timestamp >= ?
-              AND COALESCE(TRIM(terminal_outcome), '') NOT IN ('', 'unknown', 'preview_only')
-            """,
+              AND terminal_outcome IN ({canonical_outcomes})
+            """.format(canonical_outcomes=canonical_outcomes),
             window_days,
         )
         total = int(row["total"] or 0)

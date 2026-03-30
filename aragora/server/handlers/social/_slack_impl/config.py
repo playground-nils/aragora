@@ -165,8 +165,9 @@ def create_tracked_task(coro: Coroutine[Any, Any, Any], name: str) -> asyncio.Ta
         from aragora.server.unified_server import get_main_event_loop
 
         main_loop = get_main_event_loop()
+        logger.info("create_tracked_task(%s): main_loop=%s", name, main_loop is not None)
     except ImportError:
-        pass
+        logger.info("create_tracked_task(%s): unified_server import failed", name)
     if main_loop is None:
         try:
             from aragora.storage.pool_manager import get_pool_event_loop

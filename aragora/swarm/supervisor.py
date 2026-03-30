@@ -357,6 +357,8 @@ class SwarmSupervisor:
             record.get("metadata", {}).get("managed_dir_pattern", ".worktrees/{agent}-auto")
         )
         work_orders = [dict(item) for item in record.get("work_orders", [])]
+        for item in work_orders:
+            self._backfill_missing_completion_receipt(item)
         active_count = sum(
             1 for item in work_orders if str(item.get("status", "")) in {"leased", "dispatched"}
         )
@@ -419,6 +421,62 @@ class SwarmSupervisor:
             ),
         )
         return SupervisorRun.from_record(refreshed)
+
+    def _backfill_missing_completion_receipt(self, item: dict[str, Any]) -> None:
+        """Heal older completed lanes that predate receipt propagation fixes."""
+        if str(item.get("status", "")).strip().lower() != "completed":
+            return
+        lease_id = str(item.get("lease_id", "") or "").strip()
+        receipt_id = str(item.get("receipt_id") or "").strip()
+        deliverable_type = self._work_order_deliverable_type(item)
+        if not lease_id or receipt_id or not deliverable_type:
+            return
+        try:
+            receipt = self.store.record_completion(
+                lease_id=lease_id,
+                owner_agent=str(item.get("target_agent", "")).strip(),
+                owner_session_id=str(item.get("owner_session_id", "")).strip(),
+                branch=str(item.get("branch", "")).strip(),
+                worktree_path=str(item.get("worktree_path", "")).strip(),
+                base_sha=str(item.get("initial_head", "")).strip(),
+                head_sha=str(item.get("head_sha", "")).strip(),
+                commit_shas=list(item.get("commit_shas", []) or []),
+                changed_paths=list(item.get("changed_paths", []) or []),
+                tests_run=list(item.get("tests_run", []) or []),
+                validations_run=list(item.get("tests_run", []) or []),
+                assumptions=[],
+                blockers=[
+                    str(blocker).strip()
+                    for blocker in item.get("blockers", [])
+                    if str(blocker).strip()
+                ],
+                outcome=deliverable_type,
+                risks=[
+                    str(blocker).strip()
+                    for blocker in item.get("blockers", [])
+                    if str(blocker).strip()
+                ],
+                pr_url=str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip(),
+                pr_number=self._extract_pr_number(
+                    str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip()
+                ),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                metadata={
+                    "task_key": str(item.get("task_key", "")).strip() or None,
+                    "verification_results": list(item.get("verification_results", []) or []),
+                    "worker_outcome": str(item.get("worker_outcome", "")).strip() or None,
+                    "approval_required": bool(item.get("approval_required", False)),
+                    "risk_level": str(item.get("risk_level", "")).strip() or None,
+                    "success_criteria": dict(item.get("success_criteria") or {}),
+                    "backfilled_receipt": True,
+                },
+                require_session_ownership=False,
+            )
+        except (FileScopeViolationError, KeyError, ValueError):
+            logger.debug("completion receipt backfill skipped", exc_info=True)
+            return
+        item["receipt_id"] = receipt.receipt_id
+        item["confidence"] = receipt.confidence
 
     def status_summary(
         self,
@@ -1418,7 +1476,7 @@ class SwarmSupervisor:
                     item["exit_code"] = result.exit_code
                     return
 
-            receipt_id = str(item.get("receipt_id", "")).strip()
+            receipt_id = str(item.get("receipt_id") or "").strip()
             if lease_id and not receipt_id:
                 try:
                     receipt = self.store.record_completion(
@@ -1601,7 +1659,7 @@ class SwarmSupervisor:
             duration_seconds = 0.0
             if started_at is not None and completed_at is not None:
                 duration_seconds = max(0.0, (completed_at - started_at).total_seconds())
-            receipt_id = str(item.get("receipt_id", "")).strip()
+            receipt_id = str(item.get("receipt_id") or "").strip()
             pr_reference = str(item.get("pr_url", "") or item.get("adopted_pr", "") or "").strip()
             false_success_candidate = (
                 qualification.terminal_outcome

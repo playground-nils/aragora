@@ -303,6 +303,50 @@ def test_record_completion_rejects_out_of_scope_changes(store: DevCoordinationSt
     assert summary["scope_violations"][0]["violations"][0]["type"] in violation_types
 
 
+def test_record_completion_can_skip_live_session_ownership_for_historical_backfill(
+    store: DevCoordinationStore,
+) -> None:
+    lease = store.claim_lease(
+        task_id="clb-backfill",
+        title="Historical backfill lane",
+        owner_agent="codex",
+        owner_session_id="sess-backfill",
+        branch="codex/backfill",
+        worktree_path="/tmp/wt-backfill",
+        claimed_paths=["aragora/server/auth_checks.py"],
+    )
+    store.fleet_store.release_paths(session_id="sess-backfill")
+
+    with pytest.raises(FileScopeViolationError) as exc_info:
+        store.record_completion(
+            lease_id=lease.lease_id,
+            owner_agent="codex",
+            owner_session_id="sess-backfill",
+            branch="codex/backfill",
+            worktree_path="/tmp/wt-backfill",
+            commit_shas=["abc12345"],
+            changed_paths=["aragora/server/auth_checks.py"],
+        )
+
+    assert any(item["type"] == "unowned_path" for item in exc_info.value.violations)
+
+    receipt = store.record_completion(
+        lease_id=lease.lease_id,
+        owner_agent="codex",
+        owner_session_id="sess-backfill",
+        branch="codex/backfill",
+        worktree_path="/tmp/wt-backfill",
+        commit_shas=["abc12345"],
+        changed_paths=["aragora/server/auth_checks.py"],
+        metadata={"backfilled_receipt": True},
+        require_session_ownership=False,
+    )
+
+    assert receipt.receipt_id
+    assert receipt.metadata["backfilled_receipt"] is True
+    assert receipt.outcome == "deliverable_created"
+
+
 def test_record_completion_rejects_protected_hot_paths(store: DevCoordinationStore) -> None:
     lease = store.claim_lease(
         task_id="clb-hot",

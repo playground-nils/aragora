@@ -1000,6 +1000,7 @@ async def test_collect_results_records_passed_merge_gate_checks(
                 "review_status": "pending",
                 "file_scope": ["aragora/swarm/supervisor.py"],
                 "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
+                "receipt_id": None,
             }
         ],
         status="active",
@@ -1049,6 +1050,7 @@ async def test_collect_results_records_passed_merge_gate_checks(
     assert wo["status"] == "completed"
     assert wo["review_status"] == "pending_heterogeneous_review"
     assert wo["receipt_id"] is not None
+    assert store.get_completion_receipt(wo["receipt_id"]) is not None
     assert wo["merge_gate"]["checks_passed"] is True
     assert wo["merge_gate"]["human_approval_required"] is True
 
@@ -1221,6 +1223,80 @@ async def test_collect_results_blocks_merge_gate_without_verification_plan(
     assert wo["failure_reason"] == "missing_verification_plan"
     assert "verification command" in wo["blocking_question"]
     assert "missing verification plan" in wo["dispatch_error"]
+
+
+def test_refresh_run_backfills_missing_receipt_for_completed_deliverable(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run_record = store.create_supervisor_run(
+        goal="backfill receipt lane",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "backfill receipt lane"},
+        work_orders=[
+            {
+                "work_order_id": "wo-backfill",
+                "status": "queued",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "owner_session_id": "backfill-session",
+                "review_status": "pending",
+                "file_scope": ["aragora/swarm/supervisor.py"],
+            }
+        ],
+        status="active",
+    )
+    run_id = run_record["run_id"]
+    lease = store.claim_lease(
+        task_id="wo-backfill",
+        title="Backfill lane",
+        owner_agent="claude",
+        owner_session_id="backfill-session",
+        branch="main",
+        worktree_path=str(repo),
+        claimed_paths=["aragora/swarm/supervisor.py"],
+        expected_tests=["python -m pytest tests/swarm/test_supervisor.py -q"],
+        metadata={"supervisor_run_id": run_id, "work_order_id": "wo-backfill"},
+    )
+    store.update_supervisor_run(
+        run_id,
+        status="completed",
+        work_orders=[
+            {
+                "work_order_id": "wo-backfill",
+                "status": "completed",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "owner_session_id": "backfill-session",
+                "lease_id": lease.lease_id,
+                "receipt_id": None,
+                "review_status": "pending_heterogeneous_review",
+                "file_scope": ["aragora/swarm/supervisor.py"],
+                "changed_paths": ["aragora/swarm/supervisor.py"],
+                "commit_shas": ["abc12345"],
+                "tests_run": ["python -m pytest tests/swarm/test_supervisor.py -q"],
+                "worker_outcome": "completed",
+                "initial_head": "base123",
+                "head_sha": "head456",
+                "confidence": 0.82,
+            }
+        ],
+    )
+    store.fleet_store.release_paths(session_id="backfill-session")
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store)
+    refreshed = supervisor.refresh_run(run_id)
+
+    wo = refreshed.work_orders[0]
+    assert wo["status"] == "completed"
+    assert wo["receipt_id"] is not None
+    receipt = store.get_completion_receipt(wo["receipt_id"])
+    assert receipt is not None
+    assert receipt.lease_id == lease.lease_id
+    assert receipt.metadata["backfilled_receipt"] is True
 
 
 @pytest.mark.asyncio

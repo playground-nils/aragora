@@ -826,5 +826,168 @@ class TestIntegratorView:
         lane = payload["lanes"][0]
         assert lane["terminal_outcome"] == "clean_exit_no_deliverable"
         assert lane["deliverable_type"] is None
-        assert lane["missing_receipt"] is True
+        assert lane["missing_receipt"] is False
         assert lane["merge_readiness"] == "blocked"
+
+    def test_build_integrator_view_does_not_expect_receipt_for_pre_dispatch_needs_human_lane(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-lease-fail",
+                            "task_id": "wo-lease-fail",
+                            "run_id": "run-1",
+                            "status": "needs_human",
+                            "title": "Lease failed before dispatch",
+                            "owner_agent": "codex",
+                            "branch": "codex/lease-fail",
+                            "worktree_path": "/tmp/repo/.worktrees/lease-fail",
+                            "failure_reason": "work_order_leasing_failed",
+                            "dispatch_error": "autopilot ensure failed",
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "needs_human"
+        assert lane["deliverable_type"] is None
+        assert lane["receipt_expected"] is False
+        assert lane["missing_receipt"] is False
+        assert "missing_receipt" not in lane["blockers"]
+        assert "attach_receipt" not in lane["available_actions"]
+        assert lane["merge_readiness"] == "blocked"
+
+    def test_build_integrator_view_does_not_expect_receipt_for_reaped_stale_lease_lane(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-stale",
+                            "task_id": "wo-stale",
+                            "run_id": "run-1",
+                            "status": "needs_human",
+                            "title": "Stale lease lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-stale",
+                            "branch": "codex/stale-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/stale",
+                            "lease_id": "lease-stale",
+                            "blockers": ["stale_lease_reaped"],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-stale",
+                            "task_id": "wo-stale",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-stale",
+                            "branch": "codex/stale-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/stale",
+                            "status": "expired",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "needs_human"
+        assert lane["receipt_expected"] is False
+        assert lane["missing_receipt"] is False
+        assert "missing_receipt" not in lane["blockers"]
+        assert lane["lane_health"] == "expired"
+        assert lane["next_action"] == "Salvage or reassign the expired lane before resuming work."
+        assert "attach_receipt" not in lane["available_actions"]
+
+    def test_build_integrator_view_does_not_expect_receipt_when_stale_lease_record_is_gone(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-stale-missing-lease",
+                            "task_id": "wo-stale-missing-lease",
+                            "run_id": "run-1",
+                            "status": "needs_human",
+                            "title": "Stale lease lane without surviving lease row",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-stale",
+                            "branch": "codex/stale-gone",
+                            "worktree_path": "/tmp/repo/.worktrees/stale-gone",
+                            "lease_id": "lease-gone",
+                            "blockers": ["stale_lease_reaped"],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["receipt_expected"] is False
+        assert lane["missing_receipt"] is False
+        assert "missing_receipt" not in lane["blockers"]
+        assert lane["lane_health"] == "expired"
+        assert lane["next_action"] == "Salvage or reassign the expired lane before resuming work."
+
+    def test_build_integrator_view_does_not_mark_unleased_queued_lane_stale(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-queued",
+                            "task_id": "wo-queued",
+                            "run_id": "run-1",
+                            "status": "queued",
+                            "title": "Queued backlog lane",
+                            "owner_agent": "codex",
+                            "branch": "codex/queued-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/queued",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                        }
+                    ],
+                    "leases": [],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["status"] == "queued"
+        assert lane["stale_heartbeat"] is False
+        assert "stale_heartbeat" not in lane["blockers"]
+        assert lane["lane_health"] == "healthy"
