@@ -443,18 +443,20 @@ class SwarmSupervisor:
         return SupervisorRun.from_record(refreshed)
 
     def _collect_finished_workers_sync(self, run_id: str) -> None:
-        """Synchronously check dispatched workers for finished results.
+        """Mark dispatched workers with dead PIDs for deferred collection.
 
-        For each dispatched work order with a dead PID, attempt detached
-        result collection so commit SHAs are captured before lease reaping
-        marks the work order as stale.
+        Does NOT call asyncio.run (unsafe in async contexts). Instead,
+        checks git state synchronously using subprocess and backfills
+        commit SHAs so the lease reaper doesn't discard real deliverables.
         """
-        import asyncio
+        import os
+        import subprocess
 
         record = self.store.get_supervisor_run(run_id)
         if record is None:
             return
         work_orders = record.get("work_orders", [])
+        changed = False
         for item in work_orders:
             if str(item.get("status", "")) != "dispatched":
                 continue
@@ -463,47 +465,59 @@ class SwarmSupervisor:
                 continue
             # Check if PID is still alive
             try:
-                import os
-
                 os.kill(int(pid), 0)
-                continue  # Still running, skip
+                continue  # Still running
             except (OSError, ValueError):
-                pass  # Dead — try to collect
+                pass  # Dead — check for commits
 
             worktree_path = str(item.get("worktree_path", "")).strip()
-            branch = str(item.get("branch", "")).strip()
             initial_head = str(item.get("initial_head", "")).strip()
-            if not worktree_path:
+            if not worktree_path or not os.path.isdir(worktree_path):
                 continue
 
+            # Synchronous git check — no asyncio.run needed
             try:
-                result = asyncio.run(
-                    WorkerLauncher.collect_detached_result(
-                        work_order_id=str(item.get("work_order_id", "")),
-                        agent=str(item.get("target_agent", "codex")),
-                        worktree_path=worktree_path,
-                        branch=branch,
-                        pid=int(pid),
-                        initial_head=initial_head,
-                        auto_commit=True,
-                    )
+                head_result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=worktree_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
-                if result is not None and result.commit_shas:
+                if head_result.returncode != 0:
+                    continue
+                head_sha = head_result.stdout.strip()
+
+                # Check for commits ahead of initial_head or origin/main
+                base_ref = initial_head if initial_head else "origin/main"
+                rev_result = subprocess.run(
+                    ["git", "rev-list", "--reverse", f"{base_ref}..{head_sha}"],
+                    cwd=worktree_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                commit_shas = [
+                    s.strip() for s in rev_result.stdout.strip().splitlines() if s.strip()
+                ]
+                if commit_shas:
                     logger.info(
-                        "Pre-reap collection: salvaged %d commits from %s",
-                        len(result.commit_shas),
+                        "Pre-reap salvage: found %d commits from dead worker %s",
+                        len(commit_shas),
                         item.get("work_order_id"),
                     )
-                    item["commit_shas"] = list(result.commit_shas)
-                    item["head_sha"] = result.head_sha or ""
-                    item["changed_paths"] = list(result.changed_paths or [])
-                    self.store.update_supervisor_run(run_id, record)
-            except Exception:
+                    item["commit_shas"] = commit_shas
+                    item["head_sha"] = head_sha
+                    changed = True
+            except (subprocess.TimeoutExpired, OSError) as exc:
                 logger.debug(
-                    "Pre-reap collection failed for %s",
+                    "Pre-reap git check failed for %s: %s",
                     item.get("work_order_id"),
-                    exc_info=True,
+                    exc,
                 )
+
+        if changed:
+            self.store.update_supervisor_run(run_id, record)
 
     def _backfill_missing_completion_receipt(self, item: dict[str, Any]) -> None:
         """Heal older completed lanes that predate receipt propagation fixes."""
