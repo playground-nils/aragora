@@ -117,10 +117,12 @@ class SlackHandler(CommandsMixin, EventsMixin, InteractiveMixin, SecureHandler):
                 logger.debug("Workspace lookup failed (falling back to env): %s", exc)
 
         # Get signing secret (workspace-specific or fallback to env var)
+        # Read from os.environ at request time, not module import time,
+        # because secrets may be hydrated after the module is imported.
         signing_secret = (
             workspace.signing_secret
             if workspace and workspace.signing_secret
-            else _cfg.SLACK_SIGNING_SECRET
+            else os.environ.get("SLACK_SIGNING_SECRET", "") or _cfg.SLACK_SIGNING_SECRET
         )
 
         # Verify Slack signature for security - fail closed if secret missing in production
