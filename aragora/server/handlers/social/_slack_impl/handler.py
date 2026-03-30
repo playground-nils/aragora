@@ -107,7 +107,14 @@ class SlackHandler(CommandsMixin, EventsMixin, InteractiveMixin, SecureHandler):
 
         # Extract team_id for multi-workspace support
         team_id = self._extract_team_id(body, path)
-        workspace = _cfg.resolve_workspace(team_id) if team_id else None
+        workspace = None
+        if team_id:
+            try:
+                workspace = _cfg.resolve_workspace(team_id)
+            except Exception as exc:
+                # Workspace store may not be provisioned (missing table, etc.)
+                # Fall back to env-var-based auth which works for single-workspace
+                logger.debug("Workspace lookup failed (falling back to env): %s", exc)
 
         # Get signing secret (workspace-specific or fallback to env var)
         signing_secret = (
