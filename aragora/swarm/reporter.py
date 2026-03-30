@@ -425,16 +425,18 @@ def _lane_health(
     if (
         scope_violation
         or _text(status).lower() == "scope_violation"
-        or lowered_blockers.intersection(
-            {"scope_violation", "work_order_leasing_failed", "merge_gate_failed"}
-        )
-        or _text(terminal_outcome).lower() in {"clean_exit_no_deliverable", "blocked"}
+        or lowered_blockers.intersection({"scope_violation", "work_order_leasing_failed"})
     ):
         return "blocked"
     if lease_status == "expired" or status == "timed_out":
         return "expired"
     if stale_heartbeat or status in {"dispatch_failed", "failed"}:
         return "stalled"
+    if lowered_blockers.intersection({"merge_gate_failed"}) or _text(terminal_outcome).lower() in {
+        "clean_exit_no_deliverable",
+        "blocked",
+    }:
+        return "blocked"
     if readiness == "merged":
         return "merged"
     if readiness == "blocked" or missing_receipt or scope_violation or collisions:
@@ -1258,6 +1260,7 @@ def build_integrator_view(
             {
                 *[_text(item) for item in task.get("blocked_by", []) if _text(item)],
                 *[_text(item) for item in work_order.get("blockers", []) if _text(item)],
+                *[_text(item) for item in qualification.reasons if _text(item)],
                 *collision_reasons,
             }
         )

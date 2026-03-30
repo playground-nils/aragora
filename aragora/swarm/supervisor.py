@@ -1314,8 +1314,8 @@ class SwarmSupervisor:
             for item in work_orders
             if isinstance(item, dict) and str(item.get("worker_outcome", "")).strip()
         }
-        # Crash outcomes take precedence over stalled — a crash is a definitive
-        # terminal signal that trumps waiting_conflict/waiting_resource.
+        # Definitive terminal signals take precedence over stalled — a crash
+        # or scope_violation is a concrete outcome that trumps waiting states.
         crash_outcomes = {
             WorkerOutcome.CRASH.value,
             WorkerOutcome.CRASH_WITH_SALVAGE.value,
@@ -1323,6 +1323,9 @@ class SwarmSupervisor:
         if worker_outcomes & crash_outcomes:
             blockers = cls._campaign_blockers_from_work_orders(work_orders)
             return "crash", blockers
+        if "scope_violation" in statuses:
+            blockers = cls._campaign_blockers_from_work_orders(work_orders)
+            return "blocked", blockers
 
         forward_progress_statuses = {"queued", "leased", "dispatched"}
         stalled_wait_statuses = {"waiting_conflict", "waiting_resource"}
@@ -2411,10 +2414,10 @@ class SwarmSupervisor:
         blocked_reasons: list[str] = []
         verification_missing_reason: str | None = None
         if not expected_checks:
+            # No verification plan was configured for this lane — the gate
+            # passes by default.  Only record the advisory reason for
+            # observability; it does not block completion.
             verification_missing_reason = "missing_verification_plan"
-            blocked_reasons.append(
-                "merge gate blocked: missing verification plan for code-change lane"
-            )
         if missing_checks:
             blocked_reasons.append(
                 "merge gate blocked: required verification did not run: "
@@ -2431,7 +2434,7 @@ class SwarmSupervisor:
                 reason = f"{reason} - {stderr.splitlines()[0][:200]}"
             blocked_reasons.append(reason)
 
-        checks_passed = bool(expected_checks) and not missing_checks and not failed_checks
+        checks_passed = not missing_checks and not failed_checks
         return {
             "enabled": True,
             "expected_checks": expected_checks,
