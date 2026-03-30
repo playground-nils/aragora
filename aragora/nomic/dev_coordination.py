@@ -2658,6 +2658,21 @@ class DevCoordinationStore:
             for item in record["work_orders"]:
                 if str(item.get("work_order_id", "")).strip() != work_order_id:
                     continue
+                reaped_failure = _optional_text(update.get("failure_reason"))
+                if reaped_failure in {
+                    "stale_lease_reaped",
+                    "expired_lease_reaped",
+                } and _work_order_has_concrete_deliverable(item):
+                    preserved_update = {
+                        key: value
+                        for key, value in update.items()
+                        if key not in {"status", "failure_reason", "blocking_question", "blocker"}
+                    }
+                    if not preserved_update:
+                        break
+                    item.update(preserved_update)
+                    changed = True
+                    break
                 item.update(update)
                 changed = True
                 break
@@ -2677,6 +2692,16 @@ def _optional_text(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def _work_order_has_concrete_deliverable(work_order: dict[str, Any]) -> bool:
+    pr_url = _optional_text(work_order.get("pr_url"))
+    adopted_pr = _optional_text(work_order.get("adopted_pr"))
+    branch = _optional_text(work_order.get("branch"))
+    commit_shas = [
+        str(item).strip() for item in work_order.get("commit_shas", []) if str(item).strip()
+    ]
+    return bool(pr_url or adopted_pr or (branch and commit_shas))
 
 
 def _flatten_acceptance_value(value: Any) -> list[str]:

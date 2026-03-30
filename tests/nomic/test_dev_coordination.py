@@ -682,6 +682,148 @@ def test_reap_expired_leases_releases_fleet_claims(store: DevCoordinationStore) 
     assert store.fleet_store.list_claims() == []
 
 
+def test_reap_expired_leases_preserves_receipt_backed_work_order(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Preserve completed lane on expiry reap",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Preserve completed lane on expiry reap",
+            "refined_goal": "Preserve completed lane on expiry reap",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-expired-reap",
+                "title": "Deliverable lane",
+                "file_scope": ["aragora/swarm/reporter.py"],
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+
+    lease = store.claim_lease(
+        task_id="wo-expired-reap",
+        title="Deliverable lane",
+        owner_agent="codex",
+        owner_session_id="sess-expired-reap",
+        branch="codex/expired-reap",
+        worktree_path="/tmp/wt-expired-reap",
+        claimed_paths=["aragora/swarm/reporter.py"],
+        metadata={"supervisor_run_id": run["run_id"], "work_order_id": "wo-expired-reap"},
+    )
+    receipt = store.record_completion(
+        lease_id=lease.lease_id,
+        owner_agent="codex",
+        owner_session_id="sess-expired-reap",
+        branch="codex/expired-reap",
+        worktree_path="/tmp/wt-expired-reap",
+        commit_shas=["abc12345"],
+        changed_paths=["aragora/swarm/reporter.py"],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE leases SET status = ?, expires_at = ?, updated_at = ? WHERE lease_id = ?",
+            (
+                "active",
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                lease.lease_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    expired = store.reap_expired_leases()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert [item.lease_id for item in expired] == [lease.lease_id]
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "completed"
+    assert refreshed["work_orders"][0]["receipt_id"] == receipt.receipt_id
+    assert "failure_reason" not in refreshed["work_orders"][0]
+
+
+def test_reap_stale_leases_preserves_receipt_backed_work_order(store: DevCoordinationStore) -> None:
+    run = store.create_supervisor_run(
+        goal="Preserve completed lane on stale reap",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Preserve completed lane on stale reap",
+            "refined_goal": "Preserve completed lane on stale reap",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-stale-reap",
+                "title": "Deliverable lane",
+                "file_scope": ["aragora/swarm/reporter.py"],
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+
+    lease = store.claim_lease(
+        task_id="wo-stale-reap",
+        title="Deliverable lane",
+        owner_agent="codex",
+        owner_session_id="sess-stale-reap",
+        branch="codex/stale-reap",
+        worktree_path="/tmp/wt-stale-reap",
+        claimed_paths=["aragora/swarm/reporter.py"],
+        metadata={"supervisor_run_id": run["run_id"], "work_order_id": "wo-stale-reap"},
+    )
+    receipt = store.record_completion(
+        lease_id=lease.lease_id,
+        owner_agent="codex",
+        owner_session_id="sess-stale-reap",
+        branch="codex/stale-reap",
+        worktree_path="/tmp/wt-stale-reap",
+        commit_shas=["abc12345"],
+        changed_paths=["aragora/swarm/reporter.py"],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE leases SET status = ?, expires_at = ?, updated_at = ? WHERE lease_id = ?",
+            (
+                "active",
+                "2999-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                lease.lease_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    stale = store.reap_stale_leases(stale_threshold_seconds=1.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert [item.lease_id for item in stale] == [lease.lease_id]
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "completed"
+    assert refreshed["work_orders"][0]["receipt_id"] == receipt.receipt_id
+    assert "failure_reason" not in refreshed["work_orders"][0]
+
+
 def test_status_summary_does_not_reap_expired_leases(store: DevCoordinationStore) -> None:
     lease = store.claim_lease(
         task_id="clb-status-read",
