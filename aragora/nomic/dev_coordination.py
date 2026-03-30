@@ -2695,13 +2695,14 @@ def _optional_text(*values: Any) -> str:
 
 
 def _work_order_has_concrete_deliverable(work_order: dict[str, Any]) -> bool:
+    receipt_id = _optional_text(work_order.get("receipt_id"))
     pr_url = _optional_text(work_order.get("pr_url"))
     adopted_pr = _optional_text(work_order.get("adopted_pr"))
     branch = _optional_text(work_order.get("branch"))
     commit_shas = [
         str(item).strip() for item in work_order.get("commit_shas", []) if str(item).strip()
     ]
-    return bool(pr_url or adopted_pr or (branch and commit_shas))
+    return bool(receipt_id or pr_url or adopted_pr or (branch and commit_shas))
 
 
 def _flatten_acceptance_value(value: Any) -> list[str]:

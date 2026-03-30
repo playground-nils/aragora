@@ -1133,7 +1133,9 @@ class TestIntegratorView:
         assert lane["status"] == "scope_violation"
         assert lane["merge_readiness"] == "blocked"
         assert lane["lane_health"] == "blocked"
+        assert lane["scope_violation_detected"] is True
         assert (
             lane["next_action"]
             == "Narrow the lane scope or split ownership before it can re-enter merge review."
         )
+        assert payload["summary"]["scope_violation_lanes"] == 1

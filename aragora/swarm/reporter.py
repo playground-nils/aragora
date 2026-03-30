@@ -1030,6 +1030,17 @@ def build_integrator_view(
         }
         qualification = qualify_work_order_terminal_state(synthetic_work_order)
         terminal_outcome = qualification.terminal_outcome
+        qualification_reasons = list(qualification.reasons)
+        if (
+            receipt_id
+            and qualification.deliverable is not None
+            and terminal_outcome in {"deliverable_created", "pr_adopted"}
+        ):
+            qualification_reasons = [
+                reason
+                for reason in qualification_reasons
+                if _text(reason).lower() not in {"stale_lease_reaped", "expired_lease_reaped"}
+            ]
         receipt_expected = receipt_expected_for_lane(
             status=status,
             queue_status=queue_status,
@@ -1039,7 +1050,7 @@ def build_integrator_view(
             lease_id=lease_id,
             lease_status=lease_status,
             deliverable_present=qualification.deliverable is not None,
-            blockers=qualification.reasons,
+            blockers=qualification_reasons,
         )
         missing_receipt = _explicit_missing_receipt(work_order, queue_item) or (
             receipt_expected and not receipt_id
@@ -1138,7 +1149,7 @@ def build_integrator_view(
             fallback_violation = task_meta.get("last_scope_violation")
             if isinstance(fallback_violation, dict):
                 scope_violation_record = fallback_violation
-        lowered_reasons = {_text(item).lower() for item in qualification.reasons if _text(item)}
+        lowered_reasons = {_text(item).lower() for item in qualification_reasons if _text(item)}
         scope_violation = (
             isinstance(scope_violation_record, dict)
             or status == "scope_violation"
@@ -1214,7 +1225,7 @@ def build_integrator_view(
             scope_violation=scope_violation,
             superseded=superseded,
             collisions=collision_reasons,
-            blockers=qualification.reasons,
+            blockers=qualification_reasons,
         )
 
         title = _first_text(
@@ -1260,7 +1271,7 @@ def build_integrator_view(
             {
                 *[_text(item) for item in task.get("blocked_by", []) if _text(item)],
                 *[_text(item) for item in work_order.get("blockers", []) if _text(item)],
-                *[_text(item) for item in qualification.reasons if _text(item)],
+                *[_text(item) for item in qualification_reasons if _text(item)],
                 *collision_reasons,
             }
         )
@@ -1345,6 +1356,7 @@ def build_integrator_view(
             "missing_receipt": missing_receipt,
             "receipt_expected": receipt_expected,
             "scope_violation": scope_violation_record,
+            "scope_violation_detected": scope_violation,
             "superseded": superseded,
             "collisions": collision_reasons,
             "pr": pr,
@@ -1681,7 +1693,7 @@ def build_integrator_view(
             alerts["needs_decision"].append(ref)
         if lane["missing_receipt"]:
             alerts["missing_receipts"].append(ref)
-        if isinstance(lane.get("scope_violation"), dict):
+        if lane.get("scope_violation_detected"):
             alerts["scope_violations"].append(ref)
         if lane["merge_readiness"] == "ready":
             alerts["merge_ready"].append(ref)

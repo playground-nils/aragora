@@ -482,9 +482,7 @@ Reply in thread to add suggestions to ongoing debates
         try:
             # Call the debate engine directly instead of HTTP self-call.
             # Self-calls hit auth middleware which rejects the API token format.
-            from aragora.debate.orchestrator import Arena
-            from aragora.debate.protocol import DebateProtocol
-            from aragora.debate.environment import Environment
+            from aragora import Arena, DebateProtocol, Environment
 
             env = Environment(task=question)
             protocol = DebateProtocol(rounds=1, consensus="majority")
