@@ -260,13 +260,16 @@ def _next_action(
     *,
     readiness: str,
     lane_health: str,
+    terminal_outcome: str,
     stale_heartbeat: bool,
     missing_receipt: bool,
     scope_violation: bool,
     superseded: bool,
     collisions: list[str],
     queue_status: str,
+    blockers: list[str],
 ) -> str:
+    lowered_blockers = {_text(item).lower() for item in blockers if _text(item)}
     if superseded or lane_health == "superseded":
         return "Archive the superseded lane and keep the canonical lane."
     if lane_health == "expired":
@@ -277,6 +280,14 @@ def _next_action(
         return "Resolve the branch or file-scope collision before integrating."
     if scope_violation:
         return "Narrow the lane scope or split ownership before it can re-enter merge review."
+    if "work_order_leasing_failed" in lowered_blockers:
+        return "Reconcile or regenerate the managed worktree, then requeue the lane."
+    if _text(terminal_outcome).lower() == "clean_exit_no_deliverable":
+        return "Inspect why the lane produced no concrete deliverable before rerunning it."
+    if "merge_gate_failed" in lowered_blockers or any(
+        item.startswith("merge gate blocked:") for item in lowered_blockers
+    ):
+        return "Fix the merge gate or verification failure before rerunning the lane."
     if stale_heartbeat:
         return "Inspect the stale lane and decide whether to salvage or reassign it."
     if missing_receipt:
@@ -397,6 +408,7 @@ def _lane_health(
     *,
     readiness: str,
     status: str,
+    terminal_outcome: str,
     lease_status: str,
     stale_heartbeat: bool,
     missing_receipt: bool,
@@ -410,6 +422,15 @@ def _lane_health(
     lowered_blockers = {_text(item).lower() for item in blockers if _text(item)}
     if lowered_blockers.intersection({"stale_lease_reaped", "expired_lease_reaped"}):
         return "expired"
+    if (
+        scope_violation
+        or _text(status).lower() == "scope_violation"
+        or lowered_blockers.intersection(
+            {"scope_violation", "work_order_leasing_failed", "merge_gate_failed"}
+        )
+        or _text(terminal_outcome).lower() in {"clean_exit_no_deliverable", "blocked"}
+    ):
+        return "blocked"
     if lease_status == "expired" or status == "timed_out":
         return "expired"
     if stale_heartbeat or status in {"dispatch_failed", "failed"}:
@@ -869,10 +890,24 @@ def build_integrator_view(
         )
         heartbeat_age_seconds = _age_seconds(heartbeat_source, now=now)
         lease_status = _text(lease.get("status")).lower()
-        lane_in_flight = (
+        worktree_active = bool(worktree_row.get("has_lock")) and bool(worktree_row.get("pid_alive"))
+        stale_lease_blocked = (
             status in {"leased", "dispatched", "active", "integrating"}
-            or lease_status == "active"
+            and queue_status not in {"validating", "integrating"}
+            and (
+                lease_status in {"released", "expired"}
+                or (lease_id and not lease_status and not worktree_active)
+            )
+        )
+        lane_in_flight = (
+            lease_status == "active"
             or queue_status in {"validating", "integrating"}
+            or (
+                status in {"leased", "dispatched", "active", "integrating"}
+                and not stale_lease_blocked
+                and not lease_status
+                and worktree_active
+            )
         )
         stale_heartbeat = bool(
             (
@@ -971,6 +1006,7 @@ def build_integrator_view(
                 *_text_list(task.get("blockers")),
                 *_text_list(queue_meta.get("blockers")),
                 *_text_list(receipt.get("blockers")),
+                *(["stale_lease_reaped"] if stale_lease_blocked else []),
             ],
             "dispatch_error": _first_text(
                 work_order.get("dispatch_error"),
@@ -1100,7 +1136,13 @@ def build_integrator_view(
             fallback_violation = task_meta.get("last_scope_violation")
             if isinstance(fallback_violation, dict):
                 scope_violation_record = fallback_violation
-        scope_violation = isinstance(scope_violation_record, dict)
+        lowered_reasons = {_text(item).lower() for item in qualification.reasons if _text(item)}
+        scope_violation = (
+            isinstance(scope_violation_record, dict)
+            or status == "scope_violation"
+            or worker_outcome == "scope_violation"
+            or "scope_violation" in lowered_reasons
+        )
 
         terminal_blocked = terminal_outcome in {
             "blocked",
@@ -1163,6 +1205,7 @@ def build_integrator_view(
         lane_health = _lane_health(
             readiness=readiness,
             status=status,
+            terminal_outcome=terminal_outcome,
             lease_status=lease_status,
             stale_heartbeat=stale_heartbeat,
             missing_receipt=missing_receipt,
@@ -1314,12 +1357,14 @@ def build_integrator_view(
             "next_action": _next_action(
                 readiness=readiness,
                 lane_health=lane_health,
+                terminal_outcome=terminal_outcome,
                 stale_heartbeat=stale_heartbeat,
                 missing_receipt=missing_receipt,
                 scope_violation=scope_violation,
                 superseded=superseded,
                 collisions=collision_reasons,
                 queue_status=queue_status,
+                blockers=blockers,
             ),
         }
 

@@ -828,6 +828,11 @@ class TestIntegratorView:
         assert lane["deliverable_type"] is None
         assert lane["missing_receipt"] is False
         assert lane["merge_readiness"] == "blocked"
+        assert lane["lane_health"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Inspect why the lane produced no concrete deliverable before rerunning it."
+        )
 
     def test_build_integrator_view_does_not_expect_receipt_for_pre_dispatch_needs_human_lane(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
@@ -867,6 +872,11 @@ class TestIntegratorView:
         assert "missing_receipt" not in lane["blockers"]
         assert "attach_receipt" not in lane["available_actions"]
         assert lane["merge_readiness"] == "blocked"
+        assert lane["lane_health"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Reconcile or regenerate the managed worktree, then requeue the lane."
+        )
 
     def test_build_integrator_view_does_not_expect_receipt_for_reaped_stale_lease_lane(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
@@ -991,3 +1001,139 @@ class TestIntegratorView:
         assert lane["stale_heartbeat"] is False
         assert "stale_heartbeat" not in lane["blockers"]
         assert lane["lane_health"] == "healthy"
+
+    def test_build_integrator_view_marks_released_dispatched_lane_expired(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-released-dispatched",
+                            "task_id": "wo-released-dispatched",
+                            "run_id": "run-1",
+                            "status": "dispatched",
+                            "title": "Released dispatched lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-released",
+                            "branch": "codex/released-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/released",
+                            "lease_id": "lease-released",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-released",
+                            "task_id": "wo-released-dispatched",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-released",
+                            "branch": "codex/released-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/released",
+                            "status": "released",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["status"] == "dispatched"
+        assert lane["stale_heartbeat"] is False
+        assert "stale_lease_reaped" in lane["blockers"]
+        assert lane["lane_health"] == "expired"
+        assert lane["next_action"] == "Salvage or reassign the expired lane before resuming work."
+
+    def test_build_integrator_view_marks_orphaned_dispatched_lane_expired(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-orphaned-dispatched",
+                            "task_id": "wo-orphaned-dispatched",
+                            "run_id": "run-1",
+                            "status": "dispatched",
+                            "title": "Orphaned dispatched lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-orphaned",
+                            "branch": "codex/orphaned-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/orphaned",
+                            "lease_id": "lease-orphaned",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                        }
+                    ],
+                    "leases": [],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            worktrees=[
+                {
+                    "session_id": "sess-orphaned",
+                    "path": "/tmp/repo/.worktrees/orphaned",
+                    "branch": "codex/orphaned-lane",
+                    "has_lock": False,
+                    "pid_alive": False,
+                    "agent": "codex",
+                    "last_activity": (now - timedelta(hours=2)).isoformat(),
+                }
+            ],
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["status"] == "dispatched"
+        assert lane["stale_heartbeat"] is False
+        assert "stale_lease_reaped" in lane["blockers"]
+        assert lane["lane_health"] == "expired"
+        assert lane["next_action"] == "Salvage or reassign the expired lane before resuming work."
+
+    def test_build_integrator_view_marks_scope_violation_lane_blocked(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-scope",
+                            "task_id": "wo-scope",
+                            "run_id": "run-1",
+                            "status": "scope_violation",
+                            "title": "Scope violation lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope",
+                            "branch": "codex/scope-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/scope",
+                            "blockers": ["scope_violation"],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["status"] == "scope_violation"
+        assert lane["merge_readiness"] == "blocked"
+        assert lane["lane_health"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Narrow the lane scope or split ownership before it can re-enter merge review."
+        )

@@ -1314,6 +1314,16 @@ class SwarmSupervisor:
             for item in work_orders
             if isinstance(item, dict) and str(item.get("worker_outcome", "")).strip()
         }
+        # Crash outcomes take precedence over stalled — a crash is a definitive
+        # terminal signal that trumps waiting_conflict/waiting_resource.
+        crash_outcomes = {
+            WorkerOutcome.CRASH.value,
+            WorkerOutcome.CRASH_WITH_SALVAGE.value,
+        }
+        if worker_outcomes & crash_outcomes:
+            blockers = cls._campaign_blockers_from_work_orders(work_orders)
+            return "crash", blockers
+
         forward_progress_statuses = {"queued", "leased", "dispatched"}
         stalled_wait_statuses = {"waiting_conflict", "waiting_resource"}
         stalled_dead_end = bool(statuses & stalled_wait_statuses) and not (
@@ -1447,11 +1457,18 @@ class SwarmSupervisor:
             elif not _pre_outcome:
                 item["worker_outcome"] = WorkerOutcome.COMPLETED.value
 
+            # Salvaged deliverables skip the merge gate — they are best-effort
+            # recoveries where strict verification is inappropriate.
+            _salvage_outcomes = {
+                WorkerOutcome.TIMEOUT_WITH_SALVAGE.value,
+                WorkerOutcome.CRASH_WITH_SALVAGE.value,
+            }
+            _is_salvage = str(item.get("worker_outcome", "")).strip() in _salvage_outcomes
             merge_gate = self._merge_gate_state(item)
             item["merge_gate"] = merge_gate
             if merge_gate.get("verification_missing_reason"):
                 item["verification_missing_reason"] = merge_gate["verification_missing_reason"]
-            if not bool(merge_gate.get("checks_passed")):
+            if not _is_salvage and not bool(merge_gate.get("checks_passed")):
                 # LLM second opinion: is the merge gate failure genuine?
                 if self._llm_override_merge_gate(item, merge_gate):
                     # LLM says deliverable is ready despite gate failure
@@ -1584,14 +1601,22 @@ class SwarmSupervisor:
             return
 
         deliverable_present = bool(self._work_order_deliverable_type(item))
+        salvage_outcome = str(item.get("worker_outcome", "")).strip()
+        is_salvage = salvage_outcome in {
+            WorkerOutcome.CRASH_WITH_SALVAGE.value,
+            WorkerOutcome.TIMEOUT_WITH_SALVAGE.value,
+        }
+        if deliverable_present and is_salvage:
+            # Salvaged deliverables proceed to completion — the recovery was
+            # intentional and the deliverable (commits/PR) is real.
+            item["status"] = "completed"
+            item["review_status"] = "pending_heterogeneous_review"
+            item["exit_code"] = result.exit_code
+            self._release_terminal_lease(item)
+            self._register_pr_if_present(item, result)
+            return
         if deliverable_present:
-            failure_reason = (
-                "worker_timeout_with_salvage"
-                if result.exit_code == -1
-                or str(item.get("worker_outcome", "")).strip()
-                == WorkerOutcome.TIMEOUT_WITH_SALVAGE.value
-                else "worker_crash_with_salvage"
-            )
+            failure_reason = "worker_crash_with_deliverable"
             self._mark_needs_human(
                 item,
                 "worker exited non-zero after producing a recoverable deliverable",

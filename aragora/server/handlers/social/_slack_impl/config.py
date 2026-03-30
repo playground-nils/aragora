@@ -138,36 +138,23 @@ def _handle_task_exception(task: asyncio.Task[Any], task_name: str) -> None:
 
 
 def create_tracked_task(coro: Coroutine[Any, Any, Any], name: str) -> asyncio.Task[Any]:
-    """Create an async task with exception logging.
+    """Schedule a fire-and-forget async task on the server's main event loop.
 
-    Use this instead of raw asyncio.create_task() for fire-and-forget tasks
-    to ensure exceptions are logged rather than silently swallowed.
+    In SQLite mode, HTTP handlers run in temporary event loops created by
+    ``_run_handler_coroutine`` — those loops die when the handler returns.
+    Using ``create_task`` on a temporary loop silently abandons the task.
 
-    When called from a sync HTTP handler thread (no running event loop),
-    dispatches the coroutine to the server's main event loop via
-    ``run_coroutine_threadsafe`` so async resources (HTTP pools, DB
-    connections) work correctly.
+    This function ALWAYS dispatches to the persistent main server loop
+    (set in ``unified_server.start()``) so background tasks survive.
     """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        task = loop.create_task(coro, name=name)
-        task.add_done_callback(lambda t: _handle_task_exception(t, name))
-        return task
-
-    # Dispatch to the server's main event loop (same pattern as
-    # _run_handler_coroutine in handler_registry/core.py)
+    # 1. Find the persistent main server loop
     main_loop = None
     try:
         from aragora.server.unified_server import get_main_event_loop
 
         main_loop = get_main_event_loop()
-        logger.info("create_tracked_task(%s): main_loop=%s", name, main_loop is not None)
     except ImportError:
-        logger.info("create_tracked_task(%s): unified_server import failed", name)
+        pass
     if main_loop is None:
         try:
             from aragora.storage.pool_manager import get_pool_event_loop
@@ -175,33 +162,42 @@ def create_tracked_task(coro: Coroutine[Any, Any, Any], name: str) -> asyncio.Ta
             main_loop = get_pool_event_loop()
         except ImportError:
             pass
-    try:
-        if main_loop is not None and main_loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(coro, main_loop)
 
-            def _on_done(f: Any) -> None:
-                exc = f.exception()
-                if exc:
-                    logger.error("Task %s failed: %s", name, exc, exc_info=exc)
+    # 2. Dispatch to the main loop if available
+    if main_loop is not None and main_loop.is_running():
+        try:
+            current = asyncio.get_running_loop()
+        except RuntimeError:
+            current = None
 
-            future.add_done_callback(_on_done)
-            logger.debug("Dispatched task %s to main event loop", name)
+        if current is main_loop:
+            # Already on the main loop — create_task is safe
+            task = main_loop.create_task(coro, name=name)
+            task.add_done_callback(lambda t: _handle_task_exception(t, name))
+            return task
 
-            class _ThreadsafeTask:
-                def add_done_callback(self, _cb: Any) -> None:
-                    return None
+        # Different thread/loop — use threadsafe dispatch
+        future = asyncio.run_coroutine_threadsafe(coro, main_loop)
+        future.add_done_callback(
+            lambda f: (
+                logger.error("Task %s failed: %s", name, f.exception(), exc_info=f.exception())
+                if f.exception()
+                else None
+            )
+        )
 
-            return _ThreadsafeTask()  # type: ignore[return-value]
-    except ImportError:
-        pass
+        class _ThreadsafeTask:
+            def add_done_callback(self, _cb: Any) -> None:
+                return None
 
-    # Final fallback: thread with isolated event loop (may break async
-    # resources tied to the main loop, but works for simple tasks)
+        return _ThreadsafeTask()  # type: ignore[return-value]
+
+    # 3. Final fallback: thread with isolated event loop
     def _run_in_thread() -> None:
         try:
             asyncio.run(coro)
-        except Exception as exc:  # pragma: no cover - safety net
-            logger.error("Task %s failed with exception: %s", name, exc, exc_info=exc)
+        except Exception as exc:
+            logger.error("Task %s failed: %s", name, exc, exc_info=exc)
 
     thread = threading.Thread(target=_run_in_thread, name=f"slack-task-{name}", daemon=True)
     thread.start()
