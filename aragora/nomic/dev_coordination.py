@@ -886,7 +886,10 @@ class DevCoordinationStore:
                     ):
                         continue
                     metadata = dict(item.get("metadata") or {})
-                    archive_reason = _work_order_reap_failure_reason(item) or "stale_lease_reaped"
+                    archive_reason = (
+                        _work_order_reap_failure_reason(item, lease_status=lease_status)
+                        or "stale_lease_reaped"
+                    )
                     metadata.update(
                         {
                             "archived_due_to": "reaped_no_receipt",
@@ -2902,11 +2905,26 @@ def _developer_task_blockers(work_order: dict[str, Any]) -> list[str]:
     return blockers
 
 
-def _work_order_reap_failure_reason(work_order: dict[str, Any]) -> str:
+def _work_order_reap_failure_reason(
+    work_order: dict[str, Any],
+    *,
+    lease_status: str | None = None,
+) -> str:
     for blocker in _developer_task_blockers(work_order):
         normalized = blocker.strip().lower()
         if normalized in _REAPED_NO_RECEIPT_BLOCKERS:
             return normalized
+    status = _optional_text(work_order.get("status")).lower()
+    normalized_lease_status = _optional_text(lease_status).lower()
+    if status in {"leased", "dispatched", "active", "integrating"} and normalized_lease_status in {
+        "released",
+        "expired",
+    }:
+        return (
+            "expired_lease_reaped"
+            if normalized_lease_status == LeaseStatus.EXPIRED.value
+            else "stale_lease_reaped"
+        )
     return ""
 
 
@@ -2932,7 +2950,7 @@ def _work_order_should_archive_reaped_no_receipt(
         work_order
     ):
         return False
-    if not _work_order_reap_failure_reason(work_order):
+    if not _work_order_reap_failure_reason(work_order, lease_status=lease_status):
         return False
     updated_at = _parse_dt(_developer_task_updated_at(work_order, run))
     return updated_at <= cutoff
