@@ -2512,10 +2512,10 @@ class SwarmSupervisor:
         blocked_reasons: list[str] = []
         verification_missing_reason: str | None = None
         if not expected_checks:
-            # No verification plan was configured for this lane — the gate
-            # passes by default.  Only record the advisory reason for
-            # observability; it does not block completion.
             verification_missing_reason = "missing_verification_plan"
+            blocked_reasons.append(
+                "merge gate blocked: missing verification plan for code-change lane"
+            )
         if missing_checks:
             blocked_reasons.append(
                 "merge gate blocked: required verification did not run: "
@@ -2532,7 +2532,9 @@ class SwarmSupervisor:
                 reason = f"{reason} - {stderr.splitlines()[0][:200]}"
             blocked_reasons.append(reason)
 
-        checks_passed = not missing_checks and not failed_checks
+        checks_passed = (
+            verification_missing_reason is None and not missing_checks and not failed_checks
+        )
         return {
             "enabled": True,
             "expected_checks": expected_checks,
@@ -2849,6 +2851,10 @@ class SwarmSupervisor:
         Returns True if the LLM says the deliverable is ready despite the
         gate failure.  Returns False on any error (fail-closed).
         """
+        if str(merge_gate.get("verification_missing_reason", "")).strip() == (
+            "missing_verification_plan"
+        ):
+            return False
         try:
             from aragora.ralph.llm_classifier import LLMBlockerClassifier
 

@@ -358,6 +358,8 @@ def _next_action(
         return "Inspect the stalled lane and decide whether to salvage, supersede, or reassign it."
     if collisions:
         return "Resolve the branch or file-scope collision before integrating."
+    if "receipt_backfill_blocked_undeclared_scope" in lowered_blockers:
+        return "Declare the intended lane scope or discard the lane before receipt backfill and merge review."
     if scope_violation:
         return "Narrow the lane scope or split ownership before it can re-enter merge review."
     if "work_order_leasing_failed" in lowered_blockers:
@@ -1106,6 +1108,7 @@ def build_integrator_view(
             "pr_url": _first_text(
                 work_order.get("pr_url"),
                 task.get("pr_url"),
+                task_meta.get("pr_url"),
                 receipt.get("pr_url"),
                 queue_item.get("pr_url"),
                 queue_meta.get("pr_url"),
@@ -1113,6 +1116,7 @@ def build_integrator_view(
             "adopted_pr": _first_text(
                 work_order.get("adopted_pr"),
                 task.get("adopted_pr"),
+                task_meta.get("adopted_pr"),
                 receipt.get("adopted_pr"),
                 queue_item.get("adopted_pr"),
                 queue_meta.get("adopted_pr"),
@@ -1128,17 +1132,20 @@ def build_integrator_view(
             "dispatch_error": _first_text(
                 work_order.get("dispatch_error"),
                 task.get("dispatch_error"),
+                task_meta.get("dispatch_error"),
                 queue_item.get("error"),
                 queue_meta.get("error"),
             ),
             "failure_reason": _first_text(
                 work_order.get("failure_reason"),
                 task.get("failure_reason"),
+                task_meta.get("failure_reason"),
                 queue_meta.get("failure_reason"),
             ),
             "blocking_question": _first_text(
                 work_order.get("blocking_question"),
                 task.get("blocking_question"),
+                task_meta.get("blocking_question"),
                 queue_meta.get("blocking_question"),
             ),
             "blocker": blocker_dict,
@@ -1554,6 +1561,11 @@ def build_integrator_view(
             "title": title,
             "status": status,
             "terminal_outcome": terminal_outcome,
+            "deliverable": (
+                dict(qualification.deliverable)
+                if isinstance(qualification.deliverable, dict)
+                else None
+            ),
             "deliverable_type": qualification.deliverable_type,
             "worker_outcome": worker_outcome or None,
             "canonical_lane": canonical_lane,

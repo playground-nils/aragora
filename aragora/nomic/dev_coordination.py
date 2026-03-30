@@ -42,6 +42,8 @@ _PENDING_INTEGRATION_DECISIONS = {"pending_review"}
 _OPEN_SALVAGE_STATUSES = {"detected", "claimed"}
 _OPEN_SUPERVISOR_RUN_STATUSES = {"planned", "active", "needs_human"}
 _DUPLICATE_BRANCH_DELIVERABLE_ARCHIVE_GRACE_HOURS = 24.0
+_SUPERSEDED_WAITING_CONFLICT_ARCHIVE_GRACE_HOURS = 24.0
+_CLEAN_EXIT_NO_DELIVERABLE_ARCHIVE_GRACE_HOURS = 24.0
 _FAILED_NO_DELIVERABLE_ARCHIVE_GRACE_HOURS = 24.0
 _OPEN_DEVELOPER_TASK_STATUSES = {
     "queued",
@@ -1031,6 +1033,64 @@ class DevCoordinationStore:
             conn.close()
         return archived
 
+    def archive_clean_exit_no_deliverable_work_orders(
+        self,
+        *,
+        grace_period_hours: float = _CLEAN_EXIT_NO_DELIVERABLE_ARCHIVE_GRACE_HOURS,
+    ) -> int:
+        """Archive old clean-exit lanes that never produced a receipt or deliverable."""
+        now = _utcnow()
+        grace_period = timedelta(hours=max(0.0, float(grace_period_hours)))
+        cutoff = now - grace_period
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            lease_status_by_id = {
+                str(row["lease_id"]).strip(): str(row["status"]).strip()
+                for row in conn.execute("SELECT lease_id, status FROM leases").fetchall()
+                if str(row["lease_id"]).strip()
+            }
+            archived = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    lease_status = lease_status_by_id.get(_optional_text(item.get("lease_id")))
+                    if not _work_order_should_archive_clean_exit_no_deliverable(
+                        item,
+                        run=record,
+                        cutoff=cutoff,
+                        lease_status=lease_status,
+                    ):
+                        continue
+                    metadata = dict(item.get("metadata") or {})
+                    archive_reason = _work_order_clean_exit_no_deliverable_reason(item)
+                    metadata.update(
+                        {
+                            "archived_due_to": "clean_exit_no_deliverable",
+                            "archived_at": now.isoformat(),
+                            "archive_reason": archive_reason,
+                            "previous_status": _optional_text(item.get("status")) or "completed",
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    if not _optional_text(item.get("failure_reason")):
+                        item["failure_reason"] = archive_reason
+                    changed = True
+                    archived += 1
+                if not changed:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now.isoformat()
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return archived
+
     def archive_duplicate_branch_deliverable_work_orders(
         self,
         *,
@@ -1113,8 +1173,129 @@ class DevCoordinationStore:
             conn.close()
         return archived
 
+    def archive_superseded_waiting_conflict_work_orders(
+        self,
+        *,
+        grace_period_hours: float = _SUPERSEDED_WAITING_CONFLICT_ARCHIVE_GRACE_HOURS,
+    ) -> int:
+        """Archive stale waiting_conflict siblings already covered by a same-run deliverable."""
+        now = _utcnow()
+        grace_period = timedelta(hours=max(0.0, float(grace_period_hours)))
+        cutoff = now - grace_period
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            lease_status_by_id = {
+                str(row["lease_id"]).strip(): str(row["status"]).strip()
+                for row in conn.execute("SELECT lease_id, status FROM leases").fetchall()
+                if str(row["lease_id"]).strip()
+            }
+            archived = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                deliverable_items = [
+                    item
+                    for item in record["work_orders"]
+                    if isinstance(item, dict) and _work_order_has_concrete_deliverable(item)
+                ]
+                if not deliverable_items:
+                    continue
+                changed = False
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    lease_status = lease_status_by_id.get(_optional_text(item.get("lease_id")))
+                    if not _work_order_should_archive_superseded_waiting_conflict(
+                        item,
+                        run=record,
+                        cutoff=cutoff,
+                        lease_status=lease_status,
+                    ):
+                        continue
+                    overlapping_deliverables = [
+                        sibling
+                        for sibling in deliverable_items
+                        if sibling is not item and _work_orders_overlap_by_scope(item, sibling)
+                    ]
+                    if not overlapping_deliverables:
+                        continue
+                    keeper = max(
+                        overlapping_deliverables,
+                        key=lambda sibling: _duplicate_branch_deliverable_priority(
+                            sibling, run=record
+                        ),
+                    )
+                    keeper_id = _optional_text(
+                        keeper.get("work_order_id"),
+                        keeper.get("task_id"),
+                    )
+                    metadata = dict(item.get("metadata") or {})
+                    metadata.update(
+                        {
+                            "archived_due_to": "superseded_waiting_conflict",
+                            "archived_at": now.isoformat(),
+                            "archive_reason": "overlapping_deliverable_sibling",
+                            "canonical_work_order_id": keeper_id or None,
+                            "previous_status": "waiting_conflict",
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    if not _optional_text(item.get("failure_reason")):
+                        item["failure_reason"] = "superseded_waiting_conflict"
+                    changed = True
+                    archived += 1
+                if not changed:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now.isoformat()
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return archived
+
+    def backfill_file_scope_from_changed_paths(self) -> int:
+        """Repair historical empty-scope rows from concrete changed-path evidence."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            backfilled = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    if not _work_order_should_backfill_file_scope_from_changed_paths(item):
+                        continue
+                    changed_paths = [
+                        str(path).strip()
+                        for path in item.get("changed_paths", []) or []
+                        if str(path).strip()
+                    ]
+                    if not changed_paths:
+                        continue
+                    item["file_scope"] = list(dict.fromkeys(changed_paths))
+                    metadata = dict(item.get("metadata") or {})
+                    metadata["backfilled_file_scope_from_changed_paths"] = True
+                    metadata["file_scope_backfilled_at"] = now
+                    item["metadata"] = metadata
+                    changed = True
+                    backfilled += 1
+                if not changed:
+                    continue
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return backfilled
+
     def backfill_missing_completion_receipts(self) -> int:
         """Attach or synthesize missing receipts for stored deliverable work orders."""
+        self.backfill_file_scope_from_changed_paths()
         conn = self._connect()
         try:
             rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
@@ -1309,7 +1490,9 @@ class DevCoordinationStore:
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
+        self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
+        self.archive_superseded_waiting_conflict_work_orders()
         return expired
 
     def reap_stale_leases(
@@ -1396,7 +1579,9 @@ class DevCoordinationStore:
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
+        self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
+        self.archive_superseded_waiting_conflict_work_orders()
         return stale
 
     def list_completion_receipts(
@@ -2384,7 +2569,9 @@ class DevCoordinationStore:
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
+        self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
+        self.archive_superseded_waiting_conflict_work_orders()
         work_queue = queue or GlobalWorkQueue(storage_dir=self.repo_root / ".work_queue")
         await work_queue.initialize()
 
@@ -2919,6 +3106,33 @@ class DevCoordinationStore:
             updated_at=_developer_task_updated_at(work_order, run),
             metadata={
                 **metadata,
+                "base_sha": _optional_text(work_order.get("base_sha")) or None,
+                "head_sha": _optional_text(work_order.get("head_sha")) or None,
+                "commit_shas": [
+                    str(item).strip()
+                    for item in work_order.get("commit_shas", [])
+                    if str(item).strip()
+                ],
+                "changed_paths": [
+                    str(item).strip()
+                    for item in work_order.get("changed_paths", [])
+                    if str(item).strip()
+                ],
+                "changed_files": [
+                    str(item).strip()
+                    for item in work_order.get("changed_files", [])
+                    if str(item).strip()
+                ],
+                "pr_url": _optional_text(work_order.get("pr_url")) or None,
+                "pr_number": work_order.get("pr_number"),
+                "adopted_pr": _optional_text(work_order.get("adopted_pr")) or None,
+                "worker_outcome": _optional_text(work_order.get("worker_outcome")) or None,
+                "failure_reason": _optional_text(work_order.get("failure_reason")) or None,
+                "dispatch_error": _optional_text(work_order.get("dispatch_error")) or None,
+                "blocking_question": _optional_text(work_order.get("blocking_question")) or None,
+                "blocker": dict(work_order.get("blocker") or {})
+                if isinstance(work_order.get("blocker"), dict)
+                else None,
                 "target_branch": str(run.get("target_branch", "")).strip() or None,
                 "run_status": str(run.get("status", "")).strip() or None,
                 "success_criteria": dict(work_order.get("success_criteria") or {}),
@@ -3210,6 +3424,42 @@ def _work_order_failed_no_deliverable_reason(work_order: dict[str, Any]) -> str:
     return _optional_text(work_order.get("failure_reason")) or "failed_no_deliverable"
 
 
+def _work_order_clean_exit_no_deliverable_reason(work_order: dict[str, Any]) -> str:
+    status = _optional_text(work_order.get("status")).lower()
+    metadata = work_order.get("metadata")
+    candidate_fields = [
+        work_order.get("worker_outcome"),
+        work_order.get("last_run_outcome"),
+        work_order.get("failure_reason"),
+    ]
+    if isinstance(metadata, dict):
+        candidate_fields.extend(
+            [
+                metadata.get("outcome"),
+                metadata.get("terminal_outcome"),
+                metadata.get("receipt_outcome"),
+            ]
+        )
+    for candidate in candidate_fields:
+        if _optional_text(candidate).lower() == "clean_exit_no_deliverable":
+            return "clean_exit_no_deliverable"
+    for blocker in _developer_task_blockers(work_order):
+        normalized = blocker.strip().lower()
+        if normalized in {
+            "clean_exit_no_deliverable",
+            "run ended without a concrete deliverable.",
+        }:
+            return blocker.strip()
+    if (
+        status == "completed"
+        and _work_order_receipt_outcome(work_order) == "clean_exit_no_deliverable"
+        and not _developer_task_blockers(work_order)
+        and not _optional_text(work_order.get("failure_reason"))
+    ):
+        return "clean_exit_no_deliverable"
+    return ""
+
+
 def _work_order_should_archive_failed_no_deliverable(
     work_order: dict[str, Any],
     *,
@@ -3218,7 +3468,21 @@ def _work_order_should_archive_failed_no_deliverable(
     lease_status: str | None,
 ) -> bool:
     status = _optional_text(work_order.get("status")).lower()
-    if status not in {"failed", "dispatch_failed", "timed_out"}:
+    timeout_like_needs_human = False
+    if status == "needs_human":
+        worker_outcome = _optional_text(work_order.get("worker_outcome")).lower()
+        failure_reason = _optional_text(work_order.get("failure_reason")).lower()
+        blockers = {blocker.strip().lower() for blocker in _developer_task_blockers(work_order)}
+        timeout_like_needs_human = (
+            worker_outcome
+            in {
+                "timeout_no_progress",
+                "timeout_with_salvage",
+            }
+            or any("timeout" in blocker for blocker in blockers)
+            or "timeout" in failure_reason
+        )
+    if status not in {"failed", "dispatch_failed", "timed_out"} and not timeout_like_needs_human:
         return False
     if _optional_text(lease_status).lower() == LeaseStatus.ACTIVE.value:
         return False
@@ -3228,6 +3492,31 @@ def _work_order_should_archive_failed_no_deliverable(
     if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
         work_order
     ):
+        return False
+    updated_at = _parse_dt(_developer_task_updated_at(work_order, run))
+    return updated_at <= cutoff
+
+
+def _work_order_should_archive_clean_exit_no_deliverable(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+    cutoff: datetime,
+    lease_status: str | None,
+) -> bool:
+    status = _optional_text(work_order.get("status")).lower()
+    if status not in {"completed", "needs_human"}:
+        return False
+    if _optional_text(lease_status).lower() == LeaseStatus.ACTIVE.value:
+        return False
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and _optional_text(metadata.get("archived_due_to")):
+        return False
+    if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
+        work_order
+    ):
+        return False
+    if not _work_order_clean_exit_no_deliverable_reason(work_order):
         return False
     updated_at = _parse_dt(_developer_task_updated_at(work_order, run))
     return updated_at <= cutoff
@@ -3256,6 +3545,92 @@ def _work_order_should_archive_duplicate_branch_deliverable(
     return updated_at <= cutoff
 
 
+def _work_order_scope_patterns(work_order: dict[str, Any]) -> list[str]:
+    patterns = [
+        _normalize_claim(str(item))
+        for item in work_order.get("file_scope", []) or []
+        if _normalize_claim(str(item))
+    ]
+    if patterns:
+        return list(dict.fromkeys(patterns))
+    changed_paths = [
+        _normalize_claim(str(item))
+        for item in work_order.get("changed_paths", []) or []
+        if _normalize_claim(str(item))
+    ]
+    return list(dict.fromkeys(changed_paths))
+
+
+def _work_orders_overlap_by_scope(
+    first: dict[str, Any],
+    second: dict[str, Any],
+) -> bool:
+    first_globs = _work_order_scope_patterns(first)
+    second_globs = _work_order_scope_patterns(second)
+    first_paths = [
+        _normalize_claim(str(item))
+        for item in first.get("changed_paths", []) or []
+        if _normalize_claim(str(item))
+    ]
+    second_paths = [
+        _normalize_claim(str(item))
+        for item in second.get("changed_paths", []) or []
+        if _normalize_claim(str(item))
+    ]
+    if not first_globs and not first_paths:
+        return False
+    if not second_globs and not second_paths:
+        return False
+    return _globs_overlap_any(first_globs, second_globs, first_paths, second_paths)
+
+
+def _work_order_should_archive_superseded_waiting_conflict(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+    cutoff: datetime,
+    lease_status: str | None,
+) -> bool:
+    if _optional_text(work_order.get("status")).lower() != "waiting_conflict":
+        return False
+    if _optional_text(lease_status).lower() == LeaseStatus.ACTIVE.value:
+        return False
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and _optional_text(metadata.get("archived_due_to")):
+        return False
+    if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
+        work_order
+    ):
+        return False
+    if not _work_order_scope_patterns(work_order):
+        return False
+    updated_at = _parse_dt(_waiting_conflict_staleness_anchor(work_order, run))
+    return updated_at <= cutoff
+
+
+def _waiting_conflict_staleness_anchor(work_order: dict[str, Any], run: dict[str, Any]) -> str:
+    for value in (
+        *(
+            work_order.get(key)
+            for key in (
+                "last_observed_at",
+                "last_progress_at",
+                "completed_at",
+                "dispatched_at",
+                "leased_at",
+                "started_at",
+            )
+        ),
+        run.get("created_at"),
+        run.get("updated_at"),
+        _utcnow().isoformat(),
+    ):
+        text = str(value or "").strip()
+        if text and text.lower() != "none":
+            return text
+    return _utcnow().isoformat()
+
+
 def _duplicate_branch_deliverable_priority(
     work_order: dict[str, Any],
     *,
@@ -3278,6 +3653,22 @@ def _work_order_receipt_outcome(work_order: dict[str, Any]) -> str:
     if _work_order_has_concrete_deliverable(work_order):
         return "deliverable_created"
     return "clean_exit_no_deliverable"
+
+
+def _work_order_should_backfill_file_scope_from_changed_paths(work_order: dict[str, Any]) -> bool:
+    status = _optional_text(work_order.get("status")).lower()
+    if status in {"discarded", "superseded", "merged", "scope_violation"}:
+        return False
+    if any(str(path).strip() for path in work_order.get("file_scope", []) or []):
+        return False
+    if not any(str(path).strip() for path in work_order.get("changed_paths", []) or []):
+        return False
+    if isinstance(work_order.get("scope_violation"), dict):
+        return False
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and _optional_text(metadata.get("archived_due_to")):
+        return False
+    return True
 
 
 def _work_order_should_backfill_receipt(work_order: dict[str, Any]) -> bool:

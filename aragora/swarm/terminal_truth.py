@@ -231,7 +231,7 @@ def qualify_work_order_terminal_state(work_order: dict[str, Any]) -> TerminalQua
                 else "deliverable_created"
             )
         else:
-            terminal_outcome = mapped_outcome or "clean_exit_no_deliverable"
+            terminal_outcome = "clean_exit_no_deliverable"
     elif status in {"needs_human", "changes_requested"}:
         terminal_outcome = mapped_outcome or "needs_human"
     elif status in {"blocked", "scope_violation"}:

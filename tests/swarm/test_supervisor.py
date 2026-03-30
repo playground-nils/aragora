@@ -594,6 +594,109 @@ def test_explicit_work_orders_merge_spec_file_scope_hints(
     )
 
 
+def test_start_run_fails_closed_when_work_order_scope_remains_empty(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    lifecycle = MagicMock()
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Document follow-up",
+        complexity_score=1,
+        complexity_level="low",
+        should_decompose=False,
+        subtasks=[
+            SubTask(
+                id="wo-empty-scope",
+                title="Analysis Changes",
+                description="Investigate the issue and summarize next steps.",
+                file_scope=[],
+            )
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(raw_goal="Document follow-up", refined_goal="Document follow-up"),
+        max_concurrency=1,
+    )
+
+    lifecycle.ensure_managed_worktree.assert_not_called()
+    assert run.status == "needs_human"
+    assert store.status_summary()["counts"]["active_leases"] == 0
+    work_order = run.work_orders[0]
+    assert work_order["status"] == "needs_human"
+    assert work_order["failure_reason"] == "scope_violation"
+    assert (
+        work_order["dispatch_error"]
+        == "Work order has no declared file scope; declare scope before dispatch."
+    )
+    assert work_order["lease_id"] is None
+
+
+def test_start_run_fails_closed_when_validated_scope_resolves_to_empty(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    session_path = repo / "wt-invalid-scope"
+    session_path.mkdir()
+    (session_path / ".git").write_text("gitdir: /tmp/fake\n", encoding="utf-8")
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="swarm-invalid-scope",
+        agent="codex",
+        branch="codex/swarm-invalid-scope",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Fix bug",
+        complexity_score=1,
+        complexity_level="low",
+        should_decompose=False,
+        subtasks=[
+            SubTask(
+                id="wo-invalid-scope",
+                title="Fix bug",
+                description="Repair the issue",
+                file_scope=["src/not-real.py"],
+            )
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(raw_goal="Fix bug", refined_goal="Fix bug"),
+        max_concurrency=1,
+    )
+
+    lifecycle.ensure_managed_worktree.assert_called_once()
+    assert run.status == "needs_human"
+    assert store.status_summary()["counts"]["active_leases"] == 0
+    work_order = run.work_orders[0]
+    assert work_order["status"] == "needs_human"
+    assert work_order["file_scope"] == []
+    assert work_order["failure_reason"] == "scope_violation"
+    assert (
+        work_order["dispatch_error"]
+        == "Declared file scope resolved to no valid in-repo paths; declare scope before dispatch."
+    )
+    assert work_order["lease_id"] is None
+
+
 def test_explicit_work_orders_merge_spec_hints_into_existing_scope(
     repo: Path, store: DevCoordinationStore
 ) -> None:
@@ -856,7 +959,7 @@ async def test_dispatch_workers_launches_leased_orders(
                 id="dispatch-task",
                 title="Dispatch test",
                 description="Test dispatch",
-                file_scope=["aragora/test.py"],
+                file_scope=["README.md"],
             )
         ],
     )
@@ -1876,7 +1979,7 @@ async def test_collect_finished_results_requeues_capacity_failure_to_fallback_ag
                 id="fallback-task",
                 title="Fallback test",
                 description="Test capacity fallback",
-                file_scope=["tests/swarm/test_commander.py"],
+                file_scope=["README.md"],
             )
         ],
     )

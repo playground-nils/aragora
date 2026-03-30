@@ -1186,12 +1186,130 @@ class TestIntegratorView:
 
         lane = payload["lanes"][0]
         assert lane["terminal_outcome"] == "deliverable_created"
+        assert lane["deliverable"] == {
+            "type": "branch",
+            "branch": "codex/scope-gap",
+            "commit_shas": ["abc12345"],
+            "work_order_id": None,
+        }
+        assert lane["deliverable_type"] == "branch"
         assert lane["receipt_expected"] is False
         assert lane["missing_receipt"] is False
         assert "missing_receipt" not in lane["blockers"]
         assert "receipt_backfill_blocked_undeclared_scope" in lane["blockers"]
         assert "scope_violation" in lane["blockers"]
         assert lane["merge_readiness"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Declare the intended lane scope or discard the lane before receipt backfill and merge review."
+        )
+
+    def test_build_integrator_view_preserves_branch_deliverable_from_task_metadata(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-meta-branch",
+                            "task_id": "wo-meta-branch",
+                            "run_id": "run-1",
+                            "status": "completed",
+                            "title": "Historical branch-backed lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-meta-branch",
+                            "branch": "codex/meta-branch",
+                            "worktree_path": "/tmp/repo/.worktrees/meta-branch",
+                            "lease_id": "lease-meta-branch",
+                            "updated_at": now.isoformat(),
+                            "metadata": {
+                                "head_sha": "abc12345",
+                                "commit_shas": ["abc12345"],
+                                "changed_paths": ["tests/swarm/test_reporter.py"],
+                                "worker_outcome": "completed",
+                                "failure_reason": "scope_violation",
+                            },
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-meta-branch",
+                            "task_id": "wo-meta-branch",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-meta-branch",
+                            "branch": "codex/meta-branch",
+                            "worktree_path": "/tmp/repo/.worktrees/meta-branch",
+                            "status": "expired",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "deliverable_created"
+        assert lane["deliverable"] == {
+            "type": "branch",
+            "branch": "codex/meta-branch",
+            "commit_shas": ["abc12345"],
+            "work_order_id": None,
+        }
+        assert lane["deliverable_type"] == "branch"
+        assert lane["merge_readiness"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Narrow the lane scope or split ownership before it can re-enter merge review."
+        )
+
+    def test_build_integrator_view_does_not_mark_branchless_commit_lane_ready(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-branchless",
+                            "task_id": "wo-branchless",
+                            "run_id": "run-1",
+                            "status": "completed",
+                            "title": "Branchless historical lane",
+                            "owner_agent": "codex",
+                            "updated_at": now.isoformat(),
+                            "metadata": {
+                                "head_sha": "abc12345",
+                                "commit_shas": ["abc12345"],
+                                "changed_paths": ["tests/swarm/test_reporter.py"],
+                                "worker_outcome": "completed",
+                            },
+                        }
+                    ],
+                    "leases": [],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "clean_exit_no_deliverable"
+        assert lane["deliverable"] is None
+        assert lane["deliverable_type"] is None
+        assert lane["receipt_expected"] is False
+        assert lane["merge_readiness"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Inspect why the lane produced no concrete deliverable before rerunning it."
+        )
 
     def test_build_integrator_view_does_not_expect_receipt_for_scope_violation_lane(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
@@ -1746,7 +1864,7 @@ class TestIntegratorView:
         assert "stale_lease_reaped" not in lane["blockers"]
         assert (
             lane["next_action"]
-            == "Narrow the lane scope or split ownership before it can re-enter merge review."
+            == "Declare the intended lane scope or discard the lane before receipt backfill and merge review."
         )
 
     def test_build_integrator_view_does_not_expect_receipt_when_stale_lease_record_is_gone(self):
