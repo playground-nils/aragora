@@ -32,6 +32,17 @@ _IN_FLIGHT_STATUSES: frozenset[str] = frozenset(
     }
 )
 
+_FAILURE_STATUSES: frozenset[str] = frozenset(
+    {
+        "failed",
+        "blocked",
+        "error",
+        "cancelled",
+        "timed_out",
+        "aborted",
+    }
+)
+
 _WORKER_OUTCOME_TO_TERMINAL: dict[str, str] = {
     "completed": "deliverable_created",
     "clean_exit_no_effect": "clean_exit_no_deliverable",
