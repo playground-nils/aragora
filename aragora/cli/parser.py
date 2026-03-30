@@ -1519,7 +1519,7 @@ Examples:
     decide_parser.add_argument("task", help="The task/question to decide on")
     decide_parser.add_argument(
         "--spec",
-        help="Specification file (JSON from 'aragora spec') to use as debate context",
+        help="Spec JSON file (from 'aragora spec --output'). Skips debate; creates plan directly from spec.",
     )
     decide_parser.add_argument(
         "--agents",
