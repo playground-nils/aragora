@@ -127,6 +127,8 @@ def extract_work_order_deliverable(
     status = _text(work_order.get("status")).lower()
     if require_terminal_status and status in _IN_FLIGHT_STATUSES:
         return None
+    if status in _FAILURE_STATUSES:
+        return None
 
     work_order_id = work_order.get("work_order_id")
 
