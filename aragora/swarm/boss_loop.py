@@ -162,7 +162,7 @@ class GitHubIssueFeed:
             )
         return issues
 
-    def _fetch_issue(self, number: int) -> GitHubIssue | None:
+    def _fetch_issue(self, number: int, *, allow_closed: bool = False) -> GitHubIssue | None:
         cmd = [
             "gh",
             "issue",
@@ -200,7 +200,7 @@ class GitHubIssueFeed:
             return None
 
         state = str(item.get("state", "OPEN")).strip().lower()
-        if state != "open":
+        if not allow_closed and state != "open":
             return None
 
         labels_raw = item.get("labels") or []
@@ -298,6 +298,8 @@ def select_eligible_issue(
 
 _VALIDATION_SECTION_PREFIXES = (
     "acceptance criteria",
+    "acceptance",
+    "test",
     "validation",
     "validation contract",
     "definition of done",
@@ -307,6 +309,7 @@ _VALIDATION_SECTION_PREFIXES = (
 _VALIDATION_INLINE_PREFIXES = (
     "acceptance",
     "acceptance criteria",
+    "test",
     "validation",
     "validation contract",
     "definition of done",
@@ -314,6 +317,7 @@ _VALIDATION_INLINE_PREFIXES = (
     "test plan",
 )
 _VALIDATION_BULLET_RE = re.compile(r"^\s*(?:[-*]|\d+\.)\s*(?:\[(?: |x|X)\]\s*)?(?P<text>.+?)\s*$")
+_MARKDOWN_BOLD_RE = re.compile(r"\*\*(?P<text>.+?)\*\*")
 
 
 def _ordered_unique_strings(items: list[str]) -> list[str]:
@@ -326,6 +330,15 @@ def _ordered_unique_strings(items: list[str]) -> list[str]:
         seen.add(text)
         ordered.append(text)
     return ordered
+
+
+def _normalize_validation_line(text: str) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return ""
+    # GitHub issues commonly use bold inline markers like "**Acceptance:** ..."
+    normalized = _MARKDOWN_BOLD_RE.sub(lambda match: match.group("text"), normalized)
+    return normalized.strip()
 
 
 def extract_issue_validation_contract(issue_body: str) -> list[str]:
@@ -342,7 +355,7 @@ def extract_issue_validation_contract(issue_body: str) -> list[str]:
 
     for raw_line in lines:
         stripped = raw_line.strip()
-        normalized = stripped.lstrip("#").strip()
+        normalized = _normalize_validation_line(stripped.lstrip("#").strip())
         normalized_lower = normalized.rstrip(":").strip().lower()
 
         if any(
@@ -1030,6 +1043,75 @@ class BossLoop:
         self._issue_attempt_counts: dict[int, int] = {}
         self._stop_reason: str | None = None
 
+    def _target_issue_miss_guidance(self, issue_number: int) -> tuple[list[str], list[str]]:
+        reasons = [
+            f"Target issue #{issue_number} was not found in the issue feed or is not eligible under current filters/retry state."
+        ]
+        next_actions = [
+            f"Verify issue #{issue_number} is still open, eligible, and has not exceeded retry limits.",
+            "Remove --boss-issue-number to return to feed-driven selection.",
+        ]
+        fetch_issue = getattr(self._feed, "_fetch_issue", None)
+        if not callable(fetch_issue):
+            return reasons, next_actions
+        try:
+            issue = fetch_issue(issue_number, allow_closed=True)
+        except TypeError:
+            try:
+                issue = fetch_issue(issue_number)
+            except Exception:
+                return reasons, next_actions
+        except Exception:
+            return reasons, next_actions
+        if not isinstance(issue, GitHubIssue):
+            return reasons, next_actions
+
+        state = str(issue.state or "").strip().lower()
+        if state and state != "open":
+            return (
+                [
+                    f"Target issue #{issue_number} is {state} and cannot be selected by the open-issue boss feed."
+                ],
+                [
+                    f"Reopen issue #{issue_number} if it should be eligible for Boss dispatch.",
+                    "Remove --boss-issue-number to return to feed-driven selection.",
+                ],
+            )
+
+        labels = {str(label).strip() for label in issue.labels if str(label).strip()}
+        skipped = sorted(labels & set(self.config.skip_labels or set()))
+        if skipped:
+            return (
+                [f"Target issue #{issue_number} is excluded by skip labels: {', '.join(skipped)}."],
+                [
+                    f"Remove skip labels from issue #{issue_number} or adjust --label-filter/skip-label settings.",
+                    "Remove --boss-issue-number to return to feed-driven selection.",
+                ],
+            )
+
+        required = set(self.config.require_labels or set())
+        missing_labels = sorted(required - labels)
+        if missing_labels:
+            return (
+                [
+                    f"Target issue #{issue_number} is missing required labels: {', '.join(missing_labels)}."
+                ],
+                [
+                    f"Add the required labels to issue #{issue_number} or adjust --require-label settings.",
+                    "Remove --boss-issue-number to return to feed-driven selection.",
+                ],
+            )
+
+        if not issue.title:
+            return (
+                [f"Target issue #{issue_number} is missing a title and cannot be selected."],
+                [
+                    f"Add a non-empty title to issue #{issue_number}.",
+                    "Remove --boss-issue-number to return to feed-driven selection.",
+                ],
+            )
+        return reasons, next_actions
+
     def _emit_terminal_receipt(self, result: BossLoopResult) -> None:
         try:
             from aragora.receipts.provenance import emit_operational_receipt
@@ -1137,7 +1219,12 @@ class BossLoop:
                 receipt_outcome = "pass"
             elif deliverable_present and terminal_outcome in {"crash", "timeout"}:
                 receipt_outcome = "blocked"
-            elif terminal_outcome in {"needs_human", "blocked", "clean_exit_no_deliverable"}:
+            elif terminal_outcome in {
+                "needs_human",
+                "blocked",
+                "clean_exit_no_deliverable",
+                "preview_only",
+            }:
                 receipt_outcome = "blocked"
             elif terminal_outcome in {"crash", "timeout"}:
                 receipt_outcome = "fail"
@@ -1228,7 +1315,7 @@ class BossLoop:
                     deliverable_type=deliverable_type,
                     receipt_id=receipt_id,
                     human_intervention_required=terminal_outcome
-                    not in {"deliverable_created", "pr_adopted"},
+                    not in {"deliverable_created", "pr_adopted", "preview_only"},
                     duration_seconds=float(elapsed or 0.0),
                     pr_url=pr_url,
                     pr_number=pr_number,
@@ -1416,13 +1503,9 @@ class BossLoop:
 
         if selected is None:
             if self.config.issue_number is not None:
-                needs_human_reasons = [
-                    f"Target issue #{self.config.issue_number} was not found in the issue feed or is not eligible under current filters/retry state."
-                ]
-                next_actions = [
-                    f"Verify issue #{self.config.issue_number} is still open, eligible, and has not exceeded retry limits.",
-                    "Remove --boss-issue-number to return to feed-driven selection.",
-                ]
+                needs_human_reasons, next_actions = self._target_issue_miss_guidance(
+                    self.config.issue_number
+                )
             else:
                 needs_human_reasons = ["No suitable open issue found in the GitHub feed."]
                 next_actions = [
@@ -1534,13 +1617,9 @@ class BossLoop:
 
         if not selected_issues:
             if self.config.issue_number is not None:
-                needs_human_reasons = [
-                    f"Target issue #{self.config.issue_number} was not found in the issue feed or is not eligible under current filters/retry state."
-                ]
-                next_actions = [
-                    f"Verify issue #{self.config.issue_number} is still open, eligible, and has not exceeded retry limits.",
-                    "Remove --boss-issue-number to return to feed-driven selection.",
-                ]
+                needs_human_reasons, next_actions = self._target_issue_miss_guidance(
+                    self.config.issue_number
+                )
             else:
                 needs_human_reasons = ["No suitable open issue found in the GitHub feed."]
                 next_actions = [
@@ -2004,6 +2083,7 @@ class BossLoop:
         if not self.config.dispatch_enabled:
             return {
                 "status": "needs_human",
+                "outcome": "preview_only",
                 "reasons": [
                     f"No-dispatch preview only for issue #{issue.number}; supervised execution was intentionally skipped."
                 ],
@@ -2190,6 +2270,14 @@ class BossLoop:
 
     def _derive_next_actions(self) -> list[str]:
         """Derive final next actions based on stop reason."""
+        if self._stop_reason in {
+            BossStopReason.NO_FRESH_RUNNER.value,
+            BossStopReason.NO_SUITABLE_ISSUE.value,
+            BossStopReason.ISSUE_FEED_ERROR.value,
+        }:
+            for status in reversed(self._iteration_statuses):
+                if status.stop_reason == self._stop_reason and status.next_actions:
+                    return list(status.next_actions)
         if self._stop_reason == BossStopReason.MAX_ITERATIONS.value:
             for status in reversed(self._iteration_statuses):
                 if status.worker_status == "running" and status.next_actions:

@@ -78,6 +78,22 @@ def _get_lane_telemetry() -> LaneTelemetryCollector:
     return _LANE_TELEMETRY
 
 
+def _normalize_completion_outcome(
+    *,
+    outcome: str,
+    commit_shas: list[str],
+    changed_paths: list[str],
+    pr_url: str,
+    pr_number: int | None,
+) -> str:
+    normalized = str(outcome or "").strip()
+    lowered = normalized.lower()
+    if lowered and lowered != "completed":
+        return normalized
+    has_deliverable = bool(pr_url.strip() or pr_number is not None or commit_shas or changed_paths)
+    return "deliverable_created" if has_deliverable else "clean_exit_no_deliverable"
+
+
 class LeaseConflictError(ValueError):
     """Raised when a lease overlaps another active lease."""
 
@@ -1561,6 +1577,25 @@ class DevCoordinationStore:
                 raise KeyError(f"Unknown lease_id: {lease_id}")
             lease = WorkLease.from_row(lease_row)
             lease_metadata = _json_loads(lease_row["metadata_json"], {})
+            receipt_metadata = {
+                **dict(metadata or {}),
+                "supervisor_run_id": lease_metadata.get("supervisor_run_id"),
+                "work_order_id": lease_metadata.get("work_order_id"),
+                "task_key": lease_metadata.get("task_key"),
+                "reviewer_agent": lease_metadata.get("reviewer_agent"),
+                "risk_level": lease_metadata.get("risk_level"),
+            }
+            if (str(pr_url or "").strip() or pr_number is not None) and not str(
+                receipt_metadata.get("pr_created_at", "")
+            ).strip():
+                receipt_metadata["pr_created_at"] = now
+            normalized_outcome = _normalize_completion_outcome(
+                outcome=str(outcome or "completed").strip() or "completed",
+                commit_shas=list(commit_shas or []),
+                changed_paths=normalized_changed_paths,
+                pr_url=str(pr_url or "").strip(),
+                pr_number=pr_number,
+            )
             receipt = CompletionReceipt(
                 receipt_id=str(uuid.uuid4())[:12],
                 lease_id=lease_id,
@@ -1577,19 +1612,13 @@ class DevCoordinationStore:
                 validations_run=list(validations_run or tests_run or []),
                 assumptions=list(assumptions or []),
                 blockers=list(blockers or []),
-                outcome=str(outcome or "completed").strip() or "completed",
+                outcome=normalized_outcome,
                 risks=list(risks or blockers or []),
                 pr_url=str(pr_url or "").strip(),
                 pr_number=pr_number,
                 confidence=float(confidence),
-                metadata={
-                    **dict(metadata or {}),
-                    "supervisor_run_id": lease_metadata.get("supervisor_run_id"),
-                    "work_order_id": lease_metadata.get("work_order_id"),
-                    "task_key": lease_metadata.get("task_key"),
-                    "reviewer_agent": lease_metadata.get("reviewer_agent"),
-                    "risk_level": lease_metadata.get("risk_level"),
-                },
+                created_at=now,
+                metadata=receipt_metadata,
             )
             violations = self._validate_completion_scope(
                 lease,
@@ -1722,6 +1751,7 @@ class DevCoordinationStore:
                 "risks": receipt.risks,
                 "pr_url": receipt.pr_url or None,
                 "pr_number": receipt.pr_number,
+                "pr_created_at": receipt.metadata.get("pr_created_at"),
                 "metadata": dict(receipt.metadata),
             },
         )
@@ -1755,6 +1785,7 @@ class DevCoordinationStore:
                 "risks": receipt.risks,
                 "pr_url": receipt.pr_url or None,
                 "pr_number": receipt.pr_number,
+                "pr_created_at": receipt.metadata.get("pr_created_at"),
             },
         )
         self._sync_supervisor_run_from_lease(
@@ -2417,6 +2448,16 @@ class DevCoordinationStore:
             )
         except (TypeError, ValueError):
             pass
+        time_to_pr_seconds = existing.time_to_pr_seconds if existing else None
+        pr_created_at = str((receipt.metadata or {}).get("pr_created_at", "")).strip()
+        try:
+            if pr_created_at:
+                time_to_pr_seconds = max(
+                    0.0,
+                    (_parse_dt(pr_created_at) - _parse_dt(receipt.created_at)).total_seconds(),
+                )
+        except (TypeError, ValueError):
+            pass
 
         metadata = dict(existing.metadata if existing else {})
         metadata.update(
@@ -2446,7 +2487,7 @@ class DevCoordinationStore:
                 else (existing.pr_number if existing else None),
                 merge_ref=merge_commit_sha or (existing.merge_ref if existing else ""),
                 merged_at=merged_at,
-                time_to_pr_seconds=existing.time_to_pr_seconds if existing else None,
+                time_to_pr_seconds=time_to_pr_seconds,
                 time_to_merge_seconds=time_to_merge_seconds,
                 false_success_candidate=False
                 if deliverable_type

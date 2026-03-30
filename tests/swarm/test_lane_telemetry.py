@@ -104,13 +104,22 @@ class TestLaneTelemetryCollector:
             LaneTelemetryRecord(
                 lane_kind="boss_dispatch",
                 lane_id="boss-3",
+                terminal_outcome="preview_only",
+                human_intervention_required=False,
+                timestamp=now,
+            )
+        )
+        collector.record_lane(
+            LaneTelemetryRecord(
+                lane_kind="boss_dispatch",
+                lane_id="boss-4",
                 terminal_outcome="",
                 human_intervention_required=False,
                 timestamp=now,
             )
         )
 
-        assert collector.get_throughput(window_days=7) == 3
+        assert collector.get_throughput(window_days=7) == 4
         assert collector.get_success_rate(window_days=7) == 0.5
         assert collector.get_human_intervention_rate(window_days=7) == 0.5
 
@@ -172,6 +181,25 @@ class TestBossDispatchTelemetry:
         assert len(records) == 1
         assert records[0].terminal_outcome == "deliverable_created"
         assert records[0].deliverable_type == "branch"
+
+    def test_preview_only_outcome_is_excluded_from_human_intervention(self) -> None:
+        collector = LaneTelemetryCollector(db_path=":memory:")
+        loop = BossLoop(config=BossLoopConfig(max_iterations=1, iteration_interval_seconds=0.0))
+        worker_result = {
+            "run_id": "run-preview",
+            "status": "needs_human",
+            "outcome": "preview_only",
+        }
+
+        with patch("aragora.swarm.boss_loop._LANE_TELEMETRY", collector):
+            loop._record_lane_telemetry(
+                worker_result, {"number": 99, "title": "Preview lane"}, 1.0, None
+            )
+
+        records = collector.get_recent_lanes()
+        assert len(records) == 1
+        assert records[0].terminal_outcome == "preview_only"
+        assert records[0].human_intervention_required is False
 
 
 class TestSupervisorTelemetry:

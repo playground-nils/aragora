@@ -260,9 +260,13 @@ def test_record_completion_persists_extended_receipt_provenance(
     assert stored.risks == ["merge-risk:review"]
     assert stored.pr_url == "https://github.com/synaptent/aragora/pull/1044"
     assert stored.pr_number == 1044
+    assert stored.metadata["pr_created_at"] == stored.created_at
     assert stored.metadata["task_key"] == "run-123:wo-extended"
     assert stored.metadata["verification_results"][0]["command"] == "ruff check"
     assert store.list_completion_receipts(task_id="wo-extended")[0].receipt_id == receipt.receipt_id
+    merge_queue = store.fleet_store.list_merge_queue()
+    assert len(merge_queue) == 1
+    assert merge_queue[0]["metadata"]["pr_created_at"] == stored.created_at
 
 
 def test_record_completion_rejects_out_of_scope_changes(store: DevCoordinationStore) -> None:
@@ -438,6 +442,8 @@ def test_mark_supervisor_run_merged_records_canonical_lane_telemetry(
         commit_shas=["deadbeef"],
         changed_paths=["aragora/swarm/reporter.py"],
         tests_run=["python -m pytest tests/swarm/test_reporter.py -q"],
+        pr_url="https://github.com/synaptent/aragora/pull/9999",
+        pr_number=9999,
         confidence=0.93,
     )
     merged_at = (datetime.fromisoformat(receipt.created_at) + timedelta(minutes=5)).isoformat()
@@ -458,10 +464,13 @@ def test_mark_supervisor_run_merged_records_canonical_lane_telemetry(
     record = collector.get_lane("supervisor_work_order", f"{run['run_id']}:wo-merge")
     assert record is not None
     assert record.terminal_outcome == "deliverable_created"
-    assert record.deliverable_type == "branch"
+    assert record.deliverable_type == "pr"
     assert record.receipt_id == receipt.receipt_id
+    assert record.pr_url == "https://github.com/synaptent/aragora/pull/9999"
+    assert record.pr_number == 9999
     assert record.merge_ref == "mergeabc123"
     assert record.merged_at == merged_at
+    assert record.time_to_pr_seconds == 0.0
     assert record.time_to_merge_seconds == 300.0
     assert record.human_intervention_required is False
 

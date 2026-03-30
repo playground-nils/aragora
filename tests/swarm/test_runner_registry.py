@@ -944,6 +944,127 @@ class TestLocalRunnerRegistry:
         assert decision.is_blocked is False
         assert decision.selected_runner_ids == ["claude-runner-1"]
 
+    def test_requested_runner_capacity_is_not_masked_by_other_type_staleness(
+        self, tmp_path: Path
+    ) -> None:
+        now = datetime.now(UTC)
+        registry_path = tmp_path / "swarm-runners.json"
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "registrations": [
+                        {
+                            "runner_id": "claude-runner-stale",
+                            "runner_type": "claude",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "subscription",
+                            "cost_class": "subscription",
+                            "priority_weight": 100,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": (now - timedelta(hours=2)).isoformat(),
+                            "stale_after_seconds": 300,
+                            "capabilities": {"max_parallel_lanes": 1, "active_lanes": 0},
+                        },
+                        {
+                            "runner_id": "codex-runner-busy",
+                            "runner_type": "codex",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "chatgpt_login",
+                            "cost_class": "subscription",
+                            "priority_weight": 80,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now.isoformat(),
+                            "stale_after_seconds": 3600,
+                            "claimed_lanes": 1,
+                            "capabilities": {"max_parallel_lanes": 1, "active_lanes": 0},
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        owner_context = authorization_context_from_env(
+            {"ARAGORA_USER_ID": "user-123", "ARAGORA_WORKSPACE_ID": "ws-456"}
+        )
+
+        decision = LocalRunnerRegistry(path=registry_path).resolve_boss_routing(
+            owner_context=owner_context,
+            requested_runner_type="codex",
+        )
+
+        assert decision.is_blocked is True
+        assert decision.blocked_reason == "no_eligible_registered_runners"
+        assert "Free capacity on the registered codex runner" in str(decision.next_action)
+
+    def test_refresh_clears_stale_claim_for_idle_runner(self, tmp_path: Path, monkeypatch) -> None:
+        now = datetime.now(UTC)
+        monkeypatch.setattr(
+            "aragora.swarm.runner_registry.LocalRunnerRegistry._command_path_exists",
+            staticmethod(lambda _value: True),
+        )
+        registry_path = tmp_path / "swarm-runners.json"
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "registrations": [
+                        {
+                            "runner_id": "codex-runner-stale-claim",
+                            "runner_type": "codex",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "chatgpt_login",
+                            "cost_class": "subscription",
+                            "priority_weight": 80,
+                            "owner_binding": {"user_id": "user-123", "workspace_id": "ws-456"},
+                            "heartbeat_at": now.isoformat(),
+                            "last_selected_at": (now - timedelta(hours=9)).isoformat(),
+                            "claimed_lanes": 1,
+                            "stale_after_seconds": 3600,
+                            "capabilities": {"max_parallel_lanes": 1, "active_lanes": 0},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        owner_context = authorization_context_from_env(
+            {"ARAGORA_USER_ID": "user-123", "ARAGORA_WORKSPACE_ID": "ws-456"}
+        )
+        registry = LocalRunnerRegistry(path=registry_path)
+        inspection = CodexRunnerInspection(
+            runner_id="codex-runner-stale-claim",
+            runner_type="codex",
+            availability="available",
+            available=True,
+            auth_mode="chatgpt_login",
+            command_path="/usr/local/bin/codex",
+            codex_path="/usr/local/bin/codex",
+            version="codex-cli 0.107.0",
+            status_summary="Logged in using ChatGPT",
+            capabilities={"supports_exec": True, "max_parallel_lanes": 1, "active_lanes": 0},
+            owner_binding={"user_id": "user-123", "workspace_id": "ws-456", "org_id": None},
+            freshness_status="fresh",
+            stale_after_seconds=3600,
+            cost_class="subscription",
+            priority_weight=80,
+        )
+
+        registry.refresh(inspection, owner_context=owner_context)
+
+        stored = registry.list_registrations()[0]
+        assert stored["claimed_lanes"] == 0
+        decision = registry.resolve_boss_routing(
+            owner_context=owner_context,
+            requested_runner_type="codex",
+        )
+        assert decision.is_blocked is False
+        assert decision.selected_runner_ids == ["codex-runner-stale-claim"]
+
     def test_resolve_boss_routing_honors_allowed_claude_profiles(self, tmp_path: Path) -> None:
         now = datetime.now(UTC).isoformat()
         registry_path = tmp_path / "swarm-runners.json"

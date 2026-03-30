@@ -19,6 +19,7 @@ from aragora.swarm.worker_launcher import LaunchConfig
 UTC = timezone.utc
 VERIFIED_AUTH_MODES = {"chatgpt_login", "api_key", "subscription"}
 DEFAULT_RUNNER_STALE_AFTER_SECONDS = 3600
+DEFAULT_RUNNER_CLAIM_TTL_SECONDS = 8 * 3600
 DEFAULT_RUNNER_ROTATION_INTERVAL_SECONDS = 1800.0
 DEFAULT_RUNNER_PROBE_TTL_SECONDS = 3600
 RUNNER_PROBE_TOKEN = "ARAGORA_RUNNER_PROBE_OK"
@@ -1093,6 +1094,7 @@ class LocalRunnerRegistry:
         now = _utcnow()
         freshness_status = self._freshness_for_inspection(inspection)
         owner_binding = owner_binding_from_context(owner_context)
+        claimed_lanes = self._normalized_claimed_lanes(existing, inspection=inspection)
         updated_entry = self._preserve_probe_fields(
             existing,
             {
@@ -1102,6 +1104,7 @@ class LocalRunnerRegistry:
                 "owner_binding": owner_binding,
                 "registered_at": existing.get("registered_at"),
                 "heartbeat_at": now,
+                "claimed_lanes": claimed_lanes,
                 "freshness_status": freshness_status,
                 "updated_at": now,
             },
@@ -1253,6 +1256,7 @@ class LocalRunnerRegistry:
         rejected_runner_ids: list[str] = []
         saw_compatible_nonfresh = False
         saw_requested_type = False
+        saw_requested_capacity_exhausted = False
         now = datetime.now(UTC)
         for runner in self.list_registrations():
             runner_type = _text(runner.get("runner_type"))
@@ -1264,10 +1268,20 @@ class LocalRunnerRegistry:
                         rejected_runner_ids.append(runner_id)
                     continue
             if self._is_owner_compatible(runner, owner_context=owner_context):
-                if bool(runner.get("registered")) and self._freshness_status(runner) != "fresh":
-                    saw_compatible_nonfresh = True
+                runner_freshness = self._freshness_status(runner)
                 if requested and runner_type == requested:
                     saw_requested_type = True
+                    if bool(runner.get("registered")) and runner_freshness != "fresh":
+                        saw_compatible_nonfresh = True
+                    elif bool(runner.get("registered")):
+                        capabilities = dict(runner.get("capabilities") or {})
+                        max_parallel = int(capabilities.get("max_parallel_lanes") or 1)
+                        if self._effective_active_lanes(runner) >= max_parallel:
+                            saw_requested_capacity_exhausted = True
+                elif (
+                    not requested and bool(runner.get("registered")) and runner_freshness != "fresh"
+                ):
+                    saw_compatible_nonfresh = True
             if not self._is_runner_eligible(runner, owner_context=owner_context):
                 runner_id = _text(runner.get("runner_id"))
                 if runner_id:
@@ -1276,22 +1290,30 @@ class LocalRunnerRegistry:
             eligible.append(self._runner_summary(runner))
 
         if not eligible:
+            blocked_reason = (
+                "no_fresh_registered_runners"
+                if saw_compatible_nonfresh
+                else "no_eligible_registered_runners"
+            )
+            next_action = (
+                "Refresh the heartbeat for an available registered runner in this exact Aragora "
+                "user/workspace context before running Boss mode."
+                if saw_compatible_nonfresh
+                else "Register an available runner for this exact Aragora user/workspace context "
+                "before running Boss mode."
+            )
+            if requested and saw_requested_capacity_exhausted and not saw_compatible_nonfresh:
+                next_action = (
+                    f"Free capacity on the registered {requested} runner for this exact Aragora "
+                    "user/workspace context or register another available runner of that type "
+                    "before running Boss mode."
+                )
             return BossRoutingDecision(
                 owner_binding=owner_binding,
                 selection_basis=selection_basis,
-                blocked_reason=(
-                    "no_fresh_registered_runners"
-                    if saw_compatible_nonfresh
-                    else "no_eligible_registered_runners"
-                ),
+                blocked_reason=blocked_reason,
                 rejected_runner_ids=sorted(set(rejected_runner_ids)),
-                next_action=(
-                    "Refresh the heartbeat for an available registered runner in this exact Aragora "
-                    "user/workspace context before running Boss mode."
-                    if saw_compatible_nonfresh
-                    else "Register an available runner for this exact Aragora user/workspace context "
-                    "before running Boss mode."
-                ),
+                next_action=next_action,
                 requested_runner_type=requested,
             )
 
@@ -1651,6 +1673,29 @@ class LocalRunnerRegistry:
         if age_seconds > stale_after_seconds:
             return "stale"
         return "fresh"
+
+    def _normalized_claimed_lanes(
+        self,
+        runner: dict[str, Any],
+        *,
+        inspection: RunnerInspection | None = None,
+    ) -> int:
+        claimed_lanes = _optional_int(runner.get("claimed_lanes"))
+        if claimed_lanes <= 0:
+            return 0
+        inspection_payload = inspection.to_dict() if inspection is not None else {}
+        if self._effective_active_lanes(inspection_payload) > 0:
+            return claimed_lanes
+        last_selected_at = self._parse_timestamp(_text(runner.get("last_selected_at")))
+        if last_selected_at is None:
+            return claimed_lanes
+        if last_selected_at.tzinfo is None:
+            last_selected_at = last_selected_at.replace(tzinfo=UTC)
+        claim_ttl_seconds = int(runner.get("claim_ttl_seconds") or DEFAULT_RUNNER_CLAIM_TTL_SECONDS)
+        age_seconds = max(0.0, (datetime.now(UTC) - last_selected_at).total_seconds())
+        if age_seconds > claim_ttl_seconds:
+            return 0
+        return claimed_lanes
 
     def _probe_status(self, runner: dict[str, Any]) -> str | None:
         status = _text(runner.get("probe_status")).lower() or None

@@ -286,6 +286,20 @@ python -m pytest tests/swarm/test_boss_loop.py -q
             "python -m pytest tests/swarm/test_boss_loop.py -q",
         ]
 
+    def test_extracts_bold_inline_test_and_acceptance_markers(self):
+        body = """
+Add `--json` flag to `aragora quickstart`.
+
+**Test:** `aragora quickstart --topic 'test' --rounds 1 --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'receipt_id' in d"`
+
+**Acceptance:** `pytest tests/cli/test_quickstart.py -x -q` passes.
+"""
+
+        assert extract_issue_validation_contract(body) == [
+            "`aragora quickstart --topic 'test' --rounds 1 --json | python3 -c \"import json,sys; d=json.load(sys.stdin); assert 'receipt_id' in d\"`",
+            "`pytest tests/cli/test_quickstart.py -x -q` passes.",
+        ]
+
     def test_returns_none_when_no_eligible_issue(self):
         issues = [_make_issue(1, "Invalid", labels=["wontfix"])]
         selected = select_eligible_issue(issues, skip_labels={"wontfix"})
@@ -692,6 +706,26 @@ class TestBossLoop:
 
         assert result.stop_reason == BossStopReason.NO_SUITABLE_ISSUE.value
         assert "Target issue #873" in result.needs_human_reasons[0]
+        assert "Verify issue #873" in result.next_actions[0]
+        assert "Remove --boss-issue-number" in result.next_actions[1]
+
+    def test_specific_issue_number_closed_stops_with_closed_reason(self):
+        feed = MagicMock(spec=GitHubIssueFeed)
+        feed.fetch.return_value = []
+        feed._fetch_issue.return_value = _make_issue(873, "Closed target", state="CLOSED")
+
+        loop = BossLoop(
+            config=_boss_config(max_iterations=1, issue_number=873),
+            issue_feed=feed,
+            freshness_checker=lambda **kw: _fresh_result(fresh=True),
+        )
+
+        result = asyncio.run(loop.run())
+
+        assert result.stop_reason == BossStopReason.NO_SUITABLE_ISSUE.value
+        assert "is closed and cannot be selected" in result.needs_human_reasons[0]
+        assert "Reopen issue #873" in result.next_actions[0]
+        assert "Remove --boss-issue-number" in result.next_actions[1]
 
     def test_bounded_iteration_limit(self):
         """Loop respects max_iterations even when issues keep flowing."""
@@ -882,6 +916,43 @@ class TestBossLoop:
         assert result.stop_reason == BossStopReason.NEEDS_HUMAN.value
         assert "lacks an explicit validation contract" in result.needs_human_reasons[0]
 
+    def test_bold_markdown_validation_contract_allows_dispatch(self):
+        feed = MagicMock(spec=GitHubIssueFeed)
+        feed.fetch.return_value = [
+            _make_issue(
+                1639,
+                "Add --json output flag to aragora quickstart CLI",
+                body="""Add `--json` flag to `aragora quickstart` so the debate result is printed as structured JSON.
+
+**Files:** `aragora/cli/commands/quickstart.py`, `aragora/cli/parser.py`
+
+**Test:** `aragora quickstart --topic "test" --rounds 1 --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'receipt_id' in d"`
+
+**Acceptance:** `pytest tests/cli/test_quickstart.py -x -q` passes.""",
+            )
+        ]
+
+        loop = BossLoop(
+            config=_boss_config(max_iterations=1),
+            issue_feed=feed,
+            freshness_checker=lambda **kw: _fresh_result(fresh=True),
+        )
+
+        async def _completed_dispatch(issue, freshness):
+            return {
+                "status": "completed",
+                "outcome": "deliverable_created",
+                "deliverable": {"type": "branch"},
+            }
+
+        loop._dispatch_issue = _completed_dispatch
+
+        result = asyncio.run(loop.run())
+
+        assert result.stop_reason == BossStopReason.MAX_ITERATIONS.value
+        assert result.iterations_completed == 1
+        assert result.issues_completed[0]["number"] == 1639
+
     def test_no_dispatch_preview_stops_truthfully(self):
         feed = MagicMock(spec=GitHubIssueFeed)
         feed.fetch.return_value = [_make_issue(8, "Preview only issue")]
@@ -897,6 +968,7 @@ class TestBossLoop:
         assert result.stop_reason == BossStopReason.NEEDS_HUMAN.value
         assert "No-dispatch preview only" in result.needs_human_reasons[0]
         assert "Rerun without --no-dispatch" in result.next_actions[1]
+        assert result.iteration_statuses[0]["worker_outcome"] == "preview_only"
 
     def test_single_tick_live_dispatch_returns_after_launch(self):
         feed = MagicMock(spec=GitHubIssueFeed)
@@ -1052,6 +1124,35 @@ class TestStopStateReporting:
         loop._stop_reason = BossStopReason.NO_SUITABLE_ISSUE.value
         actions = loop._derive_next_actions()
         assert any("issue" in a.lower() for a in actions)
+
+    def test_no_suitable_issue_prefers_iteration_specific_next_actions(self):
+        loop = BossLoop(config=_boss_config(issue_number=873))
+        loop._stop_reason = BossStopReason.NO_SUITABLE_ISSUE.value
+        loop._iteration_statuses = [
+            BossIterationStatus(
+                iteration=1,
+                run_id="run-1",
+                timestamp="2026-03-29T00:00:00+00:00",
+                runner_freshness={},
+                selected_issue=None,
+                worker_status="idle",
+                stop_reason=BossStopReason.NO_SUITABLE_ISSUE.value,
+                needs_human_reasons=[
+                    "Target issue #873 was not found in the issue feed or is not eligible under current filters/retry state."
+                ],
+                next_actions=[
+                    "Verify issue #873 is still open, eligible, and has not exceeded retry limits.",
+                    "Remove --boss-issue-number to return to feed-driven selection.",
+                ],
+            )
+        ]
+
+        actions = loop._derive_next_actions()
+
+        assert actions == [
+            "Verify issue #873 is still open, eligible, and has not exceeded retry limits.",
+            "Remove --boss-issue-number to return to feed-driven selection.",
+        ]
 
     def test_consecutive_failures_next_actions(self):
         loop = BossLoop(config=_boss_config())

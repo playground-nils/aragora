@@ -246,7 +246,7 @@ class LaneTelemetryCollector:
                             THEN 1 ELSE 0 END) AS successes
             FROM lane_telemetry
             WHERE timestamp >= ?
-              AND COALESCE(TRIM(terminal_outcome), '') NOT IN ('', 'unknown')
+              AND COALESCE(TRIM(terminal_outcome), '') NOT IN ('', 'unknown', 'preview_only')
             """,
             window_days,
         )
@@ -272,7 +272,7 @@ class LaneTelemetryCollector:
                    SUM(human_intervention_required) AS human_required
             FROM lane_telemetry
             WHERE timestamp >= ?
-              AND COALESCE(TRIM(terminal_outcome), '') NOT IN ('', 'unknown')
+              AND COALESCE(TRIM(terminal_outcome), '') NOT IN ('', 'unknown', 'preview_only')
             """,
             window_days,
         )
