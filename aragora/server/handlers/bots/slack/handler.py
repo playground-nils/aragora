@@ -233,6 +233,29 @@ class SlackHandler(BotHandlerMixin, SecureHandler):
                 logger.error("Error handling Slack POST: %s", e)
                 return error_response(safe_error_message(e, "Slack command"), 500)
 
+        # OAuth endpoints — GET only, unauthenticated (Slack redirects here)
+        oauth_paths = {
+            "/api/v1/bots/slack/oauth/start": "GET",
+            "/api/v1/bots/slack/oauth/callback": "GET",
+        }
+        if normalized_path in oauth_paths:
+            if method != oauth_paths[normalized_path]:
+                return error_response("Method not allowed", 405)
+            from .oauth import handle_slack_oauth_callback, handle_slack_oauth_start
+
+            handler_fn = (
+                handle_slack_oauth_start
+                if "start" in normalized_path
+                else handle_slack_oauth_callback
+            )
+            try:
+                asyncio.get_running_loop()
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, handler_fn(handler))
+                    return future.result(timeout=30)
+            except RuntimeError:
+                return asyncio.run(handler_fn(handler))
+
         return None
 
     async def _get_status_sync(self, handler: Any) -> HandlerResult:
