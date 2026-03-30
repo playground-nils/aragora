@@ -930,6 +930,183 @@ class TestIntegratorView:
         assert lane["next_action"] == "Salvage or reassign the expired lane before resuming work."
         assert "attach_receipt" not in lane["available_actions"]
 
+    def test_build_integrator_view_does_not_expect_receipt_for_merge_gate_no_deliverable_lane(
+        self,
+    ):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-merge-gate",
+                            "task_id": "wo-merge-gate",
+                            "run_id": "run-1",
+                            "status": "needs_human",
+                            "title": "Merge gate lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-merge-gate",
+                            "branch": "codex/merge-gate",
+                            "worktree_path": "/tmp/repo/.worktrees/merge-gate",
+                            "lease_id": "lease-merge-gate",
+                            "failure_reason": "merge_gate_failed",
+                            "blockers": [
+                                "merge gate blocked: missing verification plan for code-change lane"
+                            ],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-merge-gate",
+                            "task_id": "wo-merge-gate",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-merge-gate",
+                            "branch": "codex/merge-gate",
+                            "worktree_path": "/tmp/repo/.worktrees/merge-gate",
+                            "status": "released",
+                            "updated_at": now.isoformat(),
+                            "expires_at": (now + timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "needs_human"
+        assert lane["deliverable_type"] is None
+        assert lane["receipt_expected"] is False
+        assert lane["missing_receipt"] is False
+        assert "missing_receipt" not in lane["blockers"]
+        assert "attach_receipt" not in lane["available_actions"]
+        assert lane["merge_readiness"] == "blocked"
+
+    def test_build_integrator_view_marks_undeclared_scope_receipt_gap_as_scope_issue(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-scope-gap",
+                            "task_id": "wo-scope-gap",
+                            "run_id": "run-1",
+                            "status": "completed",
+                            "title": "Historical deliverable lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope-gap",
+                            "branch": "codex/scope-gap",
+                            "worktree_path": "/tmp/repo/.worktrees/scope-gap",
+                            "lease_id": "lease-scope-gap",
+                            "commit_shas": ["abc12345"],
+                            "changed_paths": ["tests/swarm/test_reporter.py"],
+                            "blockers": ["missing_receipt"],
+                            "updated_at": now.isoformat(),
+                            "metadata": {
+                                "last_scope_violation": {
+                                    "detected_at": now.isoformat(),
+                                    "changed_paths": ["tests/swarm/test_reporter.py"],
+                                    "violations": [
+                                        {
+                                            "type": "undeclared_scope",
+                                            "paths": ["tests/swarm/test_reporter.py"],
+                                            "message": "Lease has no declared file scope.",
+                                        }
+                                    ],
+                                }
+                            },
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-scope-gap",
+                            "task_id": "wo-scope-gap",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope-gap",
+                            "branch": "codex/scope-gap",
+                            "worktree_path": "/tmp/repo/.worktrees/scope-gap",
+                            "status": "expired",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "deliverable_created"
+        assert lane["receipt_expected"] is False
+        assert lane["missing_receipt"] is False
+        assert "missing_receipt" not in lane["blockers"]
+        assert "receipt_backfill_blocked_undeclared_scope" in lane["blockers"]
+        assert "scope_violation" in lane["blockers"]
+        assert lane["merge_readiness"] == "blocked"
+
+    def test_build_integrator_view_does_not_expect_receipt_for_scope_violation_lane(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-scope-violation",
+                            "task_id": "wo-scope-violation",
+                            "run_id": "run-1",
+                            "status": "scope_violation",
+                            "title": "Scope violation lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope-violation",
+                            "branch": "codex/scope-violation",
+                            "worktree_path": "/tmp/repo/.worktrees/scope-violation",
+                            "lease_id": "lease-scope-violation",
+                            "blockers": [
+                                "worker edited files outside permitted scope: tests/swarm/test_reporter.py"
+                            ],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-scope-violation",
+                            "task_id": "wo-scope-violation",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope-violation",
+                            "branch": "codex/scope-violation",
+                            "worktree_path": "/tmp/repo/.worktrees/scope-violation",
+                            "status": "released",
+                            "updated_at": now.isoformat(),
+                            "expires_at": (now + timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "blocked"
+        assert lane["receipt_expected"] is False
+        assert lane["missing_receipt"] is False
+        assert "missing_receipt" not in lane["blockers"]
+        assert "scope_violation" in lane["blockers"]
+        assert lane["merge_readiness"] == "blocked"
+
     def test_build_integrator_view_keeps_receipt_backed_reaped_lane_reviewable(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
 
@@ -1002,6 +1179,287 @@ class TestIntegratorView:
             lane["next_action"] == "Review the validated lane and decide whether it should merge."
         )
 
+    def test_build_integrator_view_ignores_placeholder_blockers_on_receipt_backed_reaped_lane(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-reaped-placeholder",
+                            "task_id": "wo-reaped-placeholder",
+                            "run_id": "run-1",
+                            "status": "failed",
+                            "title": "Receipt-backed reaped lane with placeholder blocker",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-reaped-placeholder",
+                            "branch": "codex/reaped-placeholder",
+                            "worktree_path": "/tmp/repo/.worktrees/reaped-placeholder",
+                            "lease_id": "lease-reaped-placeholder",
+                            "blockers": ["None", "stale_lease_reaped"],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-reaped-placeholder",
+                            "task_id": "wo-reaped-placeholder",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-reaped-placeholder",
+                            "branch": "codex/reaped-placeholder",
+                            "worktree_path": "/tmp/repo/.worktrees/reaped-placeholder",
+                            "status": "released",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "receipt-reaped-placeholder",
+                            "lease_id": "lease-reaped-placeholder",
+                            "task_id": "wo-reaped-placeholder",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-reaped-placeholder",
+                            "branch": "codex/reaped-placeholder",
+                            "worktree_path": "/tmp/repo/.worktrees/reaped-placeholder",
+                            "commit_shas": ["abc123"],
+                            "changed_paths": ["aragora/swarm/reporter.py"],
+                            "created_at": now.isoformat(),
+                        }
+                    ],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["receipt_id"] == "receipt-reaped-placeholder"
+        assert lane["terminal_outcome"] == "deliverable_created"
+        assert lane["merge_readiness"] == "review"
+        assert lane["lane_health"] == "healthy"
+        assert "None" not in lane["blockers"]
+        assert "stale_lease_reaped" not in lane["blockers"]
+        assert (
+            lane["next_action"] == "Review the validated lane and decide whether it should merge."
+        )
+
+    def test_build_integrator_view_keeps_receipt_backed_released_dispatched_lane_reviewable(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-released-review",
+                            "task_id": "wo-released-review",
+                            "run_id": "run-1",
+                            "status": "dispatched",
+                            "title": "Receipt-backed released dispatched lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-released-review",
+                            "branch": "codex/released-review",
+                            "worktree_path": "/tmp/repo/.worktrees/released-review",
+                            "lease_id": "lease-released-review",
+                            "blockers": ["stale_lease_reaped"],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-released-review",
+                            "task_id": "wo-released-review",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-released-review",
+                            "branch": "codex/released-review",
+                            "worktree_path": "/tmp/repo/.worktrees/released-review",
+                            "status": "released",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "receipt-released-review",
+                            "lease_id": "lease-released-review",
+                            "task_id": "wo-released-review",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-released-review",
+                            "branch": "codex/released-review",
+                            "worktree_path": "/tmp/repo/.worktrees/released-review",
+                            "commit_shas": ["abc123"],
+                            "changed_paths": ["aragora/swarm/reporter.py"],
+                            "created_at": now.isoformat(),
+                        }
+                    ],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "deliverable_created"
+        assert lane["receipt_id"] == "receipt-released-review"
+        assert lane["merge_readiness"] == "review"
+        assert lane["lane_health"] == "healthy"
+        assert lane["blockers"] == []
+        assert (
+            lane["next_action"] == "Review the validated lane and decide whether it should merge."
+        )
+
+    def test_build_integrator_view_keeps_merge_gate_failed_receipt_lane_blocked(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-merge-gate",
+                            "task_id": "wo-merge-gate",
+                            "run_id": "run-1",
+                            "status": "needs_human",
+                            "title": "Merge-gate failed receipt lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-merge-gate",
+                            "branch": "codex/merge-gate",
+                            "worktree_path": "/tmp/repo/.worktrees/merge-gate",
+                            "lease_id": "lease-merge-gate",
+                            "blockers": [
+                                "merge gate blocked: verification failed: pytest tests/swarm -q",
+                                "merge_gate_failed",
+                            ],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-merge-gate",
+                            "task_id": "wo-merge-gate",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-merge-gate",
+                            "branch": "codex/merge-gate",
+                            "worktree_path": "/tmp/repo/.worktrees/merge-gate",
+                            "status": "released",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "receipt-merge-gate",
+                            "lease_id": "lease-merge-gate",
+                            "task_id": "wo-merge-gate",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-merge-gate",
+                            "branch": "codex/merge-gate",
+                            "worktree_path": "/tmp/repo/.worktrees/merge-gate",
+                            "commit_shas": ["abc123"],
+                            "changed_paths": ["aragora/swarm/reporter.py"],
+                            "created_at": now.isoformat(),
+                        }
+                    ],
+                    "integration_decisions": [
+                        {
+                            "decision_id": "decision-merge-gate",
+                            "lease_id": "lease-merge-gate",
+                            "receipt_id": "receipt-merge-gate",
+                            "decision": "pending_review",
+                            "created_at": now.isoformat(),
+                        }
+                    ],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["merge_readiness"] == "blocked"
+        assert lane["lane_health"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Fix the merge gate or verification failure before rerunning the lane."
+        )
+
+    def test_build_integrator_view_keeps_scope_violation_receipt_lane_blocked(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-scope-receipt",
+                            "task_id": "wo-scope-receipt",
+                            "run_id": "run-1",
+                            "status": "scope_violation",
+                            "title": "Scope violation receipt lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope-receipt",
+                            "branch": "codex/scope-receipt",
+                            "worktree_path": "/tmp/repo/.worktrees/scope-receipt",
+                            "lease_id": "lease-scope-receipt",
+                            "blockers": ["scope_violation"],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-scope-receipt",
+                            "task_id": "wo-scope-receipt",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope-receipt",
+                            "branch": "codex/scope-receipt",
+                            "worktree_path": "/tmp/repo/.worktrees/scope-receipt",
+                            "status": "released",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "receipt-scope-receipt",
+                            "lease_id": "lease-scope-receipt",
+                            "task_id": "wo-scope-receipt",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-scope-receipt",
+                            "branch": "codex/scope-receipt",
+                            "worktree_path": "/tmp/repo/.worktrees/scope-receipt",
+                            "commit_shas": ["abc123"],
+                            "changed_paths": ["aragora/swarm/reporter.py"],
+                            "created_at": now.isoformat(),
+                        }
+                    ],
+                    "integration_decisions": [
+                        {
+                            "decision_id": "decision-scope-receipt",
+                            "lease_id": "lease-scope-receipt",
+                            "receipt_id": "receipt-scope-receipt",
+                            "decision": "pending_review",
+                            "created_at": now.isoformat(),
+                        }
+                    ],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["scope_violation_detected"] is True
+        assert lane["merge_readiness"] == "blocked"
+        assert lane["lane_health"] == "blocked"
+        assert (
+            lane["next_action"]
+            == "Narrow the lane scope or split ownership before it can re-enter merge review."
+        )
+
     def test_build_integrator_view_does_not_expect_receipt_when_stale_lease_record_is_gone(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
 
@@ -1037,6 +1495,7 @@ class TestIntegratorView:
         assert lane["receipt_expected"] is False
         assert lane["missing_receipt"] is False
         assert "missing_receipt" not in lane["blockers"]
+        assert lane["lease_health"] == "expired"
         assert lane["lane_health"] == "expired"
         assert lane["next_action"] == "Salvage or reassign the expired lane before resuming work."
 
@@ -1073,6 +1532,148 @@ class TestIntegratorView:
         assert lane["stale_heartbeat"] is False
         assert "stale_heartbeat" not in lane["blockers"]
         assert lane["lane_health"] == "healthy"
+
+    def test_build_integrator_view_does_not_cross_match_task_id_across_runs(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-a:subtask_1",
+                            "task_id": "subtask_1",
+                            "run_id": "run-a",
+                            "status": "queued",
+                            "title": "Queued lane should stay isolated",
+                            "owner_agent": "codex",
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-run-b",
+                            "task_id": "subtask_1",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-run-b",
+                            "branch": "codex/run-b",
+                            "worktree_path": "/tmp/repo/.worktrees/run-b",
+                            "status": "active",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now + timedelta(hours=1)).isoformat(),
+                            "metadata": {
+                                "supervisor_run_id": "run-b",
+                                "task_key": "run-b:subtask_1",
+                                "work_order_id": "subtask_1",
+                            },
+                        }
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "receipt-run-b",
+                            "lease_id": "lease-run-b",
+                            "task_id": "subtask_1",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-run-b",
+                            "branch": "codex/run-b",
+                            "worktree_path": "/tmp/repo/.worktrees/run-b",
+                            "commit_shas": ["abc123"],
+                            "changed_paths": ["aragora/swarm/reporter.py"],
+                            "created_at": now.isoformat(),
+                            "metadata": {
+                                "supervisor_run_id": "run-b",
+                                "task_key": "run-b:subtask_1",
+                                "work_order_id": "subtask_1",
+                            },
+                        }
+                    ],
+                    "integration_decisions": [
+                        {
+                            "decision_id": "decision-run-b",
+                            "receipt_id": "receipt-run-b",
+                            "decision": "pending_review",
+                            "created_at": now.isoformat(),
+                        }
+                    ],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["lane_id"] == "run-a:subtask_1"
+        assert lane["receipt_id"] is None
+        assert lane["lease_id"] is None
+        assert lane["lease_status"] is None
+        assert lane["stale_heartbeat"] is False
+        assert lane["merge_readiness"] == "in_progress"
+        assert lane["lane_health"] == "healthy"
+        assert lane["blockers"] == []
+
+    def test_build_integrator_view_collapses_cli_transcript_blocker(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+        transcript = (
+            "OpenAI Codex v0.107.0 (research preview)\n"
+            "--------\n"
+            "workdir: /tmp/repo/.worktrees/swarm-timeout\n"
+            "approval: never\n"
+            "sandbox: workspace-write\n"
+            "session id: deadbeef\n"
+            "user\n# Task: Example\n"
+            "exec\n/bin/zsh -lc 'rg --files'\n"
+            "worker timed out while waiting for completion\n"
+        ) + ("x" * 700)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-timeout:subtask_1",
+                            "task_id": "subtask_1",
+                            "run_id": "run-timeout",
+                            "status": "failed",
+                            "title": "Timeout lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-timeout",
+                            "branch": "codex/timeout-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/timeout-lane",
+                            "lease_id": "lease-timeout",
+                            "blockers": [transcript],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-timeout",
+                            "task_id": "subtask_1",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-timeout",
+                            "branch": "codex/timeout-lane",
+                            "worktree_path": "/tmp/repo/.worktrees/timeout-lane",
+                            "status": "released",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                            "metadata": {
+                                "supervisor_run_id": "run-timeout",
+                                "task_key": "run-timeout:subtask_1",
+                                "work_order_id": "subtask_1",
+                            },
+                        }
+                    ],
+                    "completion_receipts": [],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["lane_health"] == "stalled"
+        assert lane["terminal_outcome"] == "timeout"
+        assert lane["blockers"] == ["worker_timeout_transcript_captured"]
 
     def test_build_integrator_view_marks_released_dispatched_lane_expired(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
@@ -1118,6 +1719,7 @@ class TestIntegratorView:
 
         lane = payload["lanes"][0]
         assert lane["status"] == "dispatched"
+        assert lane["merge_readiness"] == "blocked"
         assert lane["stale_heartbeat"] is False
         assert "stale_lease_reaped" in lane["blockers"]
         assert lane["lane_health"] == "expired"
@@ -1166,6 +1768,7 @@ class TestIntegratorView:
 
         lane = payload["lanes"][0]
         assert lane["status"] == "dispatched"
+        assert lane["merge_readiness"] == "blocked"
         assert lane["stale_heartbeat"] is False
         assert "stale_lease_reaped" in lane["blockers"]
         assert lane["lane_health"] == "expired"

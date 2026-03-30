@@ -16,6 +16,7 @@ from aragora.nomic.dev_coordination import (
     FileScopeViolationError,
     IntegrationDecisionType,
     LeaseConflictError,
+    LeaseStatus,
     SalvageStatus,
 )
 from aragora.nomic.global_work_queue import GlobalWorkQueue, WorkStatus
@@ -824,6 +825,280 @@ def test_reap_stale_leases_preserves_receipt_backed_work_order(store: DevCoordin
     assert "failure_reason" not in refreshed["work_orders"][0]
 
 
+def test_archive_reaped_no_receipt_work_orders_discards_old_backlog(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive stale reaped backlog",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Archive stale reaped backlog",
+            "refined_goal": "Archive stale reaped backlog",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-archive-stale",
+                "title": "Old stale lane",
+                "file_scope": ["aragora/swarm/reporter.py"],
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", run["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_reaped_no_receipt_work_orders(grace_period_hours=6.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["status"] == "discarded"
+    assert work_order["failure_reason"] == "stale_lease_reaped"
+    assert work_order["metadata"]["archived_due_to"] == "reaped_no_receipt"
+    assert work_order["metadata"]["archive_reason"] == "stale_lease_reaped"
+    assert work_order["metadata"]["previous_status"] == "needs_human"
+    assert store.get_developer_task(f"{run['run_id']}:wo-archive-stale") is not None
+    assert store.list_developer_tasks(open_only=True) == []
+
+
+def test_archive_reaped_no_receipt_work_orders_preserves_active_or_receipt_backed_lanes(
+    store: DevCoordinationStore,
+) -> None:
+    stale_run = store.create_supervisor_run(
+        goal="Keep active stale lane open",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Keep active stale lane open",
+            "refined_goal": "Keep active stale lane open",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-active-stale",
+                "title": "Active stale lane",
+                "file_scope": ["aragora/swarm/reporter.py"],
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "lease_id": "lease-active-stale",
+            }
+        ],
+    )
+    receipt_run = store.create_supervisor_run(
+        goal="Keep receipt lane reviewable",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Keep receipt lane reviewable",
+            "refined_goal": "Keep receipt lane reviewable",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-receipt-stale",
+                "title": "Receipt stale lane",
+                "file_scope": ["aragora/swarm/reporter.py"],
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "receipt_id": "rcpt-stale-keep",
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO leases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "lease-active-stale",
+                "wo-active-stale",
+                "Active stale lane",
+                "codex",
+                "sess-active-stale",
+                "codex/active-stale",
+                "/tmp/wt-active-stale",
+                "[]",
+                '["aragora/swarm/reporter.py"]',
+                "[]",
+                LeaseStatus.ACTIVE.value,
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                "2999-01-01T00:00:00+00:00",
+                "{}",
+            ),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET updated_at = ? WHERE run_id IN (?, ?)",
+            (
+                "2000-01-01T00:00:00+00:00",
+                stale_run["run_id"],
+                receipt_run["run_id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_reaped_no_receipt_work_orders(grace_period_hours=6.0)
+    stale_refreshed = store.get_supervisor_run(stale_run["run_id"])
+    receipt_refreshed = store.get_supervisor_run(receipt_run["run_id"])
+
+    assert archived == 0
+    assert stale_refreshed is not None
+    assert stale_refreshed["work_orders"][0]["status"] == "needs_human"
+    assert receipt_refreshed is not None
+    assert receipt_refreshed["work_orders"][0]["status"] == "needs_human"
+
+
+def test_backfill_missing_completion_receipts_for_historical_deliverable(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Backfill historical deliverable receipt",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Backfill historical deliverable receipt",
+            "refined_goal": "Backfill historical deliverable receipt",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-backfill-store",
+                "title": "Completed deliverable lane",
+                "file_scope": ["aragora/nomic/dev_coordination.py"],
+                "status": "completed",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "owner_session_id": "sess-backfill-store",
+                "branch": "codex/backfill-store",
+                "worktree_path": str(repo),
+                "changed_paths": ["aragora/nomic/dev_coordination.py"],
+                "commit_shas": ["abc12345"],
+                "tests_run": ["python -m pytest tests/nomic/test_dev_coordination.py -q"],
+                "confidence": 0.73,
+            }
+        ],
+    )
+    lease = store.claim_lease(
+        task_id="wo-backfill-store",
+        title="Completed deliverable lane",
+        owner_agent="codex",
+        owner_session_id="sess-backfill-store",
+        branch="codex/backfill-store",
+        worktree_path=str(repo),
+        claimed_paths=["aragora/nomic/dev_coordination.py"],
+        metadata={
+            "supervisor_run_id": run["run_id"],
+            "work_order_id": "wo-backfill-store",
+            "task_key": f"{run['run_id']}:wo-backfill-store",
+        },
+    )
+    updated = store.get_supervisor_run(run["run_id"])
+    assert updated is not None
+    updated["work_orders"][0]["lease_id"] = lease.lease_id
+    updated["work_orders"][0]["status"] = "completed"
+    store.update_supervisor_run(run["run_id"], work_orders=updated["work_orders"])
+
+    backfilled = store.backfill_missing_completion_receipts()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert backfilled == 1
+    assert refreshed is not None
+    receipt_id = refreshed["work_orders"][0]["receipt_id"]
+    assert receipt_id is not None
+    receipt = store.get_completion_receipt(receipt_id)
+    assert receipt is not None
+    assert receipt.outcome == "deliverable_created"
+    assert receipt.metadata["backfilled_receipt"] is True
+
+
+def test_backfill_missing_completion_receipts_skips_no_deliverable_lane(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Skip no-deliverable receipt backfill",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Skip no-deliverable receipt backfill",
+            "refined_goal": "Skip no-deliverable receipt backfill",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-no-deliverable",
+                "title": "Needs human without deliverable",
+                "file_scope": ["aragora/nomic/dev_coordination.py"],
+                "status": "needs_human",
+                "failure_reason": "merge_gate_failed",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "owner_session_id": "sess-no-deliverable",
+                "branch": "codex/no-deliverable",
+                "worktree_path": str(repo),
+            }
+        ],
+    )
+    lease = store.claim_lease(
+        task_id="wo-no-deliverable",
+        title="Needs human without deliverable",
+        owner_agent="codex",
+        owner_session_id="sess-no-deliverable",
+        branch="codex/no-deliverable",
+        worktree_path=str(repo),
+        claimed_paths=["aragora/nomic/dev_coordination.py"],
+        metadata={"supervisor_run_id": run["run_id"], "work_order_id": "wo-no-deliverable"},
+    )
+    updated = store.get_supervisor_run(run["run_id"])
+    assert updated is not None
+    updated["work_orders"][0]["lease_id"] = lease.lease_id
+    updated["work_orders"][0]["status"] = "needs_human"
+    store.update_supervisor_run(run["run_id"], work_orders=updated["work_orders"])
+
+    backfilled = store.backfill_missing_completion_receipts()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert backfilled == 0
+    assert refreshed is not None
+    assert refreshed["work_orders"][0].get("receipt_id") is None
+
+
 def test_status_summary_does_not_reap_expired_leases(store: DevCoordinationStore) -> None:
     lease = store.claim_lease(
         task_id="clb-status-read",
@@ -1046,6 +1321,62 @@ async def test_sync_developer_task_queue_completes_resolved_tasks(
     assert counts["completed"] == 1
     assert item is not None
     assert item.status == WorkStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_sync_developer_task_queue_completes_archived_reaped_tasks(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive stale reaped queue item",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Archive stale reaped queue item",
+            "refined_goal": "Archive stale reaped queue item",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-archive-queue",
+                "title": "Archive me later",
+                "file_scope": ["aragora/nomic/dev_coordination.py"],
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+    queue = GlobalWorkQueue(storage_dir=repo / ".work_queue")
+
+    await store.sync_developer_task_queue(queue)
+    task_item = await queue.get(f"task:{run['run_id']}:wo-archive-queue")
+    assert task_item is not None
+    assert task_item.status == WorkStatus.BLOCKED
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", run["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    counts = await store.sync_developer_task_queue(queue)
+    refreshed = await queue.get(f"task:{run['run_id']}:wo-archive-queue")
+    run_record = store.get_supervisor_run(run["run_id"])
+
+    assert counts["completed"] == 1
+    assert refreshed is not None
+    assert refreshed.status == WorkStatus.COMPLETED
+    assert run_record is not None
+    assert run_record["work_orders"][0]["status"] == "discarded"
 
 
 @pytest.mark.asyncio

@@ -67,6 +67,8 @@ _QUEUEABLE_DEVELOPER_TASK_STATUSES = {
     "timed_out",
     "failed",
 }
+_REAPED_NO_RECEIPT_ARCHIVE_GRACE_HOURS = 6.0
+_REAPED_NO_RECEIPT_BLOCKERS = {"stale_lease_reaped", "expired_lease_reaped"}
 
 
 def _get_lane_telemetry() -> LaneTelemetryCollector:
@@ -851,6 +853,143 @@ class DevCoordinationStore:
         tasks.sort(key=lambda item: item.updated_at, reverse=True)
         return tasks
 
+    def archive_reaped_no_receipt_work_orders(
+        self,
+        *,
+        grace_period_hours: float = _REAPED_NO_RECEIPT_ARCHIVE_GRACE_HOURS,
+    ) -> int:
+        """Archive stale reaped work orders that never produced a receipt."""
+        now = _utcnow()
+        grace_period = timedelta(hours=max(0.0, float(grace_period_hours)))
+        cutoff = now - grace_period
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            lease_status_by_id = {
+                str(row["lease_id"]).strip(): str(row["status"]).strip()
+                for row in conn.execute("SELECT lease_id, status FROM leases").fetchall()
+                if str(row["lease_id"]).strip()
+            }
+            archived = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    lease_status = lease_status_by_id.get(_optional_text(item.get("lease_id")))
+                    if not _work_order_should_archive_reaped_no_receipt(
+                        item,
+                        run=record,
+                        cutoff=cutoff,
+                        lease_status=lease_status,
+                    ):
+                        continue
+                    metadata = dict(item.get("metadata") or {})
+                    archive_reason = _work_order_reap_failure_reason(item) or "stale_lease_reaped"
+                    metadata.update(
+                        {
+                            "archived_due_to": "reaped_no_receipt",
+                            "archived_at": now.isoformat(),
+                            "archive_reason": archive_reason,
+                            "previous_status": _optional_text(item.get("status")) or "needs_human",
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    if not _optional_text(item.get("failure_reason")):
+                        item["failure_reason"] = archive_reason
+                    changed = True
+                    archived += 1
+                if not changed:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now.isoformat()
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return archived
+
+    def backfill_missing_completion_receipts(self) -> int:
+        """Attach or synthesize missing receipts for stored deliverable work orders."""
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+        finally:
+            conn.close()
+
+        backfilled = 0
+        for row in rows:
+            record = self._supervisor_run_from_row(row)
+            changed = False
+            for item in record["work_orders"]:
+                if not isinstance(item, dict):
+                    continue
+                if not _work_order_should_backfill_receipt(item):
+                    continue
+                lease_id = _optional_text(item.get("lease_id"))
+                if not lease_id:
+                    continue
+                existing = self.list_completion_receipts(lease_id=lease_id, limit=1)
+                if existing:
+                    receipt = existing[0]
+                else:
+                    try:
+                        receipt = self.record_completion(
+                            lease_id=lease_id,
+                            owner_agent=_optional_text(item.get("target_agent")),
+                            owner_session_id=_optional_text(item.get("owner_session_id")),
+                            branch=_optional_text(item.get("branch")),
+                            worktree_path=_optional_text(item.get("worktree_path")),
+                            base_sha=_optional_text(item.get("initial_head")),
+                            head_sha=_optional_text(item.get("head_sha")),
+                            commit_shas=list(item.get("commit_shas", []) or []),
+                            changed_paths=list(item.get("changed_paths", []) or []),
+                            tests_run=list(item.get("tests_run", []) or []),
+                            validations_run=list(item.get("validations_run", []) or []),
+                            assumptions=[],
+                            blockers=[
+                                str(blocker).strip()
+                                for blocker in item.get("blockers", [])
+                                if str(blocker).strip()
+                            ],
+                            outcome=_work_order_receipt_outcome(item),
+                            risks=[
+                                str(blocker).strip()
+                                for blocker in item.get("blockers", [])
+                                if str(blocker).strip()
+                            ],
+                            pr_url=_optional_text(item.get("pr_url"), item.get("adopted_pr")),
+                            pr_number=_extract_pr_number(
+                                _optional_text(item.get("pr_url"), item.get("adopted_pr"))
+                            ),
+                            confidence=float(item.get("confidence", 0.0) or 0.0),
+                            metadata={
+                                "task_key": _optional_text(item.get("task_key")) or None,
+                                "verification_results": list(
+                                    item.get("verification_results", []) or []
+                                ),
+                                "worker_outcome": _optional_text(item.get("worker_outcome"))
+                                or None,
+                                "approval_required": bool(item.get("approval_required", False)),
+                                "risk_level": _optional_text(item.get("risk_level")) or None,
+                                "success_criteria": dict(item.get("success_criteria") or {}),
+                                "backfilled_receipt": True,
+                            },
+                            require_session_ownership=False,
+                        )
+                    except (FileScopeViolationError, KeyError, ValueError):
+                        continue
+                item["receipt_id"] = receipt.receipt_id
+                item["confidence"] = receipt.confidence
+                changed = True
+                backfilled += 1
+            if not changed:
+                continue
+            self.update_supervisor_run(record["run_id"], work_orders=record["work_orders"])
+        return backfilled
+
     def get_developer_task(self, task_key: str) -> DeveloperTask | None:
         for task in self.list_developer_tasks(limit=500):
             if task.task_key == str(task_key).strip():
@@ -964,6 +1103,8 @@ class DevCoordinationStore:
                 lease.metadata,
                 update={"status": "needs_human", "failure_reason": "expired_lease_reaped"},
             )
+        self.backfill_missing_completion_receipts()
+        self.archive_reaped_no_receipt_work_orders()
         return expired
 
     def reap_stale_leases(
@@ -1046,6 +1187,8 @@ class DevCoordinationStore:
                 update={"status": "needs_human", "failure_reason": "stale_lease_reaped"},
             )
 
+        self.backfill_missing_completion_receipts()
+        self.archive_reaped_no_receipt_work_orders()
         return stale
 
     def list_completion_receipts(
@@ -2029,6 +2172,8 @@ class DevCoordinationStore:
         complete_missing: bool = True,
     ) -> dict[str, int]:
         """Project open developer tasks into the global work queue."""
+        self.backfill_missing_completion_receipts()
+        self.archive_reaped_no_receipt_work_orders()
         work_queue = queue or GlobalWorkQueue(storage_dir=self.repo_root / ".work_queue")
         await work_queue.initialize()
 
@@ -2755,6 +2900,69 @@ def _developer_task_blockers(work_order: dict[str, Any]) -> list[str]:
     if isinstance(work_order.get("scope_violation"), dict):
         blockers.append("scope_violation")
     return blockers
+
+
+def _work_order_reap_failure_reason(work_order: dict[str, Any]) -> str:
+    for blocker in _developer_task_blockers(work_order):
+        normalized = blocker.strip().lower()
+        if normalized in _REAPED_NO_RECEIPT_BLOCKERS:
+            return normalized
+    return ""
+
+
+def _work_order_should_archive_reaped_no_receipt(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+    cutoff: datetime,
+    lease_status: str | None,
+) -> bool:
+    status = _optional_text(work_order.get("status")).lower()
+    if status not in _OPEN_DEVELOPER_TASK_STATUSES:
+        return False
+    if _optional_text(lease_status).lower() == LeaseStatus.ACTIVE.value:
+        return False
+    metadata = work_order.get("metadata")
+    if (
+        isinstance(metadata, dict)
+        and _optional_text(metadata.get("archived_due_to")) == "reaped_no_receipt"
+    ):
+        return False
+    if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
+        work_order
+    ):
+        return False
+    if not _work_order_reap_failure_reason(work_order):
+        return False
+    updated_at = _parse_dt(_developer_task_updated_at(work_order, run))
+    return updated_at <= cutoff
+
+
+def _work_order_receipt_outcome(work_order: dict[str, Any]) -> str:
+    if _optional_text(work_order.get("adopted_pr")):
+        return "pr_adopted"
+    if _work_order_has_concrete_deliverable(work_order):
+        return "deliverable_created"
+    return "clean_exit_no_deliverable"
+
+
+def _work_order_should_backfill_receipt(work_order: dict[str, Any]) -> bool:
+    status = _optional_text(work_order.get("status")).lower()
+    if status in {"queued", "leased", "dispatched", "active", "integrating", "discarded"}:
+        return False
+    if _optional_text(work_order.get("receipt_id")):
+        return False
+    if not _optional_text(work_order.get("lease_id")):
+        return False
+    return _work_order_receipt_outcome(work_order) in {"deliverable_created", "pr_adopted"}
+
+
+def _extract_pr_number(pr_reference: str) -> int | None:
+    text = str(pr_reference or "").strip().rstrip("/")
+    if not text:
+        return None
+    tail = text.rsplit("/", 1)[-1]
+    return int(tail) if tail.isdigit() else None
 
 
 def _developer_task_priority(work_order: dict[str, Any]) -> int:

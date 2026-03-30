@@ -23,6 +23,16 @@ logger = logging.getLogger(__name__)
 
 _STALE_LANE_AFTER_SECONDS = 15 * 60
 _LANE_TELEMETRY = LaneTelemetryCollector()
+_PLACEHOLDER_BLOCKERS: frozenset[str] = frozenset({"none", "null", "n/a", "na"})
+_CLI_TRANSCRIPT_MARKERS: tuple[str, ...] = (
+    "openai codex v",
+    "workdir:",
+    "approval:",
+    "sandbox:",
+    "session id:",
+    "\nuser\n# task:",
+    "\nexec\n",
+)
 
 
 def _parse_iso_timestamp(value: Any) -> datetime | None:
@@ -78,6 +88,24 @@ def _text_list(value: Any) -> list[str]:
     return list(dict.fromkeys(_text(item) for item in value if _text(item)))
 
 
+def _blocker_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return list(dict.fromkeys(text for item in value if (text := _normalize_blocker_text(item))))
+
+
+def _normalize_blocker_text(value: Any) -> str:
+    text = _text(value)
+    lowered = text.lower()
+    if not text or lowered in _PLACEHOLDER_BLOCKERS:
+        return ""
+    if len(text) >= 500 and any(marker in lowered for marker in _CLI_TRANSCRIPT_MARKERS):
+        if "timeout" in lowered or "timed out" in lowered:
+            return "worker_timeout_transcript_captured"
+        return "worker_cli_transcript_captured"
+    return text
+
+
 def _first_list(*values: Any) -> list[str]:
     for value in values:
         items = _text_list(value)
@@ -100,6 +128,30 @@ def _extract_receipt_id(*sources: dict[str, Any] | None) -> str:
             if text:
                 return text
     return ""
+
+
+def _run_task_tuple(run_id: Any, task_id: Any) -> tuple[str, str] | None:
+    run_text = _text(run_id)
+    task_text = _text(task_id)
+    if not run_text or not task_text:
+        return None
+    return (run_text, task_text)
+
+
+def _item_task_key(item: dict[str, Any] | None) -> str:
+    if not isinstance(item, dict):
+        return ""
+    meta = _metadata(item)
+    return _first_text(item.get("task_key"), meta.get("task_key"))
+
+
+def _item_run_task(item: dict[str, Any] | None) -> tuple[str, str] | None:
+    if not isinstance(item, dict):
+        return None
+    meta = _metadata(item)
+    task_id = _first_text(item.get("task_id"), meta.get("task_id"), meta.get("work_order_id"))
+    run_id = _first_text(meta.get("supervisor_run_id"), meta.get("run_id"))
+    return _run_task_tuple(run_id, task_id)
 
 
 def _deliverable(source: dict[str, Any] | None) -> dict[str, Any]:
@@ -195,6 +247,17 @@ def _explicit_missing_receipt(*sources: dict[str, Any] | None) -> bool:
         meta = _metadata(source)
         lowered = _text(meta.get("error")).lower()
         if "without receipt" in lowered or "missing receipt" in lowered:
+            return True
+    return False
+
+
+def _receipt_backfill_scope_gap(scope_violation_record: dict[str, Any] | None) -> bool:
+    if not isinstance(scope_violation_record, dict):
+        return False
+    for violation in scope_violation_record.get("violations", []) or []:
+        if not isinstance(violation, dict):
+            continue
+        if _text(violation.get("type")).lower() == "undeclared_scope":
             return True
     return False
 
@@ -432,6 +495,11 @@ def _lane_health(
         return "blocked"
     if lease_status == "expired" or status == "timed_out":
         return "expired"
+    if readiness == "review" and _text(terminal_outcome).lower() in {
+        "deliverable_created",
+        "pr_adopted",
+    }:
+        return "healthy"
     if stale_heartbeat or status in {"dispatch_failed", "failed"}:
         return "stalled"
     if lowered_blockers.intersection({"merge_gate_failed"}) or _text(terminal_outcome).lower() in {
@@ -592,6 +660,8 @@ def build_integrator_view(
     queue_by_branch: dict[str, list[dict[str, Any]]] = defaultdict(list)
     queue_by_session: dict[str, list[dict[str, Any]]] = defaultdict(list)
     queue_by_receipt: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    queue_by_task_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    queue_by_run_task: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     queue_by_task: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in merge_queue:
         branch = _text(item.get("branch"))
@@ -599,6 +669,8 @@ def build_integrator_view(
         meta = _metadata(item)
         receipt_id = _first_text(item.get("receipt_id"), meta.get("receipt_id"))
         task_id = _first_text(item.get("task_id"), meta.get("task_id"))
+        task_key = _item_task_key(item)
+        run_task = _item_run_task(item)
         if branch:
             queue_by_branch[branch].append(item)
             queue_branch_counts[branch] += 1
@@ -606,6 +678,10 @@ def build_integrator_view(
             queue_by_session[session_id].append(item)
         if receipt_id:
             queue_by_receipt[receipt_id].append(item)
+        if task_key:
+            queue_by_task_key[task_key].append(item)
+        if run_task:
+            queue_by_run_task[run_task].append(item)
         if task_id:
             queue_by_task[task_id].append(item)
 
@@ -640,12 +716,20 @@ def build_integrator_view(
             tasks_by_session_branch[(session_id, branch)] = task
 
     leases_by_id: dict[str, dict[str, Any]] = {}
+    leases_by_task_key: dict[str, dict[str, Any]] = {}
+    leases_by_run_task: dict[tuple[str, str], dict[str, Any]] = {}
     leases_by_task: dict[str, dict[str, Any]] = {}
     leases_by_session_branch: dict[tuple[str, str], dict[str, Any]] = {}
     for lease in leases:
         lease_id = _text(lease.get("lease_id"))
         if lease_id and lease_id not in leases_by_id:
             leases_by_id[lease_id] = lease
+        task_key = _item_task_key(lease)
+        if task_key and task_key not in leases_by_task_key:
+            leases_by_task_key[task_key] = lease
+        run_task = _item_run_task(lease)
+        if run_task and run_task not in leases_by_run_task:
+            leases_by_run_task[run_task] = lease
         task_id = _text(lease.get("task_id"))
         if task_id and task_id not in leases_by_task:
             leases_by_task[task_id] = lease
@@ -654,6 +738,8 @@ def build_integrator_view(
             leases_by_session_branch[key] = lease
 
     receipts_by_id: dict[str, dict[str, Any]] = {}
+    receipts_by_task_key: dict[str, dict[str, Any]] = {}
+    receipts_by_run_task: dict[tuple[str, str], dict[str, Any]] = {}
     receipts_by_task: dict[str, dict[str, Any]] = {}
     receipts_by_lease: dict[str, dict[str, Any]] = {}
     receipts_by_session_branch: dict[tuple[str, str], dict[str, Any]] = {}
@@ -661,6 +747,12 @@ def build_integrator_view(
         receipt_id = _text(receipt.get("receipt_id"))
         if receipt_id and receipt_id not in receipts_by_id:
             receipts_by_id[receipt_id] = receipt
+        task_key = _item_task_key(receipt)
+        if task_key and task_key not in receipts_by_task_key:
+            receipts_by_task_key[task_key] = receipt
+        run_task = _item_run_task(receipt)
+        if run_task and run_task not in receipts_by_run_task:
+            receipts_by_run_task[run_task] = receipt
         task_id = _text(receipt.get("task_id"))
         if task_id and task_id not in receipts_by_task:
             receipts_by_task[task_id] = receipt
@@ -1005,11 +1097,11 @@ def build_integrator_view(
                 queue_meta.get("adopted_pr"),
             ),
             "blockers": [
-                *_text_list(work_order.get("blockers")),
-                *_text_list(task.get("blocked_by")),
-                *_text_list(task.get("blockers")),
-                *_text_list(queue_meta.get("blockers")),
-                *_text_list(receipt.get("blockers")),
+                *_blocker_list(work_order.get("blockers")),
+                *_blocker_list(task.get("blocked_by")),
+                *_blocker_list(task.get("blockers")),
+                *_blocker_list(queue_meta.get("blockers")),
+                *_blocker_list(receipt.get("blockers")),
                 *(["stale_lease_reaped"] if stale_lease_blocked else []),
             ],
             "dispatch_error": _first_text(
@@ -1034,6 +1126,10 @@ def build_integrator_view(
         terminal_outcome = qualification.terminal_outcome
         qualification_reasons = list(qualification.reasons)
         blocked_reason = qualification.blocked_reason
+        reaped_lane = any(
+            _text(reason).lower() in {"stale_lease_reaped", "expired_lease_reaped"}
+            for reason in qualification_reasons
+        )
         reaped_receipt_backed_lane = (
             receipt_id
             and qualification.deliverable is not None
@@ -1061,6 +1157,23 @@ def build_integrator_view(
             ]
             if _text(blocked_reason).lower() in {"stale_lease_reaped", "expired_lease_reaped"}:
                 blocked_reason = None
+        scope_violation_record = (
+            scope_violation_by_lease.get(lease_id)
+            if lease_id
+            else scope_violation_by_session_branch.get((session_id, branch))
+        )
+        if not isinstance(scope_violation_record, dict):
+            fallback_violation = _pick_first(
+                lease_meta.get("last_scope_violation"),
+                task_meta.get("last_scope_violation"),
+            )
+            if isinstance(fallback_violation, dict):
+                scope_violation_record = fallback_violation
+        receipt_backfill_blocked = (
+            not receipt_id
+            and qualification.deliverable is not None
+            and _receipt_backfill_scope_gap(scope_violation_record)
+        )
         receipt_expected = receipt_expected_for_lane(
             status=status,
             queue_status=queue_status,
@@ -1072,6 +1185,8 @@ def build_integrator_view(
             deliverable_present=qualification.deliverable is not None,
             blockers=qualification_reasons,
         )
+        if receipt_backfill_blocked:
+            receipt_expected = False
         missing_receipt = _explicit_missing_receipt(work_order, queue_item) or (
             receipt_expected and not receipt_id
         )
@@ -1089,8 +1204,8 @@ def build_integrator_view(
             queue_meta.get("assumptions"),
         )
         receipt_blockers = _first_list(
-            receipt.get("blockers"),
-            queue_meta.get("blockers"),
+            _blocker_list(receipt.get("blockers")),
+            _blocker_list(queue_meta.get("blockers")),
         )
         risks = _first_list(
             receipt.get("risks"),
@@ -1160,21 +1275,21 @@ def build_integrator_view(
             else ""
         )
 
-        scope_violation_record = (
-            scope_violation_by_lease.get(lease_id)
-            if lease_id
-            else scope_violation_by_session_branch.get((session_id, branch))
-        )
-        if not isinstance(scope_violation_record, dict):
-            fallback_violation = task_meta.get("last_scope_violation")
-            if isinstance(fallback_violation, dict):
-                scope_violation_record = fallback_violation
         lowered_reasons = {_text(item).lower() for item in qualification_reasons if _text(item)}
         scope_violation = (
             isinstance(scope_violation_record, dict)
             or status == "scope_violation"
             or worker_outcome == "scope_violation"
             or "scope_violation" in lowered_reasons
+        )
+        if scope_violation and not receipt_id:
+            receipt_expected = False
+            missing_receipt = False
+        hard_review_blocker = (
+            scope_violation
+            or "merge_gate_failed" in lowered_reasons
+            or "clean_exit_no_deliverable" in lowered_reasons
+            or any(reason.startswith("merge gate blocked:") for reason in lowered_reasons)
         )
 
         terminal_blocked = terminal_outcome in {
@@ -1193,21 +1308,44 @@ def build_integrator_view(
             readiness = "merged" if queue_status == "merged" else "integrating"
         elif terminal_blocked:
             readiness = "blocked"
+        elif (
+            reaped_lane
+            and status in {"leased", "dispatched", "active"}
+            and not (
+                receipt_id
+                and qualification.deliverable is not None
+                and terminal_outcome in {"deliverable_created", "pr_adopted"}
+            )
+        ):
+            readiness = "blocked"
         elif decision_type == "pending_review":
-            readiness = "review"
+            readiness = "blocked" if hard_review_blocker else "review"
         elif decision_type in {"request_changes", "salvage"}:
             readiness = "blocked"
         elif (
             receipt_id
             and qualification.deliverable is not None
             and terminal_outcome in {"deliverable_created", "pr_adopted"}
-            and status
-            in {
-                "completed",
-                "needs_human",
-                "changes_requested",
-                "integrating",
-            }
+            and hard_review_blocker
+        ):
+            readiness = "blocked"
+        elif (
+            receipt_id
+            and qualification.deliverable is not None
+            and terminal_outcome in {"deliverable_created", "pr_adopted"}
+            and (
+                status
+                in {
+                    "completed",
+                    "needs_human",
+                    "changes_requested",
+                    "integrating",
+                    "failed",
+                    "leased",
+                    "dispatched",
+                }
+                or reaped_receipt_backed_lane
+            )
         ):
             readiness = "blocked" if missing_receipt else "review"
         else:
@@ -1224,11 +1362,15 @@ def build_integrator_view(
         effective_lease_status = lease_status
         if reaped_receipt_backed_lane and lease_status in {"expired", "released"}:
             effective_lease_status = ""
+        elif reaped_lane and not lease_status:
+            effective_lease_status = "expired"
 
         if superseded:
             lease_health = "superseded"
         elif reaped_receipt_backed_lane:
             lease_health = "completed"
+        elif reaped_lane and not lease_status:
+            lease_health = "expired"
         elif lease_status == "expired" or status == "timed_out":
             lease_health = "expired"
         elif stale_heartbeat:
@@ -1295,18 +1437,37 @@ def build_integrator_view(
         )
         blockers = sorted(
             {
-                *[_text(item) for item in task.get("blocked_by", []) if _text(item)],
-                *[_text(item) for item in work_order.get("blockers", []) if _text(item)],
-                *[_text(item) for item in qualification_reasons if _text(item)],
+                *[
+                    text
+                    for item in task.get("blocked_by", [])
+                    if (text := _normalize_blocker_text(item))
+                ],
+                *[
+                    text
+                    for item in work_order.get("blockers", [])
+                    if (text := _normalize_blocker_text(item))
+                ],
+                *[
+                    text
+                    for item in qualification_reasons
+                    if (text := _normalize_blocker_text(item))
+                ],
                 *collision_reasons,
             }
         )
-        if blocked_reason:
-            blockers.append(blocked_reason)
+        normalized_blocked_reason = _normalize_blocker_text(blocked_reason)
+        if normalized_blocked_reason:
+            blockers.append(normalized_blocked_reason)
         if stale_heartbeat:
             blockers.append("stale_heartbeat")
         if missing_receipt:
             blockers.append("missing_receipt")
+        else:
+            blockers = [
+                blocker for blocker in blockers if _text(blocker).lower() != "missing_receipt"
+            ]
+        if receipt_backfill_blocked:
+            blockers.append("receipt_backfill_blocked_undeclared_scope")
         if scope_violation:
             blockers.append("scope_violation")
         if superseded:
@@ -1418,6 +1579,9 @@ def build_integrator_view(
     for task in tasks:
         run_id = _text(task.get("run_id"))
         task_id = _text(task.get("task_id"))
+        task_key = _text(task.get("task_key"))
+        run_task = _run_task_tuple(run_id, task_id)
+        allow_task_id_fallback = not task_key and run_task is None
         worktree_path = _text(task.get("worktree_path"))
         branch = _text(task.get("branch"))
         session_id = _text(task.get("owner_session_id"))
@@ -1427,13 +1591,17 @@ def build_integrator_view(
         work_order = work_order_by_key.get((run_id, task_id), {})
         matched_lease = _pick_first(
             leases_by_id.get(lease_id),
-            leases_by_task.get(task_id),
+            leases_by_task_key.get(task_key),
+            leases_by_run_task.get(run_task) if run_task else None,
+            leases_by_task.get(task_id) if allow_task_id_fallback else None,
             leases_by_session_branch.get((session_id, branch)),
         )
         matched_receipt = _pick_first(
             receipts_by_id.get(receipt_id),
             receipts_by_lease.get(lease_id),
-            receipts_by_task.get(task_id),
+            receipts_by_task_key.get(task_key),
+            receipts_by_run_task.get(run_task) if run_task else None,
+            receipts_by_task.get(task_id) if allow_task_id_fallback else None,
             receipts_by_session_branch.get((session_id, branch)),
         )
         effective_receipt_id = _first_text(
@@ -1450,7 +1618,9 @@ def build_integrator_view(
         )
         matched_queue = _pick_first(
             queue_by_receipt.get(effective_receipt_id, []),
-            queue_by_task.get(task_id, []),
+            queue_by_task_key.get(task_key, []),
+            queue_by_run_task.get(run_task, []) if run_task else None,
+            queue_by_task.get(task_id, []) if allow_task_id_fallback else None,
             queue_by_branch.get(branch, []),
             queue_by_session.get(session_id, []),
         )
@@ -1495,6 +1665,11 @@ def build_integrator_view(
                 work_order.get("owner_session_id"),
                 _metadata(work_order).get("owner_session_id"),
             )
+            task_key = _first_text(
+                _metadata(work_order).get("task_key"), f"{run_id}:{work_order_id}"
+            )
+            run_task = _run_task_tuple(run_id, work_order_id)
+            allow_task_id_fallback = not task_key and run_task is None
             lease_id = _first_text(
                 work_order.get("lease_id"), _metadata(work_order).get("lease_id")
             )
@@ -1509,13 +1684,17 @@ def build_integrator_view(
             )
             matched_lease = _pick_first(
                 leases_by_id.get(lease_id),
-                leases_by_task.get(work_order_id),
+                leases_by_task_key.get(task_key),
+                leases_by_run_task.get(run_task) if run_task else None,
+                leases_by_task.get(work_order_id) if allow_task_id_fallback else None,
                 leases_by_session_branch.get((session_id, branch)),
             )
             matched_receipt = _pick_first(
                 receipts_by_id.get(receipt_id),
                 receipts_by_lease.get(lease_id),
-                receipts_by_task.get(work_order_id),
+                receipts_by_task_key.get(task_key),
+                receipts_by_run_task.get(run_task) if run_task else None,
+                receipts_by_task.get(work_order_id) if allow_task_id_fallback else None,
                 receipts_by_session_branch.get((session_id, branch)),
             )
             effective_receipt_id = _first_text(
@@ -1525,7 +1704,9 @@ def build_integrator_view(
             matched_decision = _pick_first(decisions_by_receipt.get(effective_receipt_id))
             queue_item = _pick_first(
                 queue_by_receipt.get(effective_receipt_id, []),
-                queue_by_task.get(work_order_id, []),
+                queue_by_task_key.get(task_key, []),
+                queue_by_run_task.get(run_task, []) if run_task else None,
+                queue_by_task.get(work_order_id, []) if allow_task_id_fallback else None,
                 queue_by_branch.get(branch, []),
                 queue_by_session.get(session_id, []),
             )
@@ -1561,6 +1742,13 @@ def build_integrator_view(
         branch = _text(row.get("branch"))
         session_id = _text(row.get("session_id"))
         matched_task = _pick_first(tasks_by_session_branch.get((session_id, branch)))
+        task_key = _text(matched_task.get("task_key")) if isinstance(matched_task, dict) else ""
+        run_task = (
+            _run_task_tuple(_text(matched_task.get("run_id")), _text(matched_task.get("task_id")))
+            if isinstance(matched_task, dict)
+            else None
+        )
+        allow_task_id_fallback = not task_key and run_task is None
         lease_id = _first_text(
             matched_task.get("lease_id") if isinstance(matched_task, dict) else "",
         )
@@ -1569,11 +1757,25 @@ def build_integrator_view(
         )
         matched_lease = _pick_first(
             leases_by_id.get(lease_id),
+            leases_by_task_key.get(task_key),
+            leases_by_run_task.get(run_task) if run_task else None,
+            leases_by_task.get(
+                _text(matched_task.get("task_id")) if isinstance(matched_task, dict) else ""
+            )
+            if allow_task_id_fallback
+            else None,
             leases_by_session_branch.get((session_id, branch)),
         )
         matched_receipt = _pick_first(
             receipts_by_id.get(receipt_id),
             receipts_by_lease.get(lease_id),
+            receipts_by_task_key.get(task_key),
+            receipts_by_run_task.get(run_task) if run_task else None,
+            receipts_by_task.get(
+                _text(matched_task.get("task_id")) if isinstance(matched_task, dict) else ""
+            )
+            if allow_task_id_fallback
+            else None,
             receipts_by_session_branch.get((session_id, branch)),
         )
         effective_receipt_id = _first_text(
@@ -1581,12 +1783,19 @@ def build_integrator_view(
             matched_receipt.get("receipt_id") if isinstance(matched_receipt, dict) else "",
         )
         matched_decision = _pick_first(decisions_by_receipt.get(effective_receipt_id))
-        queue_item = _pick_first(
-            queue_by_receipt.get(effective_receipt_id, []),
+        task_queue_items = (
             queue_by_task.get(
                 _text(matched_task.get("task_id")) if isinstance(matched_task, dict) else "",
                 [],
-            ),
+            )
+            if allow_task_id_fallback
+            else None
+        )
+        queue_item = _pick_first(
+            queue_by_receipt.get(effective_receipt_id, []),
+            queue_by_task_key.get(task_key, []),
+            queue_by_run_task.get(run_task, []) if run_task else None,
+            task_queue_items,
             queue_by_branch.get(branch, []),
             queue_by_session.get(session_id, []),
         )
@@ -1616,11 +1825,18 @@ def build_integrator_view(
         session_id = _text(item.get("session_id"))
         branch = _text(item.get("branch"))
         meta = _metadata(item)
+        task_key = _first_text(item.get("task_key"), meta.get("task_key"))
         receipt_id = _first_text(item.get("receipt_id"), meta.get("receipt_id"))
         task_id = _first_text(item.get("task_id"), meta.get("task_id"))
+        run_task = _run_task_tuple(
+            _first_text(meta.get("supervisor_run_id"), meta.get("run_id")),
+            _first_text(task_id, meta.get("work_order_id")),
+        )
+        allow_task_id_fallback = not task_key and run_task is None
         matched_task = _pick_first(
             tasks_by_session_branch.get((session_id, branch)),
-            tasks_by_run_task.get((_text(meta.get("run_id")), task_id)),
+            tasks_by_key.get(task_key),
+            tasks_by_run_task.get(run_task) if run_task else None,
         )
         lease_id = _first_text(
             meta.get("lease_id"),
@@ -1628,13 +1844,17 @@ def build_integrator_view(
         )
         matched_lease = _pick_first(
             leases_by_id.get(lease_id),
-            leases_by_task.get(task_id),
+            leases_by_task_key.get(task_key),
+            leases_by_run_task.get(run_task) if run_task else None,
+            leases_by_task.get(task_id) if allow_task_id_fallback else None,
             leases_by_session_branch.get((session_id, branch)),
         )
         matched_receipt = _pick_first(
             receipts_by_id.get(receipt_id),
             receipts_by_lease.get(lease_id),
-            receipts_by_task.get(task_id),
+            receipts_by_task_key.get(task_key),
+            receipts_by_run_task.get(run_task) if run_task else None,
+            receipts_by_task.get(task_id) if allow_task_id_fallback else None,
             receipts_by_session_branch.get((session_id, branch)),
         )
         effective_receipt_id = _first_text(

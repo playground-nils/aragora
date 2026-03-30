@@ -55,6 +55,7 @@ _WORKER_OUTCOME_TO_TERMINAL: dict[str, str] = {
 }
 
 _SUCCESS_OUTCOMES: frozenset[str] = frozenset({"deliverable_created", "pr_adopted"})
+_PLACEHOLDER_BLOCKERS: frozenset[str] = frozenset({"none", "null", "n/a", "na"})
 
 
 def _text(value: Any) -> str:
@@ -72,7 +73,7 @@ def _ordered_unique(items: list[str]) -> list[str]:
     ordered: list[str] = []
     for item in items:
         text = _text(item)
-        if not text or text in seen:
+        if not text or text.lower() in _PLACEHOLDER_BLOCKERS or text in seen:
             continue
         seen.add(text)
         ordered.append(text)
@@ -127,7 +128,7 @@ def extract_work_order_deliverable(
     status = _text(work_order.get("status")).lower()
     if require_terminal_status and status in _IN_FLIGHT_STATUSES:
         return None
-    if status in _FAILURE_STATUSES:
+    if require_terminal_status and status in _FAILURE_STATUSES:
         return None
 
     work_order_id = work_order.get("work_order_id")
@@ -401,6 +402,8 @@ def receipt_expected_for_lane(
     normalized_lease_status = _text(lease_status).lower()
     normalized_blockers = {_text(item).lower() for item in blockers or [] if _text(item)}
 
+    if normalized_status == "scope_violation" or "scope_violation" in normalized_blockers:
+        return False
     if deliverable_present:
         return True
     if (
@@ -429,6 +432,18 @@ def receipt_expected_for_lane(
                     "work_order_leasing_failed",
                 }
             )
+        )
+    ):
+        return False
+    if (
+        not deliverable_present
+        and normalized_lease_id
+        and normalized_outcome in {"needs_human", "blocked"}
+        and (
+            normalized_status == "scope_violation"
+            or "scope_violation" in normalized_blockers
+            or "merge_gate_failed" in normalized_blockers
+            or any(item.startswith("merge gate blocked:") for item in normalized_blockers)
         )
     ):
         return False

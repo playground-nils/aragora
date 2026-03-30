@@ -480,90 +480,86 @@ Reply in thread to add suggestions to ongoing debates
         """Answer a question asynchronously using a single agent."""
 
         try:
-            from aragora.server.http_client_pool import get_http_pool
+            # Call the debate engine directly instead of HTTP self-call.
+            # Self-calls hit auth middleware which rejects the API token format.
+            from aragora.agents.base import AgentType, create_agent
+            from aragora.core import Environment
+            from aragora.debate.orchestrator import Arena, DebateProtocol
+            from aragora.cli.commands.quickstart import _detect_agents
 
-            pool = get_http_pool()
-            # Internal self-calls need the API token to bypass auth
-            api_token = os.environ.get("ARAGORA_API_TOKEN", "")
-            headers = {"Authorization": f"Bearer {api_token}"} if api_token else {}
-            async with pool.get_session("slack") as client:
-                resp = await client.post(
-                    f"{ARAGORA_API_BASE_URL}/api/quick-answer",
-                    json={
-                        "question": question,
-                        "metadata": {
-                            "source": "slack",
-                            "channel_id": channel_id,
-                            "user_id": user_id,
-                        },
-                    },
-                    headers=headers,
-                    timeout=60,
-                )
-                if resp.status_code != 200:
-                    # Fallback to debate API if quick-answer not available
-                    data = {"answer": None, "error": "Quick answer service unavailable"}
-                else:
-                    data = resp.json()
+            env = Environment(task=question)
+            protocol = DebateProtocol(
+                rounds=1,
+                consensus="majority",
+                convergence_detection=False,
+                enable_research=False,
+                enable_trending_injection=False,
+            )
 
-                answer = data.get("answer")
-                if not answer:
-                    # Fallback: use single-round debate
-                    debate_resp = await client.post(
-                        f"{ARAGORA_API_BASE_URL}/api/debates",
-                        json={
-                            "task": question,
-                            "rounds": 1,
-                            "agents": ["anthropic-api"],
-                        },
-                        headers=headers,
-                        timeout=60,
+            # Detect available agents from env API keys
+            detected = _detect_agents()
+            if not detected:
+                raise RuntimeError("No API keys configured for debate agents")
+
+            agents = []
+            roles = ["proposer", "critic"]
+            for i, (agent_type, model) in enumerate(detected[:2]):
+                agents.append(
+                    create_agent(
+                        AgentType(agent_type),
+                        name=f"agent-{i}",
+                        role=roles[i % len(roles)],
+                        model=model,
                     )
-                    if debate_resp.status_code == 200 or debate_resp.status_code == 201:
-                        debate_data = debate_resp.json()
-                        answer = debate_data.get("final_answer", "Unable to generate answer.")
-                    else:
-                        answer = "Unable to generate answer at this time."
-
-                # Build response blocks
-                blocks = [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Question:*\n_{question[:200]}{'...' if len(question) > 200 else ''}_",
-                        },
-                    },
-                    {
-                        "type": "divider",
-                    },
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Answer:*\n{answer[:2000] if answer else 'No answer available'}",
-                        },
-                    },
-                    {
-                        "type": "context",
-                        "elements": [
-                            {
-                                "type": "mrkdwn",
-                                "text": f"Asked by <@{user_id}>",
-                            },
-                        ],
-                    },
-                ]
-
-                await self._post_to_response_url(
-                    response_url,
-                    {
-                        "response_type": "in_channel",
-                        "text": f"Answer: {answer[:100] if answer else 'No answer'}...",
-                        "blocks": blocks,
-                        "replace_original": False,
-                    },
                 )
+
+            arena = Arena(env, agents, protocol)
+            result = await asyncio.wait_for(arena.run(), timeout=90)
+            answer = str(
+                getattr(result, "final_answer", None)
+                or getattr(result, "summary", None)
+                or "Debate completed but no clear answer emerged."
+            )
+
+            # Build response blocks
+            blocks = [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Question:*\n_{question[:200]}{'...' if len(question) > 200 else ''}_",
+                    },
+                },
+                {
+                    "type": "divider",
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Answer:*\n{answer[:2000] if answer else 'No answer available'}",
+                    },
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"Asked by <@{user_id}>",
+                        },
+                    ],
+                },
+            ]
+
+            await self._post_to_response_url(
+                response_url,
+                {
+                    "response_type": "in_channel",
+                    "text": f"Answer: {answer[:100] if answer else 'No answer'}...",
+                    "blocks": blocks,
+                    "replace_original": False,
+                },
+            )
 
         except (
             OSError,
