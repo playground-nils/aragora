@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from aragora.cli.commands.swarm import cmd_swarm
+from aragora.cli.commands.swarm import _classify_issue_validation_status, cmd_swarm
 from aragora.swarm.spec import SwarmSpec
 
 
@@ -81,6 +81,7 @@ def _swarm_args(**overrides: object) -> argparse.Namespace:
         "owner_session_id": None,
         "skip_review": False,
         "output": None,
+        "audit_ref": None,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -184,6 +185,30 @@ class TestSwarmParser:
         assert args.swarm_goal == "probe"
         assert args.runner_type == "claude"
         assert args.probe_limit == 2
+        assert args.json is True
+
+    def test_swarm_audit_issues_parser(self):
+        from aragora.cli.parser import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "swarm",
+                "audit-issues",
+                "--boss-repo",
+                "synaptent/aragora",
+                "--label",
+                "boss-ready",
+                "--audit-ref",
+                "origin/main",
+                "--json",
+            ]
+        )
+        assert args.command == "swarm"
+        assert args.swarm_action_or_goal == "audit-issues"
+        assert args.boss_repo == "synaptent/aragora"
+        assert args.labels == ["boss-ready"]
+        assert args.audit_ref == "origin/main"
         assert args.json is True
 
     def test_swarm_boss_parser_accepts_issue_list(self):
@@ -1497,6 +1522,125 @@ class TestSwarmCommand:
         assert '"selected_before": 1' in out
         assert '"selected_after": 0' in out
 
+    def test_cmd_swarm_audit_issues_json(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="audit-issues",
+            swarm_goal=None,
+            boss_repo="synaptent/aragora",
+            labels=["boss-ready"],
+            boss_label_filter=None,
+            boss_issue_number=None,
+            boss_issue_list=None,
+            audit_ref="origin/main",
+            json=True,
+        )
+        issue = SimpleNamespace(
+            number=1639,
+            title="Add --json output flag to aragora quickstart CLI",
+            body="Validation: pytest tests/cli/test_quickstart.py -x -q",
+            labels=["boss-ready"],
+            url="https://github.com/synaptent/aragora/issues/1639",
+        )
+
+        with (
+            patch("aragora.swarm.boss_loop.GitHubIssueFeed") as feed_cls,
+            patch(
+                "aragora.cli.commands.swarm._open_audit_checkout",
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=Path("/tmp/audit-main")),
+                    __exit__=MagicMock(return_value=False),
+                ),
+            ) as open_checkout,
+            patch(
+                "aragora.cli.commands.swarm._audit_issue_validation_contract",
+                return_value={
+                    "number": 1639,
+                    "title": "Add --json output flag to aragora quickstart CLI",
+                    "url": "https://github.com/synaptent/aragora/issues/1639",
+                    "labels": ["boss-ready"],
+                    "validation_contract": ["pytest tests/cli/test_quickstart.py -x -q"],
+                    "commands": ["pytest tests/cli/test_quickstart.py -x -q"],
+                    "probe_results": [
+                        {
+                            "command": "pytest tests/cli/test_quickstart.py -x -q",
+                            "status": "failed",
+                            "returncode": 1,
+                        }
+                    ],
+                    "status": "validation_fails_now",
+                    "next_action": "Validation still fails on the current branch.",
+                },
+            ) as audit_issue,
+        ):
+            feed_cls.return_value.fetch.return_value = [issue]
+            cmd_swarm(args)
+
+        out = capsys.readouterr().out
+        assert '"mode": "swarm-issue-audit"' in out
+        assert '"action": "audit-issues"' in out
+        assert '"audit_ref": "origin/main"' in out
+        assert '"issue_count": 1' in out
+        assert '"validation_fails_now": 1' in out
+        open_checkout.assert_called_once()
+        _, kwargs = open_checkout.call_args
+        assert kwargs["git_ref"] == "origin/main"
+        audit_issue.assert_called_once()
+        _, kwargs = audit_issue.call_args
+        assert kwargs["repo_root"] == Path("/tmp/audit-main")
+
+    def test_classify_issue_validation_status_detects_cli_usage_failure(self):
+        status, next_action = _classify_issue_validation_status(
+            validation_contract=["aragora quickstart --json"],
+            commands=["python3 -m aragora.cli.main quickstart --json"],
+            probe_results=[
+                {
+                    "command": "python3 -m aragora.cli.main quickstart --json",
+                    "status": "failed",
+                    "returncode": 1,
+                    "stderr": "usage: main.py ... error: unrecognized arguments: --json",
+                }
+            ],
+        )
+        assert status == "cli_usage_failure"
+        assert "parser rejects this queued CLI command" in next_action
+
+    def test_classify_issue_validation_status_detects_no_matching_tests_collected(self):
+        status, next_action = _classify_issue_validation_status(
+            validation_contract=["pytest tests/swarm/test_boss_loop.py -k refine -q"],
+            commands=["pytest tests/swarm/test_boss_loop.py -k refine -q"],
+            probe_results=[
+                {
+                    "command": "pytest tests/swarm/test_boss_loop.py -k refine -q",
+                    "status": "failed",
+                    "returncode": 5,
+                    "stdout": "82 deselected in 0.44s",
+                }
+            ],
+        )
+        assert status == "no_matching_tests_collected"
+        assert "collects no tests on the current branch" in next_action
+
+    def test_classify_issue_validation_status_detects_unsafe_validation_contract(self):
+        status, next_action = _classify_issue_validation_status(
+            validation_contract=[
+                'aragora quickstart --topic test --rounds 1 --json | python3 -c "import json"'
+            ],
+            commands=[
+                "python3 -m aragora.cli.main quickstart --topic test --rounds 1 --json | "
+                'python3 -c "import json"'
+            ],
+            probe_results=[
+                {
+                    "command": "python3 -m aragora.cli.main quickstart --topic test --rounds 1 --json | "
+                    'python3 -c "import json"',
+                    "status": "unsafe",
+                    "detail": "shell operators are not allowed",
+                }
+            ],
+        )
+        assert status == "unsafe_validation_contract"
+        assert "single direct command" in next_action
+
     def test_cmd_swarm_requires_goal_or_spec(self, capsys):
         args = argparse.Namespace(
             swarm_action_or_goal="run",
@@ -1759,7 +1903,7 @@ class TestSwarmCommand:
         assert "runs=1 queued=0 leased=0 completed=1" in out
         assert "integrator ready=0 review=0 blocked=1" in out
         assert (
-            "next: Write operator guide: Review the validated lane and decide whether it should merge."
+            "next: Write operator guide: Inspect why the lane produced no concrete deliverable before rerunning it."
             in out
         )
 

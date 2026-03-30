@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import shlex
+import subprocess
 import sys
+import tempfile
 from uuid import uuid4
 
 
@@ -32,6 +36,7 @@ def _resolve_swarm_action_goal(args: argparse.Namespace) -> tuple[str, str | Non
         "run",
         "boss",
         "boss-loop",
+        "audit-issues",
         "runner",
         "status",
         "reconcile",
@@ -88,6 +93,262 @@ def _print_table(
     print("  ".join("-" * widths[key] for key, _label in headers))
     for row in rows:
         print("  ".join(str(row.get(key, "") or "").ljust(widths[key]) for key, _label in headers))
+
+
+def _trim_command_output(text: str, *, limit: int = 240) -> str | None:
+    normalized = " ".join(str(text or "").strip().split())
+    if not normalized:
+        return None
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."
+
+
+_UNSAFE_VALIDATION_SHELL_FRAGMENTS = (
+    "|",
+    "&&",
+    "||",
+    ";",
+    "<",
+    ">",
+    "$(",
+    "`",
+    "\n",
+    "\r",
+)
+
+
+def _probe_validation_command(
+    command: str,
+    *,
+    repo_root: Path,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    normalized = str(command or "").strip()
+    if not normalized:
+        return {
+            "command": command,
+            "status": "unsafe",
+            "detail": "empty validation command",
+        }
+    for fragment in _UNSAFE_VALIDATION_SHELL_FRAGMENTS:
+        if fragment in normalized:
+            return {
+                "command": command,
+                "status": "unsafe",
+                "detail": (
+                    "shell operators are not allowed in auto-probed validation commands; "
+                    "use a single direct command instead"
+                ),
+            }
+    try:
+        argv = shlex.split(normalized, posix=True)
+    except ValueError as exc:
+        return {
+            "command": command,
+            "status": "unsafe",
+            "detail": f"invalid shell quoting: {exc}",
+        }
+    if not argv:
+        return {
+            "command": command,
+            "status": "unsafe",
+            "detail": "empty validation command",
+        }
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(repo_root),
+            text=True,
+            capture_output=True,
+            timeout=max(1, int(timeout_seconds)),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "command": command,
+            "status": "timeout",
+            "stdout": _trim_command_output(getattr(exc, "stdout", "") or ""),
+            "stderr": _trim_command_output(getattr(exc, "stderr", "") or ""),
+        }
+    except (FileNotFoundError, OSError) as exc:
+        return {
+            "command": command,
+            "status": "error",
+            "stderr": _trim_command_output(str(exc)),
+        }
+
+    return {
+        "command": command,
+        "status": "passed" if proc.returncode == 0 else "failed",
+        "returncode": proc.returncode,
+        "stdout": _trim_command_output(proc.stdout),
+        "stderr": _trim_command_output(proc.stderr),
+    }
+
+
+def _classify_issue_validation_status(
+    *,
+    validation_contract: list[str],
+    commands: list[str],
+    probe_results: list[dict[str, object]],
+) -> tuple[str, str]:
+    if not validation_contract:
+        return (
+            "missing_validation_contract",
+            "Add an Acceptance Criteria, Validation, or Test section with at least one concrete command.",
+        )
+    if not commands:
+        return (
+            "non_runnable_validation_contract",
+            "Rewrite the validation contract so it contains runnable commands instead of prose.",
+        )
+    if probe_results and all(str(item.get("status")) == "passed" for item in probe_results):
+        return (
+            "passes_now",
+            "Issue validations already pass on the current branch; close, relabel, or rewrite the stale queue item.",
+        )
+    first_failure = next(
+        (item for item in probe_results if str(item.get("status")) != "passed"),
+        None,
+    )
+    command = str(first_failure.get("command") if isinstance(first_failure, dict) else "")
+    returncode = (
+        int(first_failure.get("returncode"))
+        if isinstance(first_failure, dict) and isinstance(first_failure.get("returncode"), int)
+        else None
+    )
+    stdout_text = str(first_failure.get("stdout") if isinstance(first_failure, dict) else "" or "")
+    stderr_text = str(first_failure.get("stderr") if isinstance(first_failure, dict) else "" or "")
+    combined_output = f"{stdout_text}\n{stderr_text}".lower()
+    if isinstance(first_failure, dict) and str(first_failure.get("status")) == "unsafe":
+        return (
+            "unsafe_validation_contract",
+            "Rewrite the validation contract as a single direct command without shell pipelines, redirects, or chaining.",
+        )
+    if command.startswith("python3 -m aragora.cli.main ") and (
+        returncode in {1, 2}
+        and ("unrecognized arguments" in combined_output or "usage: main.py" in combined_output)
+    ):
+        return (
+            "cli_usage_failure",
+            "The current Aragora parser rejects this queued CLI command. Refresh the contract if the flags were renamed, or keep the issue queued if it is meant to add that CLI surface.",
+        )
+    if returncode == 5 and (
+        command.startswith("pytest ")
+        or command.startswith("python -m pytest ")
+        or command.startswith("python3 -m pytest ")
+    ):
+        return (
+            "no_matching_tests_collected",
+            "The queued pytest selector collects no tests on the current branch. Refresh the selector if tests moved, or keep the issue queued if the expected coverage has not been added yet.",
+        )
+    if any(
+        cmd.startswith(prefix)
+        for cmd in commands
+        for prefix in (
+            "pytest tests/ -q",
+            "python -m pytest tests/ -q",
+            "python3 -m pytest tests/ -q",
+        )
+    ):
+        return (
+            "broad_validation_contract",
+            "Replace the broad test-suite command with focused validation tied to the intended file scope.",
+        )
+    return (
+        "validation_fails_now",
+        "Validation still fails on the current branch; confirm whether the issue remains real or the contract is stale.",
+    )
+
+
+def _audit_issue_validation_contract(
+    issue: object,
+    *,
+    repo_root: Path,
+    timeout_seconds: float = 45.0,
+) -> dict[str, object]:
+    from aragora.swarm.boss_loop import (
+        extract_issue_validation_contract,
+        extract_pre_dispatch_validation_commands,
+    )
+
+    body = str(getattr(issue, "body", "") or "")
+    validation_contract = extract_issue_validation_contract(body)
+    commands = extract_pre_dispatch_validation_commands(body)
+    probe_results: list[dict[str, object]] = []
+
+    for command in commands:
+        result = _probe_validation_command(
+            command,
+            repo_root=repo_root,
+            timeout_seconds=timeout_seconds,
+        )
+        probe_results.append(result)
+        if result["status"] != "passed":
+            break
+
+    status, next_action = _classify_issue_validation_status(
+        validation_contract=validation_contract,
+        commands=commands,
+        probe_results=probe_results,
+    )
+    return {
+        "number": int(getattr(issue, "number", 0) or 0),
+        "title": str(getattr(issue, "title", "") or "").strip(),
+        "url": str(getattr(issue, "url", "") or "").strip(),
+        "labels": list(getattr(issue, "labels", []) or []),
+        "validation_contract": validation_contract,
+        "commands": commands,
+        "probe_results": probe_results,
+        "status": status,
+        "next_action": next_action,
+    }
+
+
+@contextmanager
+def _open_audit_checkout(repo_root: Path, *, git_ref: str | None):
+    if not git_ref:
+        yield repo_root
+        return
+
+    with tempfile.TemporaryDirectory(prefix="aragora-audit-") as temp_dir:
+        checkout_root = Path(temp_dir) / "checkout"
+        add_proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "worktree",
+                "add",
+                "--detach",
+                str(checkout_root),
+                git_ref,
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if add_proc.returncode != 0:
+            stderr = _trim_command_output(add_proc.stderr or "") or "git worktree add failed"
+            raise RuntimeError(f"Failed to open audit checkout for {git_ref}: {stderr}")
+        try:
+            yield checkout_root
+        finally:
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(checkout_root),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
 
 
 def _build_runner_report_payload(
@@ -994,6 +1255,86 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                     print()
             else:
                 print(render_runner_registration_text(payload))
+        return
+
+    if action == "audit-issues":
+        from aragora.swarm.boss_loop import GitHubIssueFeed
+
+        cli_labels: list[str] = list(getattr(args, "labels", None) or [])
+        audit_ref = _optional_text(getattr(args, "audit_ref", None))
+        legacy_label = getattr(args, "boss_label_filter", None)
+        if legacy_label and legacy_label not in cli_labels:
+            cli_labels.insert(0, legacy_label)
+        label_filter = cli_labels[0] if cli_labels else None
+        required_labels = set(cli_labels)
+        issue_list = [
+            int(item.strip())
+            for item in str(getattr(args, "boss_issue_list", "") or "").split(",")
+            if item.strip()
+        ]
+        if getattr(args, "boss_issue_number", None):
+            issue_list.append(int(getattr(args, "boss_issue_number")))
+
+        feed = GitHubIssueFeed(
+            repo=getattr(args, "boss_repo", None),
+            label_filter=label_filter,
+            issue_numbers=issue_list or None,
+            limit=25,
+        )
+        issues = feed.fetch()
+        if required_labels:
+            issues = [
+                issue
+                for issue in issues
+                if required_labels.issubset(
+                    {str(label).strip() for label in getattr(issue, "labels", [])}
+                )
+            ]
+
+        with _open_audit_checkout(Path.cwd(), git_ref=audit_ref) as audit_root:
+            audits = [
+                _audit_issue_validation_contract(issue, repo_root=audit_root) for issue in issues
+            ]
+        summary: dict[str, int] = {}
+        for item in audits:
+            status = str(item.get("status", "unknown") or "unknown")
+            summary[status] = summary.get(status, 0) + 1
+        payload = {
+            "mode": "swarm-issue-audit",
+            "action": "audit-issues",
+            "repo": getattr(args, "boss_repo", None),
+            "audit_ref": audit_ref,
+            "labels": cli_labels,
+            "issue_count": len(audits),
+            "summary": summary,
+            "issues": audits,
+        }
+        if as_json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(
+                f"audited={len(audits)} "
+                + (f"ref={audit_ref} " if audit_ref else "")
+                + " ".join(f"{key}={value}" for key, value in sorted(summary.items()))
+            )
+            rows = [
+                {
+                    "number": item["number"],
+                    "status": item["status"],
+                    "title": item["title"][:64],
+                    "next_action": str(item["next_action"])[:80],
+                }
+                for item in audits
+            ]
+            _print_table(
+                [
+                    ("number", "Issue"),
+                    ("status", "Status"),
+                    ("title", "Title"),
+                    ("next_action", "Next Action"),
+                ],
+                rows,
+            )
         return
 
     if action == "integrator":
