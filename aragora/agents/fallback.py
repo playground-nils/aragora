@@ -331,13 +331,182 @@ class QuotaFallbackMixin:
 
         return agent
 
+    # -----------------------------------------------------------------
+    # Content-policy error detection (non-retryable)
+    # -----------------------------------------------------------------
+
+    _CONTENT_POLICY_KEYWORDS = frozenset(
+        [
+            "content policy",
+            "content_policy",
+            "content filter",
+            "content_filter",
+            "safety filter",
+            "safety_filter",
+            "harmful content",
+            "violates our usage policies",
+            "violates usage policies",
+            "moderation",
+        ]
+    )
+
+    # Status codes worth retrying across providers
+    _RETRYABLE_STATUS_CODES = frozenset({402, 408, 429, 504})
+
+    @staticmethod
+    def _is_content_policy_error(status_code: int, error_text: str) -> bool:
+        """Return True when the error is a content-policy rejection (non-retryable).
+
+        Content-policy errors (400 with policy keywords) will fail on *every*
+        provider, so there is no point in trying another one.
+        """
+        if status_code != 400:
+            return False
+        lower = error_text.lower()
+        return any(kw in lower for kw in QuotaFallbackMixin._CONTENT_POLICY_KEYWORDS)
+
+    # -----------------------------------------------------------------
+    # Multi-provider fallback helpers
+    # -----------------------------------------------------------------
+
+    # Mapping: env-var name -> (provider key, factory builder)
+    # The factory builder receives (name, role, timeout, system_prompt)
+    # and returns an agent instance.
+    _PROVIDER_ENV_KEYS: list[tuple[str, str]] = [
+        ("OPENROUTER_API_KEY", "openrouter"),
+        ("OPENAI_API_KEY", "openai"),
+        ("ANTHROPIC_API_KEY", "anthropic"),
+        ("GEMINI_API_KEY", "gemini"),
+        ("MISTRAL_API_KEY", "mistral"),
+        ("XAI_API_KEY", "grok"),
+    ]
+
+    def _get_available_fallback_providers(self) -> list[tuple[str, Any]]:
+        """Build an ordered list of ``(provider_name, agent)`` pairs for fallback.
+
+        Skips the provider that ``self`` belongs to (no point falling back to
+        itself). OpenRouter is always tried first when available.
+        Returns only providers whose API keys are set in the environment.
+        """
+        own_provider = self._derive_provider_name()
+        name = getattr(self, "name", "fallback")
+        role = cast(AgentRole, getattr(self, "role", "proposer"))
+        timeout = getattr(self, "timeout", 120)
+        system_prompt = getattr(self, "system_prompt", None)
+
+        providers: list[tuple[str, Any]] = []
+
+        for env_var, provider_key in self._PROVIDER_ENV_KEYS:
+            # Skip self
+            if provider_key == own_provider:
+                continue
+
+            api_key = os.environ.get(env_var)
+            if not api_key:
+                continue
+
+            agent = self._create_fallback_agent(
+                provider_key, api_key, name, role, timeout, system_prompt
+            )
+            if agent is not None:
+                providers.append((provider_key, agent))
+
+        return providers
+
+    @staticmethod
+    def _create_fallback_agent(
+        provider_key: str,
+        api_key: str,
+        name: str,
+        role: AgentRole,
+        timeout: int,
+        system_prompt: str | None,
+    ) -> Any | None:
+        """Create a fallback agent for the given provider.
+
+        Returns None if the required agent class cannot be imported.
+        """
+        try:
+            if provider_key == "openrouter":
+                from .api_agents import OpenRouterAgent
+
+                agent = OpenRouterAgent(
+                    name=f"{name}_fallback_openrouter",
+                    role=role,
+                    timeout=timeout,
+                )
+            elif provider_key == "openai":
+                from .api_agents.openai import OpenAIAPIAgent
+
+                agent = OpenAIAPIAgent(
+                    name=f"{name}_fallback_openai",
+                    role=role,
+                    timeout=timeout,
+                    api_key=api_key,
+                    enable_fallback=False,  # prevent recursive fallback
+                )
+            elif provider_key == "anthropic":
+                from .api_agents.anthropic import AnthropicAPIAgent
+
+                agent = AnthropicAPIAgent(
+                    name=f"{name}_fallback_anthropic",
+                    role=role,
+                    timeout=timeout,
+                    api_key=api_key,
+                    enable_fallback=False,
+                )
+            elif provider_key == "gemini":
+                from .api_agents.gemini import GeminiAPIAgent
+
+                agent = GeminiAPIAgent(
+                    name=f"{name}_fallback_gemini",
+                    role=role,
+                    timeout=timeout,
+                    api_key=api_key,
+                    enable_fallback=False,
+                )
+            elif provider_key == "mistral":
+                from .api_agents.mistral import MistralAPIAgent
+
+                agent = MistralAPIAgent(
+                    name=f"{name}_fallback_mistral",
+                    role=role,
+                    timeout=timeout,
+                    api_key=api_key,
+                    enable_fallback=False,
+                )
+            elif provider_key == "grok":
+                from .api_agents.grok import GrokAPIAgent
+
+                agent = GrokAPIAgent(
+                    name=f"{name}_fallback_grok",
+                    role=role,
+                    timeout=timeout,
+                    api_key=api_key,
+                    enable_fallback=False,
+                )
+            else:
+                return None
+
+            if system_prompt:
+                agent.system_prompt = system_prompt
+            return agent
+        except (ImportError, ModuleNotFoundError, TypeError, ValueError) as e:
+            logger.debug("Could not create fallback agent for %s: %s", provider_key, e)
+            return None
+
     async def fallback_generate(
         self,
         prompt: str,
         context: list | None = None,
         status_code: int | None = None,
     ) -> str | None:
-        """Attempt to generate using OpenRouter fallback.
+        """Attempt to generate using multiple fallback providers.
+
+        Tries providers in order: OpenRouter first (existing behavior), then
+        other providers that have API keys set. Skips the provider that ``self``
+        belongs to. Only retries on billing/rate-limit errors (402, 429, 408, 504),
+        not on content-policy errors (400 with policy keywords).
 
         Args:
             prompt: The prompt to send
@@ -354,36 +523,79 @@ class QuotaFallbackMixin:
         if not getattr(self, "enable_fallback", True):
             return None
 
-        fallback = self._get_cached_fallback_agent()
-        if not fallback:
-            name = getattr(self, "name", "unknown")
-            logger.debug("%s quota exceeded but OPENROUTER_API_KEY not set - cannot fallback", name)
-            return None
-
         name = getattr(self, "name", "unknown")
         status_info = f" (status {status_code})" if status_code else ""
         error_type = "rate_limit" if status_code == 429 else "quota"
-        logger.debug(
-            "API quota/rate limit error%s for %s, falling back to OpenRouter", status_info, name
+
+        # Build the list of fallback providers with valid API keys
+        fallback_providers = self._get_available_fallback_providers()
+        if not fallback_providers:
+            logger.debug(
+                "%s quota exceeded but no fallback provider API keys set - cannot fallback",
+                name,
+            )
+            return None
+
+        logger.info(
+            "API quota/rate limit error%s for %s, trying %d fallback provider(s): %s",
+            status_info,
+            name,
+            len(fallback_providers),
+            ", ".join(p[0] for p in fallback_providers),
         )
 
-        # Record fallback activation telemetry
-        record_fallback_activation(
-            primary_agent=name,
-            fallback_provider="openrouter",
-            error_type=error_type,
-        )
+        last_error: Exception | None = None
+        for provider_key, agent in fallback_providers:
+            # Record fallback activation telemetry
+            record_fallback_activation(
+                primary_agent=name,
+                fallback_provider=provider_key,
+                error_type=error_type,
+            )
 
-        start_time = time.time()
-        try:
-            result = await fallback.generate(prompt, context)
-            latency = time.time() - start_time
-            record_fallback_success("openrouter", success=True, latency_seconds=latency)
-            return result
-        except Exception:  # noqa: BLE001 - Intentional catch-all: fallback handler must record metrics for any failure type before re-raising
-            latency = time.time() - start_time
-            record_fallback_success("openrouter", success=False, latency_seconds=latency)
-            raise
+            start_time = time.time()
+            try:
+                result = await agent.generate(prompt, context)
+                latency = time.time() - start_time
+                record_fallback_success(provider_key, success=True, latency_seconds=latency)
+                logger.info(
+                    "Fallback to %s succeeded for %s (%.2fs)",
+                    provider_key,
+                    name,
+                    latency,
+                )
+                return result
+            except Exception as e:  # noqa: BLE001 - Intentional catch-all: fallback handler must try all providers before giving up
+                latency = time.time() - start_time
+                record_fallback_success(provider_key, success=False, latency_seconds=latency)
+                last_error = e
+
+                # Check if this is a content-policy error (non-retryable)
+                error_str = str(e).lower()
+                if any(kw in error_str for kw in self._CONTENT_POLICY_KEYWORDS):
+                    logger.debug(
+                        "Content policy error from %s fallback, not retrying other providers: %s",
+                        provider_key,
+                        e,
+                    )
+                    return None
+
+                logger.debug(
+                    "Fallback provider %s failed for %s (%.2fs): %s",
+                    provider_key,
+                    name,
+                    latency,
+                    e,
+                )
+                continue
+
+        # All fallback providers exhausted
+        logger.warning(
+            "All fallback providers exhausted for %s. Last error: %s",
+            name,
+            last_error,
+        )
+        return None
 
     async def fallback_generate_stream(
         self,
@@ -391,7 +603,10 @@ class QuotaFallbackMixin:
         context: list | None = None,
         status_code: int | None = None,
     ):
-        """Attempt to stream using OpenRouter fallback.
+        """Attempt to stream using multiple fallback providers.
+
+        Tries providers in order: OpenRouter first, then other providers
+        with valid API keys. Skips the provider that ``self`` belongs to.
 
         Args:
             prompt: The prompt to send
@@ -408,41 +623,80 @@ class QuotaFallbackMixin:
         if not getattr(self, "enable_fallback", True):
             return
 
-        fallback = self._get_cached_fallback_agent()
-        if not fallback:
-            name = getattr(self, "name", "unknown")
-            logger.debug("%s quota exceeded but OPENROUTER_API_KEY not set - cannot fallback", name)
+        name = getattr(self, "name", "unknown")
+        error_type = "rate_limit" if status_code == 429 else "quota"
+
+        fallback_providers = self._get_available_fallback_providers()
+        if not fallback_providers:
+            logger.debug(
+                "%s quota exceeded but no fallback provider API keys set - cannot fallback",
+                name,
+            )
             return
 
-        name = getattr(self, "name", "unknown")
         status_info = f" (status {status_code})" if status_code else ""
-        error_type = "rate_limit" if status_code == 429 else "quota"
-        logger.debug(
-            "API quota/rate limit error%s for %s, falling back to OpenRouter streaming",
+        logger.info(
+            "API quota/rate limit error%s for %s, trying %d fallback streaming provider(s): %s",
             status_info,
             name,
+            len(fallback_providers),
+            ", ".join(p[0] for p in fallback_providers),
         )
 
-        # Record fallback activation telemetry
-        record_fallback_activation(
-            primary_agent=name,
-            fallback_provider="openrouter",
-            error_type=error_type,
-        )
+        for provider_key, agent in fallback_providers:
+            if not hasattr(agent, "generate_stream"):
+                logger.debug(
+                    "Fallback provider %s has no streaming support, skipping", provider_key
+                )
+                continue
 
-        start_time = time.time()
-        success = False
-        try:
-            async for token in fallback.generate_stream(prompt, context):
-                if not success:
-                    success = True  # First token received = success
-                yield token
-            latency = time.time() - start_time
-            record_fallback_success("openrouter", success=True, latency_seconds=latency)
-        except Exception:  # noqa: BLE001 - Intentional catch-all: fallback handler must record metrics for any failure type before re-raising
-            latency = time.time() - start_time
-            record_fallback_success("openrouter", success=False, latency_seconds=latency)
-            raise
+            # Record fallback activation telemetry
+            record_fallback_activation(
+                primary_agent=name,
+                fallback_provider=provider_key,
+                error_type=error_type,
+            )
+
+            start_time = time.time()
+            success = False
+            try:
+                async for token in agent.generate_stream(prompt, context):
+                    if not success:
+                        success = True  # First token received = success
+                    yield token
+                latency = time.time() - start_time
+                record_fallback_success(provider_key, success=True, latency_seconds=latency)
+                logger.info(
+                    "Fallback stream to %s succeeded for %s (%.2fs)",
+                    provider_key,
+                    name,
+                    latency,
+                )
+                return
+            except Exception as e:  # noqa: BLE001 - Intentional catch-all: fallback handler must try all providers before giving up
+                latency = time.time() - start_time
+                record_fallback_success(provider_key, success=False, latency_seconds=latency)
+
+                # Content policy error - stop trying
+                error_str = str(e).lower()
+                if any(kw in error_str for kw in self._CONTENT_POLICY_KEYWORDS):
+                    logger.debug(
+                        "Content policy error from %s stream fallback, stopping: %s",
+                        provider_key,
+                        e,
+                    )
+                    return
+
+                logger.debug(
+                    "Fallback stream provider %s failed for %s (%.2fs): %s",
+                    provider_key,
+                    name,
+                    latency,
+                    e,
+                )
+                continue
+
+        logger.warning("All fallback streaming providers exhausted for %s", name)
 
 
 @dataclass

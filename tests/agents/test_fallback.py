@@ -3,6 +3,8 @@ Tests for quota detection and fallback utilities.
 
 Tests the fallback module functionality including:
 - QuotaFallbackMixin for quota error detection
+- Multi-provider fallback chain (OpenRouter -> other providers with valid API keys)
+- Content-policy error detection (non-retryable)
 - FallbackMetrics for tracking fallback chain behavior
 - AgentFallbackChain for multi-provider sequencing
 - Error handling (AllProvidersExhaustedError, FallbackTimeoutError)
@@ -11,6 +13,7 @@ Tests the fallback module functionality including:
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -739,3 +742,523 @@ class TestRateLimitDetection:
 
         error = RuntimeError("Quota exceeded for this API key")
         assert chain._is_rate_limit_error(error) is True
+
+
+# =============================================================================
+# Multi-Provider Fallback Tests
+# =============================================================================
+
+
+class TestContentPolicyDetection:
+    """Test content policy error detection."""
+
+    def test_content_policy_400_detected(self):
+        """Content policy errors on 400 are detected."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        assert QuotaFallbackMixin._is_content_policy_error(
+            400, "Request blocked by content policy filter"
+        )
+
+    def test_content_policy_moderation(self):
+        """Moderation keyword is detected."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        assert QuotaFallbackMixin._is_content_policy_error(400, "Blocked by moderation system")
+
+    def test_content_policy_non_400_not_detected(self):
+        """Non-400 status codes are not treated as content policy errors."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        assert not QuotaFallbackMixin._is_content_policy_error(429, "content policy violation")
+
+    def test_content_policy_400_without_keywords_not_detected(self):
+        """400 without policy keywords is not a content policy error."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        assert not QuotaFallbackMixin._is_content_policy_error(400, "Invalid request parameters")
+
+    def test_content_policy_safety_filter(self):
+        """Safety filter keyword is detected."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        assert QuotaFallbackMixin._is_content_policy_error(400, "Blocked by safety filter")
+
+
+class TestMultiProviderFallbackMixin:
+    """Test multi-provider fallback in QuotaFallbackMixin."""
+
+    def _make_mixin_agent(self, name="test-agent", provider="anthropic"):
+        """Create a mock agent with QuotaFallbackMixin behavior."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        class MockAgent(QuotaFallbackMixin):
+            OPENROUTER_MODEL_MAP = {}
+            DEFAULT_FALLBACK_MODEL = "anthropic/claude-sonnet-4.6"
+
+            def __init__(self, agent_name, agent_provider):
+                self.name = agent_name
+                self.model = "test-model"
+                self.enable_fallback = True
+                self.role = "proposer"
+                self.timeout = 120
+                self.system_prompt = None
+                self._fallback_agent = None
+                self._provider = agent_provider
+
+            def _derive_provider_name(self):
+                return self._provider
+
+        return MockAgent(name, provider)
+
+    def test_get_available_providers_skips_self(self):
+        """Fallback list should not include the agent's own provider."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "sk-ant-test",
+                "OPENAI_API_KEY": "sk-openai-test",
+                "OPENROUTER_API_KEY": "sk-or-test",
+            },
+            clear=True,
+        ):
+            # Mock agent creation to avoid real imports
+            with patch.object(
+                type(agent),
+                "_create_fallback_agent",
+                side_effect=lambda pk, ak, n, r, t, s: MagicMock(name=f"mock-{pk}")
+                if pk != "anthropic"
+                else None,
+            ):
+                providers = agent._get_available_fallback_providers()
+
+        provider_keys = [p[0] for p in providers]
+        assert "anthropic" not in provider_keys
+        assert "openrouter" in provider_keys
+        assert "openai" in provider_keys
+
+    def test_get_available_providers_only_with_keys(self):
+        """Only providers with API keys set are returned."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        with patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "sk-openai-test"},
+            clear=True,
+        ):
+            with patch.object(
+                type(agent),
+                "_create_fallback_agent",
+                side_effect=lambda pk, ak, n, r, t, s: MagicMock(name=f"mock-{pk}"),
+            ):
+                providers = agent._get_available_fallback_providers()
+
+        provider_keys = [p[0] for p in providers]
+        assert provider_keys == ["openai"]
+
+    def test_get_available_providers_empty_when_no_keys(self):
+        """Returns empty list when no API keys are set."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        with patch.dict(os.environ, {}, clear=True):
+            providers = agent._get_available_fallback_providers()
+
+        assert providers == []
+
+    def test_openrouter_is_first(self):
+        """OpenRouter should be tried first when available."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENROUTER_API_KEY": "sk-or-test",
+                "OPENAI_API_KEY": "sk-openai-test",
+                "GEMINI_API_KEY": "sk-gemini-test",
+            },
+            clear=True,
+        ):
+            with patch.object(
+                type(agent),
+                "_create_fallback_agent",
+                side_effect=lambda pk, ak, n, r, t, s: MagicMock(name=f"mock-{pk}"),
+            ):
+                providers = agent._get_available_fallback_providers()
+
+        provider_keys = [p[0] for p in providers]
+        assert provider_keys[0] == "openrouter"
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_tries_multiple_providers(self):
+        """fallback_generate tries providers sequentially until one succeeds."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        openrouter_agent = MagicMock()
+        openrouter_agent.generate = AsyncMock(side_effect=RuntimeError("Rate limit"))
+
+        openai_agent = MagicMock()
+        openai_agent.generate = AsyncMock(return_value="Response from OpenAI")
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[("openrouter", openrouter_agent), ("openai", openai_agent)],
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=429)
+
+        assert result == "Response from OpenAI"
+        openrouter_agent.generate.assert_called_once()
+        openai_agent.generate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_returns_first_success(self):
+        """fallback_generate returns on first successful provider."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        openrouter_agent = MagicMock()
+        openrouter_agent.generate = AsyncMock(return_value="OpenRouter response")
+
+        openai_agent = MagicMock()
+        openai_agent.generate = AsyncMock(return_value="OpenAI response")
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[("openrouter", openrouter_agent), ("openai", openai_agent)],
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=429)
+
+        assert result == "OpenRouter response"
+        openrouter_agent.generate.assert_called_once()
+        openai_agent.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_returns_none_when_all_fail(self):
+        """fallback_generate returns None when all providers fail."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        openrouter_agent = MagicMock()
+        openrouter_agent.generate = AsyncMock(side_effect=RuntimeError("OR fail"))
+
+        openai_agent = MagicMock()
+        openai_agent.generate = AsyncMock(side_effect=RuntimeError("OAI fail"))
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[("openrouter", openrouter_agent), ("openai", openai_agent)],
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=429)
+
+        assert result is None
+        openrouter_agent.generate.assert_called_once()
+        openai_agent.generate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_stops_on_content_policy_error(self):
+        """fallback_generate stops trying on content policy errors."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        openrouter_agent = MagicMock()
+        openrouter_agent.generate = AsyncMock(
+            side_effect=RuntimeError("Blocked by content policy filter")
+        )
+
+        openai_agent = MagicMock()
+        openai_agent.generate = AsyncMock(return_value="OpenAI response")
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[("openrouter", openrouter_agent), ("openai", openai_agent)],
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=429)
+
+        assert result is None
+        openrouter_agent.generate.assert_called_once()
+        # OpenAI should NOT be tried after content policy error
+        openai_agent.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_returns_none_when_disabled(self):
+        """fallback_generate returns None when enable_fallback is False."""
+        agent = self._make_mixin_agent(provider="anthropic")
+        agent.enable_fallback = False
+
+        result = await agent.fallback_generate("Test prompt", status_code=429)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_returns_none_when_no_providers(self):
+        """fallback_generate returns None when no providers are available."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[],
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=429)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_passes_context(self):
+        """fallback_generate passes context to provider agents."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        openrouter_agent = MagicMock()
+        openrouter_agent.generate = AsyncMock(return_value="Response")
+
+        context = [{"role": "user", "content": "Hello"}]
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[("openrouter", openrouter_agent)],
+        ):
+            await agent.fallback_generate("Test prompt", context=context, status_code=429)
+
+        openrouter_agent.generate.assert_called_once_with("Test prompt", context)
+
+    @pytest.mark.asyncio
+    async def test_fallback_generate_notifies_session_circuit_breaker(self):
+        """fallback_generate notifies session circuit breaker."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        with (
+            patch.object(
+                type(agent),
+                "_get_available_fallback_providers",
+                return_value=[],
+            ),
+            patch.object(
+                type(agent),
+                "_notify_session_circuit_breaker",
+            ) as mock_notify,
+        ):
+            await agent.fallback_generate("Test prompt", status_code=429)
+
+        mock_notify.assert_called_once_with(429)
+
+
+class TestCreateFallbackAgent:
+    """Test _create_fallback_agent static method."""
+
+    def test_create_openrouter_agent(self):
+        """OpenRouter agent can be created."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}, clear=False):
+            agent = QuotaFallbackMixin._create_fallback_agent(
+                "openrouter", "sk-test", "test", "proposer", 120, None
+            )
+
+        assert agent is not None
+        assert "fallback_openrouter" in agent.name
+
+    def test_create_unknown_provider_returns_none(self):
+        """Unknown provider returns None."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        agent = QuotaFallbackMixin._create_fallback_agent(
+            "unknown_provider", "sk-test", "test", "proposer", 120, None
+        )
+
+        assert agent is None
+
+    def test_create_agent_sets_system_prompt(self):
+        """System prompt is applied to fallback agent."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-test"}, clear=False):
+            agent = QuotaFallbackMixin._create_fallback_agent(
+                "openrouter", "sk-test", "test", "proposer", 120, "Be helpful."
+            )
+
+        assert agent is not None
+        assert agent.system_prompt == "Be helpful."
+
+    def test_create_agent_with_enable_fallback_false(self):
+        """Fallback agents are created with enable_fallback=False to prevent recursion."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=False):
+            agent = QuotaFallbackMixin._create_fallback_agent(
+                "openai", "sk-test", "test", "proposer", 120, None
+            )
+
+        assert agent is not None
+        assert agent.enable_fallback is False
+
+    def test_create_agent_handles_import_error(self):
+        """Import errors are caught and None is returned."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        # Simulate ImportError by patching the import within the method
+        with patch.dict("sys.modules", {"aragora.agents.api_agents": None}):
+            agent = QuotaFallbackMixin._create_fallback_agent(
+                "openrouter", "sk-test", "test", "proposer", 120, None
+            )
+            # Should return None when import fails, not crash
+            assert agent is None
+
+
+class TestMultiProviderFallbackStream:
+    """Test multi-provider fallback for streaming."""
+
+    def _make_mixin_agent(self, name="test-agent", provider="anthropic"):
+        """Create a mock agent with QuotaFallbackMixin behavior."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        class MockAgent(QuotaFallbackMixin):
+            OPENROUTER_MODEL_MAP = {}
+            DEFAULT_FALLBACK_MODEL = "anthropic/claude-sonnet-4.6"
+
+            def __init__(self, agent_name, agent_provider):
+                self.name = agent_name
+                self.model = "test-model"
+                self.enable_fallback = True
+                self.role = "proposer"
+                self.timeout = 120
+                self.system_prompt = None
+                self._fallback_agent = None
+                self._provider = agent_provider
+
+            def _derive_provider_name(self):
+                return self._provider
+
+        return MockAgent(name, provider)
+
+    @pytest.mark.asyncio
+    async def test_stream_fallback_tries_multiple_providers(self):
+        """Stream fallback tries providers sequentially."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        async def failing_stream(*args, **kwargs):
+            raise RuntimeError("Rate limit")
+            yield  # noqa: unreachable - makes this an async generator
+
+        async def successful_stream(*args, **kwargs):
+            for token in ["Hello", " world"]:
+                yield token
+
+        openrouter_agent = MagicMock()
+        openrouter_agent.generate_stream = failing_stream
+
+        openai_agent = MagicMock()
+        openai_agent.generate_stream = successful_stream
+
+        tokens = []
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[("openrouter", openrouter_agent), ("openai", openai_agent)],
+        ):
+            async for token in agent.fallback_generate_stream("Test prompt", status_code=429):
+                tokens.append(token)
+
+        assert tokens == ["Hello", " world"]
+
+    @pytest.mark.asyncio
+    async def test_stream_fallback_returns_empty_when_disabled(self):
+        """Stream fallback yields nothing when disabled."""
+        agent = self._make_mixin_agent(provider="anthropic")
+        agent.enable_fallback = False
+
+        tokens = []
+        async for token in agent.fallback_generate_stream("Test prompt", status_code=429):
+            tokens.append(token)
+
+        assert tokens == []
+
+    @pytest.mark.asyncio
+    async def test_stream_fallback_stops_on_content_policy_error(self):
+        """Stream fallback stops on content policy errors."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        async def policy_error_stream(*args, **kwargs):
+            raise RuntimeError("Blocked by content policy filter")
+            yield  # noqa: unreachable - makes this an async generator
+
+        async def successful_stream(*args, **kwargs):
+            for token in ["Hello"]:
+                yield token
+
+        openrouter_agent = MagicMock()
+        openrouter_agent.generate_stream = policy_error_stream
+
+        openai_agent = MagicMock()
+        openai_agent.generate_stream = successful_stream
+
+        tokens = []
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[("openrouter", openrouter_agent), ("openai", openai_agent)],
+        ):
+            async for token in agent.fallback_generate_stream("Test prompt", status_code=429):
+                tokens.append(token)
+
+        # Should be empty - stopped after content policy error
+        assert tokens == []
+
+    @pytest.mark.asyncio
+    async def test_stream_fallback_skips_non_streaming_providers(self):
+        """Providers without generate_stream are skipped."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        async def successful_stream(*args, **kwargs):
+            for token in ["Hello"]:
+                yield token
+
+        non_streaming_agent = MagicMock(spec=[])  # No generate_stream attribute
+
+        streaming_agent = MagicMock()
+        streaming_agent.generate_stream = successful_stream
+
+        tokens = []
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=[
+                ("non_streaming", non_streaming_agent),
+                ("streaming", streaming_agent),
+            ],
+        ):
+            async for token in agent.fallback_generate_stream("Test prompt", status_code=429):
+                tokens.append(token)
+
+        assert tokens == ["Hello"]
+
+
+class TestProviderEnvKeyOrdering:
+    """Test that provider ordering follows the expected precedence."""
+
+    def test_provider_env_keys_order(self):
+        """OpenRouter should come first in the provider list."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        keys = [entry[1] for entry in QuotaFallbackMixin._PROVIDER_ENV_KEYS]
+        assert keys[0] == "openrouter"
+        # All expected providers should be present
+        assert "openai" in keys
+        assert "anthropic" in keys
+        assert "gemini" in keys
+        assert "mistral" in keys
+        assert "grok" in keys
+
+    def test_retryable_status_codes(self):
+        """Retryable status codes should include expected values."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        codes = QuotaFallbackMixin._RETRYABLE_STATUS_CODES
+        assert 402 in codes
+        assert 429 in codes
+        assert 408 in codes
+        assert 504 in codes
+        # 400 should NOT be in retryable codes (content policy)
+        assert 400 not in codes
