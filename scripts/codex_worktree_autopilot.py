@@ -457,6 +457,15 @@ def _branch_exists(repo_root: Path, branch: str) -> bool:
     return proc.returncode == 0
 
 
+def _branch_collision_error(stderr: str, branch: str) -> bool:
+    message = str(stderr or "").lower()
+    return (
+        "a branch named" in message
+        and "already exists" in message
+        and str(branch or "").lower() in message
+    )
+
+
 def _ensure_fetched(repo_root: Path, base: str) -> None:
     _run_git(repo_root, "fetch", "origin", base)
 
@@ -610,26 +619,58 @@ def _create_managed_worktree(
     now = _utc_now()
     token = uuid4().hex[:8]
     sid = session_id or f"{agent}-{now.strftime('%Y%m%d-%H%M%S')}-{token}"
-    branch = f"codex/{sid}"
-    while _branch_exists(repo_root, branch):
-        branch = f"{branch}-{uuid4().hex[:4]}"
+    base_branch_name = f"codex/{sid}"
     worktree_path = (managed_root / sid).resolve()
 
     if worktree_path.exists():
         shutil.rmtree(worktree_path, ignore_errors=True)
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
+    attached_branches = {
+        entry.branch
+        for entry in _get_worktree_entries(repo_root)
+        if str(entry.branch or "").strip()
+    }
+    if (
+        session_id
+        and _branch_exists(repo_root, base_branch_name)
+        and base_branch_name not in attached_branches
+    ):
+        add_proc = _run_git(
+            repo_root,
+            "worktree",
+            "add",
+            str(worktree_path),
+            base_branch_name,
+        )
+        if add_proc.returncode == 0:
+            return {
+                "session_id": sid,
+                "agent": agent,
+                "branch": base_branch_name,
+                "path": str(worktree_path),
+                "base_branch": base,
+                "base_sha": _resolve_ref_sha(repo_root, _base_ref(base)),
+                "created_at": now.isoformat(),
+                "last_seen_at": now.isoformat(),
+                "cleanup_lock": False,
+                "cleanup_lock_reason": None,
+                "last_heartbeat_at": None,
+                "lease_status": None,
+                "lease_expires_at": None,
+                "lifecycle_state": "grace",
+            }
+        if worktree_path.exists():
+            shutil.rmtree(worktree_path, ignore_errors=True)
+
     source = f"origin/{base}"
-    add_proc = _run_git(
-        repo_root,
-        "worktree",
-        "add",
-        "-b",
-        branch,
-        str(worktree_path),
-        source,
-    )
-    if add_proc.returncode != 0:
+    attempted_branches: set[str] = set()
+    branch = base_branch_name
+    add_proc: subprocess.CompletedProcess[str] | None = None
+    for _ in range(8):
+        while branch in attempted_branches or _branch_exists(repo_root, branch):
+            branch = f"{base_branch_name}-{uuid4().hex[:4]}"
+        attempted_branches.add(branch)
         add_proc = _run_git(
             repo_root,
             "worktree",
@@ -637,10 +678,28 @@ def _create_managed_worktree(
             "-b",
             branch,
             str(worktree_path),
-            base,
+            source,
         )
-    if add_proc.returncode != 0:
-        raise RuntimeError(add_proc.stderr.strip() or "git worktree add failed")
+        if add_proc.returncode == 0:
+            break
+        if not _branch_collision_error(add_proc.stderr, branch):
+            add_proc = _run_git(
+                repo_root,
+                "worktree",
+                "add",
+                "-b",
+                branch,
+                str(worktree_path),
+                base,
+            )
+            if add_proc.returncode == 0:
+                break
+            if not _branch_collision_error(add_proc.stderr, branch):
+                raise RuntimeError(add_proc.stderr.strip() or "git worktree add failed")
+        if worktree_path.exists():
+            shutil.rmtree(worktree_path, ignore_errors=True)
+    else:
+        raise RuntimeError(add_proc.stderr.strip() if add_proc else "git worktree add failed")
 
     return {
         "session_id": sid,

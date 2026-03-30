@@ -200,6 +200,117 @@ def test_parse_ts_normalizes_naive_timestamp_to_utc():
     assert parsed.tzinfo == timezone.utc
 
 
+def test_create_managed_worktree_reuses_unattached_existing_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_autopilot as mod
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    managed_root = repo_root / ".worktrees" / "codex-auto"
+    calls: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(mod, "_ensure_fetched", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mod, "_branch_exists", lambda _repo, branch: branch == "codex/swarm-123")
+    monkeypatch.setattr(
+        mod,
+        "_get_worktree_entries",
+        lambda _repo: [mod.WorktreeEntry(path=repo_root, branch="main")],
+    )
+    monkeypatch.setattr(mod, "_resolve_ref_sha", lambda *_args, **_kwargs: "abc123")
+
+    def _run_git(
+        _repo_root: Path, *args: str, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(tuple(args))
+        return subprocess.CompletedProcess(args=("git", *args), returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod, "_run_git", _run_git)
+
+    session = mod._create_managed_worktree(
+        repo_root,
+        managed_root,
+        agent="codex",
+        base="main",
+        session_id="swarm-123",
+    )
+
+    assert session["branch"] == "codex/swarm-123"
+    assert any(
+        call[:4]
+        == ("worktree", "add", str((managed_root / "swarm-123").resolve()), "codex/swarm-123")
+        for call in calls
+    )
+    assert not any(call[:3] == ("worktree", "add", "-b") for call in calls)
+
+
+def test_create_managed_worktree_retries_add_time_branch_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_autopilot as mod
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    managed_root = repo_root / ".worktrees" / "codex-auto"
+    calls: list[tuple[str, ...]] = []
+    uuid_values = iter(["race0001", "b16b00b5", "cafe1234"])
+
+    monkeypatch.setattr(mod, "_ensure_fetched", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mod, "_branch_exists", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        mod,
+        "_get_worktree_entries",
+        lambda _repo: [mod.WorktreeEntry(path=repo_root, branch="main")],
+    )
+    monkeypatch.setattr(mod, "_resolve_ref_sha", lambda *_args, **_kwargs: "abc123")
+    monkeypatch.setattr(
+        mod,
+        "uuid4",
+        lambda: type("FakeUUID", (), {"hex": next(uuid_values)})(),
+    )
+
+    def _run_git(
+        _repo_root: Path, *args: str, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(tuple(args))
+        if args[:3] == ("worktree", "add", "-b") and args[3] == "codex/swarm-race":
+            return subprocess.CompletedProcess(
+                args=("git", *args),
+                returncode=128,
+                stdout="",
+                stderr="fatal: a branch named 'codex/swarm-race' already exists",
+            )
+        return subprocess.CompletedProcess(args=("git", *args), returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod, "_run_git", _run_git)
+
+    session = mod._create_managed_worktree(
+        repo_root,
+        managed_root,
+        agent="codex",
+        base="main",
+        session_id="swarm-race",
+    )
+
+    assert session["branch"] == "codex/swarm-race-b16b"
+    assert (
+        "worktree",
+        "add",
+        "-b",
+        "codex/swarm-race",
+        str((managed_root / "swarm-race").resolve()),
+        "origin/main",
+    ) in calls
+    assert (
+        "worktree",
+        "add",
+        "-b",
+        "codex/swarm-race-b16b",
+        str((managed_root / "swarm-race").resolve()),
+        "origin/main",
+    ) in calls
+
+
 def test_cmd_cleanup_keeps_session_when_worktree_remove_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
