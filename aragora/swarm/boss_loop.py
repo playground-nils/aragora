@@ -891,6 +891,7 @@ async def dispatch_bounded_spec(
     default_reviewer_agent: str | None = None,
     use_managed_session_script: bool = True,
     selected_runner: dict[str, Any] | None = None,
+    worker_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     # Auto-detect Claude profile from environment if no runner specified
     if selected_runner is None:
@@ -944,6 +945,7 @@ async def dispatch_bounded_spec(
             default_reviewer_agent=default_reviewer_agent,
             use_managed_session_script=use_managed_session_script,
             default_target_runner=selected_runner,
+            worker_env=worker_env,
         )
         run_dict = run.to_dict()
         run_status = str(run_dict.get("status", "")).strip().lower()
@@ -2211,13 +2213,17 @@ class BossLoop:
         )
 
         try:
-            from aragora.swarm.prompt_refiner import refine_worker_prompt
+            from aragora.swarm.prompt_refiner import (
+                build_refinement_worker_env,
+                refine_worker_prompt,
+            )
 
             refinement = await refine_worker_prompt(
                 issue.title,
                 issue.body or "",
                 repo_path=Path.cwd(),
             )
+            refinement_worker_env = build_refinement_worker_env(refinement)
             if refinement.get("context_gathered"):
                 goal = refinement["refined_prompt"]
                 logger.info(
@@ -2228,6 +2234,7 @@ class BossLoop:
                 )
         except Exception as exc:
             logger.debug("Prompt refinement skipped: %s", exc)
+            refinement_worker_env = {}
 
         spec = SwarmSpec.from_direct_goal(
             goal,
@@ -2320,6 +2327,7 @@ class BossLoop:
                 # default) due to ${VAR,,} syntax.  Matches tranche_queue.py.
                 use_managed_session_script=False,
                 selected_runner=selected_runner,
+                worker_env=refinement_worker_env or None,
             )
         finally:
             if claimed_runner_id:
