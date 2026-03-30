@@ -591,7 +591,7 @@ def _show_dogfood_metrics() -> None:
     import sqlite3
 
     try:
-        from aragora.db.path import resolve_db_path
+        from aragora.config import resolve_db_path
     except ImportError:
         return
 
