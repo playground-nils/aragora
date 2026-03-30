@@ -160,10 +160,21 @@ def create_tracked_task(coro: Coroutine[Any, Any, Any], name: str) -> asyncio.Ta
 
     # Dispatch to the server's main event loop (same pattern as
     # _run_handler_coroutine in handler_registry/core.py)
+    main_loop = None
     try:
-        from aragora.storage.pool_manager import get_pool_event_loop
+        from aragora.server.unified_server import get_main_event_loop
 
-        main_loop = get_pool_event_loop()
+        main_loop = get_main_event_loop()
+    except ImportError:
+        pass
+    if main_loop is None:
+        try:
+            from aragora.storage.pool_manager import get_pool_event_loop
+
+            main_loop = get_pool_event_loop()
+        except ImportError:
+            pass
+    try:
         if main_loop is not None and main_loop.is_running():
             future = asyncio.run_coroutine_threadsafe(coro, main_loop)
 
