@@ -930,6 +930,78 @@ class TestIntegratorView:
         assert lane["next_action"] == "Salvage or reassign the expired lane before resuming work."
         assert "attach_receipt" not in lane["available_actions"]
 
+    def test_build_integrator_view_keeps_receipt_backed_reaped_lane_reviewable(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
+
+        payload = build_integrator_view(
+            coordination={
+                "integrator": {
+                    "developer_tasks": [
+                        {
+                            "task_key": "run-1:wo-reaped-receipt",
+                            "task_id": "wo-reaped-receipt",
+                            "run_id": "run-1",
+                            "status": "needs_human",
+                            "title": "Receipt-backed reaped lane",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-reaped-receipt",
+                            "branch": "codex/reaped-receipt",
+                            "worktree_path": "/tmp/repo/.worktrees/reaped-receipt",
+                            "lease_id": "lease-reaped-receipt",
+                            "blockers": ["stale_lease_reaped"],
+                            "updated_at": now.isoformat(),
+                        }
+                    ],
+                    "leases": [
+                        {
+                            "lease_id": "lease-reaped-receipt",
+                            "task_id": "wo-reaped-receipt",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-reaped-receipt",
+                            "branch": "codex/reaped-receipt",
+                            "worktree_path": "/tmp/repo/.worktrees/reaped-receipt",
+                            "status": "expired",
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "expires_at": (now - timedelta(hours=1)).isoformat(),
+                        }
+                    ],
+                    "completion_receipts": [
+                        {
+                            "receipt_id": "receipt-reaped",
+                            "lease_id": "lease-reaped-receipt",
+                            "task_id": "wo-reaped-receipt",
+                            "owner_agent": "codex",
+                            "owner_session_id": "sess-reaped-receipt",
+                            "branch": "codex/reaped-receipt",
+                            "worktree_path": "/tmp/repo/.worktrees/reaped-receipt",
+                            "commit_shas": ["abc123"],
+                            "changed_paths": ["aragora/swarm/reporter.py"],
+                            "tests_run": ["python -m pytest tests/swarm/test_reporter.py -q"],
+                            "validations_run": [],
+                            "assumptions": [],
+                            "blockers": [],
+                            "confidence": 0.9,
+                            "created_at": now.isoformat(),
+                            "artifact_hash": "hash-reaped",
+                        }
+                    ],
+                    "integration_decisions": [],
+                    "salvage_candidates": [],
+                }
+            },
+            now=now,
+        )
+
+        lane = payload["lanes"][0]
+        assert lane["terminal_outcome"] == "deliverable_created"
+        assert lane["receipt_id"] == "receipt-reaped"
+        assert lane["merge_readiness"] == "review"
+        assert lane["lane_health"] == "healthy"
+        assert "stale_lease_reaped" not in lane["blockers"]
+        assert (
+            lane["next_action"] == "Review the validated lane and decide whether it should merge."
+        )
+
     def test_build_integrator_view_does_not_expect_receipt_when_stale_lease_record_is_gone(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=UTC)
 

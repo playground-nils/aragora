@@ -483,10 +483,17 @@ Reply in thread to add suggestions to ongoing debates
             # Call the debate engine directly instead of HTTP self-call.
             # Self-calls hit auth middleware which rejects the API token format.
             from aragora import Arena, DebateProtocol, Environment
+            from aragora.agents.api_agents import create_api_agents
 
             env = Environment(task=question)
             protocol = DebateProtocol(rounds=1, consensus="majority")
-            arena = Arena(env, protocol=protocol)
+            agents = create_api_agents(count=2)
+            if not agents:
+                # Fallback: create minimal agent list
+                from aragora.agents.api_agents.anthropic import AnthropicAgent
+
+                agents = [AnthropicAgent(role="proposer"), AnthropicAgent(role="critic")]
+            arena = Arena(env, agents=agents, protocol=protocol)
             result = await arena.run()
             answer = str(
                 getattr(result, "final_answer", None)

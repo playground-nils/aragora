@@ -294,6 +294,8 @@ def _next_action(
         return "Attach or regenerate the completion receipt before integration."
     if queue_status == "needs_human":
         return "Review the validated lane and decide whether it should merge."
+    if readiness == "review":
+        return "Review the validated lane and decide whether it should merge."
     if readiness == "ready":
         return "Queue or validate this lane for merge."
     if readiness == "merged":
@@ -1031,6 +1033,22 @@ def build_integrator_view(
         qualification = qualify_work_order_terminal_state(synthetic_work_order)
         terminal_outcome = qualification.terminal_outcome
         qualification_reasons = list(qualification.reasons)
+        blocked_reason = qualification.blocked_reason
+        reaped_receipt_backed_lane = (
+            receipt_id
+            and qualification.deliverable is not None
+            and qualification_reasons
+            and all(
+                _text(reason).lower() in {"stale_lease_reaped", "expired_lease_reaped"}
+                for reason in qualification_reasons
+            )
+        )
+        if reaped_receipt_backed_lane:
+            terminal_outcome = (
+                "pr_adopted"
+                if qualification.deliverable_type == "adopted_pr"
+                else "deliverable_created"
+            )
         if (
             receipt_id
             and qualification.deliverable is not None
@@ -1041,6 +1059,8 @@ def build_integrator_view(
                 for reason in qualification_reasons
                 if _text(reason).lower() not in {"stale_lease_reaped", "expired_lease_reaped"}
             ]
+            if _text(blocked_reason).lower() in {"stale_lease_reaped", "expired_lease_reaped"}:
+                blocked_reason = None
         receipt_expected = receipt_expected_for_lane(
             status=status,
             queue_status=queue_status,
@@ -1201,8 +1221,14 @@ def build_integrator_view(
                 collisions=collision_reasons,
             )
 
+        effective_lease_status = lease_status
+        if reaped_receipt_backed_lane and lease_status in {"expired", "released"}:
+            effective_lease_status = ""
+
         if superseded:
             lease_health = "superseded"
+        elif reaped_receipt_backed_lane:
+            lease_health = "completed"
         elif lease_status == "expired" or status == "timed_out":
             lease_health = "expired"
         elif stale_heartbeat:
@@ -1219,7 +1245,7 @@ def build_integrator_view(
             readiness=readiness,
             status=status,
             terminal_outcome=terminal_outcome,
-            lease_status=lease_status,
+            lease_status=effective_lease_status,
             stale_heartbeat=stale_heartbeat,
             missing_receipt=missing_receipt,
             scope_violation=scope_violation,
@@ -1275,8 +1301,8 @@ def build_integrator_view(
                 *collision_reasons,
             }
         )
-        if qualification.blocked_reason:
-            blockers.append(qualification.blocked_reason)
+        if blocked_reason:
+            blockers.append(blocked_reason)
         if stale_heartbeat:
             blockers.append("stale_heartbeat")
         if missing_receipt:
@@ -1287,6 +1313,12 @@ def build_integrator_view(
             blockers.append("superseded")
         if decision_type in {"request_changes", "salvage"}:
             blockers.append(f"decision:{decision_type}")
+        if reaped_receipt_backed_lane:
+            blockers = [
+                blocker
+                for blocker in blockers
+                if _text(blocker).lower() not in {"stale_lease_reaped", "expired_lease_reaped"}
+            ]
         blockers = sorted(set(blockers))
 
         available_actions = _available_actions(
