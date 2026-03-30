@@ -460,7 +460,7 @@ Reply in thread to add suggestions to ongoing debates
         # Queue the question asynchronously
         if response_url:
             create_tracked_task(
-                self._answer_question_async(question, response_url, user_id, channel_id),
+                lambda: self._answer_question_async(question, response_url, user_id, channel_id),
                 name=f"slack-ask-{question[:30]}",
             )
 
@@ -932,7 +932,13 @@ Reply in thread to add suggestions to ongoing debates
         # Queue the gauntlet run asynchronously
         if response_url:
             create_tracked_task(
-                self._run_gauntlet_async(statement, response_url, user_id, channel_id, team_id),
+                lambda: self._run_gauntlet_async(
+                    statement,
+                    response_url,
+                    user_id,
+                    channel_id,
+                    team_id,
+                ),
                 name=f"slack-gauntlet-{statement[:30]}",
             )
 
@@ -1148,7 +1154,7 @@ Reply in thread to add suggestions to ongoing debates
         # Queue the debate creation asynchronously
         if response_url:
             create_tracked_task(
-                self._create_debate_async(
+                lambda: self._create_debate_async(
                     topic,
                     response_url,
                     user_id,
@@ -1317,7 +1323,7 @@ Reply in thread to add suggestions to ongoing debates
                 nonlocal last_round
                 # Post individual agent response to thread (fire-and-forget)
                 create_tracked_task(
-                    self._post_agent_response(
+                    lambda: self._post_agent_response(
                         response_url,
                         agent,
                         response,
@@ -1332,7 +1338,7 @@ Reply in thread to add suggestions to ongoing debates
                 if round_num > last_round:
                     last_round = round_num
                     create_tracked_task(
-                        self._post_round_update(
+                        lambda: self._post_round_update(
                             response_url,
                             topic,
                             round_num,
