@@ -642,6 +642,136 @@ def test_explicit_work_orders_merge_spec_hints_into_existing_scope(
     assert "tests/live" in work_order["file_scope"]
 
 
+def test_start_run_collapses_redundant_identical_scope_work_orders(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    session_path = repo / "wt-collapsed"
+    session_path.mkdir()
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="swarm-collapsed",
+        agent="codex",
+        branch="codex/swarm-collapsed",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Add quickstart json output",
+        complexity_score=4,
+        complexity_level="moderate",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="wo-cli",
+                title="CLI Changes",
+                description="Update quickstart command output.",
+                file_scope=["aragora/cli/commands/quickstart.py", "tests/cli/test_quickstart.py"],
+            ),
+            SubTask(
+                id="wo-tests",
+                title="Tests Changes",
+                description="Add JSON output regression tests.",
+                file_scope=["aragora/cli/commands/quickstart.py", "tests/cli/test_quickstart.py"],
+            ),
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+    spec = SwarmSpec(
+        raw_goal="Add quickstart json output",
+        refined_goal="Add --json output to quickstart",
+        file_scope_hints=["aragora/cli/commands/quickstart.py", "tests/cli/test_quickstart.py"],
+    )
+
+    run = supervisor.start_run(spec=spec, max_concurrency=1)
+
+    assert len(run.work_orders) == 1
+    work_order = run.work_orders[0]
+    assert work_order["status"] == "leased"
+    assert work_order["file_scope"] == [
+        "aragora/cli/commands/quickstart.py",
+        "tests/cli/test_quickstart.py",
+    ]
+    assert work_order["metadata"]["collapsed_redundant_work_orders"] == ["wo-cli", "wo-tests"]
+    lifecycle.ensure_managed_worktree.assert_called_once()
+
+
+def test_start_run_preserves_distinct_scope_work_orders(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    sessions = [
+        ManagedWorktreeSession(
+            session_id="swarm-distinct-a",
+            agent="codex",
+            branch="codex/swarm-distinct-a",
+            path=repo / "wt-distinct-a",
+            created=True,
+            reconcile_status="up_to_date",
+            payload={},
+        ),
+        ManagedWorktreeSession(
+            session_id="swarm-distinct-b",
+            agent="claude",
+            branch="codex/swarm-distinct-b",
+            path=repo / "wt-distinct-b",
+            created=True,
+            reconcile_status="up_to_date",
+            payload={},
+        ),
+    ]
+    sessions[0].path.mkdir()
+    sessions[1].path.mkdir()
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.side_effect = sessions
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Fix CLI and server",
+        complexity_score=5,
+        complexity_level="moderate",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="wo-cli",
+                title="CLI Changes",
+                description="Update quickstart command output.",
+                file_scope=["aragora/cli/commands/quickstart.py"],
+            ),
+            SubTask(
+                id="wo-server",
+                title="Server Changes",
+                description="Update receipt route output.",
+                file_scope=["aragora/server/fastapi/receipts.py"],
+            ),
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+    spec = SwarmSpec(
+        raw_goal="Fix CLI and server",
+        refined_goal="Fix CLI and server",
+        file_scope_hints=[
+            "aragora/cli/commands/quickstart.py",
+            "aragora/server/fastapi/receipts.py",
+        ],
+    )
+
+    run = supervisor.start_run(spec=spec, max_concurrency=2)
+
+    assert len(run.work_orders) == 2
+    assert lifecycle.ensure_managed_worktree.call_count == 2
+
+
 def test_start_run_initializes_worker_type_circuit_breaker_metadata(
     repo: Path, store: DevCoordinationStore
 ) -> None:

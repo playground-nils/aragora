@@ -932,6 +932,7 @@ class SwarmSupervisor:
                 )
             ]
         work_orders = self.bridge.build_work_orders(subtasks)
+        work_orders = self._collapse_redundant_work_orders(work_orders, spec)
         for item in work_orders:
             _ensure_work_order_scope(item, spec)
             item.expected_tests = self._default_tests(item, spec)
@@ -943,6 +944,88 @@ class SwarmSupervisor:
                 "constraints": list(spec.constraints),
             }
         return work_orders
+
+    @staticmethod
+    def _normalized_scope_signature(paths: list[str]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in paths:
+            path = str(raw).strip()
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            normalized.append(path)
+        return tuple(sorted(normalized))
+
+    def _collapse_redundant_work_orders(
+        self,
+        work_orders: list[BoundedWorkOrder],
+        spec: SwarmSpec,
+    ) -> list[BoundedWorkOrder]:
+        """Collapse decomposition noise when every lane targets the same bounded scope.
+
+        Boss-loop issue bodies can sometimes be over-decomposed into multiple
+        phase-style work orders ("CLI Changes", "Tests Changes", etc.) that all
+        claim the same file scope. Those lanes cannot make independent forward
+        progress because lease enforcement serializes identical scopes anyway.
+        Converting them back into one bounded work order preserves the file
+        contract while avoiding waiting_conflict fan-out.
+        """
+
+        if len(work_orders) <= 1:
+            return work_orders
+
+        spec_scope = self._normalized_scope_signature(list(spec.file_scope_hints))
+        if not spec_scope:
+            return work_orders
+
+        order_scopes = {
+            self._normalized_scope_signature(list(item.file_scope)) for item in work_orders
+        }
+        if order_scopes != {spec_scope}:
+            return work_orders
+
+        tests: list[str] = []
+        seen_tests: set[str] = set()
+        for item in work_orders:
+            for test in item.expected_tests:
+                normalized = str(test).strip()
+                if not normalized or normalized in seen_tests:
+                    continue
+                seen_tests.add(normalized)
+                tests.append(normalized)
+
+        first = work_orders[0]
+        collapsed = BoundedWorkOrder(
+            work_order_id=first.work_order_id,
+            pipeline_task_id=first.pipeline_task_id,
+            title=first.title,
+            description=spec.refined_goal or spec.raw_goal or first.description,
+            file_scope=list(spec_scope),
+            dependency_ids=[],
+            success_criteria={
+                **dict(first.success_criteria),
+                "tests": tests or list(first.success_criteria.get("tests", [])),
+            },
+            expected_tests=tests or list(first.expected_tests),
+            estimated_complexity=first.estimated_complexity,
+            risk_level=first.risk_level,
+            target_agent=first.target_agent,
+            reviewer_agent=first.reviewer_agent,
+            approval_required=True,
+            metadata={
+                **dict(first.metadata),
+                "collapsed_redundant_work_orders": [item.work_order_id for item in work_orders],
+                "source": "collapsed_decomposition",
+            },
+        )
+        logger.info(
+            "Collapsed %d redundant work orders with identical scope %s into %s",
+            len(work_orders),
+            list(spec_scope),
+            collapsed.work_order_id,
+        )
+        return [collapsed]
 
     def _explicit_work_orders_from_spec(self, spec: SwarmSpec) -> list[BoundedWorkOrder]:
         if not spec.work_orders:
