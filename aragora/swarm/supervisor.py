@@ -339,6 +339,14 @@ class SwarmSupervisor:
         return run
 
     def refresh_run(self, run_id: str) -> SupervisorRun:
+        # Collect finished detached workers BEFORE reaping leases.
+        # Without this, a worker that just completed gets its lease reaped
+        # as "stale" before results are collected — losing the deliverable.
+        try:
+            self._collect_finished_workers_sync(run_id)
+        except Exception:
+            logger.debug("pre-reap worker collection failed", exc_info=True)
+
         # Reap dead-session active leases before deriving run status so
         # orphaned leased work orders do not remain "active" indefinitely.
         try:
@@ -380,7 +388,7 @@ class SwarmSupervisor:
                 if str(item.get("status", "queued")) not in {"queued", "waiting_conflict"}:
                     continue
                 try:
-                    self._lease_work_order(
+                    leased = self._lease_work_order(
                         run_id=run_id,
                         target_branch=str(record.get("target_branch", "main")),
                         work_order=item,
@@ -389,12 +397,13 @@ class SwarmSupervisor:
                             record.get("approval_policy")
                         ),
                     )
-                    active_count += 1
+                    if leased:
+                        active_count += 1
                 except LeaseConflictError as exc:
                     released = self._release_orphaned_conflict_leases(exc.conflicts)
                     if released:
                         try:
-                            self._lease_work_order(
+                            leased = self._lease_work_order(
                                 run_id=run_id,
                                 target_branch=str(record.get("target_branch", "main")),
                                 work_order=item,
@@ -403,7 +412,8 @@ class SwarmSupervisor:
                                     record.get("approval_policy")
                                 ),
                             )
-                            active_count += 1
+                            if leased:
+                                active_count += 1
                             continue
                         except LeaseConflictError as retry_exc:
                             exc = retry_exc
@@ -431,6 +441,69 @@ class SwarmSupervisor:
             ),
         )
         return SupervisorRun.from_record(refreshed)
+
+    def _collect_finished_workers_sync(self, run_id: str) -> None:
+        """Synchronously check dispatched workers for finished results.
+
+        For each dispatched work order with a dead PID, attempt detached
+        result collection so commit SHAs are captured before lease reaping
+        marks the work order as stale.
+        """
+        import asyncio
+
+        record = self.store.get_supervisor_run(run_id)
+        if record is None:
+            return
+        work_orders = record.get("work_orders", [])
+        for item in work_orders:
+            if str(item.get("status", "")) != "dispatched":
+                continue
+            pid = item.get("pid")
+            if pid is None:
+                continue
+            # Check if PID is still alive
+            try:
+                import os
+
+                os.kill(int(pid), 0)
+                continue  # Still running, skip
+            except (OSError, ValueError):
+                pass  # Dead — try to collect
+
+            worktree_path = str(item.get("worktree_path", "")).strip()
+            branch = str(item.get("branch", "")).strip()
+            initial_head = str(item.get("initial_head", "")).strip()
+            if not worktree_path:
+                continue
+
+            try:
+                result = asyncio.run(
+                    WorkerLauncher.collect_detached_result(
+                        work_order_id=str(item.get("work_order_id", "")),
+                        agent=str(item.get("target_agent", "codex")),
+                        worktree_path=worktree_path,
+                        branch=branch,
+                        pid=int(pid),
+                        initial_head=initial_head,
+                        auto_commit=True,
+                    )
+                )
+                if result is not None and result.commit_shas:
+                    logger.info(
+                        "Pre-reap collection: salvaged %d commits from %s",
+                        len(result.commit_shas),
+                        item.get("work_order_id"),
+                    )
+                    item["commit_shas"] = list(result.commit_shas)
+                    item["head_sha"] = result.head_sha or ""
+                    item["changed_paths"] = list(result.changed_paths or [])
+                    self.store.update_supervisor_run(run_id, record)
+            except Exception:
+                logger.debug(
+                    "Pre-reap collection failed for %s",
+                    item.get("work_order_id"),
+                    exc_info=True,
+                )
 
     def _backfill_missing_completion_receipt(self, item: dict[str, Any]) -> None:
         """Heal older completed lanes that predate receipt propagation fixes."""
@@ -1220,12 +1293,20 @@ class SwarmSupervisor:
         work_order: dict[str, Any],
         managed_dir_pattern: str,
         approval_policy: SwarmApprovalPolicy,
-    ) -> None:
+    ) -> bool:
         target_agent = str(work_order.get("target_agent", "codex")).strip() or "codex"
         managed_dir = self._managed_dir_for_agent(managed_dir_pattern, target_agent)
         wo_id = str(work_order.get("work_order_id", "task"))
         task_key = f"{run_id}:{wo_id}"
         session_key = f"swarm-{run_id[:8]}-{wo_id}"
+        raw_scope = [str(item) for item in work_order.get("file_scope", []) if str(item).strip()]
+        if not raw_scope:
+            self._mark_needs_human(
+                work_order,
+                "Work order has no declared file scope; declare scope before dispatch.",
+                failure_reason="scope_violation",
+            )
+            return False
         session = self.lifecycle.ensure_managed_worktree(
             managed_dir=managed_dir,
             base_branch=target_branch,
@@ -1234,10 +1315,16 @@ class SwarmSupervisor:
             reconcile=True,
             strategy="ff-only",
         )
-        raw_scope = [str(item) for item in work_order.get("file_scope", []) if str(item).strip()]
         file_scope = self._validate_file_scope(raw_scope, str(session.path))
-        if len(file_scope) < len(raw_scope):
+        if len(file_scope) != len(raw_scope):
             work_order["file_scope"] = file_scope
+        if not file_scope:
+            self._mark_needs_human(
+                work_order,
+                "Declared file scope resolved to no valid in-repo paths; declare scope before dispatch.",
+                failure_reason="scope_violation",
+            )
+            return False
         claimed_paths = [item for item in file_scope if not self._looks_like_glob(item)]
         allowed_globs = [item for item in file_scope if self._looks_like_glob(item)]
         if not allowed_globs and not claimed_paths and file_scope:
@@ -1274,6 +1361,7 @@ class SwarmSupervisor:
                 "task_key": task_key,
             }
         )
+        return True
 
     @staticmethod
     def _strip_session_artifacts(paths: list[str]) -> list[str]:
