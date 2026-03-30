@@ -1235,6 +1235,227 @@ class TestMultiProviderFallbackStream:
         assert tokens == ["Hello"]
 
 
+# =============================================================================
+# End-to-End Fallback Chain Tests
+# =============================================================================
+
+
+class TestFallbackChainEndToEnd:
+    """End-to-end integration tests for multi-provider fallback chain.
+
+    These tests exercise sequential provider failures with realistic HTTP status
+    codes and verify the chain traverses through multiple providers correctly.
+    """
+
+    def _make_mixin_agent(self, name="test-agent", provider="anthropic"):
+        """Create a mock agent with QuotaFallbackMixin behavior."""
+        from aragora.agents.fallback import QuotaFallbackMixin
+
+        class MockAgent(QuotaFallbackMixin):
+            OPENROUTER_MODEL_MAP = {}
+            DEFAULT_FALLBACK_MODEL = "anthropic/claude-sonnet-4.6"
+
+            def __init__(self, agent_name, agent_provider):
+                self.name = agent_name
+                self.model = "test-model"
+                self.enable_fallback = True
+                self.role = "proposer"
+                self.timeout = 120
+                self.system_prompt = None
+                self._fallback_agent = None
+                self._provider = agent_provider
+
+            def _derive_provider_name(self):
+                return self._provider
+
+        return MockAgent(name, provider)
+
+    @pytest.mark.asyncio
+    async def test_sequential_failures_reaches_third_provider(self):
+        """Chain traverses through 3 failing providers to reach the 4th.
+
+        Provider 1: HTTP 402 Payment Required
+        Provider 2: HTTP 429 Too Many Requests
+        Provider 3: RuntimeError (generic failure)
+        Provider 4: Succeeds with expected response
+        """
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        provider_1 = MagicMock()
+        provider_1.generate = AsyncMock(
+            side_effect=RuntimeError("HTTP 402: Payment Required - credit balance is too low")
+        )
+
+        provider_2 = MagicMock()
+        provider_2.generate = AsyncMock(
+            side_effect=RuntimeError("HTTP 429: Too Many Requests - rate limit exceeded")
+        )
+
+        provider_3 = MagicMock()
+        provider_3.generate = AsyncMock(side_effect=RuntimeError("Connection reset by peer"))
+
+        provider_4 = MagicMock()
+        provider_4.generate = AsyncMock(return_value="Success from provider 4")
+
+        providers = [
+            ("openrouter", provider_1),
+            ("openai", provider_2),
+            ("gemini", provider_3),
+            ("mistral", provider_4),
+        ]
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=providers,
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=402)
+
+        assert result == "Success from provider 4"
+
+        # Verify all providers were called in order
+        provider_1.generate.assert_called_once_with("Test prompt", None)
+        provider_2.generate.assert_called_once_with("Test prompt", None)
+        provider_3.generate.assert_called_once_with("Test prompt", None)
+        provider_4.generate.assert_called_once_with("Test prompt", None)
+
+    @pytest.mark.asyncio
+    async def test_all_providers_fail_returns_none(self):
+        """Chain returns None when all 4 providers fail with different errors.
+
+        Provider 1: HTTP 402 Payment Required
+        Provider 2: HTTP 429 Too Many Requests
+        Provider 3: TimeoutError
+        Provider 4: Generic RuntimeError
+        """
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        provider_1 = MagicMock()
+        provider_1.generate = AsyncMock(side_effect=RuntimeError("HTTP 402: Payment Required"))
+
+        provider_2 = MagicMock()
+        provider_2.generate = AsyncMock(side_effect=RuntimeError("HTTP 429: Too Many Requests"))
+
+        provider_3 = MagicMock()
+        provider_3.generate = AsyncMock(side_effect=TimeoutError("Request timed out after 30s"))
+
+        provider_4 = MagicMock()
+        provider_4.generate = AsyncMock(side_effect=RuntimeError("Internal server error"))
+
+        providers = [
+            ("openrouter", provider_1),
+            ("openai", provider_2),
+            ("gemini", provider_3),
+            ("mistral", provider_4),
+        ]
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=providers,
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=402)
+
+        assert result is None
+
+        # Verify all 4 providers were attempted
+        provider_1.generate.assert_called_once()
+        provider_2.generate.assert_called_once()
+        provider_3.generate.assert_called_once()
+        provider_4.generate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_content_policy_error_stops_chain(self):
+        """Chain stops immediately when first provider returns content policy error.
+
+        A 400 with 'content policy' in the message is non-retryable and should
+        prevent the chain from trying any subsequent providers.
+        """
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        provider_1 = MagicMock()
+        provider_1.generate = AsyncMock(
+            side_effect=RuntimeError(
+                "HTTP 400: Your request was rejected due to content policy violation"
+            )
+        )
+
+        provider_2 = MagicMock()
+        provider_2.generate = AsyncMock(return_value="Should never be reached")
+
+        provider_3 = MagicMock()
+        provider_3.generate = AsyncMock(return_value="Should never be reached")
+
+        provider_4 = MagicMock()
+        provider_4.generate = AsyncMock(return_value="Should never be reached")
+
+        providers = [
+            ("openrouter", provider_1),
+            ("openai", provider_2),
+            ("gemini", provider_3),
+            ("mistral", provider_4),
+        ]
+
+        with patch.object(
+            type(agent),
+            "_get_available_fallback_providers",
+            return_value=providers,
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=400)
+
+        assert result is None
+
+        # Only the first provider should be tried
+        provider_1.generate.assert_called_once()
+        provider_2.generate.assert_not_called()
+        provider_3.generate.assert_not_called()
+        provider_4.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_logs_successful_provider(self):
+        """When provider #3 succeeds, a log message records which provider was used."""
+        agent = self._make_mixin_agent(provider="anthropic")
+
+        provider_1 = MagicMock()
+        provider_1.generate = AsyncMock(side_effect=RuntimeError("HTTP 402: Payment Required"))
+
+        provider_2 = MagicMock()
+        provider_2.generate = AsyncMock(side_effect=RuntimeError("HTTP 429: Too Many Requests"))
+
+        provider_3 = MagicMock()
+        provider_3.generate = AsyncMock(return_value="Response from gemini")
+
+        providers = [
+            ("openrouter", provider_1),
+            ("openai", provider_2),
+            ("gemini", provider_3),
+        ]
+
+        with (
+            patch.object(
+                type(agent),
+                "_get_available_fallback_providers",
+                return_value=providers,
+            ),
+            patch("aragora.agents.fallback.logger") as mock_logger,
+        ):
+            result = await agent.fallback_generate("Test prompt", status_code=402)
+
+        assert result == "Response from gemini"
+
+        # Verify the success log message records the provider name
+        info_calls = [call.args for call in mock_logger.info.call_args_list]
+        success_logs = [
+            args for args in info_calls if len(args) >= 2 and "succeeded" in str(args[0])
+        ]
+        assert len(success_logs) >= 1, "Expected a success log message"
+        # The log format is: "Fallback to %s succeeded for %s (%.2fs)"
+        # args[1] is the provider key
+        assert any(args[1] == "gemini" for args in success_logs), (
+            f"Expected 'gemini' in success log, got: {success_logs}"
+        )
+
+
 class TestProviderEnvKeyOrdering:
     """Test that provider ordering follows the expected precedence."""
 

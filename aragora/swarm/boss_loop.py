@@ -1280,6 +1280,47 @@ class BossLoop:
             return None
         return self.config.default_target_agent
 
+    def _refresh_runner_heartbeats(self) -> None:
+        """Update heartbeat timestamps for all registered runners.
+
+        Called at the top of each iteration so that ``check_runner_freshness``
+        does not reject runners whose ``updated_at`` drifted past the TTL
+        while the boss loop was still running.
+        """
+        from aragora.swarm.runner_registry import (
+            LocalRunnerRegistry,
+            RunnerInspection,
+            authorization_context_from_env,
+        )
+
+        owner_context = authorization_context_from_env(self._env)
+        if owner_context is None:
+            return
+
+        registry = (
+            LocalRunnerRegistry(path=self.config.registry_path)
+            if self.config.registry_path
+            else LocalRunnerRegistry()
+        )
+
+        for reg in registry.list_registrations():
+            runner_id = str(reg.get("runner_id", "")).strip()
+            if not runner_id:
+                continue
+            inspection = RunnerInspection(
+                runner_id=runner_id,
+                runner_type=str(reg.get("runner_type", "codex")).strip(),
+                availability=str(reg.get("availability", "unknown")).strip(),
+                available=bool(reg.get("available", False)),
+                auth_mode=str(reg.get("auth_mode", "unknown")).strip(),
+                command_path=reg.get("command_path"),
+                profile=reg.get("profile"),
+            )
+            try:
+                registry.heartbeat(inspection, owner_context=owner_context)
+            except Exception:
+                logger.debug("Failed to refresh heartbeat for runner %s", runner_id, exc_info=True)
+
     def _requested_target_agent_for_issue(self, issue_number: int) -> str | None:
         attempt_count = max(0, int(self._issue_attempt_counts.get(issue_number, 0) or 0))
         default_target = str(self.config.default_target_agent or "").strip().lower() or None
@@ -1603,6 +1644,10 @@ class BossLoop:
 
         while iteration < self.config.max_iterations:
             iteration += 1
+
+            # Refresh runner heartbeats so registrations do not go stale
+            # while the boss loop is running continuously.
+            self._refresh_runner_heartbeats()
 
             statuses = await self._run_iteration_statuses(iteration)
             self._iteration_statuses.extend(statuses)
