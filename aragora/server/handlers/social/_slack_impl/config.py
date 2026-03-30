@@ -142,6 +142,11 @@ def create_tracked_task(coro: Coroutine[Any, Any, Any], name: str) -> asyncio.Ta
 
     Use this instead of raw asyncio.create_task() for fire-and-forget tasks
     to ensure exceptions are logged rather than silently swallowed.
+
+    When called from a sync HTTP handler thread (no running event loop),
+    dispatches the coroutine to the server's main event loop via
+    ``run_coroutine_threadsafe`` so async resources (HTTP pools, DB
+    connections) work correctly.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -153,6 +158,33 @@ def create_tracked_task(coro: Coroutine[Any, Any, Any], name: str) -> asyncio.Ta
         task.add_done_callback(lambda t: _handle_task_exception(t, name))
         return task
 
+    # Dispatch to the server's main event loop (same pattern as
+    # _run_handler_coroutine in handler_registry/core.py)
+    try:
+        from aragora.storage.pool_manager import get_pool_event_loop
+
+        main_loop = get_pool_event_loop()
+        if main_loop is not None and main_loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(coro, main_loop)
+
+            def _on_done(f: Any) -> None:
+                exc = f.exception()
+                if exc:
+                    logger.error("Task %s failed: %s", name, exc, exc_info=exc)
+
+            future.add_done_callback(_on_done)
+            logger.debug("Dispatched task %s to main event loop", name)
+
+            class _ThreadsafeTask:
+                def add_done_callback(self, _cb: Any) -> None:
+                    return None
+
+            return _ThreadsafeTask()  # type: ignore[return-value]
+    except ImportError:
+        pass
+
+    # Final fallback: thread with isolated event loop (may break async
+    # resources tied to the main loop, but works for simple tasks)
     def _run_in_thread() -> None:
         try:
             asyncio.run(coro)
@@ -163,7 +195,7 @@ def create_tracked_task(coro: Coroutine[Any, Any, Any], name: str) -> asyncio.Ta
     thread.start()
 
     class _BackgroundTask:
-        def add_done_callback(self, _cb):
+        def add_done_callback(self, _cb: Any) -> None:
             return None
 
     return _BackgroundTask()  # type: ignore[return-value]
