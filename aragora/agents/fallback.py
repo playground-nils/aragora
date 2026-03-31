@@ -584,6 +584,7 @@ class QuotaFallbackMixin:
             seen_provider_keys.add(provider_key)
 
         return fallback_providers
+
     async def fallback_generate(
         self,
         prompt: str,
