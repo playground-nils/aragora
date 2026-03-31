@@ -1640,6 +1640,119 @@ def test_archive_superseded_waiting_conflict_work_orders_preserves_non_overlappi
     assert refreshed["work_orders"][1]["status"] == "waiting_conflict"
 
 
+def test_backfill_missing_blocker_metadata_infers_missing_verification_plan(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Backfill merge gate blocker metadata",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Backfill merge gate blocker metadata",
+            "refined_goal": "Backfill merge gate blocker metadata",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Historical merge gate lane",
+                "status": "needs_human",
+                "worker_outcome": "merge_gate_failed",
+                "dispatch_error": "merge gate blocked: missing verification plan for code-change lane",
+            }
+        ],
+    )
+
+    updated = store.backfill_missing_blocker_metadata()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["failure_reason"] == "missing_verification_plan"
+    assert "verification command" in work_order["blocking_question"]
+    assert work_order["blocker"]["reason"] == "missing_verification_plan"
+
+
+def test_backfill_missing_blocker_metadata_infers_clean_exit_no_deliverable(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Backfill clean exit blocker metadata",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Backfill clean exit blocker metadata",
+            "refined_goal": "Backfill clean exit blocker metadata",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Historical clean exit lane",
+                "status": "needs_human",
+                "worker_outcome": "clean_exit_no_effect",
+                "dispatch_error": "worker exited 0 with no commits and no changed paths",
+            }
+        ],
+    )
+
+    updated = store.backfill_missing_blocker_metadata()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["failure_reason"] == "clean_exit_no_deliverable"
+    assert "concrete branch, commit, or PR" in work_order["blocking_question"]
+    assert work_order["blocker"]["reason"] == "clean_exit_no_deliverable"
+
+
+def test_backfill_missing_blocker_metadata_preserves_blocked_deliverable_lane(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Backfill blocked deliverable metadata",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Backfill blocked deliverable metadata",
+            "refined_goal": "Backfill blocked deliverable metadata",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Blocked deliverable lane",
+                "status": "needs_human",
+                "worker_outcome": "merge_gate_failed",
+                "dispatch_error": "merge gate blocked: missing verification plan for code-change lane",
+                "branch": "codex/blocked-deliverable",
+                "commit_shas": ["abc12345"],
+            }
+        ],
+    )
+
+    updated = store.backfill_missing_blocker_metadata()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["failure_reason"] == "missing_verification_plan"
+    assert work_order["branch"] == "codex/blocked-deliverable"
+    assert work_order["commit_shas"] == ["abc12345"]
+
+
 def test_backfill_missing_completion_receipts_for_historical_deliverable(
     repo: Path, store: DevCoordinationStore
 ) -> None:

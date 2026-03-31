@@ -857,6 +857,33 @@ class DevCoordinationStore:
         tasks.sort(key=lambda item: item.updated_at, reverse=True)
         return tasks
 
+    def backfill_missing_blocker_metadata(self) -> int:
+        """Fill structured blocker fields for historical lanes that only stored free-text errors."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            updated = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    normalized = _backfill_work_order_blocker_metadata(item)
+                    if not normalized:
+                        continue
+                    changed = True
+                    updated += 1
+                if not changed:
+                    continue
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return updated
+
     def archive_reaped_no_receipt_work_orders(
         self,
         *,
@@ -1487,6 +1514,7 @@ class DevCoordinationStore:
                 update={"status": "needs_human", "failure_reason": "expired_lease_reaped"},
             )
         self.backfill_missing_completion_receipts()
+        self.backfill_missing_blocker_metadata()
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
@@ -1576,6 +1604,7 @@ class DevCoordinationStore:
             )
 
         self.backfill_missing_completion_receipts()
+        self.backfill_missing_blocker_metadata()
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
@@ -2566,6 +2595,7 @@ class DevCoordinationStore:
     ) -> dict[str, int]:
         """Project open developer tasks into the global work queue."""
         self.backfill_missing_completion_receipts()
+        self.backfill_missing_blocker_metadata()
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
@@ -3325,6 +3355,148 @@ def _developer_task_blockers(work_order: dict[str, Any]) -> list[str]:
     if isinstance(work_order.get("scope_violation"), dict):
         blockers.append("scope_violation")
     return blockers
+
+
+def _default_blocking_question_for_reason(reason_code: str) -> str:
+    mapping = {
+        "clean_exit_no_deliverable": (
+            "What concrete branch, commit, or PR should this lane produce before rerunning?"
+        ),
+        "merge_gate_failed": (
+            "Which required verification or acceptance check must pass before approval?"
+        ),
+        "missing_verification_plan": (
+            "Which verification command or acceptance check should be added before rerunning?"
+        ),
+        "scope_violation": (
+            "Which files should stay in scope, or should this lane be split before rerunning?"
+        ),
+        "worker_exited_without_receipt": (
+            "Should this lane be rerun, or recovered manually from the existing worktree?"
+        ),
+        "worker_no_progress_timeout": (
+            "Should this stalled lane be rerun, split, or investigated in its current worktree?"
+        ),
+        "worker_timeout_with_salvage": (
+            "Should the recovered timed-out deliverable be adopted, amended, or rerun before integration?"
+        ),
+        "worker_timeout_no_deliverable": (
+            "Should this timed-out lane be rerun, split, or investigated before retrying?"
+        ),
+        "worker_crash_with_salvage": (
+            "Should the recovered crashed deliverable be adopted, amended, or rerun before integration?"
+        ),
+        "worker_crash": (
+            "Should this crashed lane be rerun, reassigned, or investigated before retrying?"
+        ),
+        "worker_type_blocked": (
+            "Which worker type or capacity issue must be resolved before rerunning this lane?"
+        ),
+        "work_order_leasing_failed": (
+            "What missing environment, resource, or policy input must be resolved first?"
+        ),
+        "stale_lease_reaped": ("Should this stale lane be requeued, recovered, or discarded?"),
+        "expired_lease_reaped": ("Should this expired lane be requeued, recovered, or discarded?"),
+    }
+    return mapping.get(reason_code, "What human input is required before rerunning this lane?")
+
+
+def _infer_missing_failure_reason_for_work_order(work_order: dict[str, Any]) -> str:
+    merge_gate = work_order.get("merge_gate")
+    if isinstance(merge_gate, dict):
+        missing = _optional_text(merge_gate.get("verification_missing_reason")).lower()
+        if missing:
+            return missing
+
+    worker_outcome = _optional_text(work_order.get("worker_outcome")).lower()
+    if worker_outcome == "clean_exit_no_effect":
+        return "clean_exit_no_deliverable"
+    if worker_outcome == "merge_gate_failed":
+        dispatch_error = _optional_text(work_order.get("dispatch_error")).lower()
+        if "missing verification plan" in dispatch_error:
+            return "missing_verification_plan"
+        return "merge_gate_failed"
+    if worker_outcome == "scope_violation":
+        return "scope_violation"
+    if worker_outcome == "timeout_with_salvage":
+        return "worker_timeout_with_salvage"
+    if worker_outcome == "timeout_no_progress":
+        return "worker_no_progress_timeout"
+    if worker_outcome == "crash_with_salvage":
+        return "worker_crash_with_salvage"
+
+    lowered = _optional_text(work_order.get("dispatch_error")).lower()
+    if "missing verification plan" in lowered:
+        return "missing_verification_plan"
+    if "merge gate" in lowered:
+        return "merge_gate_failed"
+    if "scope" in lowered and "ownership" in lowered:
+        return "scope_violation"
+    if "without receipt or exit marker" in lowered:
+        return "worker_exited_without_receipt"
+    if "no-progress timeout" in lowered:
+        return "worker_no_progress_timeout"
+    if "recoverable deliverable" in lowered and "timed out" in lowered:
+        return "worker_timeout_with_salvage"
+    if "recoverable deliverable" in lowered and "non-zero" in lowered:
+        return "worker_crash_with_salvage"
+    if "timed out before producing a deliverable" in lowered:
+        return "worker_timeout_no_deliverable"
+    if "crashed before producing a deliverable" in lowered:
+        return "worker_crash"
+    if "no commits and no changed paths" in lowered or "no real deliverables" in lowered:
+        return "clean_exit_no_deliverable"
+    if "dispatch blocked" in lowered:
+        return "worker_type_blocked"
+    if "autopilot ensure failed" in lowered or "lease" in lowered or "worktree" in lowered:
+        return "work_order_leasing_failed"
+
+    return _optional_text(work_order.get("failure_reason")) or "needs_human"
+
+
+def _backfill_work_order_blocker_metadata(work_order: dict[str, Any]) -> bool:
+    if not isinstance(work_order, dict):
+        return False
+    status = _optional_text(work_order.get("status")).lower()
+    if status not in {
+        "needs_human",
+        "changes_requested",
+        "dispatch_failed",
+        "failed",
+        "timed_out",
+        "scope_violation",
+    }:
+        return False
+
+    changed = False
+    failure_reason = _optional_text(work_order.get("failure_reason"))
+    if not failure_reason:
+        inferred = _infer_missing_failure_reason_for_work_order(work_order)
+        if inferred:
+            work_order["failure_reason"] = inferred
+            failure_reason = inferred
+            changed = True
+
+    blocking_question = _optional_text(work_order.get("blocking_question"))
+    if not blocking_question and failure_reason:
+        work_order["blocking_question"] = _default_blocking_question_for_reason(failure_reason)
+        blocking_question = _optional_text(work_order.get("blocking_question"))
+        changed = True
+
+    blocker = work_order.get("blocker")
+    if (
+        not isinstance(blocker, dict)
+        or not _optional_text(blocker.get("reason"))
+        or not _optional_text(blocker.get("question"))
+    ) and (failure_reason or blocking_question):
+        work_order["blocker"] = {
+            "reason": failure_reason or "needs_human",
+            "question": blocking_question
+            or _default_blocking_question_for_reason(failure_reason or "needs_human"),
+        }
+        changed = True
+
+    return changed
 
 
 def _work_order_reap_failure_reason(
