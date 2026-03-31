@@ -1300,8 +1300,12 @@ def test_archive_failed_no_deliverable_work_orders_discards_old_timeout_needs_hu
     conn = store._connect()
     try:
         conn.execute(
-            "UPDATE supervisor_runs SET updated_at = ? WHERE run_id = ?",
-            ("2000-01-01T00:00:00+00:00", run["run_id"]),
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                run["run_id"],
+            ),
         )
         conn.commit()
     finally:
@@ -1350,8 +1354,12 @@ def test_archive_clean_exit_no_deliverable_work_orders_discards_old_backlog(
     conn = store._connect()
     try:
         conn.execute(
-            "UPDATE supervisor_runs SET updated_at = ? WHERE run_id = ?",
-            ("2000-01-01T00:00:00+00:00", run["run_id"]),
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                run["run_id"],
+            ),
         )
         conn.commit()
     finally:
@@ -1367,6 +1375,60 @@ def test_archive_clean_exit_no_deliverable_work_orders_discards_old_backlog(
     assert work_order["metadata"]["archived_due_to"] == "clean_exit_no_deliverable"
     assert work_order["metadata"]["archive_reason"] == "Run ended without a concrete deliverable."
     assert work_order["metadata"]["previous_status"] == "completed"
+
+
+def test_archive_clean_exit_no_deliverable_work_orders_uses_run_created_at_anchor(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive old clean exit backlog despite fresh run updates",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Archive old clean exit backlog despite fresh run updates",
+            "refined_goal": "Archive old clean exit backlog despite fresh run updates",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-clean-exit-created-anchor",
+                "title": "Old clean exit lane with fresh sync timestamp",
+                "file_scope": ["aragora/swarm/supervisor.py"],
+                "status": "needs_human",
+                "failure_reason": "clean_exit_no_deliverable",
+                "blockers": ["Run ended without a concrete deliverable."],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2999-01-01T00:00:00+00:00",
+                run["run_id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_clean_exit_no_deliverable_work_orders(grace_period_hours=24.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["status"] == "discarded"
+    assert work_order["metadata"]["archived_due_to"] == "clean_exit_no_deliverable"
+    assert work_order["metadata"]["previous_status"] == "needs_human"
 
 
 def test_archive_clean_exit_no_deliverable_work_orders_preserves_deliverable_lane(
@@ -1400,8 +1462,12 @@ def test_archive_clean_exit_no_deliverable_work_orders_preserves_deliverable_lan
     conn = store._connect()
     try:
         conn.execute(
-            "UPDATE supervisor_runs SET updated_at = ? WHERE run_id = ?",
-            ("2000-01-01T00:00:00+00:00", run["run_id"]),
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                run["run_id"],
+            ),
         )
         conn.commit()
     finally:
@@ -1446,8 +1512,12 @@ def test_archive_clean_exit_no_deliverable_work_orders_infers_historical_complet
     conn = store._connect()
     try:
         conn.execute(
-            "UPDATE supervisor_runs SET updated_at = ? WHERE run_id = ?",
-            ("2000-01-01T00:00:00+00:00", run["run_id"]),
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                run["run_id"],
+            ),
         )
         conn.commit()
     finally:
@@ -2033,6 +2103,125 @@ def test_archive_work_order_leasing_failed_work_orders_preserves_deliverable_bac
     assert refreshed["work_orders"][0]["status"] == "needs_human"
 
 
+def test_archive_work_order_leasing_failed_work_orders_uses_created_at_before_run_updated_at(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive stale leasing failure despite refreshed run timestamp",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Stale leasing failure with refreshed run",
+                "status": "needs_human",
+                "failure_reason": "work_order_leasing_failed",
+                "dispatch_error": "autopilot ensure failed (1): branch already exists",
+                "file_scope": ["aragora/cli/commands/quickstart.py"],
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2999-01-01T00:00:00+00:00", run["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_work_order_leasing_failed_work_orders(grace_period_hours=24.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "discarded"
+
+
+def test_archive_worker_type_blocked_work_orders_discards_old_no_deliverable_lane(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive stale worker-type blocked lane",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Stale worker-type blocked lane",
+                "status": "needs_human",
+                "failure_reason": "worker_type_blocked",
+                "dispatch_error": "worker dispatch blocked: claude breaker open until 2000-01-01T00:00:00+00:00 after agent_capacity",
+                "file_scope": ["aragora/live/src/**"],
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2999-01-01T00:00:00+00:00", run["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_worker_type_blocked_work_orders(grace_period_hours=24.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "discarded"
+
+
+def test_archive_worker_type_blocked_work_orders_preserves_deliverable_backed_lane(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Preserve worker-type blocked lane with deliverable",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Deliverable-backed worker-type blocked lane",
+                "status": "needs_human",
+                "failure_reason": "worker_type_blocked",
+                "dispatch_error": "worker dispatch blocked: claude breaker open until 2000-01-01T00:00:00+00:00 after agent_capacity",
+                "branch": "codex/subtask_1",
+                "commit_shas": ["deadbeef"],
+                "file_scope": ["aragora/live/src/**"],
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2999-01-01T00:00:00+00:00", run["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_worker_type_blocked_work_orders(grace_period_hours=24.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 0
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "needs_human"
+
+
 def test_archive_duplicate_work_order_leasing_failed_work_orders_discards_older_duplicate_runs(
     store: DevCoordinationStore,
 ) -> None:
@@ -2287,6 +2476,49 @@ def test_archive_superseded_clean_exit_no_deliverable_work_orders_discards_helpe
     helper = refreshed["work_orders"][0]
     assert helper["status"] == "discarded"
     assert helper["metadata"]["archive_reason"] == "helper_clean_exit_no_deliverable"
+    assert helper["metadata"]["canonical_work_order_id"] == "subtask_2"
+
+
+def test_archive_superseded_stale_lease_reaped_work_orders_discards_helper_lane_with_open_sibling(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive helper stale-lease lane with queued sibling",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Read existing receipt.py command structure and add --format flag",
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "file_scope": [
+                    "aragora/cli/commands/receipt.py",
+                    "tests/cli/test_receipt_command.py",
+                ],
+            },
+            {
+                "work_order_id": "subtask_2",
+                "title": "Add test cases for --format markdown functionality",
+                "status": "queued",
+                "file_scope": [
+                    "tests/cli/test_receipt_command.py",
+                    "aragora/cli/commands/receipt.py",
+                ],
+            },
+        ],
+    )
+
+    archived = store.archive_superseded_stale_lease_reaped_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    helper = refreshed["work_orders"][0]
+    assert helper["status"] == "discarded"
+    assert helper["metadata"]["archive_reason"] == "helper_stale_lease_reaped"
     assert helper["metadata"]["canonical_work_order_id"] == "subtask_2"
 
 
@@ -2776,6 +3008,39 @@ def test_reclassify_branch_snapshot_stale_review_work_orders(
     )
 
     updated = store.reclassify_branch_snapshot_stale_review_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 1
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "changes_requested"
+    assert refreshed["work_orders"][0]["review_status"] == "changes_requested"
+
+
+def test_reclassify_deliverable_changes_requested_work_orders(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Move deliverable changes-requested lane into review bucket",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Verification target missing lane",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "worker_outcome": "merge_gate_failed",
+                "failure_reason": "verification_target_missing",
+                "receipt_id": "receipt-verification-target-missing",
+                "branch": "codex/subtask_1",
+                "commit_shas": ["abc12345"],
+            }
+        ],
+    )
+
+    updated = store.reclassify_deliverable_changes_requested_work_orders()
     refreshed = store.get_supervisor_run(run["run_id"])
 
     assert updated == 1
@@ -3439,7 +3704,7 @@ def test_replay_environment_blocked_merge_gate_failures_skips_non_environment_fa
                 "work_order_id": "wo-verification-env-skip",
                 "title": "Receipt-backed real failure lane",
                 "file_scope": [changed_path],
-                "status": "needs_human",
+                "status": "changes_requested",
                 "review_status": "changes_requested",
                 "failure_reason": "merge_gate_failed",
                 "worker_outcome": "merge_gate_failed",
@@ -3755,7 +4020,7 @@ def test_replay_targeted_merge_gate_failures_skips_rows_without_narrower_target(
             {
                 "work_order_id": "wo-targeted-replay-skip",
                 "title": "Broad verification with no narrower target",
-                "status": "needs_human",
+                "status": "changes_requested",
                 "review_status": "changes_requested",
                 "failure_reason": "merge_gate_failed",
                 "worker_outcome": "merge_gate_failed",
