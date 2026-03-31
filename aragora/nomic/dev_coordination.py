@@ -1032,6 +1032,32 @@ class DevCoordinationStore:
             conn.close()
         return updated
 
+    def reclassify_branch_snapshot_stale_review_work_orders(self) -> int:
+        """Move deliverable-backed branch-stale lanes into the review bucket."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            updated = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not _work_order_should_reclassify_branch_snapshot_stale_review(item):
+                        continue
+                    item["status"] = "changes_requested"
+                    item["review_status"] = "changes_requested"
+                    changed = True
+                    updated += 1
+                if not changed:
+                    continue
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return updated
+
     def archive_reaped_no_receipt_work_orders(
         self,
         *,
@@ -2435,7 +2461,7 @@ class DevCoordinationStore:
                     dict(entry) for entry in verification_results
                 ]
                 refreshed_item["metadata"] = metadata
-                refreshed_item["status"] = "needs_human"
+                refreshed_item["status"] = "changes_requested"
                 refreshed_item["review_status"] = "changes_requested"
                 refreshed_item["worker_outcome"] = "branch_snapshot_stale"
                 refreshed_item["failure_reason"] = "branch_snapshot_stale"
@@ -3720,6 +3746,7 @@ class DevCoordinationStore:
         self.backfill_missing_verification_plans()
         self.rehabilitate_docs_only_missing_verification_plan_work_orders()
         self.rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders()
+        self.reclassify_branch_snapshot_stale_review_work_orders()
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
@@ -4951,6 +4978,26 @@ def _work_order_should_rehabilitate_deliverable_backed_clean_exit_no_deliverable
     if not _optional_text(work_order.get("receipt_id")):
         return False
     return _work_order_has_concrete_deliverable(work_order)
+
+
+def _work_order_should_reclassify_branch_snapshot_stale_review(
+    work_order: dict[str, Any],
+) -> bool:
+    if not isinstance(work_order, dict):
+        return False
+    status = _optional_text(work_order.get("status")).lower()
+    if status != "needs_human":
+        return False
+    if _optional_text(work_order.get("failure_reason")).lower() != "branch_snapshot_stale":
+        return False
+    if not _optional_text(work_order.get("receipt_id")):
+        return False
+    if not _work_order_has_concrete_deliverable(work_order):
+        return False
+    metadata = work_order.get("metadata")
+    if not isinstance(metadata, dict) or not bool(metadata.get("mainline_verification_passed")):
+        return False
+    return True
 
 
 def _work_order_should_replay_missing_verification(work_order: dict[str, Any]) -> bool:

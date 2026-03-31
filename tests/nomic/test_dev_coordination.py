@@ -2615,6 +2615,40 @@ def test_rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders_p
     assert refreshed["work_orders"][0]["status"] == "needs_human"
 
 
+def test_reclassify_branch_snapshot_stale_review_work_orders(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Move branch-stale lane into review bucket",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Branch-stale lane",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "worker_outcome": "branch_snapshot_stale",
+                "failure_reason": "branch_snapshot_stale",
+                "receipt_id": "receipt-branch-stale",
+                "branch": "codex/branch-stale",
+                "commit_shas": ["abc12345"],
+                "metadata": {"mainline_verification_passed": True},
+            }
+        ],
+    )
+
+    updated = store.reclassify_branch_snapshot_stale_review_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 1
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "changes_requested"
+    assert refreshed["work_orders"][0]["review_status"] == "changes_requested"
+
+
 def test_backfill_missing_completion_receipts_for_historical_deliverable(
     repo: Path, store: DevCoordinationStore
 ) -> None:
@@ -2989,7 +3023,7 @@ def test_replay_missing_verification_for_merge_gate_failures_keeps_lane_blocked_
     assert replayed == 1
     assert refreshed is not None
     item = refreshed["work_orders"][0]
-    assert item["status"] == "needs_human"
+    assert item["status"] == "changes_requested"
     assert item["review_status"] == "changes_requested"
     assert item["worker_outcome"] == "merge_gate_failed"
     assert item["failure_reason"] == "merge_gate_failed"
@@ -3311,7 +3345,7 @@ def test_replay_environment_blocked_merge_gate_failures_skips_non_environment_fa
     assert replayed == 0
     assert refreshed is not None
     item = refreshed["work_orders"][0]
-    assert item["status"] == "needs_human"
+    assert item["status"] == "changes_requested"
     assert item["failure_reason"] == "merge_gate_failed"
     assert item.get("metadata", {}) == {}
 
@@ -3557,7 +3591,7 @@ def test_replay_targeted_merge_gate_failures_keeps_lane_blocked_on_real_targeted
     assert replayed == 1
     assert refreshed is not None
     item = refreshed["work_orders"][0]
-    assert item["status"] == "needs_human"
+    assert item["status"] == "changes_requested"
     assert item["review_status"] == "changes_requested"
     assert item["worker_outcome"] == "merge_gate_failed"
     assert item["failure_reason"] == "merge_gate_failed"
@@ -3631,7 +3665,7 @@ def test_replay_targeted_merge_gate_failures_skips_rows_without_narrower_target(
     assert replayed == 0
     assert refreshed is not None
     item = refreshed["work_orders"][0]
-    assert item["status"] == "needs_human"
+    assert item["status"] == "changes_requested"
     assert item["expected_tests"] == [broad_command]
     assert item["tests_run"] == [broad_command]
 
@@ -3846,7 +3880,7 @@ def test_reclassify_branch_stale_merge_gate_failures_when_mainline_passes(
     assert reclassified == 1
     assert refreshed is not None
     item = refreshed["work_orders"][0]
-    assert item["status"] == "needs_human"
+    assert item["status"] == "changes_requested"
     assert item["review_status"] == "changes_requested"
     assert item["worker_outcome"] == "branch_snapshot_stale"
     assert item["failure_reason"] == "branch_snapshot_stale"
