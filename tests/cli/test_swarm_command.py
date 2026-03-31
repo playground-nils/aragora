@@ -550,6 +550,7 @@ class TestSwarmParser:
                 "harvest-queue",
                 "--queue",
                 "docs/examples/overnight-queue.yaml",
+                "--dry-run",
                 "--execute-merge",
                 "--allow-admin",
                 "--json",
@@ -559,6 +560,7 @@ class TestSwarmParser:
         assert args.swarm_action_or_goal == "tranche"
         assert args.swarm_goal == "harvest-queue"
         assert args.queue == "docs/examples/overnight-queue.yaml"
+        assert args.dry_run is True
         assert args.execute_merge is True
         assert args.allow_admin is True
         assert args.json is True
@@ -1144,6 +1146,40 @@ class TestSwarmCommand:
             queue_path=Path("/tmp/overnight-queue.yaml").resolve(),
             repo_root=Path("/tmp/repo"),
             execute_merge=True,
+            allow_admin=True,
+        )
+
+    def test_cmd_swarm_tranche_harvest_queue_dry_run_forces_non_mutating_json(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="tranche",
+            swarm_goal="harvest-queue",
+            queue="/tmp/overnight-queue.yaml",
+            dry_run=True,
+            execute_merge=True,
+            allow_admin=True,
+            json=True,
+        )
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("aragora.worktree.fleet.resolve_repo_root", return_value=Path("/tmp/repo")),
+            patch("aragora.swarm.tranche_queue.harvest_tranche_queue") as mock_harvest_queue,
+        ):
+            mock_harvest_queue.return_value = {
+                "mode": "tranche-queue-harvest",
+                "queue_id": "overnight",
+                "status": "completed",
+                "pr_counts": {"merge_now": 1},
+                "executed_merges": [],
+            }
+            cmd_swarm(args)
+
+        out = capsys.readouterr().out
+        assert '"dry_run": true' in out
+        assert '"requested_execute_merge": true' in out
+        mock_harvest_queue.assert_called_once_with(
+            queue_path=Path("/tmp/overnight-queue.yaml").resolve(),
+            repo_root=Path("/tmp/repo"),
+            execute_merge=False,
             allow_admin=True,
         )
 
