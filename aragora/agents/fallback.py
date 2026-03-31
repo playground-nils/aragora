@@ -558,6 +558,12 @@ class QuotaFallbackMixin:
         instance_getter = getattr(self, "__dict__", {}).get("_get_cached_fallback_agent")
         if callable(instance_getter):
             return cast("OpenRouterAgent | None", instance_getter())
+        class_getter = type(self).__dict__.get("_get_cached_fallback_agent")
+        if (
+            class_getter is not None
+            and class_getter is not QuotaFallbackMixin._get_cached_fallback_agent
+        ):
+            return cast("OpenRouterAgent | None", self._get_cached_fallback_agent())
 
         return None
 
@@ -578,7 +584,6 @@ class QuotaFallbackMixin:
             seen_provider_keys.add(provider_key)
 
         return fallback_providers
-
     async def fallback_generate(
         self,
         prompt: str,
