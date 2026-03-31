@@ -118,6 +118,135 @@ def test_start_run_creates_leased_work_orders(repo: Path, store: DevCoordination
     assert store.status_summary()["counts"]["active_leases"] == 2
 
 
+def test_start_run_discards_duplicate_open_non_deliverable_lane(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    store.create_supervisor_run(
+        goal="Add --json output flag to aragora quickstart CLI",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "existing",
+                "title": "Existing quickstart lane",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+
+    lifecycle = MagicMock()
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="subtask_1",
+                title="Test Changes",
+                description="Add --json output flag to aragora quickstart CLI",
+                file_scope=[
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            )
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal="Add --json output flag to aragora quickstart CLI",
+            refined_goal="Add --json output flag to aragora quickstart CLI",
+        ),
+        refresh_scaling=False,
+    )
+
+    work_order = run.work_orders[0]
+    assert work_order["status"] == "discarded"
+    assert work_order["metadata"]["archived_due_to"] == "duplicate_open_work_order"
+    assert work_order["metadata"]["archive_reason"] == "duplicate_open_work_order"
+    assert work_order["metadata"]["canonical_task_key"].endswith(":existing")
+
+
+def test_start_run_preserves_duplicate_scope_when_existing_lane_has_deliverable(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    store.create_supervisor_run(
+        goal="Add --json output flag to aragora quickstart CLI",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "existing",
+                "title": "Reviewed quickstart lane",
+                "status": "changes_requested",
+                "receipt_id": "receipt-existing",
+                "branch": "codex/existing-quickstart",
+                "commit_shas": ["deadbeef"],
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+
+    lifecycle = MagicMock()
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="subtask_1",
+                title="Test Changes",
+                description="Add --json output flag to aragora quickstart CLI",
+                file_scope=[
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            )
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal="Add --json output flag to aragora quickstart CLI",
+            refined_goal="Add --json output flag to aragora quickstart CLI",
+        ),
+        refresh_scaling=False,
+    )
+
+    assert run.work_orders[0]["status"] == "queued"
+
+
 def test_start_run_passes_acceptance_and_constraints_to_decomposer(
     repo: Path, store: DevCoordinationStore
 ) -> None:

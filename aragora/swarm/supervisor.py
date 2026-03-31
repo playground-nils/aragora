@@ -318,6 +318,7 @@ class SwarmSupervisor:
                 metadata = dict(item.get("metadata") or {})
                 metadata["worker_env"] = normalized_worker_env
                 item["metadata"] = metadata
+        self._suppress_duplicate_open_work_orders(goal, work_orders)
 
         record = self.store.create_supervisor_run(
             goal=goal,
@@ -1515,6 +1516,79 @@ class SwarmSupervisor:
             seen.add(path)
             normalized.append(path)
         return tuple(sorted(normalized))
+
+    @staticmethod
+    def _normalized_goal_signature(value: Any) -> str:
+        return " ".join(str(value or "").split()).strip().lower()
+
+    @staticmethod
+    def _task_has_concrete_deliverable(task: Any) -> bool:
+        metadata = getattr(task, "metadata", {}) or {}
+        commit_shas = [
+            str(item).strip() for item in (metadata.get("commit_shas") or []) if str(item).strip()
+        ]
+        pr_url = str(metadata.get("pr_url") or "").strip()
+        adopted_pr = str(metadata.get("adopted_pr") or "").strip()
+        return bool(getattr(task, "receipt_id", None) or commit_shas or pr_url or adopted_pr)
+
+    def _suppress_duplicate_open_work_orders(
+        self,
+        goal: str,
+        work_orders: list[dict[str, Any]],
+    ) -> None:
+        goal_key = self._normalized_goal_signature(goal)
+        if not goal_key:
+            return
+
+        active_duplicate_statuses = {
+            "queued",
+            "leased",
+            "dispatched",
+            "active",
+            "waiting_conflict",
+            "dispatch_failed",
+            "needs_human",
+            "timed_out",
+            "failed",
+        }
+        existing_by_scope: dict[tuple[str, ...], str] = {}
+        for task in self.store.list_developer_tasks(open_only=True, limit=1000):
+            if self._normalized_goal_signature(getattr(task, "goal", "")) != goal_key:
+                continue
+            if str(getattr(task, "status", "")).strip().lower() not in active_duplicate_statuses:
+                continue
+            if self._task_has_concrete_deliverable(task):
+                continue
+            scope = self._normalized_scope_signature(list(getattr(task, "allowed_paths", []) or []))
+            if not scope or scope in existing_by_scope:
+                continue
+            existing_by_scope[scope] = str(getattr(task, "task_key", "")).strip()
+
+        if not existing_by_scope:
+            return
+
+        now = datetime.now(UTC).isoformat()
+        for item in work_orders:
+            if str(item.get("status", "")).strip().lower() == "discarded":
+                continue
+            scope = self._normalized_scope_signature(
+                [str(path) for path in item.get("file_scope", []) if str(path).strip()]
+            )
+            canonical_task_key = existing_by_scope.get(scope)
+            if not scope or not canonical_task_key:
+                continue
+            metadata = dict(item.get("metadata") or {})
+            metadata.update(
+                {
+                    "archived_due_to": "duplicate_open_work_order",
+                    "archived_at": now,
+                    "archive_reason": "duplicate_open_work_order",
+                    "canonical_task_key": canonical_task_key,
+                    "previous_status": str(item.get("status") or "queued").strip() or "queued",
+                }
+            )
+            item["metadata"] = metadata
+            item["status"] = "discarded"
 
     def _collapse_redundant_work_orders(
         self,
