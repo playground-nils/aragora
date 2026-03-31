@@ -97,9 +97,11 @@ verify_profile() {
     echo "OK  ($email)"
     return 0
   else
+    local email
+    email="$(grep -o '"email": "[^"]*"' <<<"$status_output" | head -1 | sed 's/"email": "//;s/"//')"
     local err_line
     err_line="$(echo "$probe_output" | grep -i -m1 'expired\|401\|error\|failed' || echo "$probe_output" | tail -1)"
-    echo "EXPIRED  -- ${err_line:0:80}"
+    echo "EXPIRED  ($email)"
     return 1
   fi
 }
@@ -209,6 +211,13 @@ post_callback() {
   curl -g -fsS "http://[::1]:${port}/callback?code=${encoded_code}&state=${encoded_state}" >/dev/null
 }
 
+get_profile_email() {
+  local profile="$1"
+  local status_output
+  status_output="$("${PROFILE_TOOL}" status "$profile" 2>/dev/null)" || true
+  grep -o '"email": "[^"]*"' <<<"$status_output" | head -1 | sed 's/"email": "//;s/"//'
+}
+
 login_profile_manual_code() {
   local profile="$1"
   local profile_home_path
@@ -224,6 +233,17 @@ login_profile_manual_code() {
   profile_home_path="$(profile_home "$profile")"
   mkdir -p "${profile_home_path}/.claude" "${profile_home_path}/.config"
   auth_log="$(mktemp -t "claude-auth-${profile}.XXXXXX")"
+
+  # Show expected account so the user knows which Google account to pick
+  local expected_email
+  expected_email="$(get_profile_email "$profile")"
+  if [[ -n "$expected_email" ]]; then
+    echo "  Account: $expected_email"
+  fi
+
+  # Logout first so the login flow gets a clean OAuth redirect
+  # (otherwise claude auth login may silently reuse the expired session)
+  "${PROFILE_TOOL}" logout "$profile" >/dev/null 2>&1 || true
 
   cleanup_login() {
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
@@ -248,11 +268,16 @@ login_profile_manual_code() {
 
   state="$(extract_state_from_url "$auth_url")"
 
-  echo "Using profile home: ${profile_home_path}"
-  echo "If the browser didn't open, visit:"
-  echo "${auth_url}"
+  echo "  Profile home: ${profile_home_path}"
+  if [[ -n "$expected_email" ]]; then
+    echo
+    echo "  >>> Log in as: $expected_email <<<"
+  fi
   echo
-  echo "After Google OAuth completes, paste the returned code or code#state:"
+  echo "  If the browser didn't open, visit:"
+  echo "  ${auth_url}"
+  echo
+  echo "  After Google OAuth completes, paste the returned code or code#state:"
 
   while true; do
     if already_logged_in "$profile"; then
@@ -323,8 +348,9 @@ case "$MODE" in
       echo
       echo "=== ${profile} ==="
       if [[ "$FORCE_LOGIN" -ne 1 ]] && already_logged_in "$profile"; then
-        echo "Already logged in; skipping."
-        "${PROFILE_TOOL}" status "$profile" || true
+        local skip_email
+        skip_email="$(get_profile_email "$profile")"
+        echo "Already logged in and verified; skipping. ($skip_email)"
         continue
       fi
       login_profile_manual_code "$profile"
