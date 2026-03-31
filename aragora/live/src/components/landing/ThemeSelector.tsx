@@ -21,17 +21,17 @@ const MoonIcon = () => (
   </svg>
 );
 
-const DiamondIcon = () => (
+const SaturnIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8 1L14.5 8L8 15L1.5 8L8 1z" />
-    <path d="M1.5 8h13M5 1l-1.5 7L5 15M11 1l1.5 7L11 15" />
+    <circle cx="8" cy="8" r="3.5" />
+    <ellipse cx="8" cy="8" rx="7" ry="2.5" transform="rotate(-30 8 8)" />
   </svg>
 );
 
 const THEME_OPTIONS: ThemeOption[] = [
   { value: 'warm', label: 'Warm', icon: <SunIcon /> },
   { value: 'dark', label: 'Dark', icon: <MoonIcon /> },
-  { value: 'professional', label: 'Pro', icon: <DiamondIcon /> },
+  { value: 'professional', label: 'Pro', icon: <SaturnIcon /> },
 ];
 
 export function ThemeSelector() {
@@ -40,7 +40,7 @@ export function ThemeSelector() {
   if (!isInitialized) {
     return (
       <div
-        className="flex items-center gap-0.5 p-1"
+        className="flex items-center gap-1 p-1.5"
         style={{
           backgroundColor: 'var(--surface)',
           borderRadius: 'var(--radius-card)',
@@ -54,7 +54,7 @@ export function ThemeSelector() {
 
   return (
     <div
-      className="flex items-center gap-0.5 p-1"
+      className="flex items-center gap-1 p-1.5"
       role="radiogroup"
       aria-label="Theme selection"
       style={{
@@ -72,7 +72,7 @@ export function ThemeSelector() {
             aria-checked={isActive}
             aria-label={`${option.label} theme`}
             onClick={() => setTheme(option.value)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs transition-colors cursor-pointer"
             style={{
               fontFamily: 'var(--font-landing)',
               borderRadius: 'var(--radius-card)',

@@ -386,9 +386,10 @@ export function LiveDemoSection() {
           }}
         >
           <span
-            className="font-bold px-2 py-0.5 uppercase tracking-wider"
+            className="font-bold uppercase tracking-wider"
             style={{
               fontSize: '10px',
+              padding: '4px 10px',
               backgroundColor: status?.active ? 'var(--accent)' : 'var(--border)',
               color: status?.active ? 'var(--bg)' : 'var(--text)',
               borderRadius: 'var(--radius-button)',
@@ -437,9 +438,10 @@ export function LiveDemoSection() {
             style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}
           >
             <span
-              className="font-bold px-2 py-0.5 uppercase tracking-wider"
+              className="font-bold uppercase tracking-wider"
               style={{
                 fontSize: '10px',
+                padding: '4px 10px',
                 backgroundColor: hasLiveTranscript ? 'var(--accent)' : 'var(--border)',
                 color: hasLiveTranscript ? 'var(--bg)' : 'var(--text)',
                 borderRadius: 'var(--radius-button)',
