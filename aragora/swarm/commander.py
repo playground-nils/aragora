@@ -242,6 +242,8 @@ class SwarmCommander:
         use_managed_session_script: bool = True,
         default_target_runner: dict[str, Any] | None = None,
         worker_env: dict[str, str] | None = None,
+        allow_claude_dangerously_skip_permissions: bool = False,
+        allow_codex_full_auto: bool = False,
     ) -> SupervisorRun:
         """Dispatch a spec through the supervisor-backed Codex/Claude worker pool.
 
@@ -274,6 +276,8 @@ class SwarmCommander:
                     and str(default_target_runner.get("profile", "")).strip()
                     else None
                 ),
+                allow_claude_dangerously_skip_permissions=allow_claude_dangerously_skip_permissions,
+                allow_codex_full_auto=allow_codex_full_auto,
             )
         )
         supervisor = SwarmSupervisor(repo_root=repo_path or Path.cwd(), launcher=launcher)

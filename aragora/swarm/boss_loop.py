@@ -1040,6 +1040,10 @@ class BossLoopConfig:
     # work instead of processing issues in arbitrary GitHub order.
     use_value_ranking: bool = True
 
+    # Security: opt-in flags for dangerous worker CLI behavior (Crux 1).
+    allow_claude_dangerously_skip_permissions: bool = False
+    allow_codex_full_auto: bool = False
+
     # Reporting
     status_report_interval: int = 5  # every N iterations
     metrics_jsonl_path: str | None = ".aragora/overnight/boss_metrics.jsonl"
@@ -1094,6 +1098,8 @@ async def dispatch_bounded_spec(
     use_managed_session_script: bool = True,
     selected_runner: dict[str, Any] | None = None,
     worker_env: dict[str, str] | None = None,
+    allow_claude_dangerously_skip_permissions: bool = False,
+    allow_codex_full_auto: bool = False,
 ) -> dict[str, Any]:
     # Auto-detect Claude profile from environment if no runner specified
     if selected_runner is None:
@@ -1148,6 +1154,8 @@ async def dispatch_bounded_spec(
             use_managed_session_script=use_managed_session_script,
             default_target_runner=selected_runner,
             worker_env=worker_env,
+            allow_claude_dangerously_skip_permissions=allow_claude_dangerously_skip_permissions,
+            allow_codex_full_auto=allow_codex_full_auto,
         )
         run_dict = run.to_dict()
         run_status = str(run_dict.get("status", "")).strip().lower()
@@ -2854,6 +2862,8 @@ class BossLoop:
                 use_managed_session_script=False,
                 selected_runner=selected_runner,
                 worker_env=refinement_worker_env or None,
+                allow_claude_dangerously_skip_permissions=self.config.allow_claude_dangerously_skip_permissions,
+                allow_codex_full_auto=self.config.allow_codex_full_auto,
             )
         finally:
             if claimed_runner_id:
