@@ -19,6 +19,7 @@ from aragora.nomic.dev_coordination import (
     LeaseStatus,
     SalvageStatus,
     _targeted_replay_expected_tests_for_work_order,
+    _verification_timeout_for_command,
     _verification_result_looks_environment_blocked,
 )
 from aragora.nomic.global_work_queue import GlobalWorkQueue, WorkStatus
@@ -3080,6 +3081,23 @@ def test_targeted_replay_expected_tests_for_work_order_uses_existing_narrow_hist
         "python -m pytest tests/test_modes_deep_audit.py -q",
         "python -m pytest tests/test_debate_memory_manager.py -q",
     ]
+
+
+def test_verification_timeout_for_command_extends_single_file_pytest() -> None:
+    assert (
+        _verification_timeout_for_command(
+            "python -m pytest tests/handlers/test_playground.py -q",
+            180.0,
+        )
+        == 300.0
+    )
+    assert (
+        _verification_timeout_for_command(
+            "python -m pytest tests/ -q -k 'not benchmark and not load' --timeout=60 -x",
+            180.0,
+        )
+        == 180.0
+    )
 
 
 def test_replay_targeted_merge_gate_failures_honors_task_keys(

@@ -1626,6 +1626,7 @@ class DevCoordinationStore:
             if not command:
                 continue
             execution_command = WorkerLauncher._prepare_verification_command(command)
+            command_timeout = _verification_timeout_for_command(command, timeout)
             started = time.monotonic()
             try:
                 proc = subprocess.run(
@@ -1633,7 +1634,7 @@ class DevCoordinationStore:
                     cwd=worktree_path,
                     capture_output=True,
                     text=True,
-                    timeout=timeout,
+                    timeout=command_timeout,
                     check=False,
                     env=verification_env,
                 )
@@ -1643,7 +1644,7 @@ class DevCoordinationStore:
             except subprocess.TimeoutExpired as exc:
                 exit_code = -1
                 stdout = exc.stdout or ""
-                stderr = exc.stderr or f"Timed out after {int(timeout)}s"
+                stderr = exc.stderr or f"Timed out after {int(command_timeout)}s"
             except OSError as exc:
                 exit_code = -2
                 stdout = ""
@@ -4420,6 +4421,16 @@ def _verification_command_covers_expected(recorded_command: Any, expected_comman
         ):
             return False
     return True
+
+
+def _verification_timeout_for_command(command: Any, default_timeout: float) -> float:
+    canonical = _canonical_verification_command(command)
+    if not canonical:
+        return default_timeout
+    targets = _pytest_command_targets(canonical)
+    if len(targets) == 1 and targets[0].endswith(".py"):
+        return max(default_timeout, 300.0)
+    return default_timeout
 
 
 def _developer_task_blockers(work_order: dict[str, Any]) -> list[str]:
