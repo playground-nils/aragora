@@ -1314,7 +1314,7 @@ class DevCoordinationStore:
         *,
         grace_period_hours: float = _SUPERSEDED_WAITING_CONFLICT_ARCHIVE_GRACE_HOURS,
     ) -> int:
-        """Archive stale waiting_conflict siblings already covered by a same-run deliverable."""
+        """Archive stale waiting_conflict siblings covered by deliverables or duplicate same-scope siblings."""
         now = _utcnow()
         grace_period = timedelta(hours=max(0.0, float(grace_period_hours)))
         cutoff = now - grace_period
@@ -1334,8 +1334,6 @@ class DevCoordinationStore:
                     for item in record["work_orders"]
                     if isinstance(item, dict) and _work_order_has_concrete_deliverable(item)
                 ]
-                if not deliverable_items:
-                    continue
                 changed = False
                 for item in record["work_orders"]:
                     if not isinstance(item, dict):
@@ -1381,6 +1379,58 @@ class DevCoordinationStore:
                         item["failure_reason"] = "superseded_waiting_conflict"
                     changed = True
                     archived += 1
+                if not changed:
+                    eligible_waiting = [
+                        item
+                        for item in record["work_orders"]
+                        if isinstance(item, dict)
+                        and _work_order_should_archive_superseded_waiting_conflict(
+                            item,
+                            run=record,
+                            cutoff=cutoff,
+                            lease_status=lease_status_by_id.get(
+                                _optional_text(item.get("lease_id"))
+                            ),
+                        )
+                    ]
+                    grouped_waiting: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+                    for item in eligible_waiting:
+                        scope_key = tuple(_work_order_scope_patterns(item))
+                        if not scope_key:
+                            continue
+                        grouped_waiting.setdefault(scope_key, []).append(item)
+                    for siblings in grouped_waiting.values():
+                        if len(siblings) < 2:
+                            continue
+                        keeper = min(
+                            siblings,
+                            key=lambda sibling: _duplicate_waiting_conflict_priority(
+                                sibling, run=record
+                            ),
+                        )
+                        keeper_id = _optional_text(
+                            keeper.get("work_order_id"),
+                            keeper.get("task_id"),
+                        )
+                        for item in siblings:
+                            if item is keeper:
+                                continue
+                            metadata = dict(item.get("metadata") or {})
+                            metadata.update(
+                                {
+                                    "archived_due_to": "superseded_waiting_conflict",
+                                    "archived_at": now.isoformat(),
+                                    "archive_reason": "duplicate_waiting_conflict_sibling",
+                                    "canonical_work_order_id": keeper_id or None,
+                                    "previous_status": "waiting_conflict",
+                                }
+                            )
+                            item["metadata"] = metadata
+                            item["status"] = "discarded"
+                            if not _optional_text(item.get("failure_reason")):
+                                item["failure_reason"] = "superseded_waiting_conflict"
+                            changed = True
+                            archived += 1
                 if not changed:
                     continue
                 record["status"] = self._derive_supervisor_run_status(record["work_orders"])
@@ -5154,6 +5204,18 @@ def _duplicate_branch_deliverable_priority(
         len(commit_shas),
         1 if _optional_text(work_order.get("head_sha")) else 0,
         _developer_task_updated_at(work_order, run),
+    )
+
+
+def _duplicate_waiting_conflict_priority(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+) -> tuple[int, str, str]:
+    return (
+        -len(_work_order_scope_patterns(work_order)),
+        _waiting_conflict_staleness_anchor(work_order, run),
+        _optional_text(work_order.get("work_order_id"), work_order.get("task_id")),
     )
 
 

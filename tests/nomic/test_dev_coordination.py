@@ -1653,6 +1653,81 @@ def test_archive_superseded_waiting_conflict_work_orders_preserves_non_overlappi
     assert refreshed["work_orders"][1]["status"] == "waiting_conflict"
 
 
+def test_archive_superseded_waiting_conflict_work_orders_discards_duplicate_same_scope_siblings(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Collapse duplicate waiting conflict siblings without deliverables",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Collapse duplicate waiting conflict siblings without deliverables",
+            "refined_goal": "Collapse duplicate waiting conflict siblings without deliverables",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Canonical waiting conflict",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            },
+            {
+                "work_order_id": "subtask_2",
+                "title": "Duplicate waiting conflict sibling",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            },
+            {
+                "work_order_id": "subtask_3",
+                "title": "Distinct waiting conflict sibling",
+                "status": "waiting_conflict",
+                "file_scope": ["aragora/server/handlers/playground.py"],
+            },
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", run["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_superseded_waiting_conflict_work_orders(grace_period_hours=24.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    work_orders = {item["work_order_id"]: item for item in refreshed["work_orders"]}
+    kept = [
+        item["work_order_id"]
+        for item in refreshed["work_orders"]
+        if item["status"] == "waiting_conflict"
+    ]
+    assert sorted(kept) == ["subtask_1", "subtask_3"]
+    assert work_orders["subtask_2"]["status"] == "discarded"
+    assert work_orders["subtask_2"]["metadata"]["archived_due_to"] == "superseded_waiting_conflict"
+    assert (
+        work_orders["subtask_2"]["metadata"]["archive_reason"]
+        == "duplicate_waiting_conflict_sibling"
+    )
+    assert work_orders["subtask_2"]["metadata"]["canonical_work_order_id"] == "subtask_1"
+    assert work_orders["subtask_2"]["failure_reason"] == "superseded_waiting_conflict"
+
+
 def test_backfill_missing_blocker_metadata_infers_missing_verification_plan(
     store: DevCoordinationStore,
 ) -> None:
