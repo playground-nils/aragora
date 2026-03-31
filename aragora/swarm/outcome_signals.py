@@ -340,7 +340,9 @@ class CalibrationSnapshot:
     recommendations: list[str]
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data["timestamp_iso"] = self.timestamp
+        return data
 
 
 def compute_calibration(
