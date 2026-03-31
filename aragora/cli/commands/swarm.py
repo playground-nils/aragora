@@ -651,6 +651,10 @@ def _render_tranche_queue_harvest_table(payload: dict[str, object]) -> None:
     print(title)
     if status:
         print(f"status={status}")
+    if bool(payload.get("dry_run", False)):
+        print("dry_run=true")
+        if bool(payload.get("requested_execute_merge", False)):
+            print("requested_execute_merge=true")
     print()
     print(f"{'metric':<{metric_width}}  {'count':>{count_width}}")
     print(f"{'-' * metric_width}  {'-' * count_width}")
@@ -1925,12 +1929,16 @@ def cmd_swarm(args: argparse.Namespace) -> None:
                     )
                 )
             elif subaction == "harvest-queue":
+                requested_execute_merge = bool(getattr(args, "execute_merge", False))
+                dry_run = bool(getattr(args, "dry_run", False))
                 payload = harvest_tranche_queue(
                     queue_path=queue_path,
                     repo_root=repo_root,
-                    execute_merge=bool(getattr(args, "execute_merge", False)),
+                    execute_merge=requested_execute_merge and not dry_run,
                     allow_admin=bool(getattr(args, "allow_admin", False)),
                 )
+                payload["dry_run"] = dry_run
+                payload["requested_execute_merge"] = requested_execute_merge
             else:
                 payload = reconcile_tranche_queue(
                     queue_path=queue_path,
