@@ -474,6 +474,15 @@ class MemoryManager:
         if self.event_emitter is None:
             return None
         emitter_type = type(self.event_emitter)
+        instance_attrs = getattr(self.event_emitter, "__dict__", {})
+
+        emit_sync = instance_attrs.get("emit_sync")
+        if callable(emit_sync):
+            return emit_sync
+
+        emit = instance_attrs.get("emit")
+        if callable(emit):
+            return emit
 
         class_emit_sync = getattr(emitter_type, "emit_sync", None)
         if callable(class_emit_sync):
