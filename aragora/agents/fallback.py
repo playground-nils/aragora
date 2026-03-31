@@ -542,6 +542,43 @@ class QuotaFallbackMixin:
             logger.debug("Could not create fallback agent for %s: %s", provider_key, e)
             return None
 
+    def _get_preconfigured_fallback_agent(self) -> OpenRouterAgent | None:
+        """Return an explicitly injected fallback agent without auto-creating one.
+
+        ``fallback_generate()`` should respect pre-seeded or test-injected
+        fallback agents, but it should not auto-create a real OpenRouter agent
+        ahead of an explicitly patched provider chain. Auto-creation remains
+        available through ``_get_cached_fallback_agent()`` for callers that
+        explicitly opt into it.
+        """
+        cached_fallback = getattr(self, "_fallback_agent", None)
+        if cached_fallback is not None:
+            return cast("OpenRouterAgent | None", cached_fallback)
+
+        instance_getter = getattr(self, "__dict__", {}).get("_get_cached_fallback_agent")
+        if callable(instance_getter):
+            return cast("OpenRouterAgent | None", instance_getter())
+
+        return None
+
+    def _build_fallback_providers(self) -> list[tuple[str, Any]]:
+        """Build the fallback provider chain without auto-creating OpenRouter."""
+        fallback_providers: list[tuple[str, Any]] = []
+        seen_provider_keys: set[str] = set()
+
+        cached_fallback = self._get_preconfigured_fallback_agent()
+        if cached_fallback is not None and self._derive_provider_name() != "openrouter":
+            fallback_providers.append(("openrouter", cached_fallback))
+            seen_provider_keys.add("openrouter")
+
+        for provider_key, agent in self._get_available_fallback_providers():
+            if provider_key in seen_provider_keys:
+                continue
+            fallback_providers.append((provider_key, agent))
+            seen_provider_keys.add(provider_key)
+
+        return fallback_providers
+
     async def fallback_generate(
         self,
         prompt: str,
@@ -574,8 +611,7 @@ class QuotaFallbackMixin:
         status_info = f" (status {status_code})" if status_code else ""
         error_type = "rate_limit" if status_code == 429 else "quota"
 
-        # Build the list of fallback providers with valid API keys
-        fallback_providers = self._get_available_fallback_providers()
+        fallback_providers = self._build_fallback_providers()
         if not fallback_providers:
             logger.debug(
                 "%s quota exceeded but no fallback provider API keys set - cannot fallback",
@@ -673,7 +709,7 @@ class QuotaFallbackMixin:
         name = getattr(self, "name", "unknown")
         error_type = "rate_limit" if status_code == 429 else "quota"
 
-        fallback_providers = self._get_available_fallback_providers()
+        fallback_providers = self._build_fallback_providers()
         if not fallback_providers:
             logger.debug(
                 "%s quota exceeded but no fallback provider API keys set - cannot fallback",
