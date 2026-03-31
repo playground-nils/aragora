@@ -28,6 +28,7 @@ class EssaySynthesizer:
         *,
         target_words: int = 1200,
         voice_notes: str = "",
+        model_names: list[str] | None = None,
     ) -> str:
         """Synthesise *drafts* into one best-in-class essay.
 
@@ -43,18 +44,23 @@ class EssaySynthesizer:
             Desired word count for the synthesised output.
         voice_notes:
             Optional stylistic guidance forwarded to the prompt.
+        model_names:
+            Optional list of model names parallel to *drafts*.  When provided,
+            model attribution is included in the synthesis prompt.
 
         Returns
         -------
         str
             The synthesised essay text returned by the agent.
         """
-        # Pair each draft with its overall score then sort best-first
-        paired = list(zip(drafts, scores))
+        names = model_names or [""] * len(drafts)
+
+        # Pair each draft with its overall score and model name then sort best-first
+        paired = list(zip(drafts, scores, names))
         paired.sort(key=lambda item: item[1].overall, reverse=True)
 
-        ranked_with_scores: list[tuple[str, float]] = [
-            (draft, score.overall) for draft, score in paired
+        ranked_with_scores: list[tuple[str, float, str]] = [
+            (draft, score.overall, name) for draft, score, name in paired
         ]
 
         prompt = build_synthesis_prompt(

@@ -55,6 +55,9 @@ class EssayScore:
     # Weighted composite
     overall: float = 0.0
 
+    # Evaluator attribution
+    evaluator_model: str = ""
+
     # Qualitative feedback
     severity_notes: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
@@ -101,6 +104,7 @@ def parse_score_response(text: str) -> EssayScore:
     kwargs["weakest_paragraph"] = str(data.get("weakest_paragraph", ""))
     kwargs["strongest_paragraph"] = str(data.get("strongest_paragraph", ""))
     kwargs["factual_claims_to_verify"] = list(data.get("factual_claims_to_verify", []))
+    kwargs["evaluator_model"] = str(data.get("evaluator_model", ""))
 
     return EssayScore(**kwargs)
 
@@ -132,6 +136,7 @@ async def evaluate_essay(
     *,
     rubric: dict[str, Any] | None = None,
     context: str | None = None,
+    model_name: str = "",
 ) -> EssayScore:
     """Evaluate *essay_text* using *judge_agent* and return an ``EssayScore``.
 
@@ -146,11 +151,14 @@ async def evaluate_essay(
         default rubric.
     context:
         Optional additional context to include in the prompt.
+    model_name:
+        Optional model identifier to record on the returned score for
+        evaluator attribution.
     """
     if rubric is None:
         rubric = load_rubric()
 
-    prompt = build_evaluation_prompt(essay_text, rubric, context)
+    prompt = build_evaluation_prompt(essay_text, rubric, context, model_name=model_name)
 
     try:
         response = await judge_agent.generate(prompt)
@@ -160,4 +168,5 @@ async def evaluate_essay(
 
     score = parse_score_response(response)
     score.compute_overall(rubric.get("weights", _DEFAULT_WEIGHTS))
+    score.evaluator_model = model_name
     return score

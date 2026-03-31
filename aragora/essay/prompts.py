@@ -86,6 +86,8 @@ def build_evaluation_prompt(
     essay_text: str,
     rubric: dict[str, Any],
     context: str | None = None,
+    *,
+    model_name: str = "",
 ) -> str:
     """Return a prompt that scores an essay against the rubric dimensions.
 
@@ -100,6 +102,9 @@ def build_evaluation_prompt(
         Rubric dict (from ``load_rubric``).  Weights are shown to the model.
     context:
         Optional extra context (e.g. topic, audience).
+    model_name:
+        Optional model identifier.  When provided the model is asked to include
+        its identity in the response JSON.
     """
     weights = rubric.get("weights", {})
     dimension_lines = (
@@ -118,6 +123,12 @@ def build_evaluation_prompt(
 
     context_section = f"\nContext:\n{context}\n" if context else ""
 
+    model_instruction = ""
+    if model_name:
+        model_instruction = (
+            f'\nInclude your model identity in the response as "evaluator_model": "{model_name}".\n'
+        )
+
     return (
         "You are an expert essay evaluator. Score the following essay on these "
         "dimensions (0.0–1.0):\n\n"
@@ -129,6 +140,7 @@ def build_evaluation_prompt(
         "- strongest_paragraph: identify the strongest paragraph\n"
         "- factual_claims_to_verify: list of claims needing fact-checking\n\n"
         "Return ONLY a JSON object with these fields. No prose outside the JSON.\n"
+        f"{model_instruction}"
         f"{context_section}\n"
         f"Essay:\n{essay_text}"
     )
@@ -140,7 +152,7 @@ def build_evaluation_prompt(
 
 
 def build_synthesis_prompt(
-    ranked_drafts: list[tuple[str, float]],
+    ranked_drafts: list[tuple[str, float]] | list[tuple[str, float, str]],
     critiques: list[str],
     *,
     target_word_count: int = 1200,
@@ -151,7 +163,8 @@ def build_synthesis_prompt(
     Parameters
     ----------
     ranked_drafts:
-        List of ``(draft_text, score)`` tuples, ordered best-first.
+        List of ``(draft_text, score)`` or ``(draft_text, score, model_name)``
+        tuples, ordered best-first.
     critiques:
         Critique strings corresponding to each draft.
     target_word_count:
@@ -160,8 +173,12 @@ def build_synthesis_prompt(
         Optional stylistic guidance.
     """
     draft_sections = []
-    for i, (draft_text, score) in enumerate(ranked_drafts, start=1):
-        draft_sections.append(f"--- Draft {i} (score: {score:.2f}) ---\n{draft_text}")
+    for i, entry in enumerate(ranked_drafts, start=1):
+        draft_text = entry[0]
+        score = entry[1]
+        model_name = entry[2] if len(entry) > 2 else ""
+        model_part = f", model: {model_name}" if model_name else ""
+        draft_sections.append(f"--- Draft {i} (score: {score:.2f}{model_part}) ---\n{draft_text}")
     drafts_block = "\n\n".join(draft_sections)
 
     critiques_block = ""

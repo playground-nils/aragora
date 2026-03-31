@@ -87,28 +87,73 @@ class EssayRefinementPipeline:
             return extraction
 
         # Phase 2 -- parallel drafting
-        drafts = await self._parallel_draft(thesis, outline)
+        draft_dicts = await self._parallel_draft(thesis, outline)
+        draft_model_names = [d["model"] for d in draft_dicts]
 
         # Phase 3+4 -- evaluate / synthesize loop
         critique_history: list[str] = []
+        all_scores: list[dict[str, Any]] = []
+        all_critiques: list[dict[str, str]] = []
+        round_details: list[dict[str, Any]] = []
         current_draft = ""
         rounds_used = 1
 
         for round_idx in range(1, rounds + 1):
             if round_idx == 1:
                 # First iteration: evaluate all drafts, synthesize best
-                scores, critiques = await self._evaluate_drafts(drafts, rubric)
-                critique_history.extend(critiques)
-                current_draft = await self._synthesize(drafts, scores, critiques)
+                scores, critiques, raw = await self._evaluate_drafts(draft_dicts, rubric)
+                critique_history.extend(c["text"] if isinstance(c, dict) else c for c in critiques)
+                all_scores.extend(raw)
+                all_critiques.extend(
+                    c if isinstance(c, dict) else {"evaluator": "", "text": c} for c in critiques
+                )
+
+                # Store per-draft scores
+                for i, dd in enumerate(draft_dicts):
+                    dd["scores"] = [scores[i]] if i < len(scores) else []
+
+                round_detail: dict[str, Any] = {
+                    "round": round_idx,
+                    "scores": [s.to_dict() for s in scores],
+                    "critiques": list(critiques),
+                    "draft_before": "",
+                }
+                current_draft = await self._synthesize(
+                    draft_dicts,
+                    scores,
+                    critiques,
+                    model_names=draft_model_names,
+                )
+                round_detail["draft_after"] = current_draft[:200] + "..."
+                round_details.append(round_detail)
             else:
                 # Subsequent: evaluate current draft, check threshold
-                scores, critiques = await self._evaluate_drafts([current_draft], rubric)
-                critique_history.extend(critiques)
+                scores, critiques, raw = await self._evaluate_drafts([current_draft], rubric)
+                critique_history.extend(c["text"] if isinstance(c, dict) else c for c in critiques)
+                all_scores.extend(raw)
+                all_critiques.extend(
+                    c if isinstance(c, dict) else {"evaluator": "", "text": c} for c in critiques
+                )
+
+                round_detail = {
+                    "round": round_idx,
+                    "scores": [s.to_dict() for s in scores],
+                    "critiques": list(critiques),
+                    "draft_before": current_draft[:200] + "...",
+                }
 
                 if scores and scores[0].overall >= self.quality_threshold:
+                    round_detail["draft_after"] = current_draft[:200] + "..."
+                    round_details.append(round_detail)
                     break
 
-                current_draft = await self._synthesize([current_draft], scores, critiques)
+                current_draft = await self._synthesize(
+                    [current_draft],
+                    scores,
+                    critiques,
+                )
+                round_detail["draft_after"] = current_draft[:200] + "..."
+                round_details.append(round_detail)
 
             rounds_used = round_idx
 
@@ -125,6 +170,11 @@ class EssayRefinementPipeline:
             "outline": outline,
             "rounds_used": rounds_used,
             "critique_history": critique_history,
+            # New fields
+            "drafts": draft_dicts,
+            "all_scores": all_scores,
+            "all_critiques": all_critiques,
+            "round_details": round_details,
         }
 
     # ── Private helpers ───────────────────────────────────────────────────
@@ -154,10 +204,13 @@ class EssayRefinementPipeline:
             "raw_extraction": response,
         }
 
-    async def _parallel_draft(self, thesis: str, outline: str) -> list[str]:
-        """Create one draft per model in parallel."""
+    async def _parallel_draft(self, thesis: str, outline: str) -> list[dict[str, Any]]:
+        """Create one draft per model in parallel.
 
-        async def _draft_one(model_type: str, idx: int) -> str:
+        Returns a list of dicts with keys ``text``, ``model``, and ``model_index``.
+        """
+
+        async def _draft_one(model_type: str, idx: int) -> dict[str, Any]:
             agent = create_agent(model_type, name=f"drafter-{idx}", role="proposer")
             prompt = build_drafting_prompt(
                 thesis,
@@ -165,55 +218,130 @@ class EssayRefinementPipeline:
                 target_words=self.target_words,
                 voice_notes=self.voice_notes,
             )
-            return await agent.generate(prompt)
+            text = await agent.generate(prompt)
+            return {"text": text, "model": model_type, "model_index": idx}
 
         tasks = [_draft_one(m, i) for i, m in enumerate(self.models)]
         return list(await asyncio.gather(*tasks))
 
     async def _evaluate_drafts(
         self,
-        drafts: list[str],
+        drafts: list[str] | list[dict[str, Any]],
         rubric: dict[str, Any],
-    ) -> tuple[list[EssayScore], list[str]]:
-        """Evaluate each draft and return (scores, critiques)."""
-        # Use a different model from the drafters for evaluation
-        judge_model = self.models[-1] if len(self.models) > 1 else self.models[0]
-        judge = create_agent(judge_model, name="judge", role="critic")
+    ) -> tuple[list[EssayScore], list[dict[str, str]], list[dict[str, Any]]]:
+        """Evaluate each draft with multiple models and return aggregated results.
 
-        scores: list[EssayScore] = []
-        critiques: list[str] = []
+        Each model in ``self.models[:3]`` evaluates every draft.  Scores are
+        averaged per draft across evaluators.
 
-        for draft in drafts:
-            score = await evaluate_essay(draft, judge, rubric=rubric)
-            scores.append(score)
-            # Build critique string from score feedback
-            parts: list[str] = []
-            if score.severity_notes:
-                parts.append("Issues: " + "; ".join(score.severity_notes))
-            if score.suggestions:
-                parts.append("Suggestions: " + "; ".join(score.suggestions))
-            if score.weakest_paragraph:
-                parts.append(f"Weakest paragraph: {score.weakest_paragraph}")
-            critiques.append(" | ".join(parts) if parts else "No specific critique.")
+        Returns
+        -------
+        tuple
+            ``(aggregated_scores, all_critiques, raw_scores)`` where
+            *aggregated_scores* is one ``EssayScore`` per draft (averaged
+            across evaluators), *all_critiques* is a list of dicts with
+            ``evaluator`` and ``text``, and *raw_scores* is every individual
+            score entry with ``draft_index``, ``evaluator``, and ``score``.
+        """
+        evaluator_models = self.models[:3]
 
-        return scores, critiques
+        raw_scores: list[dict[str, Any]] = []
+        all_critiques: list[dict[str, str]] = []
+
+        for model in evaluator_models:
+            judge = create_agent(model, name=f"judge-{model}", role="critic")
+            for i, draft in enumerate(drafts):
+                draft_text = draft["text"] if isinstance(draft, dict) else draft
+                score = await evaluate_essay(
+                    draft_text,
+                    judge,
+                    rubric=rubric,
+                    model_name=model,
+                )
+                raw_scores.append(
+                    {
+                        "draft_index": i,
+                        "evaluator": model,
+                        "score": score,
+                    }
+                )
+                all_critiques.extend(
+                    {"evaluator": model, "text": note} for note in score.severity_notes
+                )
+                all_critiques.extend({"evaluator": model, "text": sug} for sug in score.suggestions)
+
+        # Aggregate: average score per draft across evaluators
+        from collections import defaultdict
+
+        per_draft: dict[int, list[EssayScore]] = defaultdict(list)
+        for entry in raw_scores:
+            per_draft[entry["draft_index"]].append(entry["score"])
+
+        aggregated: list[EssayScore] = []
+        dim_fields = [
+            "thesis_clarity",
+            "argument_coherence",
+            "evidence_grounding",
+            "rhetorical_force",
+            "concision",
+            "factual_accuracy",
+            "originality",
+        ]
+        for draft_idx in range(len(drafts)):
+            scores_for_draft = per_draft.get(draft_idx, [])
+            if not scores_for_draft:
+                aggregated.append(EssayScore())
+                continue
+            n = len(scores_for_draft)
+            kwargs: dict[str, Any] = {}
+            for dim in dim_fields:
+                kwargs[dim] = sum(getattr(s, dim) for s in scores_for_draft) / n
+            # Merge qualitative feedback from all evaluators
+            kwargs["severity_notes"] = []
+            kwargs["suggestions"] = []
+            for s in scores_for_draft:
+                kwargs["severity_notes"].extend(s.severity_notes)
+                kwargs["suggestions"].extend(s.suggestions)
+            kwargs["weakest_paragraph"] = scores_for_draft[0].weakest_paragraph
+            kwargs["strongest_paragraph"] = scores_for_draft[0].strongest_paragraph
+            kwargs["factual_claims_to_verify"] = []
+            for s in scores_for_draft:
+                kwargs["factual_claims_to_verify"].extend(s.factual_claims_to_verify)
+            agg = EssayScore(**kwargs)
+            aggregated.append(agg)
+
+        return aggregated, all_critiques, raw_scores
 
     async def _synthesize(
         self,
-        drafts: list[str],
+        drafts: list[str] | list[dict[str, Any]],
         scores: list[EssayScore],
-        critiques: list[str],
+        critiques: list[str] | list[dict[str, str]],
+        *,
+        model_names: list[str] | None = None,
     ) -> str:
         """Merge drafts into a single improved essay via EssaySynthesizer."""
         synth_model = self.models[0]
         agent = create_agent(synth_model, name="synthesizer", role="synthesizer")
         synthesizer = EssaySynthesizer(agent)
+
+        # Normalise draft dicts to plain strings
+        draft_texts = [d["text"] if isinstance(d, dict) else d for d in drafts]
+
+        # Normalise attributed critiques to plain strings
+        critique_texts = [c["text"] if isinstance(c, dict) else c for c in critiques]
+
+        # Derive model names from draft dicts when not explicitly provided
+        if model_names is None:
+            model_names = [d.get("model", "") if isinstance(d, dict) else "" for d in drafts]
+
         return await synthesizer.synthesize(
-            drafts,
+            draft_texts,
             scores,
-            critiques,
+            critique_texts,
             target_words=self.target_words,
             voice_notes=self.voice_notes,
+            model_names=model_names,
         )
 
     async def _polish(self, draft: str) -> str:
