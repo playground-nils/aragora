@@ -2311,6 +2311,12 @@ def _add_swarm_parser(subparsers) -> None:
         help="Show the spec without executing (interrogation only)",
     )
     swarm_parser.add_argument(
+        "--ping-pong",
+        action="store_true",
+        dest="ping_pong",
+        help="On needs_human retry, dispatch to alternate agent with handoff context",
+    )
+    swarm_parser.add_argument(
         "--save-spec",
         help="Save the produced spec to a YAML file",
     )

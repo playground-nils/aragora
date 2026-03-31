@@ -1535,6 +1535,7 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             runner_rotation_interval_seconds=runner_rotation_interval,
             max_parallel_dispatches=int(getattr(args, "boss_max_parallel_dispatches", 1) or 1),
             auto_continue_on_needs_human=auto_continue,
+            enable_ping_pong_retry=bool(getattr(args, "ping_pong", False)),
         )
         loop = BossLoop(config=boss_loop_config)
 
