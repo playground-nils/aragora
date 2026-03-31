@@ -203,6 +203,73 @@ class TestTaskDecomposer:
             result.subtasks[0].success_criteria["tests"].endswith("tests/cli/test_quickstart.py -q")
         )
 
+    @pytest.mark.asyncio
+    async def test_analyze_with_model_drops_helper_only_overlapping_lane(self):
+        decomposer = TaskDecomposer()
+        task = "Add --format markdown flag to aragora receipt show CLI"
+        hints = [
+            "aragora/cli/commands/receipt.py",
+            "tests/cli/test_receipt_command.py",
+        ]
+        mock_agent = SimpleNamespace(
+            generate=AsyncMock(
+                return_value=(
+                    '{"rationale":"planner output","subtasks":['
+                    '{"id":"subtask_1","title":"Read existing receipt.py code and understand current CLI structure",'
+                    '"description":"review receipt.py","estimated_complexity":"low",'
+                    '"file_scope":["aragora/cli/commands/receipt.py","tests/cli/test_receipt_command.py"]},'
+                    '{"id":"subtask_2","title":"Add --format markdown flag to receipt show command",'
+                    '"description":"update command","estimated_complexity":"medium",'
+                    '"file_scope":["aragora/cli/commands/receipt.py"]},'
+                    '{"id":"subtask_3","title":"Write tests for --format markdown functionality",'
+                    '"description":"add tests","estimated_complexity":"medium",'
+                    '"file_scope":["tests/cli/test_receipt_command.py"]}'
+                    "]}"
+                )
+            )
+        )
+
+        with patch("aragora.agents.base.create_agent", return_value=mock_agent):
+            result = await decomposer.analyze_with_model(
+                task,
+                planner_model="codex",
+                file_scope_hints=hints,
+            )
+
+        assert len(result.subtasks) == 2
+        assert [subtask.title for subtask in result.subtasks] == [
+            "Add --format markdown flag to receipt show command",
+            "Write tests for --format markdown functionality",
+        ]
+
+    def test_finalize_generated_subtasks_preserves_helper_lane_without_overlap(self):
+        decomposer = TaskDecomposer()
+        subtasks = [
+            SubTask(
+                id="subtask_1",
+                title="Read existing receipt.py code and understand current CLI structure",
+                description="review receipt.py",
+                file_scope=["aragora/cli/commands/receipt.py"],
+            ),
+            SubTask(
+                id="subtask_2",
+                title="Document receipt markdown output",
+                description="update docs",
+                file_scope=["docs/cli.md"],
+            ),
+        ]
+
+        finalized = decomposer._finalize_generated_subtasks(
+            "Add --format markdown flag to aragora receipt show CLI",
+            subtasks,
+        )
+
+        assert len(finalized) == 2
+        assert (
+            finalized[0].title
+            == "Read existing receipt.py code and understand current CLI structure"
+        )
+
     @patch.object(TaskDecomposer, "_llm_extract_subtasks", return_value=[])
     def test_file_scoped_vague_task_fails_closed_to_single_mirrored_subtask(
         self, _mock_llm_extract: object

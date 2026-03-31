@@ -939,6 +939,7 @@ class TaskDecomposer:
         finalized = list(subtasks)
         if file_scope_hints:
             finalized = self._constrain_scopes_to_hints(finalized, file_scope_hints)
+        finalized = self._drop_helper_only_subtasks(finalized)
         return self._collapse_same_scope_subtasks(
             task_description,
             finalized,
@@ -1044,6 +1045,55 @@ class TaskDecomposer:
                 source_subtasks=subtasks,
             )
         ]
+
+    _HELPER_ONLY_TITLE_PREFIXES = (
+        "read existing ",
+        "inspect ",
+        "understand ",
+        "run tests and validate",
+        "validate implementation",
+        "review existing ",
+        "analyze existing ",
+    )
+
+    @classmethod
+    def _looks_like_helper_only_subtask(cls, subtask: SubTask) -> bool:
+        title = " ".join(str(subtask.title or "").strip().lower().split())
+        return any(title.startswith(prefix) for prefix in cls._HELPER_ONLY_TITLE_PREFIXES)
+
+    @classmethod
+    def _subtask_scopes_overlap(cls, first: SubTask, second: SubTask) -> bool:
+        first_scope = set(cls._normalize_scope(first.file_scope))
+        second_scope = set(cls._normalize_scope(second.file_scope))
+        if not first_scope or not second_scope:
+            return False
+        return bool(first_scope & second_scope)
+
+    def _drop_helper_only_subtasks(self, subtasks: list[SubTask]) -> list[SubTask]:
+        if len(subtasks) < 2:
+            return subtasks
+        non_helper = [
+            subtask for subtask in subtasks if not self._looks_like_helper_only_subtask(subtask)
+        ]
+        if not non_helper:
+            return subtasks
+
+        filtered: list[SubTask] = []
+        dropped = 0
+        for subtask in subtasks:
+            if self._looks_like_helper_only_subtask(subtask) and any(
+                self._subtask_scopes_overlap(subtask, sibling) for sibling in non_helper
+            ):
+                dropped += 1
+                continue
+            filtered.append(subtask)
+        if filtered and dropped:
+            logger.info(
+                "drop_helper_only_subtasks dropped=%d kept=%d",
+                dropped,
+                len(filtered),
+            )
+        return filtered or subtasks
 
     _SPECIFIC_ACTION_VERBS = {
         "add",
