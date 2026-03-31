@@ -2033,6 +2033,128 @@ def test_archive_work_order_leasing_failed_work_orders_preserves_deliverable_bac
     assert refreshed["work_orders"][0]["status"] == "needs_human"
 
 
+def test_archive_duplicate_work_order_leasing_failed_work_orders_discards_older_duplicate_runs(
+    store: DevCoordinationStore,
+) -> None:
+    older = store.create_supervisor_run(
+        goal="Add --json output flag to aragora quickstart CLI",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Add --json output flag to aragora quickstart CLI",
+            "refined_goal": "Add --json output flag to aragora quickstart CLI",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Older duplicate leasing failure",
+                "status": "needs_human",
+                "failure_reason": "work_order_leasing_failed",
+                "dispatch_error": "autopilot ensure failed (1): branch already exists",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+    newer = store.create_supervisor_run(
+        goal="Add --json output flag to aragora quickstart CLI",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Add --json output flag to aragora quickstart CLI",
+            "refined_goal": "Add --json output flag to aragora quickstart CLI",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_9",
+                "title": "Newer duplicate leasing failure",
+                "status": "needs_human",
+                "failure_reason": "work_order_leasing_failed",
+                "dispatch_error": "autopilot ensure failed (1): branch already exists",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+    distinct = store.create_supervisor_run(
+        goal="Add JSONL metrics logging per boss loop iteration",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Add JSONL metrics logging per boss loop iteration",
+            "refined_goal": "Add JSONL metrics logging per boss loop iteration",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_2",
+                "title": "Distinct leasing failure",
+                "status": "needs_human",
+                "failure_reason": "work_order_leasing_failed",
+                "dispatch_error": "autopilot ensure failed (1): branch already exists",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", older["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-02T00:00:00+00:00", "2000-01-02T00:00:00+00:00", newer["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-03T00:00:00+00:00", "2000-01-03T00:00:00+00:00", distinct["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_duplicate_work_order_leasing_failed_work_orders()
+    older_refreshed = store.get_supervisor_run(older["run_id"])
+    newer_refreshed = store.get_supervisor_run(newer["run_id"])
+    distinct_refreshed = store.get_supervisor_run(distinct["run_id"])
+
+    assert archived == 1
+    assert older_refreshed is not None
+    assert newer_refreshed is not None
+    assert distinct_refreshed is not None
+    assert older_refreshed["work_orders"][0]["status"] == "discarded"
+    assert (
+        older_refreshed["work_orders"][0]["metadata"]["archive_reason"]
+        == "duplicate_work_order_leasing_failed"
+    )
+    assert older_refreshed["work_orders"][0]["metadata"]["canonical_run_id"] == newer["run_id"]
+    assert newer_refreshed["work_orders"][0]["status"] == "needs_human"
+    assert distinct_refreshed["work_orders"][0]["status"] == "needs_human"
+
+
 def test_backfill_missing_blocker_metadata_infers_missing_verification_plan(
     store: DevCoordinationStore,
 ) -> None:

@@ -1323,6 +1323,91 @@ class DevCoordinationStore:
             conn.close()
         return archived
 
+    def archive_duplicate_work_order_leasing_failed_work_orders(self) -> int:
+        """Collapse duplicate no-artifact leasing failures across runs."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            lease_status_by_id = {
+                str(row["lease_id"]).strip(): str(row["status"]).strip()
+                for row in conn.execute("SELECT lease_id, status FROM leases").fetchall()
+                if str(row["lease_id"]).strip()
+            }
+            records = [self._supervisor_run_from_row(row) for row in rows]
+            grouped: dict[
+                tuple[str, tuple[str, ...]], list[tuple[dict[str, Any], dict[str, Any]]]
+            ] = {}
+            for record in records:
+                goal_key = _canonical_goal_key(record.get("goal"))
+                if not goal_key:
+                    continue
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    lease_status = lease_status_by_id.get(_optional_text(item.get("lease_id")))
+                    if not _work_order_is_duplicate_work_order_leasing_failed_candidate(
+                        item,
+                        run=record,
+                        lease_status=lease_status,
+                    ):
+                        continue
+                    scope_key = _canonical_work_order_scope_key(item)
+                    if not scope_key:
+                        continue
+                    grouped.setdefault((goal_key, scope_key), []).append((record, item))
+
+            archived = 0
+            changed_run_ids: set[str] = set()
+            for _, siblings in grouped.items():
+                if len(siblings) < 2:
+                    continue
+                keeper_record, keeper_item = max(
+                    siblings,
+                    key=lambda pair: _duplicate_work_order_leasing_failed_priority(
+                        pair[1], run=pair[0]
+                    ),
+                )
+                keeper_run_id = _optional_text(keeper_record.get("run_id"))
+                keeper_id = _optional_text(
+                    keeper_item.get("work_order_id"),
+                    keeper_item.get("task_id"),
+                )
+                for record, item in siblings:
+                    if record is keeper_record and item is keeper_item:
+                        continue
+                    metadata = dict(item.get("metadata") or {})
+                    if _optional_text(metadata.get("archived_due_to")):
+                        continue
+                    metadata.update(
+                        {
+                            "archived_due_to": "duplicate_work_order_leasing_failed",
+                            "archived_at": now,
+                            "archive_reason": "duplicate_work_order_leasing_failed",
+                            "canonical_run_id": keeper_run_id or None,
+                            "canonical_work_order_id": keeper_id or None,
+                            "previous_status": _optional_text(item.get("status")) or "needs_human",
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    if not _optional_text(item.get("failure_reason")):
+                        item["failure_reason"] = "work_order_leasing_failed"
+                    archived += 1
+                    changed_run_ids.add(_optional_text(record.get("run_id")))
+
+            for record in records:
+                run_id = _optional_text(record.get("run_id"))
+                if run_id not in changed_run_ids:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return archived
+
     def archive_duplicate_branch_deliverable_work_orders(
         self,
         *,
@@ -2552,6 +2637,7 @@ class DevCoordinationStore:
         self.archive_failed_no_deliverable_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_work_order_leasing_failed_work_orders()
+        self.archive_duplicate_work_order_leasing_failed_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
         self.archive_superseded_waiting_conflict_work_orders()
         return expired
@@ -2643,6 +2729,7 @@ class DevCoordinationStore:
         self.archive_failed_no_deliverable_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_work_order_leasing_failed_work_orders()
+        self.archive_duplicate_work_order_leasing_failed_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
         self.archive_superseded_waiting_conflict_work_orders()
         return stale
@@ -3638,6 +3725,7 @@ class DevCoordinationStore:
         self.archive_failed_no_deliverable_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_work_order_leasing_failed_work_orders()
+        self.archive_duplicate_work_order_leasing_failed_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
         self.archive_superseded_waiting_conflict_work_orders()
         work_queue = queue or GlobalWorkQueue(storage_dir=self.repo_root / ".work_queue")
@@ -5269,6 +5357,42 @@ def _work_order_should_archive_work_order_leasing_failed(
     return updated_at <= cutoff
 
 
+def _work_order_is_duplicate_work_order_leasing_failed_candidate(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+    lease_status: str | None,
+) -> bool:
+    if _optional_text(work_order.get("status")).lower() != "needs_human":
+        return False
+    if _optional_text(lease_status).lower() == LeaseStatus.ACTIVE.value:
+        return False
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and _optional_text(metadata.get("archived_due_to")):
+        return False
+    if _optional_text(work_order.get("failure_reason")).lower() != "work_order_leasing_failed":
+        return False
+    if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
+        work_order
+    ):
+        return False
+    return bool(_canonical_work_order_scope_key(work_order)) and bool(
+        _canonical_goal_key(run.get("goal"))
+    )
+
+
+def _duplicate_work_order_leasing_failed_priority(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+) -> tuple[str, str, str]:
+    return (
+        _developer_task_updated_at(work_order, run),
+        _optional_text(run.get("created_at")),
+        _optional_text(work_order.get("work_order_id"), work_order.get("task_id")),
+    )
+
+
 def _work_order_should_archive_duplicate_branch_deliverable(
     work_order: dict[str, Any],
     *,
@@ -5340,6 +5464,11 @@ def _collapse_scope_patterns(patterns: list[str]) -> list[str]:
             continue
         collapsed.append(pattern)
     return collapsed
+
+
+def _canonical_goal_key(value: Any) -> str:
+    text = " ".join(str(value or "").split()).strip().lower()
+    return text
 
 
 def _claim_contains(container: str, containee: str) -> bool:
