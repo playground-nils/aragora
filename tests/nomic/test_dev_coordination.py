@@ -2714,6 +2714,42 @@ def test_backfill_missing_blocker_metadata_infers_clean_exit_no_deliverable(
     assert work_order["blocker"]["reason"] == "clean_exit_no_deliverable"
 
 
+def test_backfill_missing_blocker_metadata_infers_waiting_conflict(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Backfill waiting conflict blocker metadata",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Backfill waiting conflict blocker metadata",
+            "refined_goal": "Backfill waiting conflict blocker metadata",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Historical waiting conflict lane",
+                "status": "waiting_conflict",
+                "file_scope": ["docs/strategy/**"],
+            }
+        ],
+    )
+
+    updated = store.backfill_missing_blocker_metadata()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["failure_reason"] == "waiting_conflict"
+    assert "overlapping lane" in work_order["blocking_question"]
+    assert work_order["blocker"]["reason"] == "waiting_conflict"
+
+
 def test_backfill_missing_blocker_metadata_preserves_blocked_deliverable_lane(
     store: DevCoordinationStore,
 ) -> None:

@@ -626,6 +626,12 @@ def test_refresh_run_keeps_conflict_for_live_managed_session(
     assert work_order["status"] == "waiting_conflict"
     assert not work_order["lease_id"]
     assert work_order["conflicts"][0]["lease_id"] == blocking.lease_id
+    assert work_order["failure_reason"] == "waiting_conflict"
+    assert "overlapping lane" in work_order["blocking_question"]
+    assert work_order["blocker"]["reason"] == "waiting_conflict"
+    assert any(
+        str(entry).startswith("scope already claimed:") for entry in work_order.get("blockers", [])
+    )
     active_lease_ids = {lease.lease_id for lease in store.list_active_leases()}
     assert blocking.lease_id in active_lease_ids
 

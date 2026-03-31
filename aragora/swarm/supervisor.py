@@ -427,8 +427,7 @@ class SwarmSupervisor:
                             continue
                         except LeaseConflictError as retry_exc:
                             exc = retry_exc
-                    item["status"] = "waiting_conflict"
-                    item["conflicts"] = list(exc.conflicts)
+                    self._mark_waiting_conflict(item, exc.conflicts)
                 except RuntimeError as exc:
                     if self._is_resource_constraint_error(exc):
                         item["status"] = "waiting_resource"
@@ -3208,6 +3207,9 @@ class SwarmSupervisor:
     @staticmethod
     def _default_blocking_question(reason_code: str) -> str:
         mapping = {
+            "waiting_conflict": (
+                "Which overlapping lane should finish, be discarded, or be split before this task can proceed?"
+            ),
             "clean_exit_no_deliverable": (
                 "What concrete branch, commit, or PR should this lane produce before rerunning?"
             ),
@@ -3307,6 +3309,48 @@ class SwarmSupervisor:
         if reason not in blockers:
             blockers.append(reason)
         item["blockers"] = blockers
+        item.pop("pid", None)
+
+    @classmethod
+    def _mark_waiting_conflict(
+        cls,
+        item: dict[str, Any],
+        conflicts: list[dict[str, Any]],
+    ) -> None:
+        item["status"] = "waiting_conflict"
+        item["conflicts"] = list(conflicts)
+        item["failure_reason"] = "waiting_conflict"
+        item["blocking_question"] = cls._default_blocking_question("waiting_conflict")
+        item["blocker"] = {
+            "reason": "waiting_conflict",
+            "question": item["blocking_question"],
+        }
+        blockers: list[str] = []
+        for conflict in conflicts:
+            if not isinstance(conflict, dict):
+                continue
+            scope = (
+                str(conflict.get("path", "")).strip()
+                or ", ".join(
+                    str(value).strip()
+                    for value in (conflict.get("claimed_paths") or [])
+                    if str(value).strip()
+                )
+                or ", ".join(
+                    str(value).strip()
+                    for value in (conflict.get("allowed_globs") or [])
+                    if str(value).strip()
+                )
+            )
+            if not scope:
+                continue
+            summary = f"scope already claimed: {scope}"
+            if summary not in blockers:
+                blockers.append(summary)
+        if not blockers:
+            blockers.append("waiting_conflict")
+        item["blockers"] = blockers
+        item.pop("dispatch_error", None)
         item.pop("pid", None)
 
     def _mark_scope_violation(

@@ -5080,6 +5080,9 @@ def _developer_task_blockers(work_order: dict[str, Any]) -> list[str]:
 
 def _default_blocking_question_for_reason(reason_code: str) -> str:
     mapping = {
+        "waiting_conflict": (
+            "Which overlapping lane should finish, be discarded, or be split before this task can proceed?"
+        ),
         "clean_exit_no_deliverable": (
             "What concrete branch, commit, or PR should this lane produce before rerunning?"
         ),
@@ -5126,6 +5129,10 @@ def _default_blocking_question_for_reason(reason_code: str) -> str:
 
 
 def _infer_missing_failure_reason_for_work_order(work_order: dict[str, Any]) -> str:
+    status = _optional_text(work_order.get("status")).lower()
+    if status == "waiting_conflict":
+        return "waiting_conflict"
+
     metadata = work_order.get("metadata")
     if isinstance(metadata, dict) and bool(metadata.get("mainline_verification_passed")):
         return "branch_snapshot_stale"
@@ -5191,6 +5198,7 @@ def _backfill_work_order_blocker_metadata(work_order: dict[str, Any]) -> bool:
         return False
     status = _optional_text(work_order.get("status")).lower()
     if status not in {
+        "waiting_conflict",
         "needs_human",
         "changes_requested",
         "dispatch_failed",
