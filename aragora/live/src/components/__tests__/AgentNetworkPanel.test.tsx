@@ -2,6 +2,9 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AgentNetworkPanel } from '../AgentNetworkPanel';
 
+// Enable React 18 act() support in tests
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
@@ -17,7 +20,10 @@ describe('AgentNetworkPanel', () => {
 
   it('loads selectable agents from leaderboard payloads', async () => {
     const user = userEvent.setup();
-    render(<AgentNetworkPanel />);
+    await act(async () => {
+      render(<AgentNetworkPanel />);
+      await Promise.resolve();
+    });
 
     await act(async () => {
       await user.click(screen.getByRole('button', { name: /expand agent network panel/i }));
