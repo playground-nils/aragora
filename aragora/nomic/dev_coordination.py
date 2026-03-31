@@ -1395,7 +1395,7 @@ class DevCoordinationStore:
                     ]
                     grouped_waiting: dict[tuple[str, ...], list[dict[str, Any]]] = {}
                     for item in eligible_waiting:
-                        scope_key = tuple(_work_order_scope_patterns(item))
+                        scope_key = _canonical_work_order_scope_key(item)
                         if not scope_key:
                             continue
                         grouped_waiting.setdefault(scope_key, []).append(item)
@@ -1431,6 +1431,53 @@ class DevCoordinationStore:
                                 item["failure_reason"] = "superseded_waiting_conflict"
                             changed = True
                             archived += 1
+                    remaining_waiting = [
+                        item
+                        for item in record["work_orders"]
+                        if isinstance(item, dict)
+                        and _optional_text(item.get("status")).lower() == "waiting_conflict"
+                        and not _optional_text(item.get("receipt_id"))
+                        and not _work_order_has_concrete_deliverable(item)
+                    ]
+                    for item in remaining_waiting:
+                        containing_siblings = [
+                            sibling
+                            for sibling in remaining_waiting
+                            if sibling is not item
+                            and _optional_text(sibling.get("status")).lower() == "waiting_conflict"
+                            and _work_order_scope_contains(sibling, item)
+                            and not _work_order_scope_contains(item, sibling)
+                        ]
+                        if not containing_siblings:
+                            continue
+                        keeper = max(
+                            containing_siblings,
+                            key=lambda sibling: _containing_waiting_conflict_priority(
+                                sibling, run=record
+                            ),
+                        )
+                        keeper_id = _optional_text(
+                            keeper.get("work_order_id"),
+                            keeper.get("task_id"),
+                        )
+                        metadata = dict(item.get("metadata") or {})
+                        if _optional_text(metadata.get("archived_due_to")):
+                            continue
+                        metadata.update(
+                            {
+                                "archived_due_to": "superseded_waiting_conflict",
+                                "archived_at": now.isoformat(),
+                                "archive_reason": "contained_waiting_conflict_sibling",
+                                "canonical_work_order_id": keeper_id or None,
+                                "previous_status": "waiting_conflict",
+                            }
+                        )
+                        item["metadata"] = metadata
+                        item["status"] = "discarded"
+                        if not _optional_text(item.get("failure_reason")):
+                            item["failure_reason"] = "superseded_waiting_conflict"
+                        changed = True
+                        archived += 1
                 if not changed:
                     continue
                 record["status"] = self._derive_supervisor_run_status(record["work_orders"])
@@ -5107,18 +5154,74 @@ def _work_order_should_archive_duplicate_branch_deliverable(
 
 def _work_order_scope_patterns(work_order: dict[str, Any]) -> list[str]:
     patterns = [
-        _normalize_claim(str(item))
+        _canonical_scope_pattern(str(item))
         for item in work_order.get("file_scope", []) or []
-        if _normalize_claim(str(item))
+        if _canonical_scope_pattern(str(item))
     ]
     if patterns:
-        return list(dict.fromkeys(patterns))
+        return _collapse_scope_patterns(patterns)
     changed_paths = [
-        _normalize_claim(str(item))
+        _canonical_scope_pattern(str(item))
         for item in work_order.get("changed_paths", []) or []
-        if _normalize_claim(str(item))
+        if _canonical_scope_pattern(str(item))
     ]
-    return list(dict.fromkeys(changed_paths))
+    return _collapse_scope_patterns(changed_paths)
+
+
+def _canonical_work_order_scope_key(work_order: dict[str, Any]) -> tuple[str, ...]:
+    patterns = _work_order_scope_patterns(work_order)
+    if not patterns:
+        return ()
+    return tuple(sorted(dict.fromkeys(patterns)))
+
+
+def _canonical_scope_pattern(value: str) -> str:
+    clean = _normalize_claim(value)
+    if not clean:
+        return ""
+    if clean.endswith("/**"):
+        clean = clean[:-3].rstrip("/")
+    return clean
+
+
+def _collapse_scope_patterns(patterns: list[str]) -> list[str]:
+    collapsed: list[str] = []
+    unique_patterns = list(
+        dict.fromkeys(_canonical_scope_pattern(item) for item in patterns if item)
+    )
+    for pattern in unique_patterns:
+        if not pattern:
+            continue
+        if any(
+            other != pattern and _path_matches_glob(pattern, other)
+            for other in unique_patterns
+            if other
+        ):
+            continue
+        collapsed.append(pattern)
+    return collapsed
+
+
+def _claim_contains(container: str, containee: str) -> bool:
+    clean_container = _normalize_claim(container)
+    clean_containee = _normalize_claim(containee)
+    if not clean_container or not clean_containee:
+        return False
+    return _path_matches_glob(clean_containee, clean_container)
+
+
+def _work_order_scope_contains(container: dict[str, Any], containee: dict[str, Any]) -> bool:
+    container_patterns = _work_order_scope_patterns(container)
+    containee_patterns = _work_order_scope_patterns(containee)
+    if not container_patterns or not containee_patterns:
+        return False
+    return all(
+        any(
+            _claim_contains(container_pattern, containee_pattern)
+            for container_pattern in container_patterns
+        )
+        for containee_pattern in containee_patterns
+    )
 
 
 def _work_orders_overlap_by_scope(
@@ -5215,6 +5318,19 @@ def _duplicate_waiting_conflict_priority(
     return (
         -len(_work_order_scope_patterns(work_order)),
         _waiting_conflict_staleness_anchor(work_order, run),
+        _optional_text(work_order.get("work_order_id"), work_order.get("task_id")),
+    )
+
+
+def _containing_waiting_conflict_priority(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+) -> tuple[int, int, str]:
+    patterns = _work_order_scope_patterns(work_order)
+    return (
+        len(patterns),
+        -sum(len(pattern) for pattern in patterns),
         _optional_text(work_order.get("work_order_id"), work_order.get("task_id")),
     )
 
