@@ -1811,7 +1811,23 @@ class DevCoordinationStore:
         prepare_commands: Any | None = None,
         limit: int | None = None,
         timeout: float = 900.0,
+        task_keys: list[str] | None = None,
     ) -> int:
+        requested_task_keys = {str(item).strip() for item in (task_keys or []) if str(item).strip()}
+
+        def _task_key_for(record: dict[str, Any], item: dict[str, Any], work_order_id: str) -> str:
+            metadata = item.get("metadata")
+            if isinstance(metadata, dict):
+                task_key = _optional_text(metadata.get("task_key"))
+                if task_key:
+                    return task_key
+            task_key = _optional_text(item.get("task_key"))
+            if task_key:
+                return task_key
+            if record.get("run_id") and work_order_id:
+                return f"{record['run_id']}:{work_order_id}"
+            return ""
+
         conn = self._connect()
         try:
             rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
@@ -1831,6 +1847,9 @@ class DevCoordinationStore:
                     work_order_id = _work_order_identifier(item)
                     if not work_order_id:
                         continue
+                    task_key = _task_key_for(record, item, work_order_id)
+                    if requested_task_keys and task_key not in requested_task_keys:
+                        continue
                     candidate_ids.append((record["run_id"], work_order_id))
                     attempted += 1
         finally:
@@ -1843,6 +1862,9 @@ class DevCoordinationStore:
                 continue
             item = _find_work_order(record, work_order_id)
             if item is None or not should_replay(item):
+                continue
+            task_key = _task_key_for(record, item, work_order_id)
+            if requested_task_keys and task_key not in requested_task_keys:
                 continue
 
             commands = [
@@ -1948,12 +1970,14 @@ class DevCoordinationStore:
         *,
         limit: int | None = None,
         timeout: float = 900.0,
+        task_keys: list[str] | None = None,
     ) -> int:
         return self._replay_merge_gate_failures(
             should_replay=_work_order_should_replay_missing_verification,
             metadata_flag="verification_replayed",
             limit=limit,
             timeout=timeout,
+            task_keys=task_keys,
         )
 
     def replay_environment_blocked_merge_gate_failures(
@@ -1961,12 +1985,14 @@ class DevCoordinationStore:
         *,
         limit: int | None = None,
         timeout: float = 900.0,
+        task_keys: list[str] | None = None,
     ) -> int:
         return self._replay_merge_gate_failures(
             should_replay=_work_order_should_replay_environment_blocked_verification,
             metadata_flag="verification_environment_replayed",
             limit=limit,
             timeout=timeout,
+            task_keys=task_keys,
         )
 
     def replay_targeted_merge_gate_failures(
@@ -1974,6 +2000,7 @@ class DevCoordinationStore:
         *,
         limit: int | None = None,
         timeout: float = 900.0,
+        task_keys: list[str] | None = None,
     ) -> int:
         def _prepare(item: dict[str, Any]) -> list[str] | None:
             targeted_commands = _targeted_replay_expected_tests_for_work_order(item)
@@ -2006,7 +2033,156 @@ class DevCoordinationStore:
             prepare_commands=_prepare,
             limit=limit,
             timeout=timeout,
+            task_keys=task_keys,
         )
+
+    def reclassify_branch_stale_merge_gate_failures(
+        self,
+        *,
+        limit: int | None = None,
+        timeout: float = 900.0,
+        task_keys: list[str] | None = None,
+    ) -> int:
+        requested_task_keys = {str(item).strip() for item in (task_keys or []) if str(item).strip()}
+
+        def _task_key_for(record: dict[str, Any], item: dict[str, Any], work_order_id: str) -> str:
+            metadata = item.get("metadata")
+            if isinstance(metadata, dict):
+                task_key = _optional_text(metadata.get("task_key"))
+                if task_key:
+                    return task_key
+            task_key = _optional_text(item.get("task_key"))
+            if task_key:
+                return task_key
+            if record.get("run_id") and work_order_id:
+                return f"{record['run_id']}:{work_order_id}"
+            return ""
+
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            candidate_ids: list[tuple[str, str]] = []
+            attempted = 0
+            for row in rows:
+                if isinstance(limit, int) and limit > 0 and attempted >= limit:
+                    break
+                record = self._supervisor_run_from_row(row)
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    if isinstance(limit, int) and limit > 0 and attempted >= limit:
+                        break
+                    if not _work_order_should_reclassify_branch_stale_merge_gate_failure(item):
+                        continue
+                    work_order_id = _work_order_identifier(item)
+                    if not work_order_id:
+                        continue
+                    task_key = _task_key_for(record, item, work_order_id)
+                    if requested_task_keys and task_key not in requested_task_keys:
+                        continue
+                    candidate_ids.append((record["run_id"], work_order_id))
+                    attempted += 1
+        finally:
+            conn.close()
+
+        reclassified = 0
+        for run_id, work_order_id in candidate_ids:
+            record = self.get_supervisor_run(run_id)
+            if not record:
+                continue
+            item = _find_work_order(record, work_order_id)
+            if item is None or not _work_order_should_reclassify_branch_stale_merge_gate_failure(
+                item
+            ):
+                continue
+            task_key = _task_key_for(record, item, work_order_id)
+            if requested_task_keys and task_key not in requested_task_keys:
+                continue
+            commands = _mainline_verification_commands_for_work_order(item)
+            if not commands:
+                continue
+
+            target_ref = _optional_text(record.get("target_branch")) or "main"
+            worktree_path, cleanup_path = self._resolve_verification_worktree(
+                {"branch": target_ref}
+            )
+            if not worktree_path and target_ref != "main":
+                target_ref = "main"
+                worktree_path, cleanup_path = self._resolve_verification_worktree(
+                    {"branch": target_ref}
+                )
+            if not worktree_path:
+                continue
+            try:
+                verification_results = self._run_verification_commands_sync(
+                    worktree_path,
+                    commands,
+                    timeout=timeout,
+                )
+            finally:
+                self._cleanup_verification_worktree(cleanup_path)
+            if not verification_results or not all(
+                bool(entry.get("passed", False)) for entry in verification_results
+            ):
+                continue
+
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM supervisor_runs WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                if row is None:
+                    continue
+                refreshed_record = self._supervisor_run_from_row(row)
+                refreshed_item = _find_work_order(refreshed_record, work_order_id)
+                if (
+                    refreshed_item is None
+                    or not _work_order_should_reclassify_branch_stale_merge_gate_failure(
+                        refreshed_item
+                    )
+                ):
+                    continue
+                refreshed_task_key = _task_key_for(refreshed_record, refreshed_item, work_order_id)
+                if requested_task_keys and refreshed_task_key not in requested_task_keys:
+                    continue
+
+                checked_at = _utcnow().isoformat()
+                metadata = dict(refreshed_item.get("metadata") or {})
+                metadata["mainline_verification_passed"] = True
+                metadata["mainline_verification_checked_at"] = checked_at
+                metadata["mainline_verification_commands"] = list(commands)
+                metadata["mainline_verification_results"] = [
+                    dict(entry) for entry in verification_results
+                ]
+                refreshed_item["metadata"] = metadata
+                refreshed_item["status"] = "needs_human"
+                refreshed_item["review_status"] = "changes_requested"
+                refreshed_item["worker_outcome"] = "branch_snapshot_stale"
+                refreshed_item["failure_reason"] = "branch_snapshot_stale"
+                refreshed_item["blocking_question"] = _default_blocking_question_for_reason(
+                    "branch_snapshot_stale"
+                )
+                refreshed_item["dispatch_error"] = (
+                    f"branch snapshot stale: merge-gate verification now passes on {target_ref}"
+                )
+                refreshed_item["blockers"] = ["branch_snapshot_stale"]
+                refreshed_item["blocker"] = {
+                    "reason": "branch_snapshot_stale",
+                    "question": refreshed_item["blocking_question"],
+                }
+
+                refreshed_record["status"] = self._derive_supervisor_run_status(
+                    refreshed_record["work_orders"]
+                )
+                refreshed_record["updated_at"] = checked_at
+                self._persist_supervisor_run(conn, refreshed_record)
+                conn.commit()
+                reclassified += 1
+            finally:
+                conn.close()
+
+        return reclassified
 
     def reconcile_merge_gate_failed_work_orders(self) -> int:
         conn = self._connect()
@@ -4269,6 +4445,9 @@ def _default_blocking_question_for_reason(reason_code: str) -> str:
         "merge_gate_failed": (
             "Which required verification or acceptance check must pass before approval?"
         ),
+        "branch_snapshot_stale": (
+            "Should this deliverable be rebased, regenerated, or otherwise refreshed on current main before review?"
+        ),
         "missing_verification_plan": (
             "Which verification command or acceptance check should be added before rerunning?"
         ),
@@ -4306,6 +4485,10 @@ def _default_blocking_question_for_reason(reason_code: str) -> str:
 
 
 def _infer_missing_failure_reason_for_work_order(work_order: dict[str, Any]) -> str:
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and bool(metadata.get("mainline_verification_passed")):
+        return "branch_snapshot_stale"
+
     merge_gate = work_order.get("merge_gate")
     if isinstance(merge_gate, dict):
         missing = _optional_text(merge_gate.get("verification_missing_reason")).lower()
@@ -4313,6 +4496,8 @@ def _infer_missing_failure_reason_for_work_order(work_order: dict[str, Any]) -> 
             return missing
 
     worker_outcome = _optional_text(work_order.get("worker_outcome")).lower()
+    if worker_outcome == "branch_snapshot_stale":
+        return "branch_snapshot_stale"
     if worker_outcome == "clean_exit_no_effect":
         return "clean_exit_no_deliverable"
     if worker_outcome == "merge_gate_failed":
@@ -4330,6 +4515,8 @@ def _infer_missing_failure_reason_for_work_order(work_order: dict[str, Any]) -> 
         return "worker_crash_with_salvage"
 
     lowered = _optional_text(work_order.get("dispatch_error")).lower()
+    if "branch snapshot stale" in lowered or "passes on main" in lowered:
+        return "branch_snapshot_stale"
     if "missing verification plan" in lowered:
         return "missing_verification_plan"
     if "merge gate" in lowered:
@@ -4374,15 +4561,34 @@ def _backfill_work_order_blocker_metadata(work_order: dict[str, Any]) -> bool:
 
     changed = False
     failure_reason = _optional_text(work_order.get("failure_reason"))
+    inferred = _infer_missing_failure_reason_for_work_order(work_order)
     if not failure_reason:
-        inferred = _infer_missing_failure_reason_for_work_order(work_order)
         if inferred:
             work_order["failure_reason"] = inferred
             failure_reason = inferred
             changed = True
+    elif (
+        inferred
+        and inferred != failure_reason
+        and failure_reason
+        in {
+            "merge_gate_failed",
+            "needs_human",
+        }
+    ):
+        work_order["failure_reason"] = inferred
+        failure_reason = inferred
+        changed = True
 
     blocking_question = _optional_text(work_order.get("blocking_question"))
-    if not blocking_question and failure_reason:
+    if failure_reason and (
+        not blocking_question
+        or (
+            inferred
+            and inferred == failure_reason
+            and blocking_question == _default_blocking_question_for_reason("merge_gate_failed")
+        )
+    ):
         work_order["blocking_question"] = _default_blocking_question_for_reason(failure_reason)
         blocking_question = _optional_text(work_order.get("blocking_question"))
         changed = True
@@ -4534,6 +4740,13 @@ def _targeted_replay_expected_tests_for_work_order(work_order: dict[str, Any]) -
             for match in _TEST_FILE_PATTERN.findall(text):
                 _append(f"python -m pytest {match} -q")
 
+    for entry in work_order.get("tests_run", []):
+        _append(str(entry))
+
+    for entry in work_order.get("verification_results", []):
+        if isinstance(entry, dict):
+            _append(str(entry.get("command", "")))
+
     for path in work_order.get("file_scope", []):
         normalized = str(path).strip()
         if normalized.startswith("tests/") and normalized.endswith(".py"):
@@ -4563,6 +4776,36 @@ def _work_order_should_replay_targeted_merge_gate_failure(work_order: dict[str, 
     if not targeted:
         return False
     return set(targeted) != {command for command in current_expected if command}
+
+
+def _mainline_verification_commands_for_work_order(work_order: dict[str, Any]) -> list[str]:
+    targeted = _targeted_replay_expected_tests_for_work_order(work_order)
+    if targeted:
+        return list(targeted)
+
+    commands: list[str] = []
+    seen: set[str] = set()
+    for entry in work_order.get("expected_tests", []):
+        display = str(entry).strip()
+        normalized = _canonical_verification_command(display)
+        if not display or not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        commands.append(display)
+    return commands
+
+
+def _work_order_should_reclassify_branch_stale_merge_gate_failure(
+    work_order: dict[str, Any],
+) -> bool:
+    if not _work_order_should_reconcile_merge_gate_failure(work_order):
+        return False
+    if not _optional_text(work_order.get("receipt_id")):
+        return False
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and bool(metadata.get("mainline_verification_passed")):
+        return False
+    return bool(_mainline_verification_commands_for_work_order(work_order))
 
 
 def _work_order_should_reconcile_merge_gate_failure(work_order: dict[str, Any]) -> bool:

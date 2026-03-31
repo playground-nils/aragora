@@ -469,6 +469,33 @@ class MemoryManager:
         """Update tenant ID for subsequent memory operations."""
         self._tenant_id = tenant_id
 
+    def _resolve_event_emit_fn(self) -> Any | None:
+        """Resolve the best available event emitter method."""
+        if self.event_emitter is None:
+            return None
+        emitter_type = type(self.event_emitter)
+
+        class_emit_sync = getattr(emitter_type, "emit_sync", None)
+        if callable(class_emit_sync):
+            emit_sync = getattr(self.event_emitter, "emit_sync", None)
+            if callable(emit_sync):
+                return emit_sync
+
+        class_emit = getattr(emitter_type, "emit", None)
+        if callable(class_emit):
+            emit = getattr(self.event_emitter, "emit", None)
+            if callable(emit):
+                return emit
+
+        emit = getattr(self.event_emitter, "emit", None)
+        if callable(emit):
+            return emit
+
+        emit_sync = getattr(self.event_emitter, "emit_sync", None)
+        if callable(emit_sync):
+            return emit_sync
+        return None
+
     def _emit_event(self, event_type: str, **data: Any) -> None:
         """Emit a memory event if event_emitter is configured.
 
@@ -479,10 +506,7 @@ class MemoryManager:
         if self.event_emitter is None:
             return
         try:
-            # Use emit_sync if available (SyncEventEmitter), otherwise emit
-            emit_fn = getattr(self.event_emitter, "emit_sync", None)
-            if emit_fn is None:
-                emit_fn = getattr(self.event_emitter, "emit", None)
+            emit_fn = self._resolve_event_emit_fn()
             if emit_fn is not None:
                 emit_fn(event_type, loop_id=self.loop_id, **data)
         except (AttributeError, TypeError) as e:
@@ -573,13 +597,9 @@ class MemoryManager:
                 debate_id=result.id,
             )
 
-        except (AttributeError, TypeError, ValueError) as e:
+        except (AttributeError, TypeError, ValueError, Exception) as e:
             # Expected: memory system configuration or data format issues
             logger.warning("  [continuum] Failed to store outcome: %s", e)
-        except (OSError, RuntimeError, KeyError) as e:
-            # Unexpected error - log with full context
-            _, msg, exc_info = _build_error_action(e, "continuum")
-            logger.exception("  [continuum] Unexpected error storing outcome: %s", msg)
 
     def store_consensus_record(
         self,
@@ -867,8 +887,12 @@ class MemoryManager:
                     }
                 )
 
-            self.event_emitter.emit_sync(
-                event_type="evidence_found",
+            emit_fn = self._resolve_event_emit_fn()
+            if emit_fn is None:
+                return
+            emit_fn(
+                "evidence_found",
+                loop_id=self.loop_id,
                 debate_id="",
                 count=count,
                 domain=domain,

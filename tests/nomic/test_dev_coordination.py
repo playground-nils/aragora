@@ -18,6 +18,7 @@ from aragora.nomic.dev_coordination import (
     LeaseConflictError,
     LeaseStatus,
     SalvageStatus,
+    _targeted_replay_expected_tests_for_work_order,
     _verification_result_looks_environment_blocked,
 )
 from aragora.nomic.global_work_queue import GlobalWorkQueue, WorkStatus
@@ -3048,6 +3049,212 @@ def test_replay_targeted_merge_gate_failures_skips_rows_without_narrower_target(
     assert item["status"] == "needs_human"
     assert item["expected_tests"] == [broad_command]
     assert item["tests_run"] == [broad_command]
+
+
+def test_targeted_replay_expected_tests_for_work_order_uses_existing_narrow_history() -> None:
+    work_order = {
+        "expected_tests": [
+            "python -m pytest tests/ -q -k 'not benchmark and not load' --timeout=60 -x"
+        ],
+        "tests_run": [
+            "python -m pytest tests/test_modes_deep_audit.py -q",
+        ],
+        "verification_results": [
+            {
+                "command": "python -m pytest tests/test_debate_memory_manager.py -q",
+                "passed": False,
+                "exit_code": 1,
+                "stdout": "",
+                "stderr": "failed",
+            }
+        ],
+        "changed_paths": [
+            "aragora/debate/memory_manager.py",
+            "aragora/modes/deep_audit.py",
+        ],
+    }
+
+    targeted = _targeted_replay_expected_tests_for_work_order(work_order)
+
+    assert targeted == [
+        "python -m pytest tests/test_modes_deep_audit.py -q",
+        "python -m pytest tests/test_debate_memory_manager.py -q",
+    ]
+
+
+def test_replay_targeted_merge_gate_failures_honors_task_keys(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    first_test = repo / "tests" / "test_targeted_replay_keyed_a.py"
+    first_test.parent.mkdir(parents=True, exist_ok=True)
+    first_test.write_text(
+        "def test_targeted_replay_keyed_a():\n    assert True\n", encoding="utf-8"
+    )
+    second_test = repo / "tests" / "test_targeted_replay_keyed_b.py"
+    second_test.write_text(
+        "def test_targeted_replay_keyed_b():\n    assert True\n", encoding="utf-8"
+    )
+
+    broad_command = "python -m pytest tests/ -q -k 'not benchmark and not load' --timeout=60 -x"
+    first_changed = "tests/test_targeted_replay_keyed_a.py"
+    second_changed = "tests/test_targeted_replay_keyed_b.py"
+
+    run = store.create_supervisor_run(
+        goal="Replay only the requested task key",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "wo-targeted-key-a",
+                "title": "Keyed replay A",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "failure_reason": "merge_gate_failed",
+                "worker_outcome": "merge_gate_failed",
+                "receipt_id": "receipt-targeted-key-a",
+                "branch": "codex/targeted-key-a",
+                "worktree_path": str(repo),
+                "head_sha": "aaa11111",
+                "commit_shas": ["aaa11111"],
+                "file_scope": ["tests", "tests/**"],
+                "changed_paths": [first_changed],
+                "expected_tests": [broad_command],
+                "tests_run": [broad_command],
+                "verification_results": [
+                    {
+                        "command": broad_command,
+                        "passed": False,
+                        "exit_code": -1,
+                        "stdout": "",
+                        "stderr": "Timed out after 90s",
+                        "duration_seconds": 90.0,
+                    }
+                ],
+                "metadata": {"task_key": "run-keyed:wo-targeted-key-a"},
+            },
+            {
+                "work_order_id": "wo-targeted-key-b",
+                "title": "Keyed replay B",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "failure_reason": "merge_gate_failed",
+                "worker_outcome": "merge_gate_failed",
+                "receipt_id": "receipt-targeted-key-b",
+                "branch": "codex/targeted-key-b",
+                "worktree_path": str(repo),
+                "head_sha": "bbb22222",
+                "commit_shas": ["bbb22222"],
+                "file_scope": ["tests", "tests/**"],
+                "changed_paths": [second_changed],
+                "expected_tests": [broad_command],
+                "tests_run": [broad_command],
+                "verification_results": [
+                    {
+                        "command": broad_command,
+                        "passed": False,
+                        "exit_code": -1,
+                        "stdout": "",
+                        "stderr": "Timed out after 90s",
+                        "duration_seconds": 90.0,
+                    }
+                ],
+                "metadata": {"task_key": "run-keyed:wo-targeted-key-b"},
+            },
+        ],
+    )
+
+    with patch.object(
+        DevCoordinationStore,
+        "_resolve_verification_worktree",
+        return_value=(str(repo), None),
+    ):
+        replayed = store.replay_targeted_merge_gate_failures(
+            task_keys=["run-keyed:wo-targeted-key-a"]
+        )
+
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert replayed == 1
+    assert refreshed is not None
+    first_item, second_item = refreshed["work_orders"]
+    assert first_item["status"] == "completed"
+    assert first_item["tests_run"] == [f"python -m pytest {first_changed} -q"]
+    assert second_item["status"] == "needs_human"
+    assert second_item["tests_run"] == [broad_command]
+
+
+def test_reclassify_branch_stale_merge_gate_failures_when_mainline_passes(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    test_path = repo / "tests" / "test_branch_snapshot_stale.py"
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    test_path.write_text("def test_branch_snapshot_stale():\n    assert True\n", encoding="utf-8")
+    command = "python -m pytest tests/test_branch_snapshot_stale.py -q"
+
+    run = store.create_supervisor_run(
+        goal="Mark stale branch merge-gate failures when mainline passes",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "wo-branch-stale",
+                "title": "Branch stale merge gate",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "failure_reason": "merge_gate_failed",
+                "worker_outcome": "merge_gate_failed",
+                "receipt_id": "receipt-branch-stale",
+                "branch": "codex/branch-stale",
+                "worktree_path": str(repo),
+                "head_sha": "abc12345",
+                "commit_shas": ["abc12345"],
+                "changed_paths": ["aragora/debate/memory_manager.py"],
+                "expected_tests": [command],
+                "tests_run": [command],
+                "verification_results": [
+                    {
+                        "command": command,
+                        "passed": False,
+                        "exit_code": 1,
+                        "stdout": "",
+                        "stderr": "old branch snapshot failure",
+                        "duration_seconds": 1.0,
+                    }
+                ],
+                "metadata": {"task_key": "run-stale:wo-branch-stale"},
+            }
+        ],
+    )
+
+    with patch.object(
+        DevCoordinationStore,
+        "_resolve_verification_worktree",
+        return_value=(str(repo), None),
+    ):
+        reclassified = store.reclassify_branch_stale_merge_gate_failures(
+            task_keys=["run-stale:wo-branch-stale"]
+        )
+
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert reclassified == 1
+    assert refreshed is not None
+    item = refreshed["work_orders"][0]
+    assert item["status"] == "needs_human"
+    assert item["review_status"] == "changes_requested"
+    assert item["worker_outcome"] == "branch_snapshot_stale"
+    assert item["failure_reason"] == "branch_snapshot_stale"
+    assert item["verification_results"][0]["passed"] is False
+    assert item["metadata"]["mainline_verification_passed"] is True
+    assert item["metadata"]["mainline_verification_commands"] == [command]
+    assert item["metadata"]["mainline_verification_results"][0]["passed"] is True
+    assert item["blocking_question"] == (
+        "Should this deliverable be rebased, regenerated, or otherwise refreshed on current main before review?"
+    )
 
 
 def test_reconcile_merge_gate_failed_work_orders_normalizes_existing_results(
