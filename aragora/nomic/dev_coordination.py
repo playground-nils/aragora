@@ -48,6 +48,7 @@ _DUPLICATE_BRANCH_DELIVERABLE_ARCHIVE_GRACE_HOURS = 24.0
 _SUPERSEDED_WAITING_CONFLICT_ARCHIVE_GRACE_HOURS = 24.0
 _CLEAN_EXIT_NO_DELIVERABLE_ARCHIVE_GRACE_HOURS = 24.0
 _FAILED_NO_DELIVERABLE_ARCHIVE_GRACE_HOURS = 24.0
+_WORK_ORDER_LEASING_FAILED_ARCHIVE_GRACE_HOURS = 24.0
 _SQLITE_BUSY_TIMEOUT_MS = 60_000
 _OPEN_DEVELOPER_TASK_STATUSES = {
     "queued",
@@ -993,6 +994,44 @@ class DevCoordinationStore:
             conn.close()
         return updated
 
+    def rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders(self) -> int:
+        """Restore contradictory clean-exit lanes that already have receipt-backed deliverables."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            updated = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not _work_order_should_rehabilitate_deliverable_backed_clean_exit_no_deliverable(
+                        item
+                    ):
+                        continue
+                    item["merge_gate"] = _merge_gate_state_for_work_order(item)
+                    item["status"] = "completed"
+                    item["review_status"] = "pending_heterogeneous_review"
+                    item["worker_outcome"] = "completed"
+                    for key in (
+                        "failure_reason",
+                        "blocking_question",
+                        "blocker",
+                        "dispatch_error",
+                    ):
+                        item.pop(key, None)
+                    item["blockers"] = []
+                    changed = True
+                    updated += 1
+                if not changed:
+                    continue
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return updated
+
     def archive_reaped_no_receipt_work_orders(
         self,
         *,
@@ -1215,6 +1254,63 @@ class DevCoordinationStore:
                     item["status"] = "discarded"
                     if not _optional_text(item.get("failure_reason")):
                         item["failure_reason"] = archive_reason
+                    changed = True
+                    archived += 1
+                if not changed:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now.isoformat()
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return archived
+
+    def archive_work_order_leasing_failed_work_orders(
+        self,
+        *,
+        grace_period_hours: float = _WORK_ORDER_LEASING_FAILED_ARCHIVE_GRACE_HOURS,
+    ) -> int:
+        """Archive stale leasing failures that never produced a receipt or deliverable."""
+        now = _utcnow()
+        grace_period = timedelta(hours=max(0.0, float(grace_period_hours)))
+        cutoff = now - grace_period
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            lease_status_by_id = {
+                str(row["lease_id"]).strip(): str(row["status"]).strip()
+                for row in conn.execute("SELECT lease_id, status FROM leases").fetchall()
+                if str(row["lease_id"]).strip()
+            }
+            archived = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    lease_status = lease_status_by_id.get(_optional_text(item.get("lease_id")))
+                    if not _work_order_should_archive_work_order_leasing_failed(
+                        item,
+                        run=record,
+                        cutoff=cutoff,
+                        lease_status=lease_status,
+                    ):
+                        continue
+                    metadata = dict(item.get("metadata") or {})
+                    metadata.update(
+                        {
+                            "archived_due_to": "work_order_leasing_failed",
+                            "archived_at": now.isoformat(),
+                            "archive_reason": "work_order_leasing_failed",
+                            "previous_status": _optional_text(item.get("status")) or "needs_human",
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    if not _optional_text(item.get("failure_reason")):
+                        item["failure_reason"] = "work_order_leasing_failed"
                     changed = True
                     archived += 1
                 if not changed:
@@ -2455,6 +2551,7 @@ class DevCoordinationStore:
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
+        self.archive_work_order_leasing_failed_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
         self.archive_superseded_waiting_conflict_work_orders()
         return expired
@@ -2545,6 +2642,7 @@ class DevCoordinationStore:
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
+        self.archive_work_order_leasing_failed_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
         self.archive_superseded_waiting_conflict_work_orders()
         return stale
@@ -3534,10 +3632,12 @@ class DevCoordinationStore:
         self.backfill_missing_blocker_metadata()
         self.backfill_missing_verification_plans()
         self.rehabilitate_docs_only_missing_verification_plan_work_orders()
+        self.rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders()
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
+        self.archive_work_order_leasing_failed_work_orders()
         self.archive_duplicate_branch_deliverable_work_orders()
         self.archive_superseded_waiting_conflict_work_orders()
         work_queue = queue or GlobalWorkQueue(storage_dir=self.repo_root / ".work_queue")
@@ -4750,6 +4850,21 @@ def _work_order_should_rehabilitate_docs_only_missing_verification_plan(
     return _work_order_has_concrete_deliverable(work_order)
 
 
+def _work_order_should_rehabilitate_deliverable_backed_clean_exit_no_deliverable(
+    work_order: dict[str, Any],
+) -> bool:
+    if not isinstance(work_order, dict):
+        return False
+    status = _optional_text(work_order.get("status")).lower()
+    if status not in {"needs_human", "changes_requested"}:
+        return False
+    if _infer_missing_failure_reason_for_work_order(work_order) != "clean_exit_no_deliverable":
+        return False
+    if not _optional_text(work_order.get("receipt_id")):
+        return False
+    return _work_order_has_concrete_deliverable(work_order)
+
+
 def _work_order_should_replay_missing_verification(work_order: dict[str, Any]) -> bool:
     if not isinstance(work_order, dict):
         return False
@@ -5124,6 +5239,31 @@ def _work_order_should_archive_clean_exit_no_deliverable(
     ):
         return False
     if not _work_order_clean_exit_no_deliverable_reason(work_order):
+        return False
+    updated_at = _parse_dt(_developer_task_updated_at(work_order, run))
+    return updated_at <= cutoff
+
+
+def _work_order_should_archive_work_order_leasing_failed(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+    cutoff: datetime,
+    lease_status: str | None,
+) -> bool:
+    status = _optional_text(work_order.get("status")).lower()
+    if status != "needs_human":
+        return False
+    if _optional_text(lease_status).lower() == LeaseStatus.ACTIVE.value:
+        return False
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and _optional_text(metadata.get("archived_due_to")):
+        return False
+    if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
+        work_order
+    ):
+        return False
+    if _optional_text(work_order.get("failure_reason")).lower() != "work_order_leasing_failed":
         return False
     updated_at = _parse_dt(_developer_task_updated_at(work_order, run))
     return updated_at <= cutoff
