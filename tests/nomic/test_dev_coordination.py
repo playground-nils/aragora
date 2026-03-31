@@ -2155,6 +2155,141 @@ def test_archive_duplicate_work_order_leasing_failed_work_orders_discards_older_
     assert distinct_refreshed["work_orders"][0]["status"] == "needs_human"
 
 
+def test_archive_superseded_clean_exit_no_deliverable_work_orders_discards_helper_lane(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive helper clean-exit lane when deliverable sibling exists",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Implementation lane",
+                "status": "completed",
+                "receipt_id": "receipt-impl",
+                "branch": "codex/subtask_1",
+                "commit_shas": ["abc12345"],
+                "file_scope": [
+                    "aragora/swarm/outcome_signals.py",
+                    "tests/swarm/test_outcome_signals.py",
+                ],
+            },
+            {
+                "work_order_id": "subtask_2",
+                "title": "Validation helper lane",
+                "status": "needs_human",
+                "failure_reason": "clean_exit_no_deliverable",
+                "worker_outcome": "clean_exit_no_effect",
+                "dispatch_error": "worker exited 0 with no commits and no changed paths",
+                "file_scope": [
+                    "aragora/swarm/outcome_signals.py",
+                    "tests/swarm/test_outcome_signals.py",
+                ],
+            },
+        ],
+    )
+
+    archived = store.archive_superseded_clean_exit_no_deliverable_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    helper = refreshed["work_orders"][1]
+    assert helper["status"] == "discarded"
+    assert helper["metadata"]["archive_reason"] == "superseded_clean_exit_no_deliverable"
+    assert helper["metadata"]["canonical_work_order_id"] == "subtask_1"
+
+
+def test_archive_superseded_clean_exit_no_deliverable_work_orders_preserves_standalone_lane(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Preserve standalone clean-exit lane",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Standalone no-op lane",
+                "status": "needs_human",
+                "failure_reason": "clean_exit_no_deliverable",
+                "worker_outcome": "clean_exit_no_effect",
+                "dispatch_error": "worker exited 0 with no commits and no changed paths",
+                "file_scope": [
+                    "aragora/cli/commands/receipt.py",
+                    "tests/cli/test_receipt_command.py",
+                ],
+            },
+            {
+                "work_order_id": "subtask_2",
+                "title": "Queued sibling without deliverable",
+                "status": "queued",
+                "file_scope": [
+                    "aragora/cli/commands/receipt.py",
+                    "tests/cli/test_receipt_command.py",
+                ],
+            },
+        ],
+    )
+
+    archived = store.archive_superseded_clean_exit_no_deliverable_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 0
+    assert refreshed is not None
+    assert refreshed["work_orders"][0]["status"] == "needs_human"
+
+
+def test_archive_superseded_clean_exit_no_deliverable_work_orders_discards_helper_lane_with_open_sibling(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive helper clean-exit lane with queued sibling",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Read existing receipt.py code and understand current CLI structure",
+                "status": "needs_human",
+                "failure_reason": "clean_exit_no_deliverable",
+                "worker_outcome": "clean_exit_no_effect",
+                "dispatch_error": "worker exited 0 with no commits and no changed paths",
+                "file_scope": [
+                    "aragora/cli/commands/receipt.py",
+                    "tests/cli/test_receipt_command.py",
+                ],
+            },
+            {
+                "work_order_id": "subtask_2",
+                "title": "Write tests for --format markdown functionality",
+                "status": "queued",
+                "file_scope": [
+                    "tests/cli/test_receipt_command.py",
+                    "aragora/cli/commands/receipt.py",
+                ],
+            },
+        ],
+    )
+
+    archived = store.archive_superseded_clean_exit_no_deliverable_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    helper = refreshed["work_orders"][0]
+    assert helper["status"] == "discarded"
+    assert helper["metadata"]["archive_reason"] == "helper_clean_exit_no_deliverable"
+    assert helper["metadata"]["canonical_work_order_id"] == "subtask_2"
+
+
 def test_backfill_missing_blocker_metadata_infers_missing_verification_plan(
     store: DevCoordinationStore,
 ) -> None:

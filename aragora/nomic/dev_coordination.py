@@ -1349,6 +1349,85 @@ class DevCoordinationStore:
             conn.close()
         return archived
 
+    def archive_superseded_clean_exit_no_deliverable_work_orders(self) -> int:
+        """Archive no-op helper lanes when same-run deliverable siblings already cover the scope."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            archived = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                deliverable_items = [
+                    item
+                    for item in record["work_orders"]
+                    if isinstance(item, dict) and _work_order_has_concrete_deliverable(item)
+                ]
+                changed = False
+                for item in record["work_orders"]:
+                    if not _work_order_should_archive_superseded_clean_exit_no_deliverable(item):
+                        continue
+                    overlapping_deliverables = [
+                        sibling
+                        for sibling in deliverable_items
+                        if sibling is not item and _work_orders_overlap_by_scope(item, sibling)
+                    ]
+                    if not overlapping_deliverables:
+                        if not _looks_like_helper_clean_exit_no_deliverable(item):
+                            continue
+                        overlapping_siblings = [
+                            sibling
+                            for sibling in record["work_orders"]
+                            if isinstance(sibling, dict)
+                            and sibling is not item
+                            and _work_orders_overlap_by_scope(item, sibling)
+                            and _work_order_is_live_overlap_sibling(sibling)
+                        ]
+                        if not overlapping_siblings:
+                            continue
+                        keeper = max(
+                            overlapping_siblings,
+                            key=lambda sibling: _live_overlap_sibling_priority(sibling, run=record),
+                        )
+                        archive_reason = "helper_clean_exit_no_deliverable"
+                    else:
+                        keeper = max(
+                            overlapping_deliverables,
+                            key=lambda sibling: _duplicate_branch_deliverable_priority(
+                                sibling, run=record
+                            ),
+                        )
+                        archive_reason = "superseded_clean_exit_no_deliverable"
+                    keeper_id = _optional_text(
+                        keeper.get("work_order_id"),
+                        keeper.get("task_id"),
+                    )
+                    metadata = dict(item.get("metadata") or {})
+                    metadata.update(
+                        {
+                            "archived_due_to": "superseded_clean_exit_no_deliverable",
+                            "archived_at": now,
+                            "archive_reason": archive_reason,
+                            "canonical_work_order_id": keeper_id or None,
+                            "previous_status": _optional_text(item.get("status")) or "needs_human",
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    if not _optional_text(item.get("failure_reason")):
+                        item["failure_reason"] = "clean_exit_no_deliverable"
+                    changed = True
+                    archived += 1
+                if not changed:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return archived
+
     def archive_duplicate_work_order_leasing_failed_work_orders(self) -> int:
         """Collapse duplicate no-artifact leasing failures across runs."""
         now = _utcnow().isoformat()
@@ -3747,6 +3826,7 @@ class DevCoordinationStore:
         self.rehabilitate_docs_only_missing_verification_plan_work_orders()
         self.rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders()
         self.reclassify_branch_snapshot_stale_review_work_orders()
+        self.archive_superseded_clean_exit_no_deliverable_work_orders()
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
@@ -5402,6 +5482,80 @@ def _work_order_should_archive_work_order_leasing_failed(
         return False
     updated_at = _parse_dt(_developer_task_updated_at(work_order, run))
     return updated_at <= cutoff
+
+
+def _work_order_should_archive_superseded_clean_exit_no_deliverable(
+    work_order: dict[str, Any],
+) -> bool:
+    if not isinstance(work_order, dict):
+        return False
+    status = _optional_text(work_order.get("status")).lower()
+    if status != "needs_human":
+        return False
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and _optional_text(metadata.get("archived_due_to")):
+        return False
+    if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
+        work_order
+    ):
+        return False
+    if _optional_text(work_order.get("failure_reason")).lower() != "clean_exit_no_deliverable":
+        return False
+    return _optional_text(work_order.get("worker_outcome")).lower() == "clean_exit_no_effect"
+
+
+_HELPER_CLEAN_EXIT_TITLE_PREFIXES = (
+    "read existing ",
+    "inspect ",
+    "understand ",
+    "run tests and validate",
+    "validate implementation",
+    "review existing ",
+    "analyze existing ",
+)
+
+
+def _looks_like_helper_clean_exit_no_deliverable(work_order: dict[str, Any]) -> bool:
+    title = " ".join(_optional_text(work_order.get("title")).lower().split())
+    return any(title.startswith(prefix) for prefix in _HELPER_CLEAN_EXIT_TITLE_PREFIXES)
+
+
+def _work_order_is_live_overlap_sibling(work_order: dict[str, Any]) -> bool:
+    status = _optional_text(work_order.get("status")).lower()
+    if status in {"discarded", "superseded", "merged"}:
+        return False
+    return status in {
+        "queued",
+        "leased",
+        "dispatched",
+        "active",
+        "completed",
+        "changes_requested",
+        "needs_human",
+    }
+
+
+def _live_overlap_sibling_priority(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+) -> tuple[int, int, int, str]:
+    status = _optional_text(work_order.get("status")).lower()
+    status_rank = {
+        "completed": 6,
+        "changes_requested": 5,
+        "active": 4,
+        "dispatched": 3,
+        "leased": 2,
+        "queued": 1,
+        "needs_human": 0,
+    }.get(status, -1)
+    return (
+        status_rank,
+        1 if _work_order_has_concrete_deliverable(work_order) else 0,
+        len(_work_order_scope_patterns(work_order)),
+        _developer_task_updated_at(work_order, run),
+    )
 
 
 def _work_order_is_duplicate_work_order_leasing_failed_candidate(
