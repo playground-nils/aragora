@@ -6,6 +6,7 @@ import argparse
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from types import ModuleType
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -231,6 +232,33 @@ def test_receipt_show_renders_inbox_receipt_details(
     assert "Message ID:    msg-123" in output
     assert "Receipt State: created" in output
     assert "Rationale:     Archive the newsletter." in output
+
+
+def test_receipt_show_accepts_markdown_format_alias(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stored = {
+        "receipt_id": "rcpt-markdown-123",
+        "gauntlet_id": "rcpt-markdown-123",
+        "verdict": "PASS",
+        "confidence": 1.0,
+    }
+    fake_module = ModuleType("aragora.gauntlet.receipt_models")
+
+    class _FakeDecisionReceipt:
+        @staticmethod
+        def from_dict(data: dict) -> SimpleNamespace:
+            return SimpleNamespace(to_markdown=lambda: "# receipt")
+
+    fake_module.DecisionReceipt = _FakeDecisionReceipt
+
+    with patch("aragora.cli.commands.receipt._load_storage_receipt", return_value=stored):
+        with patch.dict("sys.modules", {"aragora.gauntlet.receipt_models": fake_module}):
+            cmd_receipt_show(
+                argparse.Namespace(id="rcpt-markdown-123", format="markdown", org_id=None)
+            )
+
+    assert capsys.readouterr().out.strip() == "# receipt"
 
 
 def test_receipt_show_falls_back_to_legacy_when_durable_missing(
