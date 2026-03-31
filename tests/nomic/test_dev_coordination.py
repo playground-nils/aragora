@@ -2056,6 +2056,124 @@ def test_archive_work_order_leasing_failed_work_orders_discards_old_no_deliverab
     assert work_order["metadata"]["archive_reason"] == "work_order_leasing_failed"
 
 
+def test_archive_duplicate_waiting_conflict_work_orders_discards_older_cross_run_duplicate(
+    store: DevCoordinationStore,
+) -> None:
+    older = store.create_supervisor_run(
+        goal="Add --json output flag to aragora quickstart CLI",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Add --json output flag to aragora quickstart CLI",
+            "refined_goal": "Add --json output flag to aragora quickstart CLI",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Test Changes",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+    newer = store.create_supervisor_run(
+        goal="Add --json output flag to aragora quickstart CLI",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Add --json output flag to aragora quickstart CLI",
+            "refined_goal": "Add --json output flag to aragora quickstart CLI",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_2",
+                "title": "Test Changes",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+    distinct = store.create_supervisor_run(
+        goal="Add JSONL metrics logging per boss loop iteration",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Add JSONL metrics logging per boss loop iteration",
+            "refined_goal": "Add JSONL metrics logging per boss loop iteration",
+        },
+        work_orders=[
+            {
+                "work_order_id": "subtask_3",
+                "title": "Test Changes",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/cli/commands/quickstart.py",
+                    "aragora/cli/parser.py",
+                    "tests/cli/test_quickstart.py",
+                ],
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", older["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-02T00:00:00+00:00", "2000-01-02T00:00:00+00:00", newer["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-03T00:00:00+00:00", "2000-01-03T00:00:00+00:00", distinct["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_duplicate_waiting_conflict_work_orders()
+    older_refreshed = store.get_supervisor_run(older["run_id"])
+    newer_refreshed = store.get_supervisor_run(newer["run_id"])
+    distinct_refreshed = store.get_supervisor_run(distinct["run_id"])
+
+    assert archived == 1
+    assert older_refreshed is not None
+    assert newer_refreshed is not None
+    assert distinct_refreshed is not None
+    older_item = older_refreshed["work_orders"][0]
+    newer_item = newer_refreshed["work_orders"][0]
+    distinct_item = distinct_refreshed["work_orders"][0]
+    assert older_item["status"] == "discarded"
+    assert older_item["metadata"]["archived_due_to"] == "duplicate_waiting_conflict"
+    assert older_item["metadata"]["archive_reason"] == "duplicate_waiting_conflict"
+    assert older_item["metadata"]["canonical_run_id"] == newer["run_id"]
+    assert older_item["metadata"]["canonical_work_order_id"] == "subtask_2"
+    assert newer_item["status"] == "waiting_conflict"
+    assert distinct_item["status"] == "waiting_conflict"
+
+
 def test_archive_work_order_leasing_failed_work_orders_preserves_deliverable_backed_lane(
     store: DevCoordinationStore,
 ) -> None:
