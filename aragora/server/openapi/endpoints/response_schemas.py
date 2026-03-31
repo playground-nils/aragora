@@ -630,9 +630,12 @@ _RECEIPT_ENDPOINTS = {
                 "200": _ok_response(
                     "Receipt stats",
                     {
-                        "total_receipts": {"type": "integer"},
-                        "verified_count": {"type": "integer"},
-                        "by_status": {"type": "object"},
+                        "total": {"type": "integer"},
+                        "verified": {"type": "integer"},
+                        "by_verdict": {"type": "object"},
+                        "by_risk_level": {"type": "object"},
+                        "by_framework": {"type": "object"},
+                        "generated_at": {"type": "string", "format": "date-time"},
                     },
                 ),
                 "401": STANDARD_ERRORS["401"],

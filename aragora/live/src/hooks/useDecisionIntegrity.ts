@@ -71,15 +71,41 @@ export interface MemoryStats {
 
 export interface ReceiptStats {
   total_receipts?: number;
+  verified_count?: number;
   delivered?: number;
   pending?: number;
   failed?: number;
   delivery_rate?: number;
+  by_verdict?: Record<string, number>;
+  by_risk_level?: Record<string, number>;
+  generated_at?: string;
   recent?: Array<{
     id: string;
     debate_id?: string;
-    status: string;
+    status: 'delivered' | 'pending' | 'failed';
     created_at?: string;
+    delivered_at?: string;
+    channel?: string;
+  }>;
+}
+
+type RecentReceipt = NonNullable<ReceiptStats['recent']>[number];
+
+interface ReceiptStatsApiResponse {
+  total?: number;
+  verified?: number;
+  by_verdict?: Record<string, number>;
+  by_risk_level?: Record<string, number>;
+  generated_at?: string;
+}
+
+interface ReceiptDeliveryHistoryResponse {
+  deliveries?: Array<{
+    id?: string;
+    receiptId?: string;
+    receipt_id?: string;
+    status?: string;
+    deliveredAt?: string;
     delivered_at?: string;
     channel?: string;
   }>;
@@ -211,6 +237,57 @@ function computeIntegrityMetrics(
   };
 }
 
+function normalizeDeliveryStatus(
+  value: unknown,
+): 'delivered' | 'pending' | 'failed' {
+  const status = typeof value === 'string' ? value.toLowerCase() : '';
+  if (status === 'success' || status === 'delivered') return 'delivered';
+  if (status === 'failed' || status === 'error') return 'failed';
+  return 'pending';
+}
+
+function normalizeReceiptStats(
+  stats: ReceiptStatsApiResponse | null,
+  history: ReceiptDeliveryHistoryResponse | null,
+): ReceiptStats | null {
+  if (!stats && !history) return null;
+
+  const recent: RecentReceipt[] = (history?.deliveries ?? []).flatMap((delivery) => {
+    const id = delivery.receiptId ?? delivery.receipt_id ?? delivery.id;
+    if (!id) return [];
+
+    const deliveredAt = delivery.deliveredAt ?? delivery.delivered_at;
+    return [
+      {
+        id,
+        status: normalizeDeliveryStatus(delivery.status),
+        created_at: deliveredAt,
+        delivered_at: deliveredAt,
+        channel: delivery.channel,
+      },
+    ];
+  });
+
+  const delivered = recent.filter((delivery) => delivery.status === 'delivered').length;
+  const pending = recent.filter((delivery) => delivery.status === 'pending').length;
+  const failed = recent.filter((delivery) => delivery.status === 'failed').length;
+  const deliveryRate =
+    delivered + failed > 0 ? delivered / (delivered + failed) : undefined;
+
+  return {
+    total_receipts: stats?.total ?? recent.length,
+    verified_count: stats?.verified,
+    delivered,
+    pending,
+    failed,
+    delivery_rate: deliveryRate,
+    by_verdict: stats?.by_verdict ?? {},
+    by_risk_level: stats?.by_risk_level ?? {},
+    generated_at: stats?.generated_at,
+    recent,
+  };
+}
+
 // ============================================================================
 // Hook
 // ============================================================================
@@ -234,13 +311,22 @@ export function useDecisionIntegrity(options?: DecisionIntegrityOptions) {
   const consensus = useSWRFetch<ConsensusMetrics>('/api/v1/consensus/metrics', swrOpts);
   const compliance = useSWRFetch<ComplianceStatus>('/api/v1/compliance/status', swrOpts);
   const memory = useSWRFetch<MemoryStats>('/api/v1/memory/stats', swrOpts);
-  const receipts = useSWRFetch<ReceiptStats>('/api/v1/receipts/stats', swrOpts);
+  const receiptStats = useSWRFetch<ReceiptStatsApiResponse>('/api/v2/receipts/stats', swrOpts);
+  const receiptDeliveries = useSWRFetch<ReceiptDeliveryHistoryResponse>(
+    '/api/v1/receipts/deliveries?limit=20',
+    swrOpts,
+  );
   const audit = useSWRFetch<AuditEventsResponse>('/api/v1/audit/events?limit=20', swrOpts);
   const leaderboard = useSWRFetch<LeaderboardResponse>('/api/v1/leaderboard', {
     refreshInterval: 60_000,
     enabled,
   });
   const settled = useSWRFetch<ConsensusSettled>('/api/v1/consensus/settled?limit=10', swrOpts);
+
+  const receipts = useMemo(
+    () => normalizeReceiptStats(receiptStats.data, receiptDeliveries.data),
+    [receiptStats.data, receiptDeliveries.data],
+  );
 
   const metrics = useMemo(
     () =>
@@ -249,9 +335,9 @@ export function useDecisionIntegrity(options?: DecisionIntegrityOptions) {
         consensus.data,
         compliance.data,
         memory.data,
-        receipts.data,
+        receipts,
       ),
-    [debates.data, consensus.data, compliance.data, memory.data, receipts.data],
+    [debates.data, consensus.data, compliance.data, memory.data, receipts],
   );
 
   const isLoading =
@@ -259,7 +345,8 @@ export function useDecisionIntegrity(options?: DecisionIntegrityOptions) {
     consensus.isLoading ||
     compliance.isLoading ||
     memory.isLoading ||
-    receipts.isLoading;
+    receiptStats.isLoading ||
+    receiptDeliveries.isLoading;
 
   return {
     // Raw data from each subsystem
@@ -267,7 +354,7 @@ export function useDecisionIntegrity(options?: DecisionIntegrityOptions) {
     consensus: consensus.data,
     compliance: compliance.data,
     memory: memory.data,
-    receipts: receipts.data,
+    receipts,
     audit: audit.data,
     leaderboard: leaderboard.data,
     settled: settled.data,
@@ -282,7 +369,7 @@ export function useDecisionIntegrity(options?: DecisionIntegrityOptions) {
       consensus: consensus.error,
       compliance: compliance.error,
       memory: memory.error,
-      receipts: receipts.error,
+      receipts: receiptStats.error ?? receiptDeliveries.error,
       audit: audit.error,
       leaderboard: leaderboard.error,
       settled: settled.error,
