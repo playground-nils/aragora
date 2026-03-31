@@ -17,7 +17,9 @@ describe('AgentNetworkPanel', () => {
 
   it('loads selectable agents from leaderboard payloads', async () => {
     const user = userEvent.setup();
-    render(<AgentNetworkPanel />);
+    await act(async () => {
+      render(<AgentNetworkPanel />);
+    });
 
     await act(async () => {
       await user.click(screen.getByRole('button', { name: /expand agent network panel/i }));
