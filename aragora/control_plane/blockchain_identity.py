@@ -26,8 +26,10 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -61,17 +63,75 @@ class BlockchainIdentityBridge:
         self,
         provider: Web3Provider | None = None,
         agent_registry: Any | None = None,
+        persistence_path: str | Path | None = None,
     ) -> None:
         """Initialize the bridge.
 
         Args:
             provider: Web3Provider for blockchain access.
             agent_registry: Aragora AgentRegistry instance.
+            persistence_path: Optional path to a JSON file for persisting
+                link state across restarts. When provided, links are loaded
+                on init and saved after every mutation.
         """
         self._provider = provider
         self._agent_registry = agent_registry
+        self._persistence_path: Path | None = Path(persistence_path) if persistence_path else None
         self._links: dict[str, AgentBlockchainLink] = {}
         self._token_to_agent: dict[tuple[int, int], str] = {}  # (chain_id, token_id) -> agent_id
+        self._load_state()
+
+    # -----------------------------------------------------------------
+    # Persistence helpers
+    # -----------------------------------------------------------------
+
+    def _load_state(self) -> None:
+        """Load persisted link state from JSON file (if configured)."""
+        if self._persistence_path is None:
+            return
+        if not self._persistence_path.exists():
+            return
+        try:
+            raw = self._persistence_path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            for entry in data.get("links", []):
+                link = AgentBlockchainLink(
+                    aragora_agent_id=entry["aragora_agent_id"],
+                    chain_id=entry["chain_id"],
+                    token_id=entry["token_id"],
+                    owner_address=entry.get("owner_address", ""),
+                    verified=entry.get("verified", False),
+                    linked_at=entry.get("linked_at"),
+                    metadata=entry.get("metadata", {}),
+                )
+                self._links[link.aragora_agent_id] = link
+                self._token_to_agent[(link.chain_id, link.token_id)] = link.aragora_agent_id
+            logger.info(
+                "Loaded %d blockchain identity links from %s",
+                len(self._links),
+                self._persistence_path,
+            )
+        except (json.JSONDecodeError, TypeError, KeyError, OSError) as exc:
+            logger.warning(
+                "Failed to load blockchain identity state from %s: %s", self._persistence_path, exc
+            )
+
+    def _save_state(self) -> None:
+        """Persist current link state to JSON file (if configured)."""
+        if self._persistence_path is None:
+            return
+        try:
+            self._persistence_path.parent.mkdir(parents=True, exist_ok=True)
+            entries = [asdict(link) for link in self._links.values()]
+            payload = {"links": entries}
+            self._persistence_path.write_text(
+                json.dumps(payload, indent=2, default=str),
+                encoding="utf-8",
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Failed to save blockchain identity state to %s: %s", self._persistence_path, exc
+            )
 
     def _get_provider(self) -> Web3Provider:
         """Get or create the Web3 provider."""
@@ -142,6 +202,7 @@ class BlockchainIdentityBridge:
         logger.info(
             "Linked agent %s to token %s on chain %s", aragora_agent_id, token_id, resolved_chain_id
         )
+        self._save_state()
         return link
 
     async def unlink_agent(self, aragora_agent_id: str) -> bool:
@@ -161,6 +222,7 @@ class BlockchainIdentityBridge:
         del self._links[aragora_agent_id]
 
         logger.info("Unlinked agent %s", aragora_agent_id)
+        self._save_state()
         return True
 
     async def get_blockchain_identity(
@@ -257,10 +319,12 @@ class BlockchainIdentityBridge:
             identity = self._get_identity_contract().get_agent(link.token_id)
             link.owner_address = identity.owner
             link.verified = True
+            self._save_state()
             return True
         except (RuntimeError, ValueError, OSError, ConnectionError, KeyError) as e:
             logger.warning("Failed to verify link for %s: %s", aragora_agent_id, e)
             link.verified = False
+            self._save_state()
             return False
 
     async def sync_from_blockchain(self, limit: int = 100) -> int:
