@@ -218,6 +218,60 @@ get_profile_email() {
   grep -o '"email": "[^"]*"' <<<"$status_output" | head -1 | sed 's/"email": "//;s/"//'
 }
 
+login_profile_interactive() {
+  local profile="$1"
+  local profile_home_path
+  profile_home_path="$(profile_home "$profile")"
+  mkdir -p "${profile_home_path}/.claude" "${profile_home_path}/.config"
+
+  # Show expected account so the user knows which Google account to pick
+  local expected_email
+  expected_email="$(get_profile_email "$profile")"
+  if [[ -n "$expected_email" ]]; then
+    echo
+    echo "  ┌──────────────────────────────────────────────┐"
+    echo "  │  Log in as: $expected_email"
+    echo "  └──────────────────────────────────────────────┘"
+  fi
+
+  # Logout the CLI profile first
+  "${PROFILE_TOOL}" logout "$profile" >/dev/null 2>&1 || true
+
+  # Step 1: Open claude.ai/settings to let user sign out of the wrong
+  # browser session, then sign into the correct account.
+  echo
+  echo "  Step 1: Sign out of claude.ai in your browser, then sign in as:"
+  echo "          $expected_email"
+  echo
+  echo "  Opening claude.ai/settings (sign out there if wrong account)..."
+  open "https://claude.ai/settings" 2>/dev/null || true
+  echo
+  echo "  Press ENTER when you are signed into claude.ai as $expected_email"
+  read -r
+
+  # Step 2: Now run claude auth login — it will open the OAuth consent
+  # page which should pick up the correct browser session.
+  echo "  Step 2: Authenticating CLI profile..."
+  if ! "${PROFILE_TOOL}" login "$profile"; then
+    echo "  Login failed for ${profile}."
+    return 1
+  fi
+
+  # Verify the correct account was used
+  local actual_email
+  actual_email="$(get_profile_email "$profile")"
+  if [[ -n "$expected_email" && -n "$actual_email" && "$expected_email" != "$actual_email" ]]; then
+    echo
+    echo "  WARNING: Expected $expected_email but got $actual_email"
+    echo "  The profile may be bound to the wrong account."
+    echo "  Re-run with --force to fix: $0 login --force $profile"
+    echo
+  fi
+
+  echo "  Done."
+}
+
+# Keep legacy manual-code login for non-interactive use
 login_profile_manual_code() {
   local profile="$1"
   local profile_home_path
@@ -234,15 +288,6 @@ login_profile_manual_code() {
   mkdir -p "${profile_home_path}/.claude" "${profile_home_path}/.config"
   auth_log="$(mktemp -t "claude-auth-${profile}.XXXXXX")"
 
-  # Show expected account so the user knows which Google account to pick
-  local expected_email
-  expected_email="$(get_profile_email "$profile")"
-  if [[ -n "$expected_email" ]]; then
-    echo "  Account: $expected_email"
-  fi
-
-  # Logout first so the login flow gets a clean OAuth redirect
-  # (otherwise claude auth login may silently reuse the expired session)
   "${PROFILE_TOOL}" logout "$profile" >/dev/null 2>&1 || true
 
   cleanup_login() {
@@ -268,12 +313,12 @@ login_profile_manual_code() {
 
   state="$(extract_state_from_url "$auth_url")"
 
+  local expected_email
+  expected_email="$(get_profile_email "$profile")"
   echo "  Profile home: ${profile_home_path}"
   if [[ -n "$expected_email" ]]; then
-    echo
     echo "  >>> Log in as: $expected_email <<<"
   fi
-  echo
   echo "  If the browser didn't open, visit:"
   echo "  ${auth_url}"
   echo
@@ -351,7 +396,7 @@ case "$MODE" in
         echo "Already logged in and verified; skipping. ($(get_profile_email "$profile"))"
         continue
       fi
-      login_profile_manual_code "$profile"
+      login_profile_interactive "$profile"
     done
     ;;
   *)
