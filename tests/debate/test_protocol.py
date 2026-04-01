@@ -133,6 +133,16 @@ class TestDebateProtocolDefaults:
         protocol = DebateProtocol()
         assert protocol.enable_breakpoints is True
 
+    def test_default_skip_empty_sidecars_disabled(self):
+        """Default keeps optional sidecars enabled."""
+        protocol = DebateProtocol()
+        assert protocol.skip_empty_sidecars is False
+
+    def test_skip_empty_sidecars_can_be_enabled(self):
+        """Protocol accepts the sidecar skip flag."""
+        protocol = DebateProtocol(skip_empty_sidecars=True)
+        assert protocol.skip_empty_sidecars is True
+
 
 class TestDebateProtocolConsensusTypes:
     """Tests for consensus type configurations."""

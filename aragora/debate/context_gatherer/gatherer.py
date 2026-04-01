@@ -96,6 +96,7 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
         max_document_context_items: int = 5,
         max_evidence_context_items: int = 5,
         auth_context: Any | None = None,
+        skip_empty_sidecars: bool = False,
     ):
         """
         Initialize the context gatherer.
@@ -123,6 +124,7 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
             enable_evidence_store_context: Whether to include EvidenceStore context.
             max_document_context_items: Max documents to include.
             max_evidence_context_items: Max evidence snippets to include.
+            skip_empty_sidecars: Skip optional research/KM sidecars for simple questions.
         """
         self._evidence_store_callback = evidence_store_callback
         self._prompt_builder = prompt_builder
@@ -149,6 +151,7 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
         self._max_document_context_items = max_document_context_items
         self._max_evidence_context_items = max_evidence_context_items
         self._auth_context = auth_context
+        self._skip_empty_sidecars = skip_empty_sidecars
 
         trending_disabled = is_trending_disabled()
         self._enable_trending_context = enable_trending_context and not trending_disabled
@@ -332,6 +335,64 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
             oldest_key = next(iter(cache))
             del cache[oldest_key]
 
+    def _should_skip_optional_sidecars(self, task: str) -> bool:
+        """Skip high-latency sidecars for short, generic questions when opted in."""
+        if not self._skip_empty_sidecars:
+            return False
+
+        normalized = " ".join(task.lower().split())
+        if not normalized:
+            return False
+
+        words = normalized.split()
+        is_short_question = normalized.endswith("?") and len(words) <= 8 and len(normalized) <= 80
+        if not is_short_question:
+            return False
+
+        domain_keywords = (
+            "api",
+            "architecture",
+            "auth",
+            "benchmark",
+            "bug",
+            "cache",
+            "compliance",
+            "database",
+            "debate",
+            "debug",
+            "design",
+            "encryption",
+            "fix",
+            "gdpr",
+            "implementation",
+            "jwt",
+            "knowledge mound",
+            "latency",
+            "migration",
+            "obsidian",
+            "oauth",
+            "openapi",
+            "performance",
+            "pii",
+            "postgres",
+            "privacy",
+            "python",
+            "redis",
+            "refactor",
+            "sdk",
+            "security",
+            "shard",
+            "sql",
+            "swarm",
+            "test",
+            "threat",
+            "typescript",
+            "vector",
+            "websocket",
+            "worker",
+        )
+        return not any(keyword in normalized for keyword in domain_keywords)
+
     async def gather_all(self, task: str, timeout: float | None = None) -> str:
         """
         Perform multi-source research and return formatted context.
@@ -362,9 +423,14 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
 
         async def _gather_with_timeout():
             nonlocal context_parts
+            skip_optional_sidecars = self._should_skip_optional_sidecars(task)
+            if skip_optional_sidecars:
+                logger.info("[context] Skipping optional sidecars for simple task: %s", task)
 
             # 1. Primary: Claude's web search (best quality research)
-            claude_ctx = await self._gather_claude_web_search(task)
+            claude_ctx = None
+            if not skip_optional_sidecars:
+                claude_ctx = await self._gather_claude_web_search(task)
             if claude_ctx:
                 context_parts.append(claude_ctx)
 
@@ -375,20 +441,30 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
 
             # 3. Gather trending context for real-time relevance (if enabled)
             trending_task = None
-            if self._enable_trending_context:
+            if not skip_optional_sidecars and self._enable_trending_context:
                 trending_task = asyncio.create_task(self._gather_trending_with_timeout())
 
             # 4. Gather knowledge mound context for institutional knowledge
-            knowledge_task = asyncio.create_task(self._gather_knowledge_mound_with_timeout(task))
+            tasks = []
+            if not skip_optional_sidecars:
+                knowledge_task = asyncio.create_task(
+                    self._gather_knowledge_mound_with_timeout(task)
+                )
+                tasks.append(knowledge_task)
 
-            # 5. Gather belief crux context for debate guidance (fast, cached)
-            belief_task = asyncio.create_task(self._gather_belief_with_timeout(task))
+                # 5. Gather belief crux context for debate guidance (fast, cached)
+                belief_task = asyncio.create_task(self._gather_belief_with_timeout(task))
+                tasks.append(belief_task)
 
-            # 6. Gather culture patterns for organizational learning
-            culture_task = asyncio.create_task(self._gather_culture_with_timeout(task))
+                # 6. Gather culture patterns for organizational learning
+                culture_task = asyncio.create_task(self._gather_culture_with_timeout(task))
+                tasks.append(culture_task)
 
-            # 7. Gather threat intelligence context for security topics
-            threat_intel_task = asyncio.create_task(self._gather_threat_intel_with_timeout(task))
+                # 7. Gather threat intelligence context for security topics
+                threat_intel_task = asyncio.create_task(
+                    self._gather_threat_intel_with_timeout(task)
+                )
+                tasks.append(threat_intel_task)
 
             # 8. Gather document/evidence store context (if available)
             document_task = None
@@ -401,7 +477,6 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
                 )
 
             # 9. Gather additional evidence in parallel (fallback if Claude search weak)
-            tasks = [knowledge_task, belief_task, culture_task, threat_intel_task]
             if trending_task is not None:
                 tasks.append(trending_task)
             if document_task is not None:
@@ -409,7 +484,7 @@ class ContextGatherer(SourceGatheringMixin, CompressionMixin, MemoryMixin):
             if evidence_store_task is not None:
                 tasks.append(evidence_store_task)
 
-            if not claude_ctx or len(claude_ctx) < 500:
+            if not skip_optional_sidecars and (not claude_ctx or len(claude_ctx) < 500):
                 evidence_task = asyncio.create_task(self._gather_evidence_with_timeout(task))
                 tasks.insert(0, evidence_task)
 

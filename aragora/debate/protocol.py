@@ -412,6 +412,7 @@ class DebateProtocol:
     enable_trending_injection: bool = True  # Enable trending topic injection by default
     trending_injection_max_topics: int = 3  # Max trending topics to inject per prompt
     trending_relevance_filter: bool = True  # Only include topics relevant to debate task
+    skip_empty_sidecars: bool = False  # Skip optional research/KM sidecars for simple tasks
 
     # ThinkPRM: Process Reward Models for step-wise debate verification
     # When enabled, debate rounds are verified for logical consistency using

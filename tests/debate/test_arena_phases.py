@@ -165,6 +165,18 @@ class TestInitPhases:
         _, kwargs = mock_gatherer_cls.call_args
         assert kwargs["enable_rlm_compression"] is False
 
+    def test_init_phases_passes_skip_empty_sidecars_flag_to_context_gatherer(self):
+        """ContextGatherer should receive the protocol sidecar skip flag."""
+        mock_arena = self._create_mock_arena()
+        mock_arena.protocol.skip_empty_sidecars = True
+
+        with patch("aragora.debate.arena_phases.ContextGatherer") as mock_gatherer_cls:
+            init_phases(mock_arena)
+
+        assert mock_gatherer_cls.called
+        _, kwargs = mock_gatherer_cls.call_args
+        assert kwargs["skip_empty_sidecars"] is True
+
     def test_init_phases_sets_context_initializer(self):
         """init_phases sets context_initializer attribute."""
         mock_arena = self._create_mock_arena()

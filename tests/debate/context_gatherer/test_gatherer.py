@@ -611,6 +611,62 @@ class TestGatherAll:
         assert "trending_data" in result
 
     @pytest.mark.asyncio
+    async def test_skip_empty_sidecars_skips_optional_sidecars_for_simple_question(self):
+        """Opt-in sidecar skipping bypasses research/KM tasks for simple questions."""
+        g = _make_gatherer(skip_empty_sidecars=True, enable_trending_context=True)
+        g._gather_claude_web_search = AsyncMock(return_value="claude_ctx")
+        g.gather_aragora_context = AsyncMock(return_value=None)
+        g._gather_trending_with_timeout = AsyncMock(return_value="trending_data")
+        g._gather_knowledge_mound_with_timeout = AsyncMock(return_value="knowledge_ctx")
+        g._gather_belief_with_timeout = AsyncMock(return_value="belief_ctx")
+        g._gather_culture_with_timeout = AsyncMock(return_value="culture_ctx")
+        g._gather_threat_intel_with_timeout = AsyncMock(return_value="threat_ctx")
+        g._gather_evidence_with_timeout = AsyncMock(return_value="evidence_ctx")
+
+        result = await g.gather_all("What is 2 + 2?")
+
+        assert result == "No research context available."
+        g.gather_aragora_context.assert_called_once_with("What is 2 + 2?")
+        g._gather_claude_web_search.assert_not_called()
+        g._gather_trending_with_timeout.assert_not_called()
+        g._gather_knowledge_mound_with_timeout.assert_not_called()
+        g._gather_belief_with_timeout.assert_not_called()
+        g._gather_culture_with_timeout.assert_not_called()
+        g._gather_threat_intel_with_timeout.assert_not_called()
+        g._gather_evidence_with_timeout.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skip_empty_sidecars_preserves_sidecars_for_domain_question(self):
+        """Domain-specific questions still gather sidecars even when the flag is enabled."""
+        g = _make_gatherer(skip_empty_sidecars=True, enable_trending_context=True)
+        g._gather_claude_web_search = AsyncMock(return_value="claude_ctx")
+        g.gather_aragora_context = AsyncMock(return_value=None)
+        g._gather_trending_with_timeout = AsyncMock(return_value=None)
+        g._gather_knowledge_mound_with_timeout = AsyncMock(return_value=None)
+        g._gather_belief_with_timeout = AsyncMock(return_value=None)
+        g._gather_culture_with_timeout = AsyncMock(return_value=None)
+        g._gather_threat_intel_with_timeout = AsyncMock(return_value=None)
+        g._gather_evidence_with_timeout = AsyncMock(return_value=None)
+
+        result = await g.gather_all("How should we shard Postgres writes?")
+
+        assert "claude_ctx" in result
+        g._gather_claude_web_search.assert_called_once_with("How should we shard Postgres writes?")
+        g._gather_trending_with_timeout.assert_called_once()
+        g._gather_knowledge_mound_with_timeout.assert_called_once_with(
+            "How should we shard Postgres writes?"
+        )
+        g._gather_belief_with_timeout.assert_called_once_with(
+            "How should we shard Postgres writes?"
+        )
+        g._gather_culture_with_timeout.assert_called_once_with(
+            "How should we shard Postgres writes?"
+        )
+        g._gather_threat_intel_with_timeout.assert_called_once_with(
+            "How should we shard Postgres writes?"
+        )
+
+    @pytest.mark.asyncio
     async def test_document_store_task_created_when_configured(self):
         """When document_store is set, its gather task is created."""
         ds = MagicMock()
