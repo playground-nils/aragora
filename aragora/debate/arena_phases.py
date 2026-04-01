@@ -266,6 +266,7 @@ def init_phases(arena: Arena) -> None:
         knowledge_mound=getattr(arena, "knowledge_mound", None),
         knowledge_workspace_id=getattr(arena, "loop_id", None) or "debate",
         enable_trending_context=getattr(arena.protocol, "enable_trending_injection", True),
+        skip_empty_sidecars=getattr(arena.protocol, "skip_empty_sidecars", False),
         enable_rlm_compression=getattr(arena, "enable_rlm", True)
         and getattr(arena, "use_rlm_limiter", True),
         document_store=getattr(arena, "document_store", None),
