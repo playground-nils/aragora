@@ -1247,6 +1247,110 @@ def test_explicit_work_orders_merge_spec_file_scope_hints(
     )
 
 
+def test_start_run_narrows_broad_scope_when_goal_names_specific_doc_path(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    lifecycle = MagicMock()
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="subtask_1",
+                title="Write governance ADR",
+                description="Write docs/governance/duplicate-subsystem-resolution.md.",
+                file_scope=["docs/governance/"],
+            )
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal="Write docs/governance/duplicate-subsystem-resolution.md with the resolution plan.",
+            refined_goal="Write docs/governance/duplicate-subsystem-resolution.md with the resolution plan.",
+        ),
+        refresh_scaling=False,
+    )
+
+    assert run.work_orders[0]["file_scope"] == ["docs/governance/duplicate-subsystem-resolution.md"]
+
+
+def test_start_run_narrows_explicit_spec_broad_scope_when_description_names_specific_path(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+
+    spec = SwarmSpec(
+        raw_goal="Write docs/plans/phase0b_campaign_manifest.yaml from the bootstrap plan.",
+        refined_goal="Write docs/plans/phase0b_campaign_manifest.yaml from the bootstrap plan.",
+        work_orders=[
+            {
+                "work_order_id": "manifest-lane",
+                "title": "Manifest lane",
+                "description": "Write docs/plans/phase0b_campaign_manifest.yaml from the bootstrap plan.",
+                "file_scope": ["docs/"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+
+    run = supervisor.start_run(spec=spec, refresh_scaling=False)
+
+    assert run.work_orders[0]["file_scope"] == ["docs/plans/phase0b_campaign_manifest.yaml"]
+
+
+def test_start_run_preserves_broad_scope_without_explicit_path_hints(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    lifecycle = MagicMock()
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="subtask_1",
+                title="Write governance ADR",
+                description="Write the governance ADR.",
+                file_scope=["docs/governance/"],
+            )
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal="Write the governance ADR.",
+            refined_goal="Write the governance ADR.",
+        ),
+        refresh_scaling=False,
+    )
+
+    assert run.work_orders[0]["file_scope"] == ["docs/governance/"]
+
+
 def test_start_run_fails_closed_when_work_order_scope_remains_empty(
     repo: Path, store: DevCoordinationStore
 ) -> None:
