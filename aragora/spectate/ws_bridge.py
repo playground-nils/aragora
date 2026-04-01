@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from aragora.spectate.redaction import redact_spectator_payload
+
 logger = logging.getLogger(__name__)
 
 _spectate_context: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
@@ -99,7 +101,7 @@ class SpectateEvent:
         return {
             "event_type": self.event_type,
             "timestamp": self.timestamp,
-            "data": self.data,
+            "data": redact_spectator_payload(self.data),
             "debate_id": self.debate_id,
             "pipeline_id": self.pipeline_id,
             "agent_name": self.agent_name,
@@ -281,6 +283,8 @@ class SpectateWebSocketBridge:
         agents = context.get("agents")
         if isinstance(agents, list) and agents and "agents" not in data:
             data["agents"] = list(agents)
+
+        data = redact_spectator_payload(data)
 
         event = SpectateEvent(
             event_type=event_type,
