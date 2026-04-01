@@ -211,11 +211,34 @@ post_callback() {
   curl -g -fsS "http://[::1]:${port}/callback?code=${encoded_code}&state=${encoded_state}" >/dev/null
 }
 
+# Static email mapping — fallback when credentials are wiped
+declare -A PROFILE_EMAILS=(
+  [max-01]="anomium@gmail.com"
+  [max-02]="scarmani@gmail.com"
+  [max-03]="ap@synaptent.com"
+  [max-04]="liftmode@liftmode.com"
+  [max-05]="root@liftmode.com"
+  [max-06]="ap@synaptent.com"
+  [max-07]="radnoem@gmail.com"
+  [max-08]="synaptent@synaptent.com"
+  [max-09]="synaptent@synaptent.com"
+  [max-10]="armand.tuzel@gmail.com"
+  [max-11]="verborgen.doel@gmail.com"
+  [max-12]="armand@synaptent.com"
+  [max-13]=""
+)
+
 get_profile_email() {
   local profile="$1"
   local status_output
   status_output="$("${PROFILE_TOOL}" status "$profile" 2>/dev/null)" || true
-  grep -o '"email": "[^"]*"' <<<"$status_output" | head -1 | sed 's/"email": "//;s/"//'
+  local email
+  email="$(grep -o '"email": "[^"]*"' <<<"$status_output" | head -1 | sed 's/"email": "//;s/"//')"
+  if [[ -n "$email" ]]; then
+    printf '%s' "$email"
+    return
+  fi
+  printf '%s' "${PROFILE_EMAILS[$profile]:-}"
 }
 
 login_profile_interactive() {
@@ -227,6 +250,12 @@ login_profile_interactive() {
   # Show expected account so the user knows which Google account to pick
   local expected_email
   expected_email="$(get_profile_email "$profile")"
+  if [[ -z "$expected_email" ]]; then
+    echo
+    echo "  No email on record for $profile."
+    printf "  Enter the email for this profile: "
+    read -r expected_email
+  fi
   if [[ -n "$expected_email" ]]; then
     echo
     echo "  ┌──────────────────────────────────────────────┐"
