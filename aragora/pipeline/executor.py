@@ -89,9 +89,13 @@ def _get_backing_store() -> Any:
     attempts are made (avoids repeated expensive retries).
     """
     global _backing_store, _backing_store_init_failed
-    if "pytest" in sys.modules and os.environ.get("ARAGORA_FORCE_PERSISTENT_PLAN_STORE") != "1":
-        return None
+    # Tests often inject a fake or temporary persistent store directly. Honor
+    # that explicit override even when auto-init is disabled under pytest.
+    if _backing_store is not None:
+        return _backing_store
     if _backing_store_init_failed:
+        return None
+    if "pytest" in sys.modules and os.environ.get("ARAGORA_FORCE_PERSISTENT_PLAN_STORE") != "1":
         return None
     if _backing_store is None:
         try:
@@ -107,6 +111,11 @@ def _get_backing_store() -> Any:
 # In-memory fallback dicts (used when PlanStore is unavailable or errors)
 _plan_store_fallback: dict[str, DecisionPlan] = {}
 _plan_outcomes_fallback: dict[str, PlanOutcome] = {}
+
+# Backward-compatible aliases for older tests and helper code that still import
+# the original in-memory store symbols directly from this module.
+_plan_store = _plan_store_fallback
+_plan_outcomes = _plan_outcomes_fallback
 
 # Maximum number of plans to keep in the in-memory fallback
 _MAX_PLANS = 1000
