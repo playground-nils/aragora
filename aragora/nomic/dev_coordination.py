@@ -6460,8 +6460,30 @@ def _collapse_scope_patterns(patterns: list[str]) -> list[str]:
 
 
 def _canonical_goal_key(value: Any) -> str:
-    text = " ".join(str(value or "").split()).strip().lower()
-    return text
+    text = str(value or "").strip()
+    for paragraph in re.split(r"\n\s*\n", text):
+        candidate = " ".join(paragraph.split()).strip()
+        if not candidate:
+            continue
+        lower = candidate.lower()
+        if lower.startswith(
+            (
+                "## ",
+                "validation",
+                "allowed write scope",
+                "verification commands",
+                "source issue context",
+                "acceptance criteria",
+                "context",
+                "goal",
+            )
+        ):
+            continue
+        first_sentence = re.split(r"(?<=[.!?])\s+", candidate, maxsplit=1)[0]
+        normalized = " ".join(first_sentence.split()).strip().lower()
+        if normalized:
+            return normalized
+    return " ".join(text.split()).strip().lower()
 
 
 def _claim_contains(container: str, containee: str) -> bool:

@@ -376,6 +376,74 @@ def test_start_run_discards_duplicate_scope_less_open_lane(
     assert work_order["metadata"]["canonical_task_key"].endswith(":existing")
 
 
+def test_start_run_discards_duplicate_open_lane_when_goal_differs_only_by_boilerplate(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    store.create_supervisor_run(
+        goal=(
+            "Connect the results page to backend endpoints to display debate outcomes, "
+            "consensus/dissent analysis, and confidence scores.\n\n"
+            "Tranche objective: Make one already reachable core page functional."
+        ),
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "existing",
+                "title": "Results lane",
+                "status": "waiting_conflict",
+                "file_scope": ["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+            }
+        ],
+    )
+
+    lifecycle = MagicMock()
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="subtask_1",
+                title="Results lane",
+                description="Connect the results page to backend endpoints and include empty-state handling.",
+                file_scope=["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+            )
+        ],
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=decomposer,
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal=(
+                "Connect the results page to backend endpoints to display debate outcomes, "
+                "consensus/dissent analysis, and confidence scores. Include empty-state handling.\n\n"
+                "Verification commands:\n- python3 -m pytest tests/swarm/test_tranche_e2e.py -q"
+            ),
+            refined_goal=(
+                "Connect the results page to backend endpoints to display debate outcomes, "
+                "consensus/dissent analysis, and confidence scores. Include empty-state handling.\n\n"
+                "Verification commands:\n- python3 -m pytest tests/swarm/test_tranche_e2e.py -q"
+            ),
+        ),
+        refresh_scaling=False,
+    )
+
+    work_order = run.work_orders[0]
+    assert work_order["status"] == "discarded"
+    assert work_order["metadata"]["archived_due_to"] == "duplicate_open_work_order"
+    assert work_order["metadata"]["canonical_task_key"].endswith(":existing")
+
+
 def test_start_run_discards_duplicate_scope_less_explicit_lane_by_tranche_lane_id(
     repo: Path, store: DevCoordinationStore
 ) -> None:

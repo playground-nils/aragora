@@ -2327,6 +2327,74 @@ def test_archive_duplicate_waiting_conflict_work_orders_discards_same_tranche_la
     assert newer_refreshed["work_orders"][0]["status"] == "waiting_conflict"
 
 
+def test_archive_duplicate_waiting_conflict_work_orders_discards_same_scope_same_first_sentence_with_boilerplate(
+    store: DevCoordinationStore,
+) -> None:
+    older = store.create_supervisor_run(
+        goal=(
+            "Connect the results page to backend endpoints to display debate outcomes, "
+            "consensus/dissent analysis, and confidence scores.\n\n"
+            "Tranche objective: Make one already reachable core page functional."
+        ),
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "lane-old",
+                "title": "Results lane",
+                "status": "waiting_conflict",
+                "file_scope": ["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+            }
+        ],
+    )
+    newer = store.create_supervisor_run(
+        goal=(
+            "Connect the results page to backend endpoints to display debate outcomes, "
+            "consensus/dissent analysis, and confidence scores. Include empty-state handling.\n\n"
+            "Verification commands:\n- python3 -m pytest tests/swarm/test_tranche_e2e.py -q"
+        ),
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "lane-new",
+                "title": "Results lane",
+                "status": "waiting_conflict",
+                "file_scope": ["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", older["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-02T00:00:00+00:00", "2000-01-02T00:00:00+00:00", newer["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_duplicate_waiting_conflict_work_orders()
+    older_refreshed = store.get_supervisor_run(older["run_id"])
+    newer_refreshed = store.get_supervisor_run(newer["run_id"])
+
+    assert archived == 1
+    assert older_refreshed is not None
+    assert newer_refreshed is not None
+    assert older_refreshed["work_orders"][0]["status"] == "discarded"
+    assert older_refreshed["work_orders"][0]["metadata"]["canonical_run_id"] == newer["run_id"]
+    assert newer_refreshed["work_orders"][0]["status"] == "waiting_conflict"
+
+
 def test_archive_duplicate_waiting_conflict_work_orders_discards_scope_less_duplicate(
     store: DevCoordinationStore,
 ) -> None:
