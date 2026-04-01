@@ -191,6 +191,8 @@ class ReceiptDeliveryHook:
         try:
             import hashlib
 
+            from aragora.gauntlet.receipt_models import normalize_live_explainability
+
             # Build receipt data
             receipt_data = {
                 "debate_id": getattr(result, "debate_id", getattr(result, "id", "")),
@@ -204,6 +206,12 @@ class ReceiptDeliveryHook:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "org_id": self.org_id,
             }
+            result_metadata = getattr(result, "metadata", {}) or {}
+            live_explainability = normalize_live_explainability(
+                result_metadata.get("live_explainability")
+            )
+            if live_explainability is not None:
+                receipt_data["explainability"] = {"live_explainability": live_explainability}
 
             # Generate explainability data
             try:
@@ -211,7 +219,13 @@ class ReceiptDeliveryHook:
 
                 builder = ExplanationBuilder()
                 decision = await builder.build(result, ctx)
+                existing_explainability = (
+                    dict(receipt_data.get("explainability"))
+                    if isinstance(receipt_data.get("explainability"), dict)
+                    else {}
+                )
                 receipt_data["explainability"] = {
+                    **existing_explainability,
                     "summary": builder.generate_summary(decision),
                     "evidence_chain": [e.to_dict() for e in decision.get_top_evidence(5)],
                     "vote_pivots": [v.to_dict() for v in decision.get_pivotal_votes()],

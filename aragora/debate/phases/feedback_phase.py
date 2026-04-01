@@ -998,7 +998,23 @@ class FeedbackPhase:
 
                 builder = ExplanationBuilder()
                 decision = await builder.build(result, ctx)
+                existing_explainability = (
+                    dict(receipt.explainability) if isinstance(receipt.explainability, dict) else {}
+                )
+                try:
+                    from aragora.gauntlet.receipt_models import normalize_live_explainability
+
+                    live_explainability = normalize_live_explainability(
+                        existing_explainability.get("live_explainability")
+                    )
+                    if live_explainability is None:
+                        existing_explainability.pop("live_explainability", None)
+                    else:
+                        existing_explainability["live_explainability"] = live_explainability
+                except ImportError:
+                    existing_explainability.pop("live_explainability", None)
                 receipt.explainability = {
+                    **existing_explainability,
                     "summary": builder.generate_summary(decision),
                     "evidence_chain": [e.to_dict() for e in decision.get_top_evidence(5)],
                     "vote_pivots": [v.to_dict() for v in decision.get_pivotal_votes()],
