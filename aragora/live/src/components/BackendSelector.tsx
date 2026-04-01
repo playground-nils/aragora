@@ -208,7 +208,7 @@ export function useBackend(): { backend: BackendType; config: BackendConfig } {
 
     // Listen for changes
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
+      if (e.key === BACKEND_STORAGE_KEY && e.newValue) {
         setBackend(e.newValue as BackendType);
       }
     };

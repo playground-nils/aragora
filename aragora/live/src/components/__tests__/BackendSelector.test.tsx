@@ -44,6 +44,37 @@ describe('useBackend', () => {
       );
     });
   });
+
+  it('updates when another tab changes the saved backend', async () => {
+    render(<BackendProbe />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('backend-probe')).toHaveTextContent(
+        JSON.stringify({
+          backend: 'development',
+          api: '',
+          ws: 'ws://localhost:8765/ws',
+        }),
+      );
+    });
+
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'aragora-backend',
+        newValue: 'production',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('backend-probe')).toHaveTextContent(
+        JSON.stringify({
+          backend: 'production',
+          api: 'https://api.aragora.ai',
+          ws: 'wss://api.aragora.ai/ws',
+        }),
+      );
+    });
+  });
 });
 
 describe('BackendSelector', () => {
