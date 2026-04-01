@@ -16,8 +16,9 @@ Usage:
     executor = PlanExecutor(execution_mode="computer_use")
     outcome = await executor.execute(plan)
 
-The executor also manages an in-memory plan store for retrieval by
-plan_id, enabling the HTTP handler to look up plans across the lifecycle.
+The executor also manages a plan store (persistent SQLite via PlanStore
+with in-memory fallback) for retrieval by plan_id, enabling the HTTP
+handler to look up plans across the lifecycle.
 
 Execution Modes:
     - "workflow": Uses WorkflowEngine with DAG-based step execution (default)
@@ -65,47 +66,111 @@ DEFAULT_EXECUTION_MODE: ExecutionMode = os.environ.get("PLAN_EXECUTION_MODE", "w
 PLAN_EXECUTE_PERMISSION = "decisions:execute"
 
 # ---------------------------------------------------------------------------
-# In-memory plan store (upgrade to persistent storage later)
+# Persistent plan store with in-memory fallback
 # ---------------------------------------------------------------------------
 
-_plan_store: dict[str, DecisionPlan] = {}
-_plan_outcomes: dict[str, PlanOutcome] = {}
+_backing_store: Any = None  # PlanStore | None — typed as Any to avoid import
+_backing_store_init_failed: bool = False
 
-# Maximum number of plans to keep in memory
+
+def _try_init_backing_store() -> Any:
+    """Attempt to create a PlanStore instance. Raises on failure."""
+    from aragora.pipeline.plan_store import PlanStore
+
+    return PlanStore()
+
+
+def _get_backing_store() -> Any:
+    """Lazily initialise the persistent PlanStore singleton.
+
+    Returns the PlanStore instance, or None if initialisation failed.
+    Once initialisation fails, the failure is remembered and no further
+    attempts are made (avoids repeated expensive retries).
+    """
+    global _backing_store, _backing_store_init_failed
+    if _backing_store_init_failed:
+        return None
+    if _backing_store is None:
+        try:
+            _backing_store = _try_init_backing_store()
+            logger.info("Plan store using persistent SQLite backend")
+        except Exception:  # noqa: BLE001 - graceful degradation to in-memory
+            logger.warning("Failed to initialize persistent PlanStore, using in-memory fallback")
+            _backing_store_init_failed = True
+            return None
+    return _backing_store
+
+
+# In-memory fallback dicts (used when PlanStore is unavailable or errors)
+_plan_store_fallback: dict[str, DecisionPlan] = {}
+_plan_outcomes_fallback: dict[str, PlanOutcome] = {}
+
+# Maximum number of plans to keep in the in-memory fallback
 _MAX_PLANS = 1000
 
 
 def store_plan(plan: DecisionPlan) -> None:
-    """Store a plan in the in-memory store."""
-    if len(_plan_store) >= _MAX_PLANS:
+    """Store a plan, delegating to PlanStore when available."""
+    store = _get_backing_store()
+    if store is not None:
+        try:
+            # Try create first; on duplicate key (re-store for status update),
+            # fall back to update_status which is the expected re-store path.
+            existing = store.get(plan.id)
+            if existing is not None:
+                store.update_status(plan.id, plan.status)
+            else:
+                store.create(plan)
+            return
+        except Exception:  # noqa: BLE001 - fall through to in-memory
+            logger.warning("Persistent store_plan failed, falling back to in-memory")
+    # In-memory fallback
+    if len(_plan_store_fallback) >= _MAX_PLANS:
         # Evict oldest completed plan
-        for pid, p in list(_plan_store.items()):
+        for pid, p in list(_plan_store_fallback.items()):
             if p.status in (PlanStatus.COMPLETED, PlanStatus.FAILED, PlanStatus.REJECTED):
-                del _plan_store[pid]
+                del _plan_store_fallback[pid]
                 break
-    _plan_store[plan.id] = plan
+    _plan_store_fallback[plan.id] = plan
 
 
 def get_plan(plan_id: str) -> DecisionPlan | None:
-    """Retrieve a plan by ID."""
-    return _plan_store.get(plan_id)
+    """Retrieve a plan by ID, delegating to PlanStore when available."""
+    store = _get_backing_store()
+    if store is not None:
+        try:
+            return store.get(plan_id)
+        except Exception:  # noqa: BLE001 - fall through to in-memory
+            logger.warning("Persistent get_plan failed, falling back to in-memory")
+    return _plan_store_fallback.get(plan_id)
 
 
 def list_plans(
     status: PlanStatus | None = None,
     limit: int = 50,
 ) -> list[DecisionPlan]:
-    """List plans, optionally filtered by status."""
-    plans = list(_plan_store.values())
+    """List plans, delegating to PlanStore when available."""
+    store = _get_backing_store()
+    if store is not None:
+        try:
+            return store.list(status=status, limit=limit)
+        except Exception:  # noqa: BLE001 - fall through to in-memory
+            logger.warning("Persistent list_plans failed, falling back to in-memory")
+    plans = list(_plan_store_fallback.values())
     if status is not None:
         plans = [p for p in plans if p.status == status]
     plans.sort(key=lambda p: p.created_at, reverse=True)
     return plans[:limit]
 
 
+def store_outcome(outcome: PlanOutcome) -> None:
+    """Store a plan outcome (in-memory; outcomes are also tracked via execution records)."""
+    _plan_outcomes_fallback[outcome.plan_id] = outcome
+
+
 def get_outcome(plan_id: str) -> PlanOutcome | None:
     """Retrieve a plan outcome by plan ID."""
-    return _plan_outcomes.get(plan_id)
+    return _plan_outcomes_fallback.get(plan_id)
 
 
 # ---------------------------------------------------------------------------
@@ -472,7 +537,7 @@ class PlanExecutor:
             )
 
         # Record outcome
-        _plan_outcomes[plan.id] = outcome
+        store_outcome(outcome)
 
         # Emit completion/failure event
         event_type = "PLAN_COMPLETED" if outcome.success else "PLAN_FAILED"

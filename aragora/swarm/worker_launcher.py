@@ -166,6 +166,9 @@ class LaunchConfig:
     base_branch: str = "main"
     detach: bool = False
     require_explicit_approval: bool = True
+    # Security: dangerous CLI flags are OFF by default (Crux 1 fix).
+    allow_claude_dangerously_skip_permissions: bool = False
+    allow_codex_full_auto: bool = False
 
 
 class WorkerLauncher:
@@ -598,7 +601,7 @@ class WorkerLauncher:
     ) -> list[str]:
         if agent == "claude":
             cmd = [self.config.claude_path, "-p", prompt]
-            if admin_approved and self._should_skip_claude_permissions():
+            if self.config.allow_claude_dangerously_skip_permissions:
                 cmd.append("--dangerously-skip-permissions")
             if self.config.claude_model:
                 cmd.extend(["--model", self.config.claude_model])
@@ -613,7 +616,7 @@ class WorkerLauncher:
             # Use stdin ("-") for prompts to avoid OS arg length limits.
             # Long prompts with issue bodies + file lists can exceed ARG_MAX.
             cmd = [self.config.codex_path, "exec", "-"]
-            if admin_approved:
+            if self.config.allow_codex_full_auto:
                 cmd.append("--full-auto")
             if self.config.codex_model:
                 cmd.extend(["--model", self.config.codex_model])
@@ -624,7 +627,7 @@ class WorkerLauncher:
 
         logger.warning("Unknown agent %r, falling back to claude", agent)
         cmd = [self.config.claude_path, "-p", prompt]
-        if admin_approved and self._should_skip_claude_permissions():
+        if self.config.allow_claude_dangerously_skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if self.config.claude_profile:
             profile_script = self.config.claude_profile_script or str(
@@ -726,16 +729,6 @@ class WorkerLauncher:
             metadata={"agent": agent},
         )
         return approval_id, action.action_id
-
-    @staticmethod
-    def _should_skip_claude_permissions() -> bool:
-        geteuid = getattr(os, "geteuid", None)
-        if geteuid is None:
-            return False
-        try:
-            return int(geteuid()) != 0
-        except (OSError, ValueError, TypeError):
-            return False
 
     @staticmethod
     def _resolve_worktree_gitdir(worktree_path: str) -> str:

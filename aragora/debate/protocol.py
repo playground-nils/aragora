@@ -570,7 +570,7 @@ class DebateProtocol:
 
     # Content moderation: Run spam/quality check on debate task before execution
     # Blocks debates with spam/low-quality prompts before burning API tokens
-    enable_content_moderation: bool = False  # Opt-in: uses SpamModerationIntegration
+    enable_content_moderation: bool = True  # On by default (Crux 2 fix)
 
     # Context trust-tiering: mark external/retrieved prompt context as untrusted
     # and instruct agents to treat such context as data, not executable instructions.

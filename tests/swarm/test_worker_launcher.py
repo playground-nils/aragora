@@ -144,8 +144,13 @@ class TestBuildPrompt:
 class TestBuildCommand:
     def test_claude_command(self, monkeypatch):
         monkeypatch.setattr("aragora.swarm.worker_launcher.os.geteuid", lambda: 501)
-        launcher = WorkerLauncher(LaunchConfig(claude_model="claude-opus-4-6"))
-        cmd = launcher._build_command("claude", "fix bug", "/tmp/wt", admin_approved=True)
+        launcher = WorkerLauncher(
+            LaunchConfig(
+                claude_model="claude-opus-4-6",
+                allow_claude_dangerously_skip_permissions=True,
+            )
+        )
+        cmd = launcher._build_command("claude", "fix bug", "/tmp/wt")
         assert cmd[0] == "bash"
         assert "scripts/codex_session.sh" in cmd[1]
         # session-id is derived from worktree basename when not provided
@@ -171,8 +176,13 @@ class TestBuildCommand:
         assert "--dangerously-skip-permissions" not in cmd
 
     def test_codex_command(self):
-        launcher = WorkerLauncher(LaunchConfig(codex_model="o3"))
-        cmd = launcher._build_command("codex", "fix bug", "/tmp/wt", admin_approved=True)
+        launcher = WorkerLauncher(
+            LaunchConfig(
+                codex_model="o3",
+                allow_codex_full_auto=True,
+            )
+        )
+        cmd = launcher._build_command("codex", "fix bug", "/tmp/wt")
         assert cmd[0] == "bash"
         assert "exec" in cmd
         # Prompt is piped via stdin using "-" to avoid ARG_MAX limits
@@ -183,8 +193,12 @@ class TestBuildCommand:
 
     def test_unknown_agent_falls_back_to_claude(self, monkeypatch):
         monkeypatch.setattr("aragora.swarm.worker_launcher.os.geteuid", lambda: 501)
-        launcher = WorkerLauncher()
-        cmd = launcher._build_command("gpt5", "do thing", "/tmp/wt", admin_approved=True)
+        launcher = WorkerLauncher(
+            LaunchConfig(
+                allow_claude_dangerously_skip_permissions=True,
+            )
+        )
+        cmd = launcher._build_command("gpt5", "do thing", "/tmp/wt")
         assert cmd[0] == "bash"
         assert "--dangerously-skip-permissions" in cmd
 
@@ -235,7 +249,12 @@ class TestBuildCommand:
         real_gitdir.mkdir(parents=True)
         (real_gitdir / "commondir").write_text("../..\n")
         (wt / ".git").write_text(f"gitdir: {real_gitdir}\n")
-        launcher = WorkerLauncher(LaunchConfig(use_managed_session_script=False))
+        launcher = WorkerLauncher(
+            LaunchConfig(
+                use_managed_session_script=False,
+                allow_codex_full_auto=True,
+            )
+        )
         cmd = launcher._build_command("codex", "task", str(wt), admin_approved=True)
         assert "--add-dir" in cmd
         idx = cmd.index("--add-dir")
@@ -247,10 +266,11 @@ class TestBuildCommand:
         wt = tmp_path / "repo"
         wt.mkdir()
         (wt / ".git").mkdir()
+        # --full-auto no longer appears by default (Crux 1 fix)
         launcher = WorkerLauncher(LaunchConfig(use_managed_session_script=False))
         cmd = launcher._build_command("codex", "task", str(wt), admin_approved=True)
         assert "--add-dir" not in cmd
-        assert "--full-auto" in cmd
+        assert "--full-auto" not in cmd
 
     def test_resolve_worktree_gitdir_returns_common_dir(self, tmp_path: Path):
         """Resolves to the common .git directory, not the worktree subdir."""
@@ -1286,3 +1306,42 @@ class TestEnsureLiveNodeModulesDisabled:
 
         assert result == source_node_modules
         assert not (worktree / "aragora" / "live" / "node_modules").exists()
+
+
+class TestSafeExecutionDefaults:
+    """Crux 1: Dangerous CLI flags must be opt-in, not default."""
+
+    def test_launch_config_defaults_safe(self):
+        cfg = LaunchConfig()
+        assert cfg.allow_claude_dangerously_skip_permissions is False
+        assert cfg.allow_codex_full_auto is False
+
+    def test_claude_command_omits_dangerous_flag_by_default(self, monkeypatch):
+        monkeypatch.setattr(os, "geteuid", lambda: 1000)
+        launcher = WorkerLauncher(LaunchConfig())
+        cmd = launcher._build_agent_command("claude", "test prompt")
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_claude_command_includes_dangerous_flag_when_opted_in(self, monkeypatch):
+        monkeypatch.setattr(os, "geteuid", lambda: 1000)
+        config = LaunchConfig(allow_claude_dangerously_skip_permissions=True)
+        launcher = WorkerLauncher(config)
+        cmd = launcher._build_agent_command("claude", "test prompt")
+        assert "--dangerously-skip-permissions" in cmd
+
+    def test_codex_command_omits_full_auto_by_default(self):
+        launcher = WorkerLauncher(LaunchConfig())
+        cmd = launcher._build_agent_command("codex", "test prompt")
+        assert "--full-auto" not in cmd
+
+    def test_codex_command_includes_full_auto_when_opted_in(self):
+        config = LaunchConfig(allow_codex_full_auto=True)
+        launcher = WorkerLauncher(config)
+        cmd = launcher._build_agent_command("codex", "test prompt")
+        assert "--full-auto" in cmd
+
+    def test_unknown_agent_fallback_respects_safe_default(self, monkeypatch):
+        monkeypatch.setattr(os, "geteuid", lambda: 1000)
+        launcher = WorkerLauncher(LaunchConfig())
+        cmd = launcher._build_agent_command("unknown_agent", "test prompt")
+        assert "--dangerously-skip-permissions" not in cmd

@@ -31,6 +31,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Named sentinel for receipt anchoring. Agent ID 0 is reserved for
+# infrastructure operations (receipt anchoring) that don't represent
+# a specific registered agent. This makes the semantics explicit
+# rather than relying on a magic literal. (Crux 3 fix)
+RECEIPT_ANCHOR_AGENT_ID: int = 0
+
 
 @dataclass
 class AnchorRecord:
@@ -95,7 +101,7 @@ class ReceiptAnchor:
         meta = metadata or {}
 
         resolved_agent_id = self._resolve_agent_id(agent_id, meta)
-        if self._provider is not None and signer is not None and resolved_agent_id is not None:
+        if self._provider is not None and signer is not None:
             return await self._anchor_on_chain(receipt_hash, meta, signer, resolved_agent_id)
 
         return self._anchor_locally(receipt_hash, meta)
@@ -116,7 +122,7 @@ class ReceiptAnchor:
         receipt_hash: str,
         metadata: dict[str, Any],
         signer: Any,
-        agent_id: int,
+        agent_id: int | None,
     ) -> str:
         """Submit receipt hash to the Validation Registry on-chain."""
         from aragora.blockchain.contracts.validation import ValidationRegistryContract
@@ -139,7 +145,7 @@ class ReceiptAnchor:
         try:
             tx_hash = contract.request_validation(
                 validator_address=signer.address,
-                agent_id=agent_id,
+                agent_id=agent_id if agent_id is not None else RECEIPT_ANCHOR_AGENT_ID,
                 request_uri=metadata_uri,
                 request_hash=receipt_hash_bytes,
                 signer=signer,
@@ -273,5 +279,6 @@ class ReceiptAnchor:
 
 __all__ = [
     "AnchorRecord",
+    "RECEIPT_ANCHOR_AGENT_ID",
     "ReceiptAnchor",
 ]

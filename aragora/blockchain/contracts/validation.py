@@ -168,6 +168,9 @@ class ValidationRegistryContract:
         request_uri: str,
         request_hash: bytes,
         signer: Any,
+        *,
+        wait_for_confirmation: bool = False,
+        confirmation_timeout: int = 120,
     ) -> str:
         """Submit a validation request for an agent.
 
@@ -177,9 +180,18 @@ class ValidationRegistryContract:
             request_uri: URI with validation request details.
             request_hash: Hash of the request content.
             signer: WalletSigner for signing.
+            wait_for_confirmation: If True, block until the transaction is
+                mined and verify its on-chain status. Default is False
+                (fire-and-forget).
+            confirmation_timeout: Seconds to wait for mining when
+                *wait_for_confirmation* is True. Default 120.
 
         Returns:
             Transaction hash.
+
+        Raises:
+            RuntimeError: If *wait_for_confirmation* is True and the
+                transaction fails on-chain (status != 1).
         """
         contract = self._get_contract()
         w3 = self._provider.get_web3(self._chain_id)
@@ -197,6 +209,14 @@ class ValidationRegistryContract:
 
         tx_hash = signer.sign_and_send(w3, tx)
         self._provider.record_success(self._chain_id)
+
+        if wait_for_confirmation:
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=confirmation_timeout)
+            if receipt.get("status") != 1:
+                raise RuntimeError(
+                    f"Transaction {tx_hash} failed on-chain (status={receipt.get('status')})"
+                )
+
         return tx_hash
 
     def submit_response(

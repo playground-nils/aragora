@@ -2,7 +2,7 @@
 
 Covers:
 - Moderation check runs when enable_content_moderation=True and blocks spam
-- Moderation check is skipped when enable_content_moderation=False (default)
+- Moderation check is skipped when enable_content_moderation=False
 - Graceful degradation when moderation module import fails
 - Non-blocking: runtime errors in moderation don't crash the debate
 """
@@ -81,7 +81,7 @@ def protocol_moderation_enabled():
 
 @pytest.fixture
 def protocol_moderation_disabled():
-    """Protocol with content moderation disabled (default)."""
+    """Protocol with content moderation explicitly disabled."""
     return DebateProtocol(
         rounds=2,
         consensus="majority",
@@ -200,10 +200,10 @@ class TestContentModerationSkipped:
             mock_check.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_default_protocol_skips_moderation(self, env, agents):
-        """Default DebateProtocol has enable_content_moderation=False."""
+    async def test_default_protocol_enables_moderation(self, env, agents):
+        """Default DebateProtocol has enable_content_moderation=True (Crux 2 fix)."""
         protocol = DebateProtocol(rounds=2, consensus="majority")
-        assert protocol.enable_content_moderation is False
+        assert protocol.enable_content_moderation is True
 
 
 class TestContentModerationGracefulDegradation:
