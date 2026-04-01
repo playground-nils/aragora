@@ -34,6 +34,7 @@ from .events import (
 from aragora.config import WS_MAX_MESSAGE_SIZE
 from aragora.server.cors_config import WS_ALLOWED_ORIGINS
 from aragora.server.security.request_limits import check_json_depth
+from aragora.spectate.redaction import redact_spectator_payload
 
 # RFC 6455 close codes
 WS_CLOSE_UNSUPPORTED_DATA = 1003  # Unsupported data (e.g., invalid JSON)
@@ -333,11 +334,11 @@ class WebSocketHandlerMixin:
                 payload["current_round"] = state.get("current_round", 0)
                 payload["message_count"] = len(state.get("messages", []))
 
-        return payload
+        return redact_spectator_payload(payload)
 
     def _serialize_spectate_event(self, event: Any) -> dict[str, Any]:
         """Translate buffered spectate bridge events into the live client protocol."""
-        data = getattr(event, "data", {}) or {}
+        data = redact_spectator_payload(getattr(event, "data", {}) or {})
         payload: dict[str, Any] = {
             "type": getattr(event, "event_type", "system"),
             "timestamp": self._spectate_timestamp_to_epoch(getattr(event, "timestamp", None)),
@@ -359,7 +360,7 @@ class WebSocketHandlerMixin:
             if key in data:
                 payload[key] = data[key]
 
-        return payload
+        return redact_spectator_payload(payload)
 
     async def _handle_spectate_websocket(self, request) -> aiohttp.web.StreamResponse:
         """Handle debate or pipeline spectate sockets used by the live UI."""

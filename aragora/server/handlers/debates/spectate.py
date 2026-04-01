@@ -15,6 +15,7 @@ from typing import Any
 from aragora.rbac.decorators import require_permission
 from aragora.rbac.models import AuthorizationContext
 from aragora.server.handlers.base import HandlerResult, json_response
+from aragora.spectate.redaction import redact_spectator_payload
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ def push_spectator_event(
         "metric": metric,
         "round": round_number,
     }
+    event = redact_spectator_payload(event)
 
     pushed = 0
     dead: list[asyncio.Queue] = []
