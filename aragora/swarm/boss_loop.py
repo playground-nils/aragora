@@ -737,7 +737,7 @@ def check_runner_freshness(
     if requested_runner_type == "claude":
         try:
             verified_target = max(
-                1, int(str((env or os.environ).get("ARAGORA_BOSS_VERIFIED_RUNNER_TARGET", "2")))
+                0, int(str((env or os.environ).get("ARAGORA_BOSS_VERIFIED_RUNNER_TARGET", "2")))
             )
         except ValueError:
             verified_target = 2
