@@ -466,17 +466,22 @@ class TaskDecomposer:
                     rationale=self._build_rationale(task_description, complexity_score, True),
                 )
             if file_scope_hints:
-                return TaskDecomposition(
-                    original_task=task_description,
-                    complexity_score=complexity_score,
-                    complexity_level=self._score_to_level(complexity_score),
-                    should_decompose=True,
-                    subtasks=[
+                mirrored = self._finalize_generated_subtasks(
+                    task_description,
+                    [
                         self._build_mirrored_subtask(
                             task_description,
                             file_scope=file_scope_hints,
                         )
                     ],
+                    file_scope_hints=file_scope_hints,
+                )
+                return TaskDecomposition(
+                    original_task=task_description,
+                    complexity_score=complexity_score,
+                    complexity_level=self._score_to_level(complexity_score),
+                    should_decompose=True,
+                    subtasks=mirrored,
                     rationale=(
                         "Bounded file-scoped task kept as one mirrored subtask "
                         "instead of vague expansion"
@@ -939,6 +944,11 @@ class TaskDecomposer:
         finalized = list(subtasks)
         if file_scope_hints:
             finalized = self._constrain_scopes_to_hints(finalized, file_scope_hints)
+        finalized = self._narrow_subtask_scopes_to_explicit_paths(
+            task_description,
+            finalized,
+            file_scope_hints=file_scope_hints,
+        )
         finalized = self._drop_helper_only_subtasks(finalized)
         return self._collapse_same_scope_subtasks(
             task_description,
@@ -957,6 +967,113 @@ class TaskDecomposer:
                 }
             )
         )
+
+    @staticmethod
+    def _is_concrete_repo_path(path: str) -> bool:
+        clean = path.strip().removeprefix("./").rstrip("/")
+        if not clean or any(token in clean for token in ("*", "?", "[", "]", "{", "}")):
+            return False
+        name = clean.rsplit("/", 1)[-1]
+        return "." in name
+
+    @classmethod
+    def _path_in_scope(cls, path: str, scope_pattern: str) -> bool:
+        clean_path = path.strip().removeprefix("./").rstrip("/")
+        clean_scope = scope_pattern.strip().removeprefix("./").rstrip("/")
+        if not clean_path or not clean_scope:
+            return False
+        try:
+            from aragora.nomic.dev_coordination import _path_matches_glob
+
+            return _path_matches_glob(clean_path, clean_scope)
+        except ImportError:
+            return clean_path == clean_scope or clean_path.startswith(f"{clean_scope}/")
+
+    @classmethod
+    def _explicit_file_hints(
+        cls,
+        task_description: str,
+        subtask: SubTask,
+        *,
+        file_scope_hints: list[str] | None = None,
+    ) -> list[str]:
+        raw_candidates: list[str] = []
+        for text in (
+            task_description,
+            subtask.title,
+            subtask.description,
+            *(file_scope_hints or []),
+        ):
+            for raw in re.split(r"\s+", str(text or "")):
+                token = raw.strip().strip("`'\".,;:()[]{}<>")
+                if not token or token.startswith(("http://", "https://")):
+                    continue
+                normalized = token.removeprefix("./").rstrip("/")
+                if "/" not in normalized:
+                    continue
+                raw_candidates.append(normalized)
+        return [path for path in dict.fromkeys(raw_candidates) if cls._is_concrete_repo_path(path)]
+
+    @classmethod
+    def _narrow_subtask_scope_to_explicit_paths(
+        cls,
+        task_description: str,
+        subtask: SubTask,
+        *,
+        file_scope_hints: list[str] | None = None,
+    ) -> SubTask:
+        original_scope = [path for path in subtask.file_scope if str(path).strip()]
+        if not original_scope:
+            return subtask
+        explicit_paths = [
+            path
+            for path in cls._explicit_file_hints(
+                task_description,
+                subtask,
+                file_scope_hints=file_scope_hints,
+            )
+            if any(cls._path_in_scope(path, scope) for scope in original_scope)
+        ]
+        if not explicit_paths:
+            return subtask
+        narrowed_scope: list[str] = []
+        replaced = False
+        for scope in original_scope:
+            contains_explicit = any(cls._path_in_scope(path, scope) for path in explicit_paths)
+            if (
+                contains_explicit
+                and scope not in explicit_paths
+                and not cls._is_concrete_repo_path(scope)
+            ):
+                replaced = True
+                continue
+            narrowed_scope.append(scope)
+        if not replaced:
+            return subtask
+        subtask.file_scope = list(dict.fromkeys(narrowed_scope + explicit_paths))
+        logger.info(
+            "Narrowed broad file_scope on subtask %s using explicit path hints: %s -> %s",
+            subtask.id,
+            original_scope,
+            subtask.file_scope,
+        )
+        return subtask
+
+    def _narrow_subtask_scopes_to_explicit_paths(
+        self,
+        task_description: str,
+        subtasks: list[SubTask],
+        *,
+        file_scope_hints: list[str] | None = None,
+    ) -> list[SubTask]:
+        return [
+            self._narrow_subtask_scope_to_explicit_paths(
+                task_description,
+                subtask,
+                file_scope_hints=file_scope_hints,
+            )
+            for subtask in subtasks
+        ]
 
     @staticmethod
     def _merge_success_criteria(subtasks: list[SubTask]) -> dict[str, Any]:
@@ -1031,7 +1148,7 @@ class TaskDecomposer:
         first_scope = normalized_scopes[0]
         if any(scope != first_scope for scope in normalized_scopes[1:]):
             return subtasks
-        collapsed_scope = list(file_scope_hints or subtasks[0].file_scope)
+        collapsed_scope = list(subtasks[0].file_scope or file_scope_hints or [])
         logger.info(
             "collapse_same_scope_subtasks task=%r subtasks=%d scope=%s",
             self._truncate_task_title(task_description),

@@ -343,6 +343,21 @@ class TestTaskDecomposer:
         assert result.subtasks[0].file_scope == hints
 
     @patch.object(TaskDecomposer, "_llm_extract_subtasks", return_value=[])
+    def test_broad_docs_hint_narrows_to_explicit_file_path(self, _mock_llm_extract: object):
+        decomposer = TaskDecomposer(DecomposerConfig(complexity_threshold=1))
+        task = (
+            "Update docs/governance/phase1-scope-boundaries.md with the final phase-one "
+            "scope boundaries and governance note."
+        )
+        hints = ["docs/governance/"]
+
+        result = decomposer.analyze(task, file_scope_hints=hints)
+
+        assert result.should_decompose is True
+        assert len(result.subtasks) == 1
+        assert result.subtasks[0].file_scope == ["docs/governance/phase1-scope-boundaries.md"]
+
+    @patch.object(TaskDecomposer, "_llm_extract_subtasks", return_value=[])
     def test_live_issue_1639_markdown_shape_stays_one_file_scoped_lane(
         self, _mock_llm_extract: object
     ):
