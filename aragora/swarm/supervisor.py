@@ -77,6 +77,65 @@ def _path_in_scope(path: str, scope_pattern: str) -> bool:
     return _path_matches_glob(clean_path, clean_scope)
 
 
+def _is_concrete_repo_path(path: str) -> bool:
+    clean = path.strip().removeprefix("./").rstrip("/")
+    if not clean or any(token in clean for token in ("*", "?", "[", "]", "{", "}")):
+        return False
+    name = clean.rsplit("/", 1)[-1]
+    return "." in name
+
+
+def _narrow_scope_to_explicit_paths(
+    item: BoundedWorkOrder,
+    spec: SwarmSpec,
+) -> BoundedWorkOrder:
+    """Replace broad container scopes with explicit file paths named in task text."""
+    if not item.file_scope:
+        return item
+    inference_text = " ".join(
+        filter(
+            None,
+            [
+                spec.refined_goal or "",
+                spec.raw_goal or "",
+                item.title or "",
+                item.description or "",
+            ],
+        )
+    )
+    explicit_paths = [
+        path
+        for path in SwarmSpec.infer_file_scope_hints(inference_text)
+        if _is_concrete_repo_path(path)
+    ]
+    if not explicit_paths:
+        return item
+
+    original_scope = [str(path).strip() for path in item.file_scope if str(path).strip()]
+    if not original_scope:
+        return item
+
+    narrowed_scope: list[str] = []
+    replaced = False
+    for scope in original_scope:
+        contains_explicit = any(_path_in_scope(path, scope) for path in explicit_paths)
+        if contains_explicit and scope not in explicit_paths and not _is_concrete_repo_path(scope):
+            replaced = True
+            continue
+        narrowed_scope.append(scope)
+    if not replaced:
+        return item
+
+    item.file_scope = list(dict.fromkeys(narrowed_scope + explicit_paths))
+    logger.info(
+        "Narrowed broad file_scope on work order %s using explicit path hints: %s -> %s",
+        item.work_order_id,
+        original_scope,
+        item.file_scope,
+    )
+    return item
+
+
 def _ensure_work_order_scope(
     item: BoundedWorkOrder,
     spec: SwarmSpec,
@@ -136,7 +195,7 @@ def _ensure_work_order_scope(
                 item.work_order_id,
             )
 
-    return item
+    return _narrow_scope_to_explicit_paths(item, spec)
 
 
 class SupervisorRunStatus(str, Enum):
@@ -1886,6 +1945,7 @@ class SwarmSupervisor:
                             merged,
                         )
                     item.file_scope = merged
+            _narrow_scope_to_explicit_paths(item, spec)
             item.expected_tests = self._default_tests(item, spec)
             item.risk_level = str(item.risk_level).strip() or self._risk_level_for_scope(
                 item.file_scope
