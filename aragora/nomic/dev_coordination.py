@@ -5581,7 +5581,8 @@ def _docs_only_verification_script_path(command: Any) -> str:
         return ""
     if not tokens:
         return ""
-    if len(tokens) < 2 or Path(tokens[0]).name not in {"python", "python3"}:
+    interpreter = Path(tokens[0]).name
+    if len(tokens) < 2 or not interpreter.startswith("python"):
         return ""
     return tokens[1]
 
