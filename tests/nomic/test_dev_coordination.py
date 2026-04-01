@@ -1909,6 +1909,71 @@ def test_archive_superseded_waiting_conflict_work_orders_discards_contained_narr
     assert work_orders["subtask_2"]["metadata"]["canonical_work_order_id"] == "subtask_1"
 
 
+def test_archive_superseded_waiting_conflict_work_orders_discards_cross_run_contained_sibling(
+    store: DevCoordinationStore,
+) -> None:
+    older = store.create_supervisor_run(
+        goal="Write an ADR for standardizing health check endpoints across all deploy surfaces.",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "Narrow ADR lane",
+                "status": "waiting_conflict",
+                "file_scope": ["docs/ADR/019-standardized-health-check-endpoints.md"],
+            }
+        ],
+    )
+    newer = store.create_supervisor_run(
+        goal="Write an ADR for standardizing health check endpoints across all deploy surfaces.",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_2",
+                "title": "Broader ADR lane",
+                "status": "waiting_conflict",
+                "file_scope": ["docs/ADR/"],
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", older["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-02T00:00:00+00:00", "2000-01-02T00:00:00+00:00", newer["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_superseded_waiting_conflict_work_orders(grace_period_hours=24.0)
+    older_refreshed = store.get_supervisor_run(older["run_id"])
+    newer_refreshed = store.get_supervisor_run(newer["run_id"])
+
+    assert archived == 1
+    assert older_refreshed is not None
+    assert newer_refreshed is not None
+    assert older_refreshed["work_orders"][0]["status"] == "discarded"
+    assert (
+        older_refreshed["work_orders"][0]["metadata"]["archive_reason"]
+        == "cross_run_contained_waiting_conflict_sibling"
+    )
+    assert older_refreshed["work_orders"][0]["metadata"]["canonical_run_id"] == newer["run_id"]
+    assert older_refreshed["work_orders"][0]["metadata"]["canonical_work_order_id"] == "subtask_2"
+    assert newer_refreshed["work_orders"][0]["status"] == "waiting_conflict"
+
+
 def test_archive_superseded_waiting_conflict_work_orders_discards_glob_and_trailing_slash_variants(
     store: DevCoordinationStore,
 ) -> None:
@@ -2172,6 +2237,224 @@ def test_archive_duplicate_waiting_conflict_work_orders_discards_older_cross_run
     assert older_item["metadata"]["canonical_work_order_id"] == "subtask_2"
     assert newer_item["status"] == "waiting_conflict"
     assert distinct_item["status"] == "waiting_conflict"
+
+
+def test_archive_duplicate_waiting_conflict_work_orders_discards_same_tranche_lane_with_goal_drift(
+    store: DevCoordinationStore,
+) -> None:
+    older = store.create_supervisor_run(
+        goal="Replace integrations UI path with truthful live-state behavior.",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "lane-old",
+                "title": "Integrations slice",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/live/**",
+                    "aragora/server/handlers/features/**",
+                    "tests/e2e/**",
+                    "tests/handlers/**",
+                    "docs/**",
+                ],
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "tranche_lane_id": "integrations-ui-truthful-status-slice",
+                },
+            }
+        ],
+    )
+    newer = store.create_supervisor_run(
+        goal=(
+            "Replace one non-trustworthy integrations UI path with live-state behavior "
+            "and truthful status messaging, preferring a status or edit flow that "
+            "already has backend state available.\n\nVerification commands:\n"
+            "- python3 -m pytest tests/handlers/features/test_integrations.py -q"
+        ),
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "lane-new",
+                "title": "Integrations slice",
+                "status": "waiting_conflict",
+                "file_scope": [
+                    "aragora/live/**",
+                    "aragora/server/handlers/features/**",
+                    "tests/e2e/**",
+                    "tests/handlers/**",
+                    "docs/**",
+                ],
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "tranche_lane_id": "integrations-ui-truthful-status-slice",
+                },
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", older["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-02T00:00:00+00:00", "2000-01-02T00:00:00+00:00", newer["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_duplicate_waiting_conflict_work_orders()
+    older_refreshed = store.get_supervisor_run(older["run_id"])
+    newer_refreshed = store.get_supervisor_run(newer["run_id"])
+
+    assert archived == 1
+    assert older_refreshed is not None
+    assert newer_refreshed is not None
+    assert older_refreshed["work_orders"][0]["status"] == "discarded"
+    assert older_refreshed["work_orders"][0]["metadata"]["archived_due_to"] == (
+        "duplicate_waiting_conflict"
+    )
+    assert older_refreshed["work_orders"][0]["metadata"]["canonical_run_id"] == newer["run_id"]
+    assert newer_refreshed["work_orders"][0]["status"] == "waiting_conflict"
+
+
+def test_archive_duplicate_waiting_conflict_work_orders_discards_scope_less_duplicate(
+    store: DevCoordinationStore,
+) -> None:
+    older = store.create_supervisor_run(
+        goal="Write an ADR for standardizing health check endpoints across all deploy surfaces.",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_1",
+                "title": "ADR lane",
+                "status": "waiting_conflict",
+            }
+        ],
+    )
+    newer = store.create_supervisor_run(
+        goal="Write an ADR for standardizing health check endpoints across all deploy surfaces.",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "subtask_2",
+                "title": "ADR lane",
+                "status": "waiting_conflict",
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", older["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-02T00:00:00+00:00", "2000-01-02T00:00:00+00:00", newer["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_duplicate_waiting_conflict_work_orders()
+    older_refreshed = store.get_supervisor_run(older["run_id"])
+    newer_refreshed = store.get_supervisor_run(newer["run_id"])
+
+    assert archived == 1
+    assert older_refreshed is not None
+    assert newer_refreshed is not None
+    assert older_refreshed["work_orders"][0]["status"] == "discarded"
+    assert older_refreshed["work_orders"][0]["metadata"]["archived_due_to"] == (
+        "duplicate_waiting_conflict"
+    )
+    assert older_refreshed["work_orders"][0]["metadata"]["canonical_run_id"] == newer["run_id"]
+    assert newer_refreshed["work_orders"][0]["status"] == "waiting_conflict"
+
+
+def test_archive_duplicate_waiting_conflict_work_orders_discards_scope_less_same_tranche_lane(
+    store: DevCoordinationStore,
+) -> None:
+    older = store.create_supervisor_run(
+        goal="Connect the results page to backend endpoints.",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "proj-001",
+                "title": "Results page lane",
+                "status": "waiting_conflict",
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "tranche_lane_id": "proj-001",
+                },
+            }
+        ],
+    )
+    newer = store.create_supervisor_run(
+        goal="Rebuild the 30/60/90 execution map from current repo reality.",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "proj-001",
+                "title": "Results page lane",
+                "status": "waiting_conflict",
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "tranche_lane_id": "proj-001",
+                },
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", older["run_id"]),
+        )
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            ("2000-01-02T00:00:00+00:00", "2000-01-02T00:00:00+00:00", newer["run_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_duplicate_waiting_conflict_work_orders()
+    older_refreshed = store.get_supervisor_run(older["run_id"])
+    newer_refreshed = store.get_supervisor_run(newer["run_id"])
+
+    assert archived == 1
+    assert older_refreshed is not None
+    assert newer_refreshed is not None
+    assert older_refreshed["work_orders"][0]["status"] == "discarded"
+    assert older_refreshed["work_orders"][0]["metadata"]["archived_due_to"] == (
+        "duplicate_waiting_conflict"
+    )
+    assert older_refreshed["work_orders"][0]["metadata"]["canonical_run_id"] == newer["run_id"]
+    assert newer_refreshed["work_orders"][0]["status"] == "waiting_conflict"
 
 
 def test_archive_work_order_leasing_failed_work_orders_preserves_deliverable_backed_lane(

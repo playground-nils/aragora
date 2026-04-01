@@ -1144,6 +1144,7 @@ class DevCoordinationStore:
                 record["status"] = self._derive_supervisor_run_status(record["work_orders"])
                 record["updated_at"] = now.isoformat()
                 self._persist_supervisor_run(conn, record)
+
             conn.commit()
         finally:
             conn.close()
@@ -1201,6 +1202,7 @@ class DevCoordinationStore:
                 record["status"] = self._derive_supervisor_run_status(record["work_orders"])
                 record["updated_at"] = now.isoformat()
                 self._persist_supervisor_run(conn, record)
+
             conn.commit()
         finally:
             conn.close()
@@ -1757,8 +1759,8 @@ class DevCoordinationStore:
                 if str(row["lease_id"]).strip()
             }
             archived = 0
-            for row in rows:
-                record = self._supervisor_run_from_row(row)
+            records = [self._supervisor_run_from_row(row) for row in rows]
+            for record in records:
                 deliverable_items = [
                     item
                     for item in record["work_orders"]
@@ -1913,6 +1915,78 @@ class DevCoordinationStore:
                 record["status"] = self._derive_supervisor_run_status(record["work_orders"])
                 record["updated_at"] = now.isoformat()
                 self._persist_supervisor_run(conn, record)
+
+            grouped_waiting_by_goal: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+            for record in records:
+                goal_key = _canonical_goal_key(record.get("goal"))
+                if not goal_key:
+                    continue
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    if not _work_order_should_archive_superseded_waiting_conflict(
+                        item,
+                        run=record,
+                        cutoff=cutoff,
+                        lease_status=lease_status_by_id.get(_optional_text(item.get("lease_id"))),
+                    ):
+                        continue
+                    grouped_waiting_by_goal.setdefault(goal_key, []).append((record, item))
+
+            changed_run_ids: set[str] = set()
+            for siblings in grouped_waiting_by_goal.values():
+                for record, item in siblings:
+                    if _optional_text(item.get("status")).lower() != "waiting_conflict":
+                        continue
+                    metadata = dict(item.get("metadata") or {})
+                    if _optional_text(metadata.get("archived_due_to")):
+                        continue
+                    record_run_id = _optional_text(record.get("run_id"))
+                    containing_siblings = [
+                        (sibling_record, sibling)
+                        for sibling_record, sibling in siblings
+                        if sibling is not item
+                        and _optional_text(sibling_record.get("run_id")) != record_run_id
+                        and _optional_text(sibling.get("status")).lower() == "waiting_conflict"
+                        and _work_order_scope_contains(sibling, item)
+                        and not _work_order_scope_contains(item, sibling)
+                    ]
+                    if not containing_siblings:
+                        continue
+                    keeper_record, keeper = max(
+                        containing_siblings,
+                        key=lambda pair: _containing_waiting_conflict_priority(
+                            pair[1], run=pair[0]
+                        ),
+                    )
+                    metadata.update(
+                        {
+                            "archived_due_to": "superseded_waiting_conflict",
+                            "archived_at": now.isoformat(),
+                            "archive_reason": "cross_run_contained_waiting_conflict_sibling",
+                            "canonical_run_id": _optional_text(keeper_record.get("run_id")) or None,
+                            "canonical_work_order_id": _optional_text(
+                                keeper.get("work_order_id"),
+                                keeper.get("task_id"),
+                            )
+                            or None,
+                            "previous_status": "waiting_conflict",
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    if not _optional_text(item.get("failure_reason")):
+                        item["failure_reason"] = "superseded_waiting_conflict"
+                    changed_run_ids.add(record_run_id)
+                    archived += 1
+
+            for record in records:
+                run_id = _optional_text(record.get("run_id"))
+                if run_id not in changed_run_ids:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now.isoformat()
+                self._persist_supervisor_run(conn, record)
             conn.commit()
         finally:
             conn.close()
@@ -1934,9 +2008,6 @@ class DevCoordinationStore:
                 tuple[str, tuple[str, ...]], list[tuple[dict[str, Any], dict[str, Any]]]
             ] = {}
             for record in records:
-                goal_key = _canonical_goal_key(record.get("goal"))
-                if not goal_key:
-                    continue
                 for item in record["work_orders"]:
                     if not isinstance(item, dict):
                         continue
@@ -1947,10 +2018,10 @@ class DevCoordinationStore:
                         lease_status=lease_status,
                     ):
                         continue
-                    scope_key = _canonical_work_order_scope_key(item)
-                    if not scope_key:
+                    group_key = _duplicate_waiting_conflict_group_key(item, run=record)
+                    if not group_key:
                         continue
-                    grouped.setdefault((goal_key, scope_key), []).append((record, item))
+                    grouped.setdefault(group_key, []).append((record, item))
 
             archived = 0
             changed_run_ids: set[str] = set()
@@ -6283,9 +6354,24 @@ def _work_order_is_duplicate_waiting_conflict_candidate(
         work_order
     ):
         return False
-    return bool(_canonical_work_order_scope_key(work_order)) and bool(
-        _canonical_goal_key(run.get("goal"))
-    )
+    return bool(_duplicate_waiting_conflict_group_key(work_order, run=run))
+
+
+def _duplicate_waiting_conflict_group_key(
+    work_order: dict[str, Any],
+    *,
+    run: dict[str, Any],
+) -> tuple[str, str, tuple[str, ...]] | None:
+    scope_key = _canonical_work_order_scope_key(work_order)
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict):
+        tranche_lane_id = _optional_text(metadata.get("tranche_lane_id"))
+        if tranche_lane_id:
+            return ("tranche_lane_id", tranche_lane_id, scope_key)
+    goal_key = _canonical_goal_key(run.get("goal"))
+    if not goal_key:
+        return None
+    return ("goal", goal_key, scope_key)
 
 
 def _duplicate_work_order_leasing_failed_priority(
