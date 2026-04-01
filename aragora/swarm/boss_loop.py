@@ -794,7 +794,7 @@ def check_runner_freshness(
                 if isinstance(item, dict) and registry._probe_status(item) == "passed"
             ]
         )
-        if selected_verified == 0:
+        if selected_verified == 0 and verified_target > 0:
             return RunnerFreshnessResult(
                 fresh=False,
                 runner_ids=routing.selected_runner_ids,
