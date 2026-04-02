@@ -28,8 +28,11 @@ import logging
 import os
 import re
 import threading
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
+
+from aragora.pipeline.execution_mode import ExecutionMode
 
 logger = logging.getLogger(__name__)
 # Per-step timeout for async callables run from the sync coordinator.
@@ -42,6 +45,7 @@ ASYNC_RUN_TIMEOUT_SECONDS = float(os.getenv("ARAGORA_POST_DEBATE_ASYNC_TIMEOUT",
 class PostDebateConfig:
     """Configuration for the post-debate processing pipeline."""
 
+    execution_mode: ExecutionMode = ExecutionMode.AUTONOMOUS
     auto_explain: bool = True
     auto_create_plan: bool = True
     auto_notify: bool = True
@@ -115,6 +119,7 @@ class PostDebateResult:
     """
 
     debate_id: str = ""
+    run_id: str | None = None
     explanation: dict[str, Any] | None = None
     plan: dict[str, Any] | None = None
     notification_sent: bool = False
@@ -167,6 +172,8 @@ class PostDebateCoordinator:
         self.config = config or PostDebateConfig()
         self._settlement_tracker = settlement_tracker
         self._knowledge_mound = knowledge_mound
+        self._backbone_runtime: Any | None = None
+        self._backbone_runtime_failed = False
 
     @staticmethod
     def _run_async_callable(async_fn: Any, /, *args: Any, **kwargs: Any) -> Any:
@@ -237,6 +244,7 @@ class PostDebateCoordinator:
             PostDebateResult with outputs from each pipeline step
         """
         result = PostDebateResult(debate_id=debate_id)
+        result.run_id = self._seed_backbone_run(debate_id, debate_result, task)
 
         # Step 0: Collect cost data (always attempted, used by downstream steps)
         result.cost_breakdown = self._step_collect_cost_data(debate_id, debate_result)
@@ -248,23 +256,7 @@ class PostDebateCoordinator:
         # Step 2: Create decision plan
         if self.config.auto_create_plan and confidence >= self.config.plan_min_confidence:
             result.plan = self._step_create_plan(debate_id, debate_result, task, result.explanation)
-
-        # Wire backbone ledger when upstream provided a backbone_run_id
-        backbone_run_id = (getattr(debate_result, "metadata", {}) or {}).get("backbone_run_id")
-        if backbone_run_id and result.plan:
-            try:
-                from aragora.pipeline.backbone_runtime import BackboneRuntime
-
-                runtime = BackboneRuntime()
-                runtime.append_stage_event(
-                    backbone_run_id,
-                    "plan",
-                    status="created",
-                    artifact_ref=str(result.plan.get("id", "")),
-                )
-                runtime.update_run(backbone_run_id, plan_id=str(result.plan.get("id", "")))
-            except Exception:
-                logger.debug("Backbone wiring skipped for post-debate plan")
+            self._record_backbone_plan(result.run_id, debate_id, result.plan)
 
         # Step 2.5: Gauntlet adversarial validation
         if self.config.auto_gauntlet_validate and confidence >= self.config.gauntlet_min_confidence:
@@ -292,6 +284,7 @@ class PostDebateCoordinator:
             if receipt_id:
                 result.receipt_persisted = True
                 result.receipt_id = receipt_id
+                self._record_backbone_receipt(result.run_id, receipt_id)
 
         # Step 2.8: Execution safety gate (signed receipts + diversity + taint checks)
         if self.config.enforce_execution_safety_gate:
@@ -316,6 +309,12 @@ class PostDebateCoordinator:
                 }
             else:
                 result.execution_result = self._step_execute_plan(result.plan, result.explanation)
+            self._record_backbone_execution(
+                result.run_id,
+                result.plan,
+                result.execution_result,
+                execution_gate=result.execution_gate,
+            )
 
         # Step 4.5: Create draft PR for code-related debates
         if (
@@ -443,6 +442,318 @@ class PostDebateCoordinator:
                 result.bridge_results.append(decision_bridge_result)
 
         return result
+
+    def _backbone_required(self) -> bool:
+        return self.config.execution_mode == ExecutionMode.INTERACTIVE
+
+    def _backbone_failure(self, message: str, exc: Exception | None = None) -> None:
+        if self._backbone_required():
+            raise RuntimeError(message) from exc
+        if exc is None:
+            logger.warning(message)
+        else:
+            logger.warning("%s: %s", message, exc)
+
+    def _ensure_backbone_write(self, result: Any, message: str) -> None:
+        if result is False:
+            self._backbone_failure(message)
+
+    def _get_backbone_runtime(self) -> Any | None:
+        """Lazily initialize the backbone runtime used for post-debate ledger writes."""
+        if self._backbone_runtime is not None:
+            return self._backbone_runtime
+        if self._backbone_runtime_failed:
+            self._backbone_failure("Post-debate backbone runtime unavailable")
+            return None
+        try:
+            from aragora.pipeline.backbone_runtime import BackboneRuntime
+
+            self._backbone_runtime = BackboneRuntime()
+        except (ImportError, RuntimeError, OSError, ValueError, TypeError) as e:
+            self._backbone_runtime_failed = True
+            self._backbone_failure("Post-debate backbone runtime unavailable", e)
+            return None
+        return self._backbone_runtime
+
+    @staticmethod
+    def _plan_object(plan_data: dict[str, Any] | None) -> Any | None:
+        if not isinstance(plan_data, dict):
+            return None
+        if "plan" in plan_data:
+            return plan_data.get("plan")
+        return plan_data
+
+    @staticmethod
+    def _plan_id(plan_obj: Any) -> str:
+        if isinstance(plan_obj, dict):
+            return str(plan_obj.get("id", "") or plan_obj.get("plan_id", "") or "").strip()
+        return str(getattr(plan_obj, "id", "") or getattr(plan_obj, "plan_id", "") or "").strip()
+
+    def _seed_backbone_run(
+        self,
+        debate_id: str,
+        debate_result: Any,
+        task: str,
+    ) -> str | None:
+        """Ensure post-debate processing has a RunLedger anchor."""
+        runtime = self._get_backbone_runtime()
+        if runtime is None:
+            return None
+
+        metadata = getattr(debate_result, "metadata", None)
+        if not isinstance(metadata, dict):
+            metadata = {}
+            try:
+                setattr(debate_result, "metadata", metadata)
+            except (AttributeError, TypeError):
+                pass
+
+        existing_run_id = str(metadata.get("backbone_run_id", "") or "").strip()
+        if existing_run_id:
+            metadata.setdefault("backbone_entrypoint", "post_debate_coordinator.run")
+            return existing_run_id
+
+        if not hasattr(runtime, "create_run"):
+            self._backbone_failure(
+                "Post-debate backbone runtime does not support run creation for seeded ledgers"
+            )
+            return None
+
+        try:
+            from aragora.pipeline.backbone_contracts import (
+                DeliberationBundle,
+                IntakeBundle,
+                RunLedger,
+            )
+
+            resolved_task = str(task or getattr(debate_result, "task", "") or "").strip()
+            intake = IntakeBundle(
+                source_kind="post_debate_coordinator",
+                raw_intent=resolved_task,
+                context_refs=[{"kind": "debate", "id": debate_id}] if debate_id else [],
+                trust_tiers=["service-authored"],
+                origin_metadata={"debate_id": debate_id},
+            )
+            try:
+                deliberation = DeliberationBundle.from_debate_result(debate_result)
+            except (ValueError, TypeError, AttributeError):
+                deliberation = DeliberationBundle(
+                    debate_id=debate_id,
+                    verdict=self._debate_final_answer(debate_result),
+                    confidence=float(getattr(debate_result, "confidence", 0.0) or 0.0),
+                    consensus_reached=self._debate_consensus_reached(debate_result),
+                )
+
+            run_id = f"run-{uuid.uuid4().hex[:12]}"
+            runtime.create_run(
+                RunLedger(
+                    run_id=run_id,
+                    entrypoint="post_debate_coordinator.run",
+                    status="deliberation_completed",
+                    intake_bundle=intake,
+                    deliberation_bundle=deliberation,
+                    debate_id=debate_id,
+                    taint_flags=list(intake.taint_flags) + list(deliberation.taint_flags),
+                    metadata={
+                        "source_surface": "post_debate_coordinator",
+                        "execution_mode": self.config.execution_mode.value,
+                    },
+                )
+            )
+            if hasattr(runtime, "append_stage_event"):
+                self._ensure_backbone_write(
+                    runtime.append_stage_event(
+                        run_id,
+                        "intake",
+                        status="completed",
+                        artifact_ref=debate_id,
+                    ),
+                    "Post-debate intake stage was not persisted",
+                )
+                self._ensure_backbone_write(
+                    runtime.append_stage_event(
+                        run_id,
+                        "deliberation",
+                        status="completed",
+                        artifact_ref=debate_id,
+                    ),
+                    "Post-debate deliberation stage was not persisted",
+                )
+            metadata["backbone_run_id"] = run_id
+            metadata["backbone_entrypoint"] = "post_debate_coordinator.run"
+            return run_id
+        except (ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            self._backbone_failure(f"Post-debate backbone seed failed for {debate_id}", e)
+            return None
+
+    def _record_backbone_plan(
+        self,
+        run_id: str | None,
+        debate_id: str,
+        plan_data: dict[str, Any] | None,
+    ) -> None:
+        """Mirror plan creation into the RunLedger when available."""
+        if not run_id:
+            return
+
+        plan_obj = self._plan_object(plan_data)
+        plan_id = self._plan_id(plan_obj)
+        if not plan_id:
+            return
+
+        runtime = self._get_backbone_runtime()
+        if runtime is None:
+            return
+
+        try:
+            if isinstance(plan_obj, dict):
+                plan_obj.setdefault("backbone_run_id", run_id)
+            elif plan_obj is not None:
+                from aragora.pipeline.backbone_runtime import BackboneRuntime
+
+                BackboneRuntime.ensure_plan_metadata(
+                    plan_obj,
+                    run_id,
+                    "post_debate_coordinator.run",
+                )
+
+            self._ensure_backbone_write(
+                runtime.update_run(
+                    run_id,
+                    status="plan_ready",
+                    plan_id=plan_id,
+                    debate_id=debate_id,
+                ),
+                "Post-debate plan state was not persisted",
+            )
+            self._ensure_backbone_write(
+                runtime.append_stage_event(
+                    run_id,
+                    "plan",
+                    status="created",
+                    artifact_ref=plan_id,
+                ),
+                "Post-debate plan stage was not persisted",
+            )
+        except (ImportError, ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            self._backbone_failure(f"Post-debate backbone plan record failed for {debate_id}", e)
+
+    def _record_backbone_receipt(self, run_id: str | None, receipt_id: str) -> None:
+        """Attach signed receipt state to the RunLedger."""
+        if not run_id or not receipt_id:
+            return
+
+        runtime = self._get_backbone_runtime()
+        if runtime is None:
+            return
+
+        try:
+            self._ensure_backbone_write(
+                runtime.update_run(
+                    run_id,
+                    receipt_id=receipt_id,
+                    metadata={"signed_receipt_persisted": True},
+                ),
+                "Post-debate receipt state was not persisted",
+            )
+            self._ensure_backbone_write(
+                runtime.append_stage_event(
+                    run_id,
+                    "receipt",
+                    status="approved",
+                    artifact_ref=receipt_id,
+                ),
+                "Post-debate receipt stage was not persisted",
+            )
+        except (ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            self._backbone_failure(f"Post-debate backbone receipt record failed for {run_id}", e)
+
+    def _record_backbone_execution(
+        self,
+        run_id: str | None,
+        plan_data: dict[str, Any] | None,
+        execution_result: dict[str, Any] | None,
+        *,
+        execution_gate: dict[str, Any] | None,
+    ) -> None:
+        """Mirror execution requests and terminal state into the RunLedger."""
+        if not run_id:
+            return
+
+        runtime = self._get_backbone_runtime()
+        if runtime is None:
+            return
+
+        plan_id = self._plan_id(self._plan_object(plan_data))
+
+        try:
+            if self._is_execution_blocked(execution_gate):
+                blocked_status = "blocked"
+                if execution_result and execution_result.get("reason") == "execution_gate_blocked":
+                    blocked_status = "pending_approval"
+                self._ensure_backbone_write(
+                    runtime.update_run(run_id, status=blocked_status),
+                    "Post-debate execution block state was not persisted",
+                )
+                self._ensure_backbone_write(
+                    runtime.append_stage_event(
+                        run_id,
+                        "execution",
+                        status=blocked_status,
+                        artifact_ref=plan_id,
+                    ),
+                    "Post-debate execution block event was not persisted",
+                )
+                return
+
+            self._ensure_backbone_write(
+                runtime.update_run(run_id, status="execution_requested"),
+                "Post-debate execution request was not persisted",
+            )
+            self._ensure_backbone_write(
+                runtime.append_stage_event(
+                    run_id,
+                    "execution",
+                    status="requested",
+                    artifact_ref=plan_id,
+                ),
+                "Post-debate execution request event was not persisted",
+            )
+
+            terminal_status = "failed"
+            artifact_ref = plan_id
+            if isinstance(execution_result, dict):
+                if execution_result.get("skipped"):
+                    terminal_status = "skipped"
+                elif execution_result.get("error"):
+                    terminal_status = "failed"
+                else:
+                    terminal_status = "completed"
+                    artifact_ref = str(execution_result.get("url", "") or plan_id)
+
+            run_status_map = {
+                "completed": "execution_completed",
+                "skipped": "execution_skipped",
+                "failed": "execution_failed",
+            }
+            self._ensure_backbone_write(
+                runtime.update_run(run_id, status=run_status_map[terminal_status]),
+                "Post-debate execution result was not persisted",
+            )
+            self._ensure_backbone_write(
+                runtime.append_stage_event(
+                    run_id,
+                    "execution",
+                    status=terminal_status,
+                    artifact_ref=artifact_ref,
+                ),
+                "Post-debate execution result event was not persisted",
+            )
+        except (ValueError, TypeError, AttributeError, RuntimeError, OSError) as e:
+            self._backbone_failure(
+                f"Post-debate backbone execution record failed for {run_id}",
+                e,
+            )
 
     def _is_execution_blocked(self, gate: dict[str, Any] | None) -> bool:
         """Return True when execution gate exists and denies auto-execution."""
@@ -2014,6 +2325,7 @@ class PostDebateCoordinator:
 
 
 DEFAULT_POST_DEBATE_CONFIG = PostDebateConfig(
+    execution_mode=ExecutionMode.AUTONOMOUS,
     auto_explain=True,
     auto_create_plan=False,
     auto_notify=False,

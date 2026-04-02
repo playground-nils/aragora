@@ -22,6 +22,7 @@ from aragora.debate.post_debate_coordinator import (
     PostDebateCoordinator,
     PostDebateResult,
 )
+from aragora.pipeline.execution_mode import ExecutionMode
 
 
 class TestDefaultPostDebateConfig:
@@ -51,6 +52,9 @@ class TestDefaultPostDebateConfig:
 
     def test_default_config_auto_build_integrity_package_disabled(self):
         assert DEFAULT_POST_DEBATE_CONFIG.auto_build_integrity_package is False
+
+    def test_default_config_execution_mode_is_autonomous(self):
+        assert DEFAULT_POST_DEBATE_CONFIG.execution_mode == ExecutionMode.AUTONOMOUS
 
 
 class TestCoordinatorWithDefaultConfig:

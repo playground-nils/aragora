@@ -1330,6 +1330,7 @@ async def handle_debate_completion(
         auto_mode = getattr(arena, "auto_approval_mode", "risk_based")
         getattr(arena, "auto_max_risk", "low")
         effective_config = PostDebateConfig(
+            execution_mode=effective_config.execution_mode,
             auto_explain=effective_config.auto_explain,
             auto_create_plan=True,
             auto_notify=effective_config.auto_notify,

@@ -13,25 +13,39 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from aragora.debate.post_debate_coordinator import (
     PostDebateConfig,
     PostDebateCoordinator,
     PostDebateResult,
 )
+from aragora.pipeline.execution_mode import ExecutionMode
+from aragora.pipeline.plan_store import PlanStore
 
 
 def _make_debate_result(consensus=True, confidence=0.85, task="Test task"):
     """Create a mock debate result."""
     result = MagicMock()
     result.consensus = "majority" if consensus else None
+    result.consensus_reached = consensus
     result.confidence = confidence
     result.task = task
     result.domain = "general"
     result.messages = []
     result.winner = "claude"
     result.agents = ["claude", "gpt4"]
+    result.participants = ["claude", "gpt4"]
     result.debate_id = "test-debate"
+    result.final_answer = "test answer"
+    result.metadata = {}
     return result
+
+
+def _patch_plan_store(monkeypatch, tmp_path):
+    store = PlanStore(db_path=str(tmp_path / "post_debate_backbone.db"))
+    monkeypatch.setattr("aragora.pipeline.plan_store._store", store)
+    return store
 
 
 class TestPostDebateResult:
@@ -40,6 +54,7 @@ class TestPostDebateResult:
     def test_defaults(self):
         r = PostDebateResult()
         assert r.debate_id == ""
+        assert r.run_id is None
         assert r.explanation is None
         assert r.plan is None
         assert r.notification_sent is False
@@ -60,6 +75,7 @@ class TestPostDebateConfig:
 
     def test_defaults(self):
         config = PostDebateConfig()
+        assert config.execution_mode == ExecutionMode.AUTONOMOUS
         assert config.auto_explain is True
         assert config.auto_create_plan is True
         assert config.auto_notify is True
@@ -384,6 +400,34 @@ class TestExecutionSafetyGate:
 class TestBackboneWiring:
     """Tests for backbone ledger wiring in PostDebateCoordinator."""
 
+    def test_backbone_run_seeded_when_no_run_id(self, tmp_path, monkeypatch):
+        store = _patch_plan_store(monkeypatch, tmp_path)
+        config = PostDebateConfig(
+            auto_explain=False,
+            auto_create_plan=False,
+            auto_notify=False,
+            auto_execute_plan=False,
+            auto_persist_receipt=False,
+            auto_execution_bridge=False,
+            enforce_execution_safety_gate=False,
+        )
+        coordinator = PostDebateCoordinator(config=config)
+
+        result = coordinator.run("d1", _make_debate_result(confidence=0.9), confidence=0.9)
+        run = store.get_run(result.run_id or "")
+
+        assert result.run_id is not None
+        assert run is not None
+        assert run.entrypoint == "post_debate_coordinator.run"
+        assert run.debate_id == "d1"
+        assert any(
+            event.stage == "intake" and event.status == "completed" for event in run.stage_events
+        )
+        assert any(
+            event.stage == "deliberation" and event.status == "completed"
+            for event in run.stage_events
+        )
+
     def test_post_debate_wires_backbone_when_run_id_present(self):
         """Coordinator should wire to backbone when debate has backbone_run_id."""
         config = PostDebateConfig(
@@ -430,43 +474,51 @@ class TestBackboneWiring:
             result = coordinator.run("d1", debate_result, confidence=0.9)
 
         assert result.plan is not None
+        assert result.run_id == "boss-run-123-issue42"
         assert len(appended_events) == 1
         assert appended_events[0]["run_id"] == "boss-run-123-issue42"
         assert appended_events[0]["stage"] == "plan"
         assert appended_events[0]["status"] == "created"
         assert appended_events[0]["artifact_ref"] == "plan-abc"
         assert len(updated_calls) == 1
+        assert updated_calls[0]["status"] == "plan_ready"
         assert updated_calls[0]["plan_id"] == "plan-abc"
 
-    def test_backbone_skipped_when_no_run_id(self):
-        """Without backbone_run_id in metadata, no backbone calls should happen."""
+    def test_backbone_records_receipt_and_execution_events(self, tmp_path, monkeypatch):
+        store = _patch_plan_store(monkeypatch, tmp_path)
         config = PostDebateConfig(
             auto_explain=False,
             auto_create_plan=True,
             auto_notify=False,
-            auto_execute_plan=False,
-            auto_persist_receipt=False,
+            auto_execute_plan=True,
+            auto_persist_receipt=True,
             auto_execution_bridge=False,
             enforce_execution_safety_gate=False,
             plan_min_confidence=0.5,
         )
         coordinator = PostDebateCoordinator(config=config)
-        debate_result = _make_debate_result(confidence=0.9)
-        debate_result.metadata = {}
-
         fake_plan = {"id": "plan-xyz", "steps": []}
 
         with (
             patch.object(coordinator, "_step_create_plan", return_value=fake_plan),
-            patch(
-                "aragora.pipeline.backbone_runtime.BackboneRuntime",
-            ) as mock_rt_cls,
+            patch.object(coordinator, "_step_persist_signed_receipt", return_value="receipt-123"),
+            patch.object(
+                coordinator,
+                "_step_execute_plan",
+                return_value={"url": "https://github.com/owner/repo/issues/42"},
+            ),
         ):
-            result = coordinator.run("d1", debate_result, confidence=0.9)
+            result = coordinator.run("d1", _make_debate_result(confidence=0.9), confidence=0.9)
 
-        assert result.plan is not None
-        # BackboneRuntime should never be instantiated
-        mock_rt_cls.assert_not_called()
+        run = store.get_run(result.run_id or "")
+
+        assert run is not None
+        assert run.receipt_id == "receipt-123"
+        execution_events = [event for event in run.stage_events if event.stage == "execution"]
+        assert [event.status for event in execution_events] == ["requested", "completed"]
+        assert any(
+            event.stage == "receipt" and event.status == "approved" for event in run.stage_events
+        )
 
     def test_backbone_failure_does_not_block_pipeline(self):
         """Backbone runtime errors must not prevent post-debate pipeline from completing."""
@@ -505,3 +557,52 @@ class TestBackboneWiring:
 
         assert result.plan is not None
         assert result.plan["id"] == "plan-crash"
+
+    def test_interactive_mode_raises_when_backbone_runtime_unavailable(self):
+        config = PostDebateConfig(
+            execution_mode=ExecutionMode.INTERACTIVE,
+            auto_explain=False,
+            auto_create_plan=False,
+            auto_notify=False,
+            auto_execute_plan=False,
+            auto_persist_receipt=False,
+            auto_execution_bridge=False,
+            enforce_execution_safety_gate=False,
+        )
+        coordinator = PostDebateCoordinator(config=config)
+        coordinator._backbone_runtime_failed = True
+
+        with pytest.raises(RuntimeError, match="backbone runtime unavailable"):
+            coordinator.run("d1", _make_debate_result(confidence=0.9), confidence=0.9)
+
+    def test_interactive_mode_raises_when_backbone_write_fails(self):
+        config = PostDebateConfig(
+            execution_mode=ExecutionMode.INTERACTIVE,
+            auto_explain=False,
+            auto_create_plan=True,
+            auto_notify=False,
+            auto_execute_plan=False,
+            auto_persist_receipt=False,
+            auto_execution_bridge=False,
+            enforce_execution_safety_gate=False,
+            plan_min_confidence=0.5,
+        )
+        coordinator = PostDebateCoordinator(config=config)
+        debate_result = _make_debate_result(confidence=0.9)
+        debate_result.metadata = {"backbone_run_id": "boss-run-123-issue42"}
+
+        class CrashingRuntime:
+            def append_stage_event(self, *a, **kw):
+                raise RuntimeError("backbone unavailable")
+
+            def update_run(self, *a, **kw):
+                raise RuntimeError("backbone unavailable")
+
+        fake_plan = {"id": "plan-crash", "steps": []}
+
+        with (
+            patch.object(coordinator, "_step_create_plan", return_value=fake_plan),
+            patch("aragora.pipeline.backbone_runtime.BackboneRuntime", CrashingRuntime),
+            pytest.raises(RuntimeError, match="backbone plan record failed"),
+        ):
+            coordinator.run("d1", debate_result, confidence=0.9)

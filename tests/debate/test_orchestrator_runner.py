@@ -24,6 +24,7 @@ import pytest
 
 from aragora.core import DebateResult, Environment, TaskComplexity
 from aragora.debate.context import DebateContext
+from aragora.debate.post_debate_coordinator import PostDebateConfig
 from aragora.debate.orchestrator_runner import (
     _DebateExecutionState,
     _record_debate_telemetry,
@@ -35,6 +36,7 @@ from aragora.debate.orchestrator_runner import (
     handle_debate_completion,
     cleanup_debate_resources,
 )
+from aragora.pipeline.execution_mode import ExecutionMode
 
 
 # =============================================================================
@@ -1227,6 +1229,45 @@ class TestHandleDebateCompletion:
         assert record_kwargs["metadata"]["status"] == "completed"
         meter.flush_all.assert_awaited_once()
         assert execution_state.ctx.result.metadata["usage_metering"]["debate_recorded"] is True
+
+    @pytest.mark.asyncio
+    async def test_auto_execution_preserves_post_debate_execution_mode(
+        self, mock_arena, execution_state, monkeypatch
+    ):
+        """Auto-execution should not reset an explicit post-debate execution mode."""
+        mock_arena.enable_auto_execution = True
+        mock_arena.disable_post_debate_pipeline = False
+        mock_arena.auto_approval_mode = "risk_based"
+        mock_arena.post_debate_config = PostDebateConfig(
+            execution_mode=ExecutionMode.INTERACTIVE,
+            auto_explain=False,
+            auto_create_plan=False,
+            auto_notify=False,
+            auto_execute_plan=False,
+            auto_create_pr=False,
+            auto_build_integrity_package=False,
+            auto_persist_receipt=False,
+            auto_gauntlet_validate=False,
+            auto_queue_improvement=False,
+            auto_execution_bridge=False,
+        )
+        monkeypatch.setenv("ARAGORA_SYNC_POST_DEBATE", "1")
+        captured: dict[str, PostDebateConfig] = {}
+        coordinator = MagicMock()
+        coordinator.run = MagicMock(return_value=None)
+
+        def _build_coordinator(*, config, settlement_tracker=None, knowledge_mound=None):
+            captured["config"] = config
+            return coordinator
+
+        with patch(
+            "aragora.debate.post_debate_coordinator.PostDebateCoordinator",
+            side_effect=_build_coordinator,
+        ):
+            await handle_debate_completion(mock_arena, execution_state)
+
+        assert captured["config"].execution_mode == ExecutionMode.INTERACTIVE
+        assert captured["config"].auto_execute_plan is True
 
     @pytest.mark.asyncio
     async def test_records_debate_analytics_agent_activity(self, mock_arena, execution_state):

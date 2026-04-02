@@ -1053,6 +1053,10 @@ class BossLoopConfig:
     # work instead of processing issues in arbitrary GitHub order.
     use_value_ranking: bool = True
 
+    # Micro-decomposition: break broad issues into single-file work orders.
+    # Workers succeed on focused tasks but timeout on broad ones in large repos.
+    use_micro_decomposition: bool = True
+
     # Security: opt-in flags for dangerous worker CLI behavior (Crux 1).
     allow_claude_dangerously_skip_permissions: bool = False
     allow_codex_full_auto: bool = False
@@ -2809,6 +2813,33 @@ class BossLoop:
             interrogation_turns=0,
             user_expertise="developer",
         )
+
+        # Micro-decompose: convert broad issues into single-file work orders.
+        # Workers succeed on focused tasks but fail on broad ones in large repos.
+        if self.config.use_micro_decomposition and scope_hints:
+            try:
+                from aragora.swarm.micro_decomposer import build_micro_work_orders
+
+                validation_contract_raw = extract_issue_validation_contract(issue.body)
+                micro_orders = build_micro_work_orders(
+                    goal=goal,
+                    file_scope_hints=scope_hints,
+                    acceptance_criteria=list(validation_contract_raw)
+                    if validation_contract_raw
+                    else None,
+                    constraints=constraints,
+                    repo_root=Path.cwd(),
+                )
+                if micro_orders:
+                    spec.work_orders = micro_orders
+                    logger.info(
+                        "Micro-decomposed issue #%s into %d work orders",
+                        issue.number,
+                        len(micro_orders),
+                    )
+            except Exception as exc:
+                logger.debug("Micro-decomposition skipped: %s", exc)
+
         validation_contract = extract_issue_validation_contract(issue.body)
         if validation_contract and self.config.use_focused_verification:
             # Replace broad test suite commands with focused verification
