@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL } from '@/config';
+import { getRuntimeBackendConfig } from '@/components/BackendSelector';
 import { logger } from '@/utils/logger';
 
 interface ProviderStatus {
@@ -41,6 +41,7 @@ const CATEGORY_LABELS: Record<string, string> = {
  * Shows provider connection status and allows users to configure integrations.
  */
 export function IntegrationSelector({ onComplete, onSkip, onBack }: IntegrationSelectorProps) {
+  const apiBase = getRuntimeBackendConfig().config.api;
   const [providers, setProviders] = useState<ProviderStatus[]>(DEFAULT_PROVIDERS);
   const [loading, setLoading] = useState(true);
 
@@ -48,7 +49,7 @@ export function IntegrationSelector({ onComplete, onSkip, onBack }: IntegrationS
   useEffect(() => {
     async function checkStatus() {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/integrations/status`);
+        const res = await fetch(`${apiBase}/api/v1/integrations/status`);
         if (res.ok) {
           const data = await res.json();
           const statusMap: Record<string, boolean> = data.integrations ?? {};
@@ -67,7 +68,7 @@ export function IntegrationSelector({ onComplete, onSkip, onBack }: IntegrationS
     }
 
     checkStatus();
-  }, []);
+  }, [apiBase]);
 
   const connectedCount = providers.filter((p) => p.connected).length;
   const hasRequiredProvider = providers.some((p) => p.required && p.connected);

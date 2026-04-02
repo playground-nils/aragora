@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { API_BASE_URL } from '@/config';
+import { getRuntimeBackendConfig } from '@/components/BackendSelector';
 import { useOnboardingStore } from '@/store';
 import { useDebateWebSocket } from '@/hooks/debate-websocket/useDebateWebSocket';
 
@@ -23,7 +23,7 @@ type ReceiptFull = Record<string, unknown> & {
 };
 
 export function FirstDebateStep() {
-  const apiBase = API_BASE_URL;
+  const apiBase = getRuntimeBackendConfig().config.api;
   const {
     selectedTemplate,
     firstDebateTopic,
