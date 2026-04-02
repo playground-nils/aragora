@@ -264,6 +264,49 @@ class TestSwarmParser:
         )
         assert args.boss_max_parallel_dispatches == 3
 
+    def test_cmd_swarm_boss_loop_full_auto_enables_postprocessing(self, capsys):
+        args = _swarm_args(
+            swarm_action_or_goal="boss-loop",
+            autonomy="full-auto",
+            json=True,
+            boss_repo="synaptent/aragora",
+            boss_issue_list="101",
+            boss_issue_number=None,
+            worker_model="claude",
+            review_model="codex",
+            labels=["boss-ready"],
+            boss_label_filter=None,
+            allow_missing_validation_contract=False,
+            ping_pong=False,
+            no_dispatch=False,
+            claude_runner_profiles=None,
+            max_consecutive_failures=3,
+        )
+        fake_result = SimpleNamespace(
+            to_dict=lambda: {
+                "mode": "boss-loop",
+                "run_id": "boss-run-1",
+                "iterations_completed": 1,
+                "stop_reason": "max_iterations",
+                "issues_attempted": [],
+                "issues_completed": [],
+                "issues_failed": [],
+                "iteration_statuses": [],
+                "needs_human_reasons": [],
+                "next_actions": [],
+            }
+        )
+        fake_loop = SimpleNamespace(run=AsyncMock(return_value=fake_result))
+
+        with patch("aragora.swarm.boss_loop.BossLoop", return_value=fake_loop) as boss_loop_cls:
+            cmd_swarm(args)
+
+        config = boss_loop_cls.call_args.kwargs["config"]
+        assert config.auto_publish_deliverables is True
+        assert config.auto_close_already_done_issues is True
+        assert config.auto_continue_on_needs_human is True
+        assert '"mode": "boss-loop"' in capsys.readouterr().out
+
     def test_swarm_integrator_parser(self):
         from aragora.cli.parser import build_parser
 

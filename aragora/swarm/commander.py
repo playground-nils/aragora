@@ -267,6 +267,7 @@ class SwarmCommander:
                 # the caller is the approval authority — skip the launcher's
                 # own approval gate that requires the wrapper.
                 require_explicit_approval=use_managed_session_script,
+                base_branch=target_branch,
                 claude_profile=(
                     str(default_target_runner.get("profile", "")).strip()
                     if isinstance(default_target_runner, dict)
@@ -409,7 +410,12 @@ class SwarmCommander:
                     from aragora.nomic.meta_planner import MetaPlanner
 
                     planner = MetaPlanner()
-                    suggestion = await planner.suggest_next_goal([r.summary for r in reports])
+                    suggestion_fn = getattr(planner, "suggest_next_goal", None)
+                    suggestion = (
+                        await suggestion_fn([r.summary for r in reports])
+                        if callable(suggestion_fn)
+                        else None
+                    )
                     if suggestion:
                         _print(f"\nSuggested next goal: {suggestion}")
                         goal = suggestion
@@ -462,7 +468,7 @@ class SwarmCommander:
                 watch_tags=["#aragora", "#swarm"],
             )
             connector = ObsidianConnector(config)
-            notes = list(connector.search_notes(tags=["#swarm"]))
+            notes = connector.list_notes(tags=["#swarm"])
             return [note.content for note in notes if note.content]
         except (ImportError, Exception):
             logger.debug("Obsidian connector unavailable")
@@ -474,6 +480,7 @@ class SwarmCommander:
             return
         try:
             from aragora.connectors.knowledge.obsidian import (
+                Frontmatter,
                 ObsidianConfig,
                 ObsidianConnector,
             )
@@ -482,11 +489,14 @@ class SwarmCommander:
             connector = ObsidianConnector(config)
             receipt_md = report.to_markdown()
             goal_slug = (report.spec.raw_goal[:50] if report.spec else "unknown").strip()
-            connector.write_note(
-                title=f"Swarm Receipt - {goal_slug}",
+            await connector.write_note(
+                path=f"aragora-receipts/Swarm Receipt - {goal_slug}",
                 content=receipt_md,
-                tags=["#aragora", "#receipt"],
-                folder="aragora-receipts",
+                frontmatter=Frontmatter(
+                    title=f"Swarm Receipt - {goal_slug}",
+                    tags=["#aragora", "#receipt"],
+                ),
+                overwrite=True,
             )
             logger.info("Decision receipt written to Obsidian vault")
         except (ImportError, Exception):
@@ -505,7 +515,7 @@ class SwarmCommander:
                 if getattr(assignment, "status", "") == "completed":
                     output = getattr(assignment, "output", "")
                     if output:
-                        score = scorer.score(output)
+                        score = scorer.score_decision({"final_answer": output})
                         if hasattr(assignment, "__dict__"):
                             assignment.__dict__["epistemic_score"] = score
                         scores.append(score.overall if hasattr(score, "overall") else 0.0)
@@ -526,7 +536,7 @@ class SwarmCommander:
             from aragora.knowledge.mound.core import KnowledgeMound
 
             mound = KnowledgeMound()
-            mound.ingest(
+            await mound.ingest(
                 {
                     "type": "swarm_cycle",
                     "cycle": cycle,

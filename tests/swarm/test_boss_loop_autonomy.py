@@ -156,6 +156,124 @@ def test_full_auto_skips_needs_human_without_deliverable() -> None:
     assert "Skipping to next issue" in status.next_actions[0]
 
 
+def test_auto_publish_promotes_branch_deliverable_to_pr_metadata() -> None:
+    loop = BossLoop(
+        config=BossLoopConfig(
+            max_iterations=1,
+            iteration_interval_seconds=0.0,
+            auto_publish_deliverables=True,
+            target_branch="release/2026.04",
+        )
+    )
+    worker_result = {
+        "status": "completed",
+        "receipt_id": "lane-101",
+        "deliverable": {
+            "type": "branch",
+            "branch": "codex/issue-101",
+            "commit_shas": ["abc123"],
+        },
+    }
+
+    with (
+        patch(
+            "aragora.swarm.tranche_integrate.publish_lane_deliverable",
+            return_value={
+                "published": True,
+                "branch": "codex/issue-101",
+                "pr_url": "https://github.com/synaptent/aragora/pull/1919",
+            },
+        ) as publish_mock,
+        patch("aragora.ralph.github_control.GitHubControl"),
+        patch("aragora.swarm.pr_registry.PullRequestRegistry"),
+    ):
+        result = loop._postprocess_issue_result(_issue(), worker_result)
+
+    assert result["deliverable"]["type"] == "pr"
+    assert result["deliverable"]["pr_url"] == "https://github.com/synaptent/aragora/pull/1919"
+    assert result["pr_number"] == 1919
+    assert result["publish_result"]["published"] is True
+    assert publish_mock.call_args.kwargs["target_branch"] == "release/2026.04"
+    assert publish_mock.call_args.args[0].branch == "codex/issue-101"
+
+
+def test_auto_close_marks_already_done_issue_resolved() -> None:
+    loop = BossLoop(
+        config=BossLoopConfig(
+            max_iterations=1,
+            iteration_interval_seconds=0.0,
+            auto_close_already_done_issues=True,
+            repo="synaptent/aragora",
+        )
+    )
+    worker_result = {
+        "status": "needs_human",
+        "run": {
+            "work_orders": [
+                {
+                    "worker_outcome": "clean_exit_no_effect",
+                    "stdout_tail": "Already implemented; nothing to commit.",
+                    "verification_results": [{"passed": True}],
+                    "tests_run": ["pytest -q tests/swarm/test_boss_loop_autonomy.py"],
+                    "commit_shas": [],
+                    "changed_paths": [],
+                }
+            ]
+        },
+    }
+
+    with patch(
+        "aragora.swarm.boss_loop.subprocess.run",
+        return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
+    ) as close_mock:
+        result = loop._postprocess_issue_result(_issue(), worker_result)
+
+    assert result["outcome"] == "issue_already_resolved"
+    assert result["issue_resolution"]["action"] == "closed"
+    assert result["issue_resolution"]["reason"] == "already_implemented"
+    assert "Verification passed on 1 check" in result["issue_resolution"]["comment"]
+    close_cmd = close_mock.call_args.args[0]
+    assert close_cmd[:3] == ["gh", "issue", "close"]
+    assert "--repo" in close_cmd
+    assert "synaptent/aragora" in close_cmd
+
+
+def test_run_iteration_treats_auto_closed_issue_as_completed() -> None:
+    feed = MagicMock()
+    feed.fetch.return_value = [_issue()]
+    loop = BossLoop(
+        config=BossLoopConfig(
+            max_iterations=1,
+            iteration_interval_seconds=0.0,
+        ),
+        issue_feed=feed,
+        freshness_checker=lambda **_kwargs: _fresh_result(),
+    )
+    loop._emit_lane_receipt = MagicMock(return_value="lane-receipt-1")
+    loop._log_value_outcome = MagicMock()
+
+    with patch.object(
+        loop,
+        "_dispatch_issue",
+        AsyncMock(
+            return_value={
+                "status": "needs_human",
+                "outcome": "issue_already_resolved",
+                "issue_resolution": {
+                    "action": "closed",
+                    "reason": "already_implemented",
+                },
+            }
+        ),
+    ):
+        status = asyncio.run(loop._run_iteration(1))
+
+    assert status.worker_status == "completed"
+    assert status.stop_reason is None
+    assert "auto-closed" in status.next_actions[0]
+    assert loop._completed_issues[0]["number"] == 101
+
+
 def test_run_iteration_passes_profile_pool_and_rotation_to_freshness_checker() -> None:
     feed = MagicMock()
     feed.fetch.return_value = [_issue()]

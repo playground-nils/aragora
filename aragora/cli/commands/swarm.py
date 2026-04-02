@@ -1548,6 +1548,8 @@ def cmd_swarm(args: argparse.Namespace) -> None:
             enable_ping_pong_retry=bool(getattr(args, "ping_pong", False)),
             allow_claude_dangerously_skip_permissions=auto_continue,
             allow_codex_full_auto=auto_continue,
+            auto_publish_deliverables=auto_continue,
+            auto_close_already_done_issues=auto_continue,
         )
         loop = BossLoop(config=boss_loop_config)
 

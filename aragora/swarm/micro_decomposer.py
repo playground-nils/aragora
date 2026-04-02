@@ -66,21 +66,18 @@ def build_micro_work_orders(
 
     work_orders: list[dict] = []
     order_idx = 0
+    prefers_test_first = _prefers_test_first_resolution(
+        goal=goal,
+        acceptance_criteria=acceptance_criteria,
+        impl_files=impl_files,
+        test_files=test_files,
+    )
 
-    # Create one work order per implementation file
-    for filepath in impl_files[:5]:  # Cap at 5 files to avoid sprawl
-        order_idx += 1
-        wo = _build_file_work_order(
-            index=order_idx,
-            filepath=filepath,
-            goal=goal,
-            constraints=constraints,
-            root=root,
-        )
-        work_orders.append(wo)
-
-    # Create one work order for test files (grouped)
-    if test_files:
+    # Some issues explicitly prefer a test-only confirmation step before any
+    # implementation work. In that case, skip the implementation-only lanes and
+    # let the final validation lane touch implementation files only if the new
+    # tests prove it is actually necessary.
+    if prefers_test_first and test_files:
         order_idx += 1
         test_wo = _build_test_work_order(
             index=order_idx,
@@ -90,6 +87,30 @@ def build_micro_work_orders(
             root=root,
         )
         work_orders.append(test_wo)
+    else:
+        # Create one work order per implementation file
+        for filepath in impl_files[:5]:  # Cap at 5 files to avoid sprawl
+            order_idx += 1
+            wo = _build_file_work_order(
+                index=order_idx,
+                filepath=filepath,
+                goal=goal,
+                constraints=constraints,
+                root=root,
+            )
+            work_orders.append(wo)
+
+        # Create one work order for test files (grouped)
+        if test_files:
+            order_idx += 1
+            test_wo = _build_test_work_order(
+                index=order_idx,
+                test_files=test_files,
+                goal=goal,
+                impl_files=impl_files,
+                root=root,
+            )
+            work_orders.append(test_wo)
 
     # Final validation work order
     if acceptance_criteria:
@@ -110,6 +131,55 @@ def build_micro_work_orders(
         )
 
     return work_orders
+
+
+def _prefers_test_first_resolution(
+    *,
+    goal: str,
+    acceptance_criteria: list[str] | None,
+    impl_files: list[str],
+    test_files: list[str],
+) -> bool:
+    """Detect issues that should start with tests, not implementation.
+
+    This targets narrow cases like:
+    - "Prefer a test-only fix if X already works"
+    - implementation files included only conditionally ("only if current ...")
+
+    For these, emitting an implementation-only lane first creates wasted churn.
+    A test lane plus a final validation/fix lane is a better bounded sequence.
+    """
+    if not acceptance_criteria or not impl_files or not test_files:
+        return False
+
+    lowered = " ".join(
+        part.strip().lower() for part in [goal, *acceptance_criteria] if part and part.strip()
+    )
+    prefers_test_only = any(
+        marker in lowered
+        for marker in (
+            "prefer a test-only fix",
+            "prefer a test only fix",
+            "only create/modify test files",
+            "only create or modify test files",
+        )
+    )
+    conditional_impl = any(
+        marker in lowered
+        for marker in (
+            "only if current",
+            "only if the current",
+            "only if parser",
+            "if the current parser already",
+            "if the current",
+            "if current",
+        )
+    )
+    test_led_acceptance = all(
+        any(token in item.lower() for token in ("pytest", "test", "tests/"))
+        for item in acceptance_criteria
+    )
+    return prefers_test_only or (conditional_impl and test_led_acceptance)
 
 
 def _resolve_file_hints(hints: list[str], root: Path) -> list[str]:

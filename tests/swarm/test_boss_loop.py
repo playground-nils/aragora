@@ -2051,7 +2051,10 @@ async def test_dispatch_issue_builds_clean_spec_from_issue_body() -> None:
     assert "[Issue #1733] Tighten supervisor merge gate" in spec.raw_goal
     assert "Workers should keep only dispatch-relevant context." in spec.raw_goal
     assert "Scope hints" not in spec.raw_goal
-    assert "aragora/swarm/supervisor.py" in spec.file_scope_hints
+    scoped_paths = set(spec.file_scope_hints)
+    for work_order in spec.work_orders:
+        scoped_paths.update(str(path) for path in work_order.get("file_scope", []))
+    assert "aragora/swarm/supervisor.py" in scoped_paths
     assert spec.acceptance_criteria == ["pytest -q tests/swarm/test_boss_loop.py"]
 
 

@@ -119,3 +119,51 @@ def test_caps_at_five_impl_files(tmp_path: Path) -> None:
         and "test" not in o.get("title", "").lower()
     ]
     assert len(impl_orders) <= 5
+
+
+def test_prefers_test_first_for_conditional_test_only_issue(tmp_path: Path) -> None:
+    (tmp_path / "aragora" / "cli").mkdir(parents=True)
+    (tmp_path / "tests" / "cli").mkdir(parents=True)
+    (tmp_path / "aragora" / "cli" / "parser.py").write_text("def build_parser():\n    pass\n")
+    (tmp_path / "tests" / "cli" / "test_swarm_command.py").write_text(
+        "def test_swarm_runner_parser():\n    pass\n"
+    )
+
+    goal = """
+    Add explicit CLI parser coverage for `swarm runner probe --runner-type codex`.
+
+    ## Scope
+    - `tests/cli/test_swarm_command.py`
+    - `aragora/cli/parser.py` only if the current parser does not already accept the codex probe shape
+
+    ## Constraints
+    - Do not broaden into runner execution, freshness, or Boss-loop behavior.
+    - Prefer a test-only fix if the parser already supports the codex probe arguments.
+    """.strip()
+
+    orders = build_micro_work_orders(
+        goal=goal,
+        file_scope_hints=["tests/cli/test_swarm_command.py", "aragora/cli/parser.py"],
+        acceptance_criteria=[
+            "`tests/cli/test_swarm_command.py` includes codex runner probe coverage.",
+            "`python3 -m pytest -q tests/cli/test_swarm_command.py -k codex`",
+        ],
+        repo_root=tmp_path,
+    )
+
+    non_validation_orders = [
+        order for order in orders if "validation" not in str(order.get("title", "")).lower()
+    ]
+    assert len(non_validation_orders) == 1
+    assert non_validation_orders[0]["title"] == "Write tests for parser.py"
+    assert non_validation_orders[0]["file_scope"] == ["tests/cli/test_swarm_command.py"]
+
+    validation_orders = [
+        order for order in orders if "validation" in str(order.get("title", "")).lower()
+    ]
+    assert len(validation_orders) == 1
+    assert validation_orders[0]["dependency_ids"] == ["micro-task-1"]
+    assert validation_orders[0]["file_scope"] == [
+        "tests/cli/test_swarm_command.py",
+        "aragora/cli/parser.py",
+    ]

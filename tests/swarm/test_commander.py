@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 from uuid import uuid4
 
 import pytest
@@ -94,7 +94,10 @@ class TestSwarmCommanderRunFromSpec:
 
         mock_sup.start_run.assert_called_once()
         mock_sup.dispatch_workers.assert_called_once_with(fake_run.run_id)
-        mock_sup.refresh_run.assert_called_once_with(fake_run.run_id)
+        assert mock_sup.refresh_run.call_args_list == [
+            call(fake_run.run_id),
+            call(fake_run.run_id),
+        ]
 
     @pytest.mark.asyncio
     async def test_run_supervised_from_spec_wait_false_returns_refreshed_run(self):
@@ -122,7 +125,10 @@ class TestSwarmCommanderRunFromSpec:
 
         assert result is refreshed_run
         mock_sup.dispatch_workers.assert_awaited_once_with(fake_run.run_id)
-        mock_sup.refresh_run.assert_called_once_with(fake_run.run_id)
+        assert mock_sup.refresh_run.call_args_list == [
+            call(fake_run.run_id),
+            call(fake_run.run_id),
+        ]
         mock_reconciler_cls.assert_not_called()
 
     @pytest.mark.asyncio
@@ -191,6 +197,7 @@ class TestSwarmCommanderRunFromSpec:
         assert result is watched_run
         assert mock_sup.start_run.call_args.kwargs["spec"] is spec
         mock_sup.dispatch_workers.assert_awaited_once_with(fake_run.run_id)
+        mock_sup.refresh_run.assert_called_once_with(fake_run.run_id)
         mock_reconciler_cls.assert_called_once_with(supervisor=mock_sup)
         mock_reconciler_cls.return_value.watch_run.assert_awaited_once_with(
             fake_run.run_id,
@@ -275,6 +282,39 @@ class TestSwarmCommanderRunFromSpec:
         mock_sup.dispatch_workers.assert_not_awaited()
         mock_sup.refresh_run.assert_called_once_with(fake_run.run_id)
         mock_reconciler_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_run_supervised_from_spec_forwards_target_branch_to_launcher_base_branch(self):
+        spec = SwarmSpec(
+            raw_goal="Ship against release branch",
+            refined_goal="Ship against release branch",
+            file_scope_hints=["aragora/swarm/commander.py"],
+        )
+        commander = SwarmCommander()
+        fake_run = MagicMock()
+        fake_run.run_id = "test-run-id"
+        mock_launcher = MagicMock()
+
+        with (
+            patch(
+                "aragora.swarm.worker_launcher.WorkerLauncher",
+                return_value=mock_launcher,
+            ) as launcher_cls,
+            patch("aragora.swarm.commander.SwarmSupervisor") as mock_supervisor_cls,
+        ):
+            mock_sup = mock_supervisor_cls.return_value
+            mock_sup.start_run.return_value = fake_run
+            mock_sup.dispatch_workers = AsyncMock(return_value=[])
+            mock_sup.refresh_run.return_value = fake_run
+
+            await commander.run_supervised_from_spec(
+                spec,
+                dispatch=False,
+                target_branch="release/2026.04",
+            )
+
+        assert launcher_cls.call_args.kwargs["config"].base_branch == "release/2026.04"
+        assert mock_supervisor_cls.call_args.kwargs["launcher"] is mock_launcher
 
     @pytest.mark.asyncio
     async def test_run_supervised_from_spec_rejects_under_specified_spec(self):

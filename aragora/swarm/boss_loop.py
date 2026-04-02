@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -49,6 +51,16 @@ logger = logging.getLogger(__name__)
 
 UTC = timezone.utc
 _LANE_TELEMETRY = LaneTelemetryCollector()
+_GITHUB_ISSUE_URL_RE = re.compile(r"github\.com/(?P<repo>[^/]+/[^/]+)/issues/(?P<number>\d+)")
+_GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/(?P<number>\d+)")
+_ALREADY_DONE_MARKERS = (
+    "already implemented",
+    "already exists",
+    "no changes needed",
+    "no code changes needed",
+    "nothing to commit",
+    "there's nothing to commit",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +149,15 @@ class BossLoopResult:
         }
 
 
+@dataclass(slots=True)
+class _BossDeliverableArtifact:
+    """Minimal artifact wrapper for boss-loop PR publication."""
+
+    metadata: dict[str, Any]
+    branch: str | None = None
+    urls: list[str] = field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Boss Loop Config
 # ---------------------------------------------------------------------------
@@ -214,6 +235,11 @@ class BossLoopConfig:
     allow_codex_full_auto: bool = False
     execution_mode: ExecutionMode = ExecutionMode.AUTONOMOUS
 
+    # Autonomous post-processing: publish verified branch deliverables and
+    # optionally close already-resolved no-op issues.
+    auto_publish_deliverables: bool = False
+    auto_close_already_done_issues: bool = False
+
     # Reporting
     status_report_interval: int = 5  # every N iterations
     metrics_jsonl_path: str | None = ".aragora/overnight/boss_metrics.jsonl"
@@ -231,6 +257,12 @@ def _classify_terminal_run_outcome(run_dict: dict[str, Any]) -> str:
 
 def _qualify_worker_result_terminal_state(worker_result: dict[str, Any]) -> tuple[str, str]:
     """Normalize legacy flat worker_result payloads into canonical terminal truth."""
+    issue_resolution = worker_result.get("issue_resolution")
+    if (
+        isinstance(issue_resolution, dict)
+        and str(issue_resolution.get("action", "")).strip() == "closed"
+    ):
+        return "issue_already_resolved", ""
     deliverable = worker_result.get("deliverable")
     adapted: dict[str, Any] = {
         "status": worker_result.get("status"),
@@ -253,6 +285,20 @@ def _qualify_worker_result_terminal_state(worker_result: dict[str, Any]) -> tupl
             )
     qualification = qualify_work_order_terminal_state(adapted)
     return qualification.terminal_outcome, qualification.deliverable_type or ""
+
+
+def _freshness_to_dict(freshness: Any) -> dict[str, Any]:
+    """Best-effort conversion for custom freshness checker payloads."""
+    if isinstance(freshness, RunnerFreshnessResult):
+        return freshness.to_dict()
+    to_dict = getattr(freshness, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        if isinstance(payload, dict):
+            return dict(payload)
+    if isinstance(freshness, dict):
+        return dict(freshness)
+    return {}
 
 
 async def dispatch_bounded_spec(
@@ -484,7 +530,7 @@ class BossLoop:
         self._failed_issues: list[dict[str, Any]] = []
         self._iteration_statuses: list[BossIterationStatus] = []
         self._consecutive_failures = 0
-        self._issue_attempt_counts: dict[int, int] = {}
+        self._issue_attempt_counts: dict[int | str, int] = {}
         self._pending_handoff_prompts: dict[int, tuple[str, str | None]] = {}
         self._stop_reason: str | None = None
 
@@ -849,6 +895,244 @@ class BossLoop:
                     files.extend(str(p) for p in paths if str(p).strip())
         return files
 
+    def _repo_slug_for_issue(self, issue: GitHubIssue) -> str | None:
+        configured_repo = str(self.config.repo or "").strip()
+        if configured_repo:
+            return configured_repo
+        match = _GITHUB_ISSUE_URL_RE.search(str(issue.url or "").strip())
+        if match is None:
+            return None
+        repo = str(match.group("repo") or "").strip()
+        return repo or None
+
+    @staticmethod
+    def _pr_number_from_url(url: str | None) -> int | None:
+        match = _GITHUB_PR_URL_RE.search(str(url or "").strip())
+        if match is None:
+            return None
+        try:
+            return int(match.group("number"))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _already_done_comment(worker_result: dict[str, Any]) -> str | None:
+        run = worker_result.get("run")
+        if not isinstance(run, dict):
+            return None
+        work_orders = [item for item in run.get("work_orders", []) if isinstance(item, dict)]
+        if not work_orders:
+            return None
+        if any(
+            str(item.get("worker_outcome", "")).strip() != "clean_exit_no_effect"
+            or item.get("commit_shas")
+            or item.get("changed_paths")
+            for item in work_orders
+        ):
+            return None
+
+        evidence_phrase: str | None = None
+        passed_checks = 0
+        tests_run: set[str] = set()
+        for item in work_orders:
+            for verification in item.get("verification_results", []) or []:
+                if isinstance(verification, dict) and verification.get("passed") is True:
+                    passed_checks += 1
+            for test_cmd in item.get("tests_run", []) or []:
+                text = str(test_cmd).strip()
+                if text:
+                    tests_run.add(text)
+            text_blob = "\n".join(
+                str(item.get(key, "")).strip()
+                for key in ("stdout_tail", "stderr_tail", "blocker", "failure_reason")
+                if str(item.get(key, "")).strip()
+            ).lower()
+            for marker in _ALREADY_DONE_MARKERS:
+                if marker in text_blob:
+                    evidence_phrase = marker
+                    break
+            if evidence_phrase:
+                break
+
+        if evidence_phrase is None:
+            return None
+        verification_detail = ""
+        if passed_checks:
+            verification_detail = f" Verification passed on {passed_checks} check(s)."
+        elif tests_run:
+            verification_detail = (
+                " Verification commands were run: " + ", ".join(sorted(tests_run)[:3]) + "."
+            )
+        return (
+            "Already implemented — autonomous verification found no code changes were needed, "
+            f"and worker logs indicated '{evidence_phrase}'.{verification_detail}"
+        )
+
+    def _maybe_auto_close_already_done_issue(
+        self,
+        issue: GitHubIssue,
+        worker_result: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not self.config.auto_close_already_done_issues:
+            return None
+        comment = self._already_done_comment(worker_result)
+        if comment is None:
+            return None
+        repo_slug = self._repo_slug_for_issue(issue)
+        if repo_slug is None:
+            return {
+                "action": "skipped",
+                "reason": "missing_repo_slug",
+                "issue_number": issue.number,
+            }
+        try:
+            proc = subprocess.run(
+                [
+                    "gh",
+                    "issue",
+                    "close",
+                    str(issue.number),
+                    "--repo",
+                    repo_slug,
+                    "--comment",
+                    comment,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            logger.warning("Boss auto-close failed for issue #%s: %s", issue.number, exc)
+            return {
+                "action": "failed",
+                "reason": type(exc).__name__,
+                "issue_number": issue.number,
+                "repo": repo_slug,
+            }
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            logger.warning("Boss auto-close failed for issue #%s: %s", issue.number, detail)
+            return {
+                "action": "failed",
+                "reason": "gh_issue_close_failed",
+                "detail": detail or "gh issue close failed",
+                "issue_number": issue.number,
+                "repo": repo_slug,
+            }
+        worker_result["outcome"] = "issue_already_resolved"
+        return {
+            "action": "closed",
+            "reason": "already_implemented",
+            "issue_number": issue.number,
+            "repo": repo_slug,
+            "comment": comment,
+        }
+
+    def _maybe_publish_deliverable(
+        self,
+        issue: GitHubIssue,
+        worker_result: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not self.config.auto_publish_deliverables:
+            return None
+        if str(worker_result.get("status", "")).strip() != "completed":
+            return None
+        deliverable = worker_result.get("deliverable")
+        if not isinstance(deliverable, dict):
+            return None
+        deliverable_type = str(deliverable.get("type", "")).strip().lower()
+        if deliverable_type in {"pr", "adopted_pr"}:
+            pr_url = str(
+                deliverable.get("pr_url")
+                or deliverable.get("adopted_pr")
+                or worker_result.get("pr_url")
+                or ""
+            ).strip()
+            if pr_url:
+                worker_result["pr_url"] = pr_url
+                worker_result["pr_number"] = self._pr_number_from_url(pr_url)
+            return {
+                "action": "existing_pr",
+                "branch": str(deliverable.get("branch", "")).strip() or None,
+                "pr_url": pr_url or None,
+            }
+        if deliverable_type != "branch":
+            return None
+        branch = str(deliverable.get("branch", "")).strip()
+        commit_shas = [
+            str(item).strip()
+            for item in deliverable.get("commit_shas", []) or []
+            if str(item).strip()
+        ]
+        if not branch or not commit_shas:
+            return None
+        try:
+            from aragora.ralph.github_control import GitHubControl
+            from aragora.swarm.pr_registry import PullRequestRegistry
+            from aragora.swarm.tranche_integrate import publish_lane_deliverable
+
+            repo_root = Path.cwd().resolve()
+            artifact = _BossDeliverableArtifact(
+                branch=branch,
+                metadata={
+                    "branch": branch,
+                    "deliverable": {
+                        **dict(deliverable),
+                        "branch": branch,
+                        "commit_shas": commit_shas,
+                    },
+                    "receipt_id": worker_result.get("receipt_id"),
+                },
+            )
+            publish_result = publish_lane_deliverable(
+                artifact,
+                manifest_id=f"boss-{self.run_id}-issue-{issue.number}",
+                github=GitHubControl(repo_root=repo_root),
+                registry=PullRequestRegistry(state_dir=repo_root / ".aragora"),
+                repo_root=repo_root,
+                target_branch=self.config.target_branch,
+                artifact_store=None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Boss publish failed for issue #%s branch %s: %s",
+                issue.number,
+                branch,
+                exc,
+            )
+            return {
+                "action": "failed",
+                "reason": type(exc).__name__,
+                "branch": branch,
+            }
+
+        pr_url = str(publish_result.get("pr_url", "")).strip()
+        if pr_url:
+            worker_result["deliverable"] = {
+                **dict(deliverable),
+                "type": "pr",
+                "branch": branch,
+                "commit_shas": commit_shas,
+                "pr_url": pr_url,
+            }
+            worker_result["pr_url"] = pr_url
+            worker_result["pr_number"] = self._pr_number_from_url(pr_url)
+        return dict(publish_result)
+
+    def _postprocess_issue_result(
+        self,
+        issue: GitHubIssue,
+        worker_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        publish_result = self._maybe_publish_deliverable(issue, worker_result)
+        if publish_result is not None:
+            worker_result["publish_result"] = publish_result
+        issue_resolution = self._maybe_auto_close_already_done_issue(issue, worker_result)
+        if issue_resolution is not None:
+            worker_result["issue_resolution"] = issue_resolution
+        return worker_result
+
     def _log_value_outcome(
         self,
         issue_dict: dict[str, Any],
@@ -905,7 +1189,11 @@ class BossLoop:
             terminal_outcome = str(worker_result.get("outcome", "")).strip().lower()
             deliverable = worker_result.get("deliverable")
             deliverable_present = isinstance(deliverable, dict) and bool(deliverable)
-            if terminal_outcome in {"deliverable_created", "pr_adopted"}:
+            if terminal_outcome in {
+                "deliverable_created",
+                "pr_adopted",
+                "issue_already_resolved",
+            }:
                 receipt_outcome = "pass"
             elif deliverable_present and terminal_outcome in {"crash", "timeout"}:
                 receipt_outcome = "blocked"
@@ -1006,7 +1294,12 @@ class BossLoop:
                     deliverable_type=deliverable_type,
                     receipt_id=receipt_id,
                     human_intervention_required=terminal_outcome
-                    not in {"deliverable_created", "pr_adopted", "preview_only"},
+                    not in {
+                        "deliverable_created",
+                        "pr_adopted",
+                        "preview_only",
+                        "issue_already_resolved",
+                    },
                     duration_seconds=float(elapsed or 0.0),
                     pr_url=pr_url,
                     pr_number=pr_number,
@@ -1175,7 +1468,7 @@ class BossLoop:
             i for i in issues if i.number in pending_issue_numbers or i.number not in already_maxed
         ]
         if pending_handoffs:
-            selected = pending_handoffs[0]
+            selected: GitHubIssue | None = pending_handoffs[0]
         elif self.config.issue_number is not None:
             target_issue = next(
                 (issue for issue in candidate_issues if issue.number == self.config.issue_number),
@@ -1233,7 +1526,7 @@ class BossLoop:
             verified_runner_target=self.config.verified_runner_target,
             runner_probe_limit=self.config.runner_probe_limit,
         )
-        freshness_dict = freshness.to_dict() if hasattr(freshness, "to_dict") else dict(freshness)
+        freshness_dict = _freshness_to_dict(freshness)
 
         if not (freshness.fresh if hasattr(freshness, "fresh") else freshness_dict.get("fresh")):
             blocked_reason = (
@@ -1383,7 +1676,7 @@ class BossLoop:
             allowed_profiles=self.config.allowed_runner_profiles,
             rotation_interval_seconds=self.config.runner_rotation_interval_seconds,
         )
-        freshness_dict = freshness.to_dict() if hasattr(freshness, "to_dict") else dict(freshness)
+        freshness_dict = _freshness_to_dict(freshness)
 
         if not (freshness.fresh if hasattr(freshness, "fresh") else freshness_dict.get("fresh")):
             blocked_reason = (
@@ -1631,6 +1924,35 @@ class BossLoop:
                 stop_reason=None,
                 needs_human_reasons=[],
                 next_actions=next_actions,
+                elapsed_seconds=elapsed_seconds,
+                worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
+            )
+
+        issue_resolution = worker_result.get("issue_resolution")
+        if (
+            isinstance(issue_resolution, dict)
+            and str(issue_resolution.get("action", "")).strip() == "closed"
+        ):
+            self._completed_issues.append(issue_dict)
+            self._consecutive_failures = 0
+            self._emit_lane_receipt(worker_result, issue_dict, elapsed_seconds)
+            self._log_value_outcome(issue_dict, "completed", elapsed_seconds)
+            self._append_iteration_metrics(
+                iteration=iteration,
+                issue_number=issue_number,
+                worker_result=worker_result,
+                elapsed_seconds=elapsed_seconds,
+            )
+            return BossIterationStatus(
+                iteration=iteration,
+                run_id=self.run_id,
+                timestamp=timestamp,
+                runner_freshness=runner_freshness,
+                selected_issue=issue_dict,
+                worker_status="completed",
+                stop_reason=None,
+                needs_human_reasons=[],
+                next_actions=["Issue auto-closed as already implemented; proceeding."],
                 elapsed_seconds=elapsed_seconds,
                 worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
             )
@@ -2165,6 +2487,7 @@ class BossLoop:
             selected_runner=selected_runner,
             requested_target_agent=requested_target_agent,
         )
+        result = self._postprocess_issue_result(issue, result)
         if result.get("status") == "failed":
             error = str(result.get("error", "")).strip()
             if error:
