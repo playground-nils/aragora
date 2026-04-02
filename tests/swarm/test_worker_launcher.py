@@ -70,7 +70,7 @@ class TestLaunchConfig:
         assert cfg.claude_path == "claude"
         assert cfg.codex_path == "codex"
         assert cfg.timeout_seconds == 2400.0
-        assert cfg.no_progress_timeout_seconds == 1800.0
+        assert cfg.no_progress_timeout_seconds == 3600.0
         assert cfg.auto_commit is True
         assert cfg.use_managed_session_script is True
 
@@ -1464,15 +1464,12 @@ class TestExecutionModeGating:
         config = LaunchConfig()
         assert config.execution_mode == ExecutionMode.AUTONOMOUS
 
-    def test_interactive_blocks_dangerous_permissions(self, monkeypatch):
-        monkeypatch.setattr(os, "geteuid", lambda: 1000)
-        config = LaunchConfig(
-            execution_mode=ExecutionMode.INTERACTIVE,
-            allow_claude_dangerously_skip_permissions=True,
-        )
-        launcher = WorkerLauncher(config)
-        cmd = launcher._build_agent_command("claude", "test")
-        assert "--dangerously-skip-permissions" not in cmd
+    def test_interactive_blocks_dangerous_permissions(self):
+        with pytest.raises(ValueError, match="allow_claude_dangerously_skip_permissions"):
+            LaunchConfig(
+                execution_mode=ExecutionMode.INTERACTIVE,
+                allow_claude_dangerously_skip_permissions=True,
+            )
 
     def test_autonomous_allows_dangerous_permissions(self, monkeypatch):
         monkeypatch.setattr(os, "geteuid", lambda: 1000)
@@ -1485,13 +1482,11 @@ class TestExecutionModeGating:
         assert "--dangerously-skip-permissions" in cmd
 
     def test_interactive_blocks_full_auto(self):
-        config = LaunchConfig(
-            execution_mode=ExecutionMode.INTERACTIVE,
-            allow_codex_full_auto=True,
-        )
-        launcher = WorkerLauncher(config)
-        cmd = launcher._build_agent_command("codex", "test")
-        assert "--full-auto" not in cmd
+        with pytest.raises(ValueError, match="allow_codex_full_auto"):
+            LaunchConfig(
+                execution_mode=ExecutionMode.INTERACTIVE,
+                allow_codex_full_auto=True,
+            )
 
     def test_autonomous_allows_full_auto(self):
         config = LaunchConfig(
@@ -1502,12 +1497,9 @@ class TestExecutionModeGating:
         cmd = launcher._build_agent_command("codex", "test")
         assert "--full-auto" in cmd
 
-    def test_interactive_blocks_unknown_agent_dangerous_permissions(self, monkeypatch):
-        monkeypatch.setattr(os, "geteuid", lambda: 1000)
-        config = LaunchConfig(
-            execution_mode=ExecutionMode.INTERACTIVE,
-            allow_claude_dangerously_skip_permissions=True,
-        )
-        launcher = WorkerLauncher(config)
-        cmd = launcher._build_agent_command("unknown_agent", "test")
-        assert "--dangerously-skip-permissions" not in cmd
+    def test_interactive_blocks_unknown_agent_dangerous_permissions(self):
+        with pytest.raises(ValueError, match="allow_claude_dangerously_skip_permissions"):
+            LaunchConfig(
+                execution_mode=ExecutionMode.INTERACTIVE,
+                allow_claude_dangerously_skip_permissions=True,
+            )

@@ -1,0 +1,121 @@
+"""Tests for micro-task decomposition."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from aragora.swarm.micro_decomposer import build_micro_work_orders
+
+
+@pytest.fixture
+def repo_root(tmp_path: Path) -> Path:
+    """Create a minimal repo structure for testing."""
+    (tmp_path / "aragora" / "routing").mkdir(parents=True)
+    (tmp_path / "tests" / "routing").mkdir(parents=True)
+
+    (tmp_path / "aragora" / "routing" / "optimizer.py").write_text(
+        "class Optimizer:\n    def route(self): pass\n"
+    )
+    (tmp_path / "aragora" / "routing" / "config.py").write_text("TIMEOUT = 300\n")
+    (tmp_path / "tests" / "routing" / "test_optimizer.py").write_text("def test_route(): pass\n")
+    return tmp_path
+
+
+def test_directory_hint_resolves_to_files(repo_root: Path) -> None:
+    orders = build_micro_work_orders(
+        goal="Add caching to route()",
+        file_scope_hints=["aragora/routing/"],
+        repo_root=repo_root,
+    )
+    assert len(orders) >= 2  # At least impl files + test
+
+
+def test_specific_file_hint(repo_root: Path) -> None:
+    orders = build_micro_work_orders(
+        goal="Fix optimizer",
+        file_scope_hints=["aragora/routing/optimizer.py"],
+        repo_root=repo_root,
+    )
+    assert len(orders) >= 1
+    assert orders[0]["file_scope"] == ["aragora/routing/optimizer.py"]
+
+
+def test_empty_hints_returns_empty() -> None:
+    orders = build_micro_work_orders(
+        goal="Do something",
+        file_scope_hints=[],
+    )
+    assert orders == []
+
+
+def test_nonexistent_path_returns_empty(tmp_path: Path) -> None:
+    orders = build_micro_work_orders(
+        goal="Fix nonexistent",
+        file_scope_hints=["aragora/does_not_exist/"],
+        repo_root=tmp_path,
+    )
+    assert orders == []
+
+
+def test_work_order_has_required_fields(repo_root: Path) -> None:
+    orders = build_micro_work_orders(
+        goal="Add feature",
+        file_scope_hints=["aragora/routing/optimizer.py"],
+        repo_root=repo_root,
+    )
+    assert len(orders) >= 1
+    wo = orders[0]
+    assert "work_order_id" in wo
+    assert "title" in wo
+    assert "description" in wo
+    assert "file_scope" in wo
+
+
+def test_test_files_grouped_separately(repo_root: Path) -> None:
+    orders = build_micro_work_orders(
+        goal="Add tests",
+        file_scope_hints=["aragora/routing/", "tests/routing/"],
+        repo_root=repo_root,
+    )
+    # Should have impl work orders + test work order
+    test_orders = [o for o in orders if "test" in o.get("title", "").lower()]
+    impl_orders = [
+        o
+        for o in orders
+        if "test" not in o.get("title", "").lower()
+        and "validation" not in o.get("title", "").lower()
+    ]
+    assert len(impl_orders) >= 1
+    assert len(test_orders) >= 1
+
+
+def test_acceptance_criteria_creates_validation_order(repo_root: Path) -> None:
+    orders = build_micro_work_orders(
+        goal="Fix bug",
+        file_scope_hints=["aragora/routing/optimizer.py"],
+        acceptance_criteria=["pytest tests/routing/ -x -q passes"],
+        repo_root=repo_root,
+    )
+    validation_orders = [o for o in orders if "validation" in o.get("title", "").lower()]
+    assert len(validation_orders) == 1
+
+
+def test_caps_at_five_impl_files(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    for i in range(10):
+        (tmp_path / "src" / f"module_{i}.py").write_text(f"x = {i}\n")
+
+    orders = build_micro_work_orders(
+        goal="Update all modules",
+        file_scope_hints=["src/"],
+        repo_root=tmp_path,
+    )
+    impl_orders = [
+        o
+        for o in orders
+        if "validation" not in o.get("title", "").lower()
+        and "test" not in o.get("title", "").lower()
+    ]
+    assert len(impl_orders) <= 5

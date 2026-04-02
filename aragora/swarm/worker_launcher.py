@@ -172,6 +172,16 @@ class LaunchConfig:
     allow_codex_full_auto: bool = False
     execution_mode: ExecutionMode = ExecutionMode.AUTONOMOUS
 
+    def __post_init__(self) -> None:
+        """Validate that dangerous flags are only used in AUTONOMOUS mode."""
+        if self.execution_mode != ExecutionMode.AUTONOMOUS:
+            if self.allow_claude_dangerously_skip_permissions:
+                raise ValueError(
+                    "allow_claude_dangerously_skip_permissions requires execution_mode=AUTONOMOUS"
+                )
+            if self.allow_codex_full_auto:
+                raise ValueError("allow_codex_full_auto requires execution_mode=AUTONOMOUS")
+
 
 class WorkerLauncher:
     """Launch and monitor Claude Code / Codex worker processes."""

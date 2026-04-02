@@ -270,6 +270,10 @@ class DecisionReceipt:
     # Maps agent name -> thinking trace string produced during the debate
     thinking_traces: dict[str, str] | None = None
 
+    # Knowledge Mound operations performed during this debate (optional)
+    # Tracks queries, retrievals, and injection counts for cross-debate visibility
+    km_operations: dict[str, Any] | None = None
+
     # Schema version for forward compatibility
     schema_version: str = "1.1"
 

@@ -59,6 +59,9 @@ class ClaudeCodeConfig(HarnessConfig):
     parse_structured_output: bool = True
     extract_code_blocks: bool = True
 
+    # Execution safety mode — AUTONOMOUS adds --yes, INTERACTIVE omits it
+    execution_mode: str = "autonomous"  # "autonomous" or "interactive"
+
     # System prompt injection for context-aware implementation
     append_system_prompt: str | None = None  # Appended to Claude Code's system prompt
     inject_claude_md: bool = True  # Auto-read CLAUDE.md from repo root
@@ -529,8 +532,9 @@ I'll ask you questions about the codebase. Provide helpful, accurate answers."""
             self.config.claude_code_path,
             "-p",  # Non-interactive mode (no --print, allows file edits)
             prompt,
-            "--yes",  # Auto-approve file edits
         ]
+        if str(self.config.execution_mode).strip().lower() == "autonomous":
+            cmd.append("--yes")  # Auto-approve file edits in autonomous mode only
 
         if self.config.model:
             cmd.extend(["--model", self.config.model])
