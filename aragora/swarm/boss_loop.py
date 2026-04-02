@@ -2832,6 +2832,9 @@ class BossLoop:
                 )
                 if micro_orders:
                     spec.work_orders = micro_orders
+                    # Clear spec-level hints so supervisor doesn't merge all
+                    # files into every work order's scope
+                    spec.file_scope_hints = []
                     logger.info(
                         "Micro-decomposed issue #%s into %d work orders",
                         issue.number,

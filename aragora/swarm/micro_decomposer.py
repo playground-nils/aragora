@@ -156,18 +156,33 @@ def _build_file_work_order(
     except OSError:
         pass
 
-    description = (
-        f"Make the following change to `{filepath}`:\n\n"
-        f"{goal}\n\n"
-        f"IMPORTANT: Only modify this ONE file. Do not touch other files.\n"
-        f"After making the change, immediately run:\n"
-        f"  git add {filepath}\n"
-        f"  git commit -m 'fix: update {filepath.rsplit('/', 1)[-1]}'\n"
+    filename = filepath.rsplit("/", 1)[-1]
+    file_exists = (root / filepath).exists()
+
+    if file_exists:
+        description = (
+            f"Edit `{filepath}` to contribute to: {goal[:200]}\n\n"
+            f"Focus on what this specific file (`{filename}`) needs for the goal above.\n"
+            f"Do NOT rewrite the entire file. Make the minimal targeted edit.\n\n"
+        )
+    else:
+        description = (
+            f"Create `{filepath}` as part of: {goal[:200]}\n\n"
+            f"Write a focused, minimal implementation for `{filename}`.\n\n"
+        )
+
+    description += (
+        f"CRITICAL WORKFLOW:\n"
+        f"1. Read `{filepath}` (if it exists)\n"
+        f"2. Make your change (keep it small and focused)\n"
+        f"3. IMMEDIATELY commit: `git add {filepath} && "
+        f"git commit -m 'fix: update {filename}'`\n"
+        f"4. Do NOT explore other files. Do NOT run tests. Just commit.\n"
     )
     if file_preview:
-        description += (
-            f"\nCurrent file structure (first 50 lines):\n```python\n{file_preview}\n```\n"
-        )
+        # Only show first 30 lines to keep prompt short
+        short_preview = "\n".join(file_preview.splitlines()[:30])
+        description += f"\nFile preview:\n```python\n{short_preview}\n```\n"
 
     constraint_list = list(constraints or [])
     constraint_list.append(f"Only modify {filepath}")
