@@ -2306,6 +2306,47 @@ class MetaPlanner:
         except (ImportError, RuntimeError, ValueError) as e:
             logger.debug("PlanStore unavailable for outcome analysis: %s", e)
 
+        # Feed OutcomeFeedbackRecord from backbone runs into goal generation
+        try:
+            from aragora.pipeline.plan_store import get_plan_store as _get_plan_store
+
+            _store = _get_plan_store()
+            if _store is not None:
+                terminal_runs = _store.list_runs(status="completed", limit=50)
+                terminal_runs += _store.list_runs(status="failed", limit=50)
+                for run in terminal_runs:
+                    if run.feedback_record is not None:
+                        goal_dict = run.feedback_record.to_nomic_goal()
+                        track_name = goal_dict.get("module", "")
+                        try:
+                            track = Track(track_name) if track_name else Track.CORE
+                        except ValueError:
+                            track = self._infer_track(
+                                goal_dict.get("description", ""),
+                                list(Track),
+                            )
+                        goals.append(
+                            PrioritizedGoal(
+                                id=f"outcome_goal_{priority - 1}",
+                                track=track,
+                                description=goal_dict.get("description", ""),
+                                rationale=goal_dict.get("rationale", ""),
+                                estimated_impact=goal_dict.get("priority", "medium"),
+                                priority=priority,
+                                focus_areas=["outcome_feedback", goal_dict.get("risk", "medium")],
+                            )
+                        )
+                        priority += 1
+                        if priority > self.config.max_goals + 1:
+                            break
+                if any(r.feedback_record for r in terminal_runs):
+                    logger.info(
+                        "meta_planner_ingested_outcome_feedback count=%d",
+                        sum(1 for r in terminal_runs if r.feedback_record),
+                    )
+        except (ImportError, RuntimeError, ValueError, TypeError, AttributeError) as e:
+            logger.debug("OutcomeFeedbackRecord ingestion skipped: %s", e)
+
         if len(outcomes) < min_debates:
             logger.info(
                 "generate_goals_from_outcomes: insufficient data (%d < %d)",
