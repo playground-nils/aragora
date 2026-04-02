@@ -270,6 +270,14 @@ class UnifiedOrchestrator:
             self.backbone_runtime.update_run(result.run_id, **update_kwargs)
 
     @staticmethod
+    def _coerce_float(value: Any, default: float = 0.0) -> float:
+        """Normalize numeric telemetry so run-ledger event payloads stay JSON-safe."""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
     def _ensure_plan_backbone_metadata(plan: Any, run_id: str) -> None:
         BackboneRuntime.ensure_plan_metadata(plan, run_id, "unified_orchestrator.run")
 
@@ -431,7 +439,9 @@ class UnifiedOrchestrator:
                 status="completed",
                 artifact_ref=str(getattr(result.debate_result, "debate_id", "") or ""),
                 details={
-                    "confidence": getattr(result.debate_result, "confidence", 0.0),
+                    "confidence": self._coerce_float(
+                        getattr(result.debate_result, "confidence", 0.0)
+                    ),
                     "consensus_reached": bool(
                         getattr(result.debate_result, "consensus_reached", False)
                     ),
