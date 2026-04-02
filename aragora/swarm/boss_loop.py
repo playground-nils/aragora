@@ -1179,6 +1179,29 @@ async def dispatch_bounded_spec(
         )
         run_dict = run.to_dict()
         run_status = str(run_dict.get("status", "")).strip().lower()
+
+        # --- Diagnostic: trace work order results ---
+        work_orders = run_dict.get("work_orders", [])
+        for wo in work_orders:
+            wo_id = str(wo.get("work_order_id", ""))[:30]
+            wo_status = wo.get("status")
+            wo_exit = wo.get("exit_code")
+            wo_commits = len(wo.get("commit_shas", []))
+            wo_changed = len(wo.get("changed_paths", []))
+            wo_pid = wo.get("pid")
+            wo_wt = str(wo.get("worktree_path", ""))[-50:]
+            logger.info(
+                "dispatch_bounded_spec work_order %s: status=%s exit=%s commits=%d "
+                "changed=%d pid=%s worktree=...%s",
+                wo_id,
+                wo_status,
+                wo_exit,
+                wo_commits,
+                wo_changed,
+                wo_pid,
+                wo_wt,
+            )
+
         if not wait_for_completion and run_status not in {"completed", "needs_human"}:
             return {
                 "status": "running",
@@ -1191,6 +1214,14 @@ async def dispatch_bounded_spec(
         deliverable = qualification.deliverable
         reasons = qualification.reasons or (
             [qualification.blocked_reason] if qualification.blocked_reason else []
+        )
+        logger.info(
+            "dispatch_bounded_spec terminal: outcome=%s deliverable=%s "
+            "blocked_reason=%s run_status=%s",
+            outcome,
+            bool(deliverable),
+            qualification.blocked_reason,
+            run_status,
         )
         worker_receipt_id = _first_receipt_id_from_run(run_dict)
         if outcome in {"deliverable_created", "pr_adopted"}:
