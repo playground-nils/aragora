@@ -28,6 +28,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from aragora.pipeline.execution_mode import ExecutionMode
+
 # ANSI color codes for terminal output
 _GREEN = "\033[32m"
 _YELLOW = "\033[33m"
@@ -97,6 +99,16 @@ def _worktree_dir_for_branch(branch: str) -> Path:
     """Return the worktree directory for a branch."""
     dir_name = branch.replace("/", "-")
     return PROJECT_ROOT / ".worktrees" / dir_name
+
+
+def _resolve_execution_mode(value: ExecutionMode | str | None) -> ExecutionMode:
+    """Normalize CLI / caller safety mode inputs."""
+    if isinstance(value, ExecutionMode):
+        return value
+    normalized = str(value or "").strip().lower()
+    if normalized == ExecutionMode.AUTONOMOUS.value:
+        return ExecutionMode.AUTONOMOUS
+    return ExecutionMode.INTERACTIVE
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +195,6 @@ def cmd_setup(args: argparse.Namespace) -> None:
     # Get the current branch to use as base
     base_branch = _run_git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
 
-    created: list[dict] = {}
     worktrees_info: dict[str, dict] = manifest.get("worktrees", {})
 
     print(f"\n{_color('Setting up sprint worktrees', _BOLD)}")
@@ -255,6 +266,7 @@ def cmd_execute(args: argparse.Namespace) -> None:
     manifest = _load_manifest()
     worktrees = manifest.get("worktrees", {})
     subtasks = {st["id"]: st for st in manifest.get("subtasks", [])}
+    execution_mode = _resolve_execution_mode(getattr(args, "execution_mode", None))
 
     if not worktrees:
         print("No worktrees configured. Run 'setup' first.")
@@ -291,6 +303,7 @@ def cmd_execute(args: argparse.Namespace) -> None:
     print(f"\n{_color('Executing Sprint', _BOLD)}")
     print(f"Tasks: {len(queued)}  |  Max parallel: {max_parallel}")
     print(f"Claude: {claude_bin}")
+    print(f"Mode: {execution_mode.value}")
     print()
 
     # Write task instructions to each worktree
@@ -336,7 +349,10 @@ def cmd_execute(args: argparse.Namespace) -> None:
         log_handle = open(log_file, "w")
 
         cmd = [claude_bin, "--print"]
-        if os.environ.get("ARAGORA_ADMIN_APPROVED", "").strip() == "1":
+        if (
+            execution_mode == ExecutionMode.AUTONOMOUS
+            and os.environ.get("ARAGORA_ADMIN_APPROVED", "").strip() == "1"
+        ):
             cmd.append("--dangerously-skip-permissions")
         cmd.extend(["-p", prompt])
 
@@ -790,6 +806,12 @@ def main() -> None:
         type=int,
         default=3,
         help="Maximum concurrent agents (default: 3)",
+    )
+    execute_parser.add_argument(
+        "--execution-mode",
+        choices=[ExecutionMode.INTERACTIVE.value, ExecutionMode.AUTONOMOUS.value],
+        default=ExecutionMode.INTERACTIVE.value,
+        help="Safety mode for spawned agents (default: interactive)",
     )
     execute_parser.set_defaults(func=cmd_execute)
 
