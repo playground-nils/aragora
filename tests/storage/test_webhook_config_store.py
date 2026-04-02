@@ -1448,6 +1448,37 @@ class TestRedisWebhookConfigStore:
         mock_redis.setex.assert_called_once()
         store.close()
 
+    def test_with_mocked_redis_update_miss_clears_stale_cache(self, tmp_path):
+        """An update miss must clear stale Redis payloads for webhooks deleted elsewhere."""
+        db_path = tmp_path / "test.db"
+        store = RedisWebhookConfigStore(db_path)
+
+        mock_redis = MagicMock()
+        mock_redis.ping.return_value = True
+        store._redis = mock_redis
+        store._redis_checked = True
+
+        webhook = store.register(url="https://example.com", events=["debate_end"])
+        stale_payload = webhook.to_json()
+
+        # Simulate the webhook being deleted out-of-band in durable storage.
+        assert store._sqlite.delete(webhook.id) is True
+
+        mock_redis.reset_mock()
+        updated = store.update(webhook.id, url="https://new.com")
+
+        assert updated is None
+        mock_redis.delete.assert_called_once_with(f"aragora:webhook_configs:{webhook.id}")
+
+        mock_redis.reset_mock()
+        mock_redis.get.return_value = stale_payload
+        retrieved = store.get(webhook.id)
+
+        assert retrieved is None
+        mock_redis.get.assert_not_called()
+        mock_redis.delete.assert_called_once_with(f"aragora:webhook_configs:{webhook.id}")
+        store.close()
+
     def test_with_mocked_redis_record_delivery_invalidates(self, tmp_path):
         """Test record_delivery invalidates the Redis cache."""
         db_path = tmp_path / "test.db"
