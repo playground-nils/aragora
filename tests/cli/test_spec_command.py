@@ -275,6 +275,7 @@ class TestCmdSpec:
             skip_interrogation=False,
             profile="founder",
             output_format="json",
+            use_orchestrator=False,
         )
         assert json.loads(output_path.read_text()) == result
 
