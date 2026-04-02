@@ -299,6 +299,10 @@ class SwarmCommander:
             worker_env=worker_env,
         )
         if dispatch:
+            # refresh_run leases queued work orders and provisions worktrees.
+            # dispatch_workers only launches "leased" orders with worktree paths,
+            # so refresh must run first.
+            supervisor.refresh_run(run.run_id)
             launched = await supervisor.dispatch_workers(run.run_id)
             if wait and launched:
                 reconciler = SwarmReconciler(supervisor=supervisor)
