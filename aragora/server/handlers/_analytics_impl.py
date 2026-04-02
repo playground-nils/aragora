@@ -84,6 +84,7 @@ class AnalyticsHandler(SecureHandler):
         """Check if this handler can process the given path."""
         return strip_version_prefix(path) in self.ROUTES
 
+    @handle_errors("analytics request routing")
     async def handle(
         self, path: str, query_params: dict[str, Any], handler: Any
     ) -> HandlerResult | None:
