@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from aragora.pipeline.execution_mode import ExecutionMode
 from aragora.swarm.terminal_truth import (
     extract_run_deliverable,
     extract_run_worker_outcome,
@@ -1055,6 +1056,7 @@ class BossLoopConfig:
     # Security: opt-in flags for dangerous worker CLI behavior (Crux 1).
     allow_claude_dangerously_skip_permissions: bool = False
     allow_codex_full_auto: bool = False
+    execution_mode: ExecutionMode = ExecutionMode.AUTONOMOUS
 
     # Reporting
     status_report_interval: int = 5  # every N iterations
@@ -1112,6 +1114,7 @@ async def dispatch_bounded_spec(
     worker_env: dict[str, str] | None = None,
     allow_claude_dangerously_skip_permissions: bool = False,
     allow_codex_full_auto: bool = False,
+    execution_mode: ExecutionMode = ExecutionMode.AUTONOMOUS,
 ) -> dict[str, Any]:
     # Auto-detect Claude profile from environment if no runner specified
     if selected_runner is None:
@@ -1168,6 +1171,7 @@ async def dispatch_bounded_spec(
             worker_env=worker_env,
             allow_claude_dangerously_skip_permissions=allow_claude_dangerously_skip_permissions,
             allow_codex_full_auto=allow_codex_full_auto,
+            execution_mode=execution_mode,
         )
         run_dict = run.to_dict()
         run_status = str(run_dict.get("status", "")).strip().lower()
@@ -2870,6 +2874,25 @@ class BossLoop:
             else self._requested_target_agent_for_issue(issue.number)
         )
 
+        # --- Backbone ledger: register dispatch intent ---
+        backbone_run_id = None
+        runtime = None
+        try:
+            from aragora.pipeline.backbone_runtime import BackboneRuntime
+            from aragora.pipeline.backbone_contracts import RunLedger
+
+            runtime = BackboneRuntime()
+            ledger = RunLedger(
+                run_id=f"boss-{self.run_id}-issue{issue.number}",
+                entrypoint="boss_loop",
+                status="dispatching",
+                metadata={"issue_number": issue.number, "issue_title": issue.title},
+            )
+            runtime.create_run(ledger)
+            backbone_run_id = ledger.run_id
+        except Exception:
+            pass  # Never block autonomous dispatch
+
         claimed_runner_id: str | None = None
         selected_runner, claimed_runner_id = self._claim_runner_for_dispatch(
             freshness,
@@ -2897,10 +2920,23 @@ class BossLoop:
                 worker_env=refinement_worker_env or None,
                 allow_claude_dangerously_skip_permissions=self.config.allow_claude_dangerously_skip_permissions,
                 allow_codex_full_auto=self.config.allow_codex_full_auto,
+                execution_mode=self.config.execution_mode,
             )
         finally:
             if claimed_runner_id:
                 self._release_runner_claim(claimed_runner_id)
+
+        # --- Backbone ledger: record dispatch outcome ---
+        if backbone_run_id and runtime is not None:
+            try:
+                runtime.update_run(
+                    backbone_run_id,
+                    status="completed" if result.get("status") == "completed" else "failed",
+                    execution_id=result.get("run_id"),
+                    receipt_id=result.get("receipt_id"),
+                )
+            except Exception:
+                pass  # Never block autonomous dispatch
         if pending_handoff is not None:
             dispatch_started = bool(result.get("run") or result.get("run_id"))
             if result.get("status") != "failed" or dispatch_started:
