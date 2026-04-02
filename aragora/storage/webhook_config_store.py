@@ -946,20 +946,34 @@ class RedisWebhookConfigStore(WebhookConfigStoreBackend):
             description=description,
         )
 
-        # Update Redis cache
-        if webhook:
+        if webhook is None:
+            # SQLite is authoritative. If the webhook no longer exists, clear
+            # any stale Redis payload so later reads cannot resurrect it.
+            # Mark the ID dirty even if delete succeeds so the next read uses
+            # SQLite truth before trusting Redis again.
             redis = self._get_redis()
             if redis:
                 try:
-                    redis.setex(
-                        self._redis_key(webhook_id),
-                        self.REDIS_TTL,
-                        self._serialize_for_cache(webhook),
-                    )
-                    self._clear_dirty(webhook_id)
-                except (_RedisError, ConnectionError, TimeoutError, OSError, ValueError) as e:
-                    logger.debug("Redis cache update failed: %s", e)
+                    redis.delete(self._redis_key(webhook_id))
                     self._mark_dirty(webhook_id)
+                except (_RedisError, ConnectionError, TimeoutError, OSError, ValueError) as e:
+                    logger.debug("Redis cache delete on update miss failed: %s", e)
+                    self._mark_dirty(webhook_id)
+            return None
+
+        # Update Redis cache
+        redis = self._get_redis()
+        if redis:
+            try:
+                redis.setex(
+                    self._redis_key(webhook_id),
+                    self.REDIS_TTL,
+                    self._serialize_for_cache(webhook),
+                )
+                self._clear_dirty(webhook_id)
+            except (_RedisError, ConnectionError, TimeoutError, OSError, ValueError) as e:
+                logger.debug("Redis cache update failed: %s", e)
+                self._mark_dirty(webhook_id)
 
         return webhook
 
