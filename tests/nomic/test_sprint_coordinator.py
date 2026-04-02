@@ -813,3 +813,83 @@ class TestCmdExecute:
         assert "last_execution" in updated
         assert "timestamp" in updated["last_execution"]
         assert "results" in updated["last_execution"]
+
+    def test_execute_closes_log_handles(
+        self,
+        tmp_project: Path,
+        manifest: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """execute should close sprint agent logs after subprocess completion."""
+        _patch_project_root(monkeypatch, tmp_project)
+        sc._save_manifest(manifest)
+        sc.cmd_setup(argparse.Namespace())
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 0
+        log_handles = [MagicMock(), MagicMock()]
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("builtins.open", side_effect=log_handles):
+                with patch("subprocess.Popen", return_value=mock_proc):
+                    sc.cmd_execute(argparse.Namespace(max_parallel=3))
+
+        for handle in log_handles:
+            handle.close.assert_called_once()
+
+    def test_execute_interactive_mode_omits_dangerous_skip_permissions(
+        self,
+        tmp_project: Path,
+        manifest: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Interactive mode should not bypass Claude permissions."""
+        _patch_project_root(monkeypatch, tmp_project)
+        sc._save_manifest(manifest)
+        sc.cmd_setup(argparse.Namespace())
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 0
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+                with patch.dict("os.environ", {"ARAGORA_ADMIN_APPROVED": "1"}, clear=False):
+                    sc.cmd_execute(
+                        argparse.Namespace(
+                            max_parallel=3,
+                            execution_mode="interactive",
+                        )
+                    )
+
+        cmd = mock_popen.call_args[0][0]
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_execute_autonomous_mode_adds_dangerous_skip_permissions_when_preapproved(
+        self,
+        tmp_project: Path,
+        manifest: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Autonomous mode keeps the explicit pre-approval bypass behavior."""
+        _patch_project_root(monkeypatch, tmp_project)
+        sc._save_manifest(manifest)
+        sc.cmd_setup(argparse.Namespace())
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 0
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+                with patch.dict("os.environ", {"ARAGORA_ADMIN_APPROVED": "1"}, clear=False):
+                    sc.cmd_execute(
+                        argparse.Namespace(
+                            max_parallel=3,
+                            execution_mode="autonomous",
+                        )
+                    )
+
+        cmd = mock_popen.call_args[0][0]
+        assert "--dangerously-skip-permissions" in cmd
