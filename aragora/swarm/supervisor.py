@@ -2987,6 +2987,7 @@ class SwarmSupervisor:
         for key in (
             "pid",
             "blockers",
+            "conflicts",
             "dispatched_at",
             "last_observed_at",
             "last_progress_at",
@@ -2997,6 +2998,7 @@ class SwarmSupervisor:
             "failure_reason",
             "blocking_question",
             "blocker",
+            "resource_error",
             "worker_outcome",
             "confidence",
             "initial_head",
