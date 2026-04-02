@@ -1238,13 +1238,16 @@ class WorkerLauncher:
         if observed_pid is None:
             observed_pid = cls._normalized_pid(session_meta.get("pid"))
         missing_terminal_marker = session_exit_code is None
-
-        if missing_terminal_marker and observed_pid is None:
-            active_lock = Path(worktree_path) / ".codex_session_active"
-            if active_lock.exists():
+        active_lock = Path(worktree_path) / ".codex_session_active"
+        if active_lock.exists():
+            # codex_session.sh writes ended_at/exit_code before it removes the
+            # active lock in its EXIT trap. Treat the lock as authoritative
+            # while it still exists unless the session PID is clearly gone.
+            if observed_pid is None:
                 return None
-
-        if (
+            if cls._is_pid_running(observed_pid):
+                return None
+        elif (
             missing_terminal_marker
             and observed_pid is not None
             and cls._is_pid_running(observed_pid)

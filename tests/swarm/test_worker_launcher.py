@@ -1256,6 +1256,68 @@ class TestCollectDetachedResult:
         mock_diff.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_returns_none_if_active_lock_exists_with_terminal_marker_and_running_pid(
+        self, tmp_path: Path
+    ):
+        (tmp_path / ".codex_session_active").write_text("1\n", encoding="utf-8")
+
+        with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "pid": 24680,
+                    "ended_at": "2026-04-02T01:23:45+00:00",
+                    "exit_code": 0,
+                },
+            ),
+            patch.object(WorkerLauncher, "_is_pid_running", return_value=True) as mock_running,
+            patch.object(WorkerLauncher, "_collect_diff") as mock_diff,
+        ):
+            result = await WorkerLauncher.collect_detached_result(
+                work_order_id="wo-active-lock-terminal-running",
+                agent="codex",
+                worktree_path=str(tmp_path),
+                branch="main",
+                pid=None,
+            )
+
+        assert result is None
+        mock_running.assert_called_once_with(24680)
+        mock_diff.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_if_active_lock_exists_with_terminal_marker_and_no_usable_pid(
+        self, tmp_path: Path
+    ):
+        (tmp_path / ".codex_session_active").write_text("1\n", encoding="utf-8")
+
+        with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "pid": "oops",
+                    "ended_at": "2026-04-02T01:23:45+00:00",
+                    "exit_code": 0,
+                },
+            ),
+            patch.object(WorkerLauncher, "_is_pid_running") as mock_running,
+            patch.object(WorkerLauncher, "_collect_diff") as mock_diff,
+        ):
+            result = await WorkerLauncher.collect_detached_result(
+                work_order_id="wo-active-lock-terminal-no-pid",
+                agent="codex",
+                worktree_path=str(tmp_path),
+                branch="main",
+                pid=None,
+            )
+
+        assert result is None
+        mock_running.assert_not_called()
+        mock_diff.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_uses_session_meta_pid_to_defer_when_marker_missing(self):
         with (
             patch.object(WorkerLauncher, "_read_session_meta", return_value={"pid": 24680}),
