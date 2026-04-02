@@ -506,6 +506,14 @@ class WorkerLauncher:
             if worker is not None:
                 session_meta = self._read_session_meta(worker.worktree_path)
                 session_exit_code, _ = self._terminal_session_result(session_meta)
+                if proc is not None and proc.returncode is None:
+                    observed_pid = self._normalized_pid(worker.pid)
+                    if observed_pid is None:
+                        observed_pid = self._normalized_pid(session_meta.get("pid"))
+                    if self._active_session_lock_blocks_collection(
+                        worker.worktree_path, observed_pid
+                    ):
+                        continue
             if proc is None or (proc.returncode is None and session_exit_code is None):
                 continue
             completed.append(self._wait_sync(work_order_id))
@@ -1238,15 +1246,8 @@ class WorkerLauncher:
         if observed_pid is None:
             observed_pid = cls._normalized_pid(session_meta.get("pid"))
         missing_terminal_marker = session_exit_code is None
-        active_lock = Path(worktree_path) / ".codex_session_active"
-        if active_lock.exists():
-            # codex_session.sh writes ended_at/exit_code before it removes the
-            # active lock in its EXIT trap. Treat the lock as authoritative
-            # while it still exists unless the session PID is clearly gone.
-            if observed_pid is None:
-                return None
-            if cls._is_pid_running(observed_pid):
-                return None
+        if cls._active_session_lock_blocks_collection(worktree_path, observed_pid):
+            return None
         elif (
             missing_terminal_marker
             and observed_pid is not None
@@ -1354,6 +1355,18 @@ class WorkerLauncher:
         except (TypeError, ValueError):
             return None
         return pid if pid > 0 else None
+
+    @classmethod
+    def _active_session_lock_blocks_collection(cls, worktree_path: str, pid: int | None) -> bool:
+        active_lock = Path(worktree_path) / ".codex_session_active"
+        if not active_lock.exists():
+            return False
+        # codex_session.sh writes ended_at/exit_code before it removes the
+        # active lock in its EXIT trap. Treat the lock as authoritative while
+        # it still exists unless the session PID is clearly gone.
+        if pid is None:
+            return True
+        return cls._is_pid_running(pid)
 
     @staticmethod
     def _cleanup_session_artifacts(worktree_path: str) -> None:

@@ -1131,6 +1131,40 @@ class TestCollectFinishedSync:
         mock_wait_pid.assert_not_called()
         assert "wo-sync-invalid-meta-pid" not in launcher._processes
 
+    def test_collect_finished_sync_defers_while_active_lock_still_exists(self, tmp_path: Path):
+        launcher = WorkerLauncher(LaunchConfig(auto_commit=False))
+        (tmp_path / ".codex_session_active").write_text("1\n", encoding="utf-8")
+        worker = WorkerProcess(
+            work_order_id="wo-sync-active-lock",
+            agent="codex",
+            worktree_path=str(tmp_path),
+            branch="main",
+            pid=333,
+            initial_head="def456",
+        )
+        launcher._workers["wo-sync-active-lock"] = worker
+        proc = MagicMock()
+        proc.returncode = None
+        launcher._processes["wo-sync-active-lock"] = proc
+
+        session_meta = {
+            "pid": 333,
+            "exit_code": 143,
+            "ended_at": "2026-03-31T12:34:56+00:00",
+        }
+
+        with (
+            patch.object(WorkerLauncher, "_read_session_meta", return_value=session_meta),
+            patch.object(WorkerLauncher, "_is_pid_running", return_value=True) as mock_running,
+            patch.object(WorkerLauncher, "_collect_diff_sync") as mock_diff,
+        ):
+            completed = launcher.collect_finished_sync(work_order_ids=["wo-sync-active-lock"])
+
+        assert completed == []
+        mock_running.assert_called_once_with(333)
+        mock_diff.assert_not_called()
+        assert "wo-sync-active-lock" in launcher._processes
+
 
 class TestCollectDetachedResult:
     @pytest.mark.asyncio
