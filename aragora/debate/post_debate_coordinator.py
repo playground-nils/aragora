@@ -32,6 +32,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from aragora.pipeline.backbone_contracts import BackboneStage, RunLedger, RunStageEvent
 from aragora.pipeline.execution_mode import ExecutionMode
 
 logger = logging.getLogger(__name__)
@@ -172,6 +173,7 @@ class PostDebateCoordinator:
         self.config = config or PostDebateConfig()
         self._settlement_tracker = settlement_tracker
         self._knowledge_mound = knowledge_mound
+        self._ledger: RunLedger | None = None
         self._backbone_runtime: Any | None = None
         self._backbone_runtime_failed = False
 
@@ -246,6 +248,14 @@ class PostDebateCoordinator:
         result = PostDebateResult(debate_id=debate_id)
         result.run_id = self._seed_backbone_run(debate_id, debate_result, task)
 
+        # Keep an in-memory ledger for traceability alongside persisted backbone writes.
+        ledger = RunLedger(
+            run_id=f"post-debate-{uuid.uuid4().hex[:12]}",
+            entrypoint="post_debate_coordinator",
+            debate_id=debate_id,
+        )
+        self._ledger = ledger
+
         # Step 0: Collect cost data (always attempted, used by downstream steps)
         result.cost_breakdown = self._step_collect_cost_data(debate_id, debate_result)
 
@@ -257,6 +267,16 @@ class PostDebateCoordinator:
         if self.config.auto_create_plan and confidence >= self.config.plan_min_confidence:
             result.plan = self._step_create_plan(debate_id, debate_result, task, result.explanation)
             self._record_backbone_plan(result.run_id, debate_id, result.plan)
+            if result.plan is not None:
+                plan_id = self._plan_id(self._plan_object(result.plan))
+                ledger.plan_id = plan_id
+                ledger.add_event(
+                    RunStageEvent.create(
+                        BackboneStage.PLAN,
+                        status="plan_created",
+                        details={"debate_id": debate_id, "plan_id": plan_id},
+                    )
+                )
 
         # Step 2.5: Gauntlet adversarial validation
         if self.config.auto_gauntlet_validate and confidence >= self.config.gauntlet_min_confidence:
@@ -301,13 +321,29 @@ class PostDebateCoordinator:
 
         # Step 4: Execute plan if approved
         if self.config.auto_execute_plan and result.plan:
+            plan_id = ledger.plan_id or self._plan_id(self._plan_object(result.plan))
+            ledger.plan_id = plan_id
             if self._is_execution_blocked(result.execution_gate):
                 result.execution_result = {
                     "skipped": True,
                     "reason": "execution_gate_blocked",
                     "gate": result.execution_gate,
                 }
+                ledger.add_event(
+                    RunStageEvent.create(
+                        BackboneStage.EXECUTION,
+                        status="execution_blocked",
+                        details={"debate_id": debate_id, "plan_id": plan_id},
+                    )
+                )
             else:
+                ledger.add_event(
+                    RunStageEvent.create(
+                        BackboneStage.EXECUTION,
+                        status="execution_requested",
+                        details={"debate_id": debate_id, "plan_id": plan_id},
+                    )
+                )
                 result.execution_result = self._step_execute_plan(result.plan, result.explanation)
             self._record_backbone_execution(
                 result.run_id,
@@ -315,6 +351,14 @@ class PostDebateCoordinator:
                 result.execution_result,
                 execution_gate=result.execution_gate,
             )
+            if not self._is_execution_blocked(result.execution_gate):
+                ledger.add_event(
+                    RunStageEvent.create(
+                        BackboneStage.EXECUTION,
+                        status="execution_completed",
+                        details={"debate_id": debate_id, "plan_id": plan_id},
+                    )
+                )
 
         # Step 4.5: Create draft PR for code-related debates
         if (
@@ -486,8 +530,16 @@ class PostDebateCoordinator:
     @staticmethod
     def _plan_id(plan_obj: Any) -> str:
         if isinstance(plan_obj, dict):
-            return str(plan_obj.get("id", "") or plan_obj.get("plan_id", "") or "").strip()
-        return str(getattr(plan_obj, "id", "") or getattr(plan_obj, "plan_id", "") or "").strip()
+            candidates = (plan_obj.get("id"), plan_obj.get("plan_id"))
+        else:
+            candidates = (getattr(plan_obj, "id", None), getattr(plan_obj, "plan_id", None))
+
+        for candidate in candidates:
+            if isinstance(candidate, str):
+                normalized = candidate.strip()
+                if normalized:
+                    return normalized
+        return ""
 
     def _seed_backbone_run(
         self,
