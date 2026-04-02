@@ -157,7 +157,7 @@ class LaunchConfig:
     claude_path: str = "claude"
     codex_path: str = "codex"
     timeout_seconds: float = 2400.0
-    no_progress_timeout_seconds: float = 1800.0
+    no_progress_timeout_seconds: float = 3600.0  # 60 min — large repos need context loading time
     claude_model: str | None = None
     codex_model: str | None = None
     claude_profile: str | None = None
