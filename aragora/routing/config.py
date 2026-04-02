@@ -35,6 +35,7 @@ class GatewayRoutingConfig:
     require_execute_keywords: set[str] = None  # type: ignore[assignment]
     time_sensitive_threshold_seconds: int = 60
     confidence_threshold: float = 0.85
+    cache_ttl_seconds: int = 300  # 5-minute cache for provider routing decisions
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "risk_levels", self.risk_levels or set(_DEF_RISK_LEVELS))
@@ -89,6 +90,7 @@ def load_gateway_routing_config() -> GatewayRoutingConfig:
       - ARAGORA_ROUTING_REQUIRE_EXECUTE_KEYWORDS (comma-separated)
       - ARAGORA_ROUTING_TIME_SENSITIVE_SECONDS
       - ARAGORA_ROUTING_CONFIDENCE_THRESHOLD
+      - ARAGORA_ROUTING_CACHE_TTL_SECONDS (default 300 = 5 minutes)
     """
 
     financial_threshold = _parse_float(
@@ -111,6 +113,10 @@ def load_gateway_routing_config() -> GatewayRoutingConfig:
         os.getenv("ARAGORA_ROUTING_CONFIDENCE_THRESHOLD"),
         0.85,
     )
+    cache_ttl_seconds = _parse_int(
+        os.getenv("ARAGORA_ROUTING_CACHE_TTL_SECONDS"),
+        300,
+    )
 
     return GatewayRoutingConfig(
         financial_threshold=financial_threshold,
@@ -121,4 +127,5 @@ def load_gateway_routing_config() -> GatewayRoutingConfig:
         require_execute_keywords=require_execute_keywords or None,
         time_sensitive_threshold_seconds=time_sensitive_threshold_seconds,
         confidence_threshold=confidence_threshold,
+        cache_ttl_seconds=cache_ttl_seconds,
     )
