@@ -11,6 +11,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+import time
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -18,6 +20,71 @@ if TYPE_CHECKING:
     from aragora.routing.provider_metrics import ProviderMetrics, ProviderMetricsStore
 
 logger = logging.getLogger(__name__)
+
+#: Default cache TTL for routing decisions (seconds).
+DEFAULT_CACHE_TTL: float = 300.0  # 5 minutes
+
+
+@dataclass
+class _CacheEntry:
+    """A cached routing decision with expiry."""
+
+    provider_name: str | None
+    expires_at: float
+
+
+@dataclass
+class RoutingCache:
+    """TTL-based cache for provider routing decisions.
+
+    Keyed by a tuple of (strategy, budget_remaining, min_quality, frozenset(exclude)).
+    """
+
+    ttl: float = DEFAULT_CACHE_TTL
+    _entries: dict[tuple, _CacheEntry] = field(default_factory=dict)
+
+    @staticmethod
+    def _make_key(
+        strategy: str,
+        budget_remaining: float | None,
+        min_quality: float,
+        exclude_providers: frozenset[str] | None,
+    ) -> tuple:
+        return (strategy, budget_remaining, min_quality, exclude_providers or frozenset())
+
+    def get(
+        self,
+        strategy: str,
+        budget_remaining: float | None,
+        min_quality: float,
+        exclude_providers: frozenset[str] | None,
+    ) -> tuple[bool, str | None]:
+        """Return (hit, provider_name). hit=False means cache miss."""
+        key = self._make_key(strategy, budget_remaining, min_quality, exclude_providers)
+        entry = self._entries.get(key)
+        if entry is not None and time.monotonic() < entry.expires_at:
+            return True, entry.provider_name
+        # Expired or missing — evict stale entry if present
+        self._entries.pop(key, None)
+        return False, None
+
+    def put(
+        self,
+        strategy: str,
+        budget_remaining: float | None,
+        min_quality: float,
+        exclude_providers: frozenset[str] | None,
+        provider_name: str | None,
+    ) -> None:
+        key = self._make_key(strategy, budget_remaining, min_quality, exclude_providers)
+        self._entries[key] = _CacheEntry(
+            provider_name=provider_name,
+            expires_at=time.monotonic() + self.ttl,
+        )
+
+    def invalidate(self) -> None:
+        """Clear all cached entries."""
+        self._entries.clear()
 
 
 class SelectionStrategy(str, Enum):
@@ -76,8 +143,13 @@ class CostQualityOptimizer:
         metrics_store: ProviderMetricsStore with recorded debate outcomes.
     """
 
-    def __init__(self, metrics_store: ProviderMetricsStore) -> None:
+    def __init__(
+        self,
+        metrics_store: ProviderMetricsStore,
+        cache_ttl: float = DEFAULT_CACHE_TTL,
+    ) -> None:
         self._store = metrics_store
+        self._cache = RoutingCache(ttl=cache_ttl)
 
     def get_pareto_frontier(self) -> list[ProviderMetrics]:
         """Return the current Pareto frontier across all providers."""
@@ -103,8 +175,20 @@ class CostQualityOptimizer:
         Returns:
             Provider name, or None if no provider meets the constraints.
         """
+        frozen_exclude = frozenset(exclude_providers) if exclude_providers else None
+        hit, cached = self._cache.get(
+            strategy.value,
+            budget_remaining,
+            min_quality,
+            frozen_exclude,
+        )
+        if hit:
+            logger.debug("Routing cache hit for strategy=%s", strategy.value)
+            return cached
+
         all_metrics = list(self._store.get_all_metrics().values())
         if not all_metrics:
+            self._cache.put(strategy.value, budget_remaining, min_quality, frozen_exclude, None)
             return None
 
         # Filter by constraints
@@ -143,11 +227,19 @@ class CostQualityOptimizer:
                 key=lambda m: m.avg_quality_score / (m.avg_cost_per_debate + epsilon),
             )
 
-        return best.provider_name
+        result = best.provider_name
+        self._cache.put(strategy.value, budget_remaining, min_quality, frozen_exclude, result)
+        return result
+
+    def invalidate_cache(self) -> None:
+        """Clear the routing decision cache."""
+        self._cache.invalidate()
 
 
 __all__ = [
     "CostQualityOptimizer",
+    "DEFAULT_CACHE_TTL",
+    "RoutingCache",
     "SelectionStrategy",
     "pareto_frontier",
 ]
