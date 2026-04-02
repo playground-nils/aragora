@@ -23,6 +23,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TextIO
 
 # Add project root to path for imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -283,7 +284,7 @@ def cmd_execute(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     max_parallel = args.max_parallel
-    active: dict[str, subprocess.Popen] = {}
+    active: dict[str, tuple[subprocess.Popen, TextIO]] = {}
     queued: list[tuple[str, dict, dict]] = []
 
     # Build queue of tasks to execute
@@ -335,7 +336,13 @@ def cmd_execute(args: argparse.Namespace) -> None:
         task_file.write_text(task_content)
 
     # Launch agents with concurrency control
-    def _launch(subtask_id: str, info: dict, st: dict) -> subprocess.Popen:
+    def _close_log_handle(log_handle: TextIO) -> None:
+        try:
+            log_handle.close()
+        except OSError:
+            pass
+
+    def _launch(subtask_id: str, info: dict, st: dict) -> tuple[subprocess.Popen, TextIO]:
         wt_path = Path(info["path"])
         title = st.get("title", subtask_id)
         description = st.get("description", title)
@@ -356,47 +363,56 @@ def cmd_execute(args: argparse.Namespace) -> None:
             cmd.append("--dangerously-skip-permissions")
         cmd.extend(["-p", prompt])
 
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(wt_path),
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            env={**os.environ, "CLAUDE_SPRINT_TASK": subtask_id},
-        )
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(wt_path),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                env={**os.environ, "CLAUDE_SPRINT_TASK": subtask_id},
+            )
+        except Exception:
+            _close_log_handle(log_handle)
+            raise
 
         print(
             f"  {_color('STARTED', _GREEN)}: [{subtask_id}] PID={proc.pid}  branch={info['branch']}"
         )
-        return proc
+        return proc, log_handle
 
     # Process queue with concurrency limit
     pending = list(queued)
     completed: list[tuple[str, int]] = []
 
-    while pending or active:
-        # Launch up to max_parallel
-        while pending and len(active) < max_parallel:
-            subtask_id, info, st = pending.pop(0)
-            active[subtask_id] = _launch(subtask_id, info, st)
+    try:
+        while pending or active:
+            # Launch up to max_parallel
+            while pending and len(active) < max_parallel:
+                subtask_id, info, st = pending.pop(0)
+                active[subtask_id] = _launch(subtask_id, info, st)
 
-        # Poll active processes
-        finished = []
-        for subtask_id, proc in active.items():
-            ret = proc.poll()
-            if ret is not None:
-                status = _color("DONE", _GREEN) if ret == 0 else _color(f"EXIT={ret}", _RED)
-                info = worktrees[subtask_id]
-                print(f"  {status}: [{subtask_id}] branch={info['branch']}")
-                completed.append((subtask_id, ret))
-                finished.append(subtask_id)
+            # Poll active processes
+            finished = []
+            for subtask_id, (proc, log_handle) in active.items():
+                ret = proc.poll()
+                if ret is not None:
+                    _close_log_handle(log_handle)
+                    status = _color("DONE", _GREEN) if ret == 0 else _color(f"EXIT={ret}", _RED)
+                    info = worktrees[subtask_id]
+                    print(f"  {status}: [{subtask_id}] branch={info['branch']}")
+                    completed.append((subtask_id, ret))
+                    finished.append(subtask_id)
 
-        for sid in finished:
-            del active[sid]
+            for sid in finished:
+                del active[sid]
 
-        if active:
-            import time
+            if active:
+                import time
 
-            time.sleep(2)
+                time.sleep(2)
+    finally:
+        for _, log_handle in active.values():
+            _close_log_handle(log_handle)
 
     # Summary
     print(f"\n{_color('Execution Summary', _BOLD)}")
