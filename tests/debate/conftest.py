@@ -222,6 +222,14 @@ def _suppress_stray_resource_warnings():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", ResourceWarning)
         yield
+        # Shut down any lingering async generators / transports on the
+        # current event loop before the loop itself is torn down.
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_closed():
+                loop.run_until_complete(asyncio.sleep(0))
+        except RuntimeError:
+            pass
         # Force a GC cycle so finalizers run now (inside the test's event loop)
         # rather than later when the loop is already closed.  Running gc.collect()
         # inside the catch_warnings block ensures any ResourceWarnings emitted by
