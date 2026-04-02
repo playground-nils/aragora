@@ -999,6 +999,7 @@ class SwarmSupervisor:
             "worker_outcome",
             "completed_at",
             "exit_code",
+            "initial_head",
             "head_sha",
             "commit_shas",
             "changed_paths",
@@ -1013,6 +1014,14 @@ class SwarmSupervisor:
             "pr_url",
             "adopted_pr",
             "scope_violation",
+            "pid",
+            "dispatched_at",
+            "last_observed_at",
+            "last_progress_at",
+            "first_output_at",
+            "last_output_at",
+            "progress_fingerprint",
+            "output_fingerprint",
         ):
             item.pop(key, None)
         item.pop("blockers", None)
@@ -1031,17 +1040,6 @@ class SwarmSupervisor:
         # live but not yet dispatched. Drop stale dispatch-only state from the
         # replaced lease so the lane can launch cleanly on the next iteration.
         item["status"] = "leased"
-        for key in (
-            "pid",
-            "dispatched_at",
-            "last_observed_at",
-            "last_progress_at",
-            "first_output_at",
-            "last_output_at",
-            "progress_fingerprint",
-            "output_fingerprint",
-        ):
-            item.pop(key, None)
 
     def _prune_stale_conflicts(
         self,
