@@ -2903,6 +2903,11 @@ Examples:
         action="store_true",
         help="Preview pipeline steps without executing",
     )
+    spec_parser.add_argument(
+        "--orchestrator",
+        action="store_true",
+        help="Route through UnifiedOrchestrator for full backbone tracking",
+    )
     spec_parser.set_defaults(func=_lazy("aragora.cli.commands.spec", "cmd_spec"))
 
 

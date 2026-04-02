@@ -21,6 +21,38 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+async def _run_spec_via_orchestrator(
+    prompt: str,
+    *,
+    depth: str = "quick",
+    profile: str = "founder",
+    skip_research: bool = False,
+) -> dict[str, Any]:
+    """Run the spec pipeline through UnifiedOrchestrator for full backbone tracking."""
+    from aragora.pipeline.unified_orchestrator import OrchestratorConfig, UnifiedOrchestrator
+
+    cfg = OrchestratorConfig(
+        preset_name=profile,
+        execution_mode="openclaw",
+        skip_execution=True,
+    )
+    orchestrator = UnifiedOrchestrator()
+    result = await orchestrator.run(prompt, config=cfg)
+
+    return {
+        "specification": None,
+        "intent": None,
+        "research": result.research_context,
+        "questions": [],
+        "stages_completed": result.stages_completed,
+        "auto_approved": False,
+        "timing": None,
+        "run_id": result.run_id,
+        "debate_result": result.debate_result,
+        "spec_bundle": result.spec_bundle,
+    }
+
+
 async def _run_spec_pipeline(
     prompt: str,
     *,
@@ -29,8 +61,17 @@ async def _run_spec_pipeline(
     skip_interrogation: bool = False,
     profile: str = "founder",
     output_format: str = "text",
+    use_orchestrator: bool = False,
 ) -> dict[str, Any]:
     """Run the prompt-to-spec pipeline and return the result."""
+    if use_orchestrator:
+        return await _run_spec_via_orchestrator(
+            prompt,
+            depth=depth,
+            profile=profile,
+            skip_research=skip_research,
+        )
+
     from aragora.prompt_engine.conductor import ConductorConfig, PromptConductor
     from aragora.prompt_engine.types import InterrogationDepth
 
@@ -208,6 +249,7 @@ def cmd_spec(args: argparse.Namespace) -> None:
     skip_interrogation = getattr(args, "skip_interrogation", False)
     output_format = getattr(args, "format", "text")
     dry_run = getattr(args, "dry_run", False)
+    use_orchestrator = getattr(args, "orchestrator", False)
 
     print("\n" + "=" * 60)
     print("  ARAGORA SPEC")
@@ -234,6 +276,7 @@ def cmd_spec(args: argparse.Namespace) -> None:
                 skip_interrogation=skip_interrogation,
                 profile=profile,
                 output_format=output_format,
+                use_orchestrator=use_orchestrator,
             )
         )
     except (RuntimeError, ValueError, TypeError, ImportError) as e:
