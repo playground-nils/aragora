@@ -440,6 +440,89 @@ def compute_calibration(
     )
 
 
+def goals_from_feedback_records(
+    records: list[Any],
+    *,
+    max_goals: int = 5,
+) -> list[GeneratedGoal]:
+    """Convert OutcomeFeedbackRecord instances into Nomic Loop goals.
+
+    Translates pipeline outcome feedback (from backbone_contracts) into
+    actionable GeneratedGoal objects that the Nomic Loop can execute.
+    Does not create GitHub issues — returns goal strings only.
+    """
+    if not records:
+        return []
+
+    goals: list[GeneratedGoal] = []
+
+    for rec in records:
+        # Low objective fidelity → improvement goal
+        fidelity = getattr(rec, "objective_fidelity", 1.0)
+        domain = getattr(rec, "domain", "unknown")
+        run_type = getattr(rec, "run_type", "unknown")
+        pipeline_id = getattr(rec, "pipeline_id", "")
+        recommendation = getattr(rec, "next_action_recommendation", "")
+        quality = getattr(rec, "quality_outcome", {}) or {}
+        execution = getattr(rec, "execution_outcome", {}) or {}
+
+        if fidelity < 0.5:
+            goal_text = (
+                f"Improve {domain} pipeline fidelity (currently {fidelity:.0%}) "
+                f"for run type '{run_type}'."
+            )
+            if recommendation:
+                goal_text += f" Recommended: {recommendation}"
+            goals.append(
+                GeneratedGoal(
+                    goal_text=goal_text,
+                    confidence=min(0.9, 0.5 + (1.0 - fidelity) * 0.5),
+                    source_signals=[pipeline_id] if pipeline_id else [],
+                    estimated_impact=0.8,
+                    estimated_effort=0.4,
+                    category="reliability",
+                )
+            )
+
+        # Quality failures
+        if quality.get("error") or quality.get("failed"):
+            reason = quality.get("error") or quality.get("reason", "quality check failed")
+            goals.append(
+                GeneratedGoal(
+                    goal_text=(f"Fix quality failure in {domain}/{run_type}: {reason}"),
+                    confidence=0.7,
+                    source_signals=[pipeline_id] if pipeline_id else [],
+                    estimated_impact=0.7,
+                    estimated_effort=0.5,
+                    category="reliability",
+                )
+            )
+
+        # Execution failures
+        if execution.get("error") or execution.get("failed"):
+            reason = execution.get("error") or execution.get("reason", "execution failed")
+            goals.append(
+                GeneratedGoal(
+                    goal_text=(f"Fix execution failure in {domain}/{run_type}: {reason}"),
+                    confidence=0.75,
+                    source_signals=[pipeline_id] if pipeline_id else [],
+                    estimated_impact=0.8,
+                    estimated_effort=0.4,
+                    category="infra",
+                )
+            )
+
+    # Deduplicate by goal_text, sort by score, limit
+    seen: set[str] = set()
+    unique: list[GeneratedGoal] = []
+    for g in goals:
+        if g.goal_text not in seen:
+            seen.add(g.goal_text)
+            unique.append(g)
+    unique.sort(key=lambda g: g.score, reverse=True)
+    return unique[:max_goals]
+
+
 def apply_calibration_to_estimator(
     snapshot: CalibrationSnapshot,
 ) -> dict[str, Any]:
