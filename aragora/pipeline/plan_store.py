@@ -1190,6 +1190,155 @@ class PlanStore:
         finally:
             conn.close()
 
+    def approve_run(
+        self,
+        run_id: str,
+        *,
+        approved_by: str = "unknown",
+        reason: str = "",
+    ) -> bool:
+        """Approve a run currently in ``pending_approval`` status.
+
+        Atomically transitions the run status from ``pending_approval`` to
+        ``approved`` and records the approval metadata.  Returns ``True`` when
+        the transition was applied, ``False`` when the run was not found or
+        was not in ``pending_approval``.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._connect()
+        try:
+            # Read current metadata so we can merge approval info
+            row = conn.execute(
+                "SELECT metadata_json FROM backbone_runs WHERE run_id = ? AND status = ?",
+                (run_id, "pending_approval"),
+            ).fetchone()
+            if row is None:
+                return False
+
+            existing_metadata = _parse_metadata_json(row["metadata_json"])
+            existing_metadata["approval"] = {
+                "approved_by": approved_by,
+                "reason": reason,
+                "approved_at": now,
+            }
+
+            cursor = conn.execute(
+                """
+                UPDATE backbone_runs
+                SET status = ?, metadata_json = ?, updated_at = ?
+                WHERE run_id = ? AND status = ?
+                """,
+                ("approved", json.dumps(existing_metadata), now, run_id, "pending_approval"),
+            )
+            conn.commit()
+            updated = cursor.rowcount > 0
+            if updated:
+                logger.info("Approved run %s by %s", run_id, approved_by)
+            return updated
+        finally:
+            conn.close()
+
+    def resume_run(
+        self,
+        run_id: str,
+        *,
+        approved_by: str = "unknown",
+        reason: str = "",
+    ) -> bool:
+        """Approve **and** resume a run currently in ``pending_approval``.
+
+        Combines approval with an immediate status transition to ``running``
+        so that the orchestrator can continue execution.  Returns ``True``
+        when the transition was applied.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT metadata_json FROM backbone_runs WHERE run_id = ? AND status = ?",
+                (run_id, "pending_approval"),
+            ).fetchone()
+            if row is None:
+                return False
+
+            existing_metadata = _parse_metadata_json(row["metadata_json"])
+            existing_metadata["approval"] = {
+                "approved_by": approved_by,
+                "reason": reason,
+                "approved_at": now,
+            }
+            existing_metadata["resumed_at"] = now
+
+            cursor = conn.execute(
+                """
+                UPDATE backbone_runs
+                SET status = ?, metadata_json = ?, updated_at = ?
+                WHERE run_id = ? AND status = ?
+                """,
+                ("running", json.dumps(existing_metadata), now, run_id, "pending_approval"),
+            )
+            conn.commit()
+            updated = cursor.rowcount > 0
+            if updated:
+                logger.info("Approved and resumed run %s by %s", run_id, approved_by)
+            return updated
+        finally:
+            conn.close()
+
+    def reject_run(
+        self,
+        run_id: str,
+        *,
+        rejected_by: str = "unknown",
+        reason: str = "",
+    ) -> bool:
+        """Reject a run currently in ``pending_approval`` status.
+
+        Atomically transitions the run from ``pending_approval`` to
+        ``rejected``.  Returns ``True`` when the transition was applied.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT metadata_json FROM backbone_runs WHERE run_id = ? AND status = ?",
+                (run_id, "pending_approval"),
+            ).fetchone()
+            if row is None:
+                return False
+
+            existing_metadata = _parse_metadata_json(row["metadata_json"])
+            existing_metadata["rejection"] = {
+                "rejected_by": rejected_by,
+                "reason": reason,
+                "rejected_at": now,
+            }
+
+            cursor = conn.execute(
+                """
+                UPDATE backbone_runs
+                SET status = ?, metadata_json = ?, updated_at = ?
+                WHERE run_id = ? AND status = ?
+                """,
+                ("rejected", json.dumps(existing_metadata), now, run_id, "pending_approval"),
+            )
+            conn.commit()
+            updated = cursor.rowcount > 0
+            if updated:
+                logger.info("Rejected run %s by %s", run_id, rejected_by)
+            return updated
+        finally:
+            conn.close()
+
+    def list_pending_approval_runs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> builtins.list[RunLedger]:
+        """List all runs currently waiting for approval."""
+        return self.list_runs(status="pending_approval", limit=limit, offset=offset)
+
     def delete(self, plan_id: str) -> bool:
         """Delete a plan by ID. Returns True if deleted."""
         conn = self._connect()
@@ -1443,4 +1592,7 @@ def get_plan_store() -> PlanStore:
     return _store
 
 
-__all__ = ["PlanStore", "get_plan_store"]
+__all__ = [
+    "PlanStore",
+    "get_plan_store",
+]  # approve_run, resume_run, reject_run are PlanStore methods
