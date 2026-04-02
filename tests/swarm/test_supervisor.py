@@ -3882,6 +3882,14 @@ async def test_collect_finished_results_requeues_capacity_failure_to_fallback_ag
     run.work_orders[0]["pr_url"] = "https://github.com/synaptent/aragora/pull/9999"
     run.work_orders[0]["adopted_pr"] = "https://github.com/synaptent/aragora/pull/9999"
     run.work_orders[0]["scope_violation"] = {"violations": [{"path": "README.md"}]}
+    run.work_orders[0]["resource_error"] = "old disk pressure"
+    run.work_orders[0]["conflicts"] = [
+        {
+            "source": "lease",
+            "lease_id": "stale-conflict",
+            "worktree_path": str(repo / "stale-conflict"),
+        }
+    ]
     store.update_supervisor_run(run.run_id, work_orders=run.work_orders, status="active")
 
     completed = await supervisor.collect_finished_results(run.run_id)
@@ -3916,6 +3924,8 @@ async def test_collect_finished_results_requeues_capacity_failure_to_fallback_ag
         "pr_url",
         "adopted_pr",
         "scope_violation",
+        "resource_error",
+        "conflicts",
     ):
         assert cleared_key not in work_order
     breaker = refreshed["metadata"][WORKER_TYPE_CIRCUIT_BREAKERS_KEY]["claude"]
