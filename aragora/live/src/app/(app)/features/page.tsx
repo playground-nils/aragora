@@ -146,7 +146,7 @@ const CATEGORIES: FeatureCategory[] = [
   {
     id: 'compliance',
     title: 'Compliance',
-    description: 'SOC 2 controls, GDPR support, EU AI Act artifact generation',
+    description: 'Enterprise security controls, GDPR support, EU AI Act artifact generation',
     features: [
       { name: 'EU AI Act Compliance', description: 'Risk classification, conformity assessment, and artifact bundle generation', status: 'active', href: '/compliance' },
       { name: 'Audit Trails', description: 'Complete audit logging of all decisions and actions', status: 'active', href: '/audit' },

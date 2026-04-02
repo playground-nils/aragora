@@ -50,7 +50,7 @@ const TIERS: Tier[] = [
     period: '',
     features: [
       'SSO / RBAC / encryption',
-      'SOC 2, HIPAA, EU AI Act',
+      'Enterprise security controls (SOC 2 ready)',
       'Self-hosted option',
       'Dedicated support + SLA',
     ],

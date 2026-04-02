@@ -69,7 +69,7 @@ const VERTICALS = {
     description: 'HIPAA-compliant multi-agent analysis for clinical documentation, research validation, and healthcare operations.',
     heroImage: '/images/verticals/healthcare-hero.png',
     stats: [
-      { value: 'HIPAA', label: 'Compliant by design' },
+      { value: 'HIPAA', label: 'Controls built in' },
       { value: '95%', label: 'Documentation accuracy' },
       { value: '50%', label: 'Time saved on reviews' },
     ],
@@ -123,7 +123,7 @@ const VERTICALS = {
     stats: [
       { value: '360\u00b0', label: 'Analysis coverage' },
       { value: 'Real-time', label: 'Market data integration' },
-      { value: 'SOC 2', label: 'Type II certified' },
+      { value: 'SOC 2', label: 'Controls implemented' },
     ],
     useCases: [
       {
