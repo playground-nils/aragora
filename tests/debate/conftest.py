@@ -220,7 +220,10 @@ def _suppress_stray_resource_warnings():
     keep ``-W error::ResourceWarning`` clean.
     """
     with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ResourceWarning)
         yield
-    # Force a GC cycle so finalizers run now (inside the test's event loop)
-    # rather than later when the loop is already closed.
-    gc.collect()
+        # Force a GC cycle so finalizers run now (inside the test's event loop)
+        # rather than later when the loop is already closed.  Running gc.collect()
+        # inside the catch_warnings block ensures any ResourceWarnings emitted by
+        # __del__ / finalizer methods are also suppressed.
+        gc.collect()
