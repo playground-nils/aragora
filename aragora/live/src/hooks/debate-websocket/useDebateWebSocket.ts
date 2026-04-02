@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { StreamEvent } from '@/types/events';
 import { logger } from '@/utils/logger';
-import { API_BASE_URL } from '@/config';
+import { getRuntimeBackendConfig } from '@/lib/runtimeBackend';
 
 // Import types from local module
 import type {
@@ -33,7 +33,6 @@ import type {
 
 // Import constants from local module
 import {
-  DEFAULT_WS_URL,
   DEBATE_START_TIMEOUT_MS,
   MAX_RECONNECT_ATTEMPTS,
   MAX_RECONNECT_DELAY_MS,
@@ -84,11 +83,14 @@ function normalizeSettlementMetadata(raw: unknown): SettlementMetadata | null {
 
 export function useDebateWebSocket({
   debateId,
-  wsUrl = DEFAULT_WS_URL,
+  wsUrl,
   enabled = true,
   accessToken = null,
   onAuthRevoked,
 }: UseDebateWebSocketOptions): UseDebateWebSocketReturn {
+  const runtimeBackendConfig = getRuntimeBackendConfig().config;
+  const apiBase = runtimeBackendConfig.api.replace(/\/$/, '');
+  const resolvedWsUrl = wsUrl ?? runtimeBackendConfig.ws;
   const MAX_HANDSHAKE_FAILURES = 3;
   const [status, setStatus] = useState<DebateConnectionStatus>('connecting');
   const [error, setError] = useState<string | null>(null);
@@ -293,7 +295,7 @@ export function useDebateWebSocket({
   // Fetch debate status from HTTP API
   const fetchDebateStatus = useCallback(async (): Promise<DebateStatus | null> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/debates/${debateId}`);
+      const response = await fetch(`${apiBase}/api/debates/${debateId}`);
       if (response.ok) {
         const data = await response.json();
         return {
@@ -312,7 +314,7 @@ export function useDebateWebSocket({
       logger.debug('Failed to fetch debate status:', e);
       return null;
     }
-  }, [debateId]);
+  }, [apiBase, debateId]);
 
   // Helper to add message with deduplication
   const addMessageIfNew = useCallback((msg: TranscriptMessage) => {
@@ -448,7 +450,7 @@ export function useDebateWebSocket({
       }
       try {
         const sinceSeq = lastSeqRef.current;
-        const url = `${API_BASE_URL}/api/debates/${debateId}/events?since=${sinceSeq}`;
+        const url = `${apiBase}/api/debates/${debateId}/events?since=${sinceSeq}`;
         const response = await fetch(url);
         if (!response.ok) {
           // If 404 the endpoint does not exist -- stop polling gracefully
@@ -483,7 +485,7 @@ export function useDebateWebSocket({
     // Initial poll immediately
     poll();
     pollingIntervalRef.current = setInterval(poll, POLLING_INTERVAL_MS);
-  }, [debateId, fetchDebateStatus, processEvent, stopPolling]);
+  }, [apiBase, debateId, fetchDebateStatus, processEvent, stopPolling]);
 
   // Keep startPollingFallback ref updated
   useEffect(() => {
@@ -628,7 +630,7 @@ export function useDebateWebSocket({
       if (accessToken) {
         protocols.push(`access_token.${accessToken}`);
       }
-      ws = new WebSocket(wsUrl, protocols);
+      ws = new WebSocket(resolvedWsUrl, protocols);
       wsRef.current = ws;
     } catch (e) {
       logger.error('[WebSocket] Failed to create connection:', e);
@@ -742,7 +744,7 @@ export function useDebateWebSocket({
       }
     };
 
-  }, [enabled, wsUrl, debateId, reconnectTrigger, clearDebateStartTimeout, clearHeartbeatTimeout, stopPolling, accessToken, onAuthRevoked]);
+  }, [enabled, resolvedWsUrl, debateId, reconnectTrigger, clearDebateStartTimeout, clearHeartbeatTimeout, stopPolling, accessToken, onAuthRevoked]);
 
   return {
     status,

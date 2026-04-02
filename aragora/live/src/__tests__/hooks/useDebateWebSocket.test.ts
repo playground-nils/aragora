@@ -55,11 +55,15 @@ class MockWebSocket {
 
 // Store original WebSocket
 const originalWebSocket = global.WebSocket;
+const originalFetch = global.fetch;
+const mockFetch = jest.fn();
 
 describe('useDebateWebSocket', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    localStorage.clear();
     MockWebSocket.instances = [];
+    mockFetch.mockReset();
     // Replace global WebSocket with mock, including static constants
     const MockWSWithStatics = MockWebSocket as unknown as typeof WebSocket;
     Object.defineProperty(MockWSWithStatics, 'CONNECTING', { value: 0, writable: true });
@@ -67,6 +71,7 @@ describe('useDebateWebSocket', () => {
     Object.defineProperty(MockWSWithStatics, 'CLOSING', { value: 2, writable: true });
     Object.defineProperty(MockWSWithStatics, 'CLOSED', { value: 3, writable: true });
     (global as { WebSocket: unknown }).WebSocket = MockWSWithStatics;
+    (global as { fetch: unknown }).fetch = mockFetch as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -78,6 +83,7 @@ describe('useDebateWebSocket', () => {
     });
     MockWebSocket.instances = [];
     (global as { WebSocket: unknown }).WebSocket = originalWebSocket;
+    (global as { fetch: unknown }).fetch = originalFetch as unknown as typeof fetch;
   });
 
   const getLatestWs = () => MockWebSocket.instances[MockWebSocket.instances.length - 1];
@@ -116,6 +122,16 @@ describe('useDebateWebSocket', () => {
       );
 
       expect(getLatestWs().url).toBe('wss://custom.ws.url/ws');
+    });
+
+    it('uses the selected runtime backend when wsUrl is omitted', () => {
+      localStorage.setItem('aragora-backend', 'production');
+
+      renderHook(() =>
+        useDebateWebSocket({ debateId: 'test-debate-1' })
+      );
+
+      expect(getLatestWs().url).toBe('wss://api.aragora.ai/ws');
     });
 
     it('should set status to streaming on open', async () => {
@@ -685,6 +701,30 @@ describe('useDebateWebSocket', () => {
       });
 
       expect(result.current.streamEvents.length).toBe(0);
+    });
+  });
+
+  describe('runtime backend fallback', () => {
+    it('uses the selected runtime backend for HTTP status fallback', async () => {
+      localStorage.setItem('aragora-backend', 'production');
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 'running' }),
+      } as Response);
+
+      renderHook(() =>
+        useDebateWebSocket({ debateId: 'test-debate-1' })
+      );
+
+      act(() => {
+        getLatestWs().simulateOpen();
+        jest.advanceTimersByTime(180000);
+      });
+
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalledWith('https://api.aragora.ai/api/debates/test-debate-1');
+      });
     });
   });
 });

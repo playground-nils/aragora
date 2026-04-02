@@ -32,8 +32,17 @@ jest.mock('../steps', () => ({
 }));
 
 import { OnboardingFlow } from '../OnboardingFlow';
+import { FirstDebateStep } from '../FirstDebateStep';
+import { IntegrationSelector } from '../IntegrationSelector';
 import { QuickDebatePanel } from '../QuickDebatePanel';
 import { TryDebateStep } from '../steps/TryDebateStep';
+
+jest.mock('@/hooks/debate-websocket/useDebateWebSocket', () => ({
+  useDebateWebSocket: () => ({
+    status: 'connecting',
+    messages: [],
+  }),
+}));
 
 describe('Onboarding backend selection', () => {
   beforeEach(() => {
@@ -53,9 +62,12 @@ describe('Onboarding backend selection', () => {
       debateStatus: 'idle',
       debateError: null,
       firstDebateTopic: '',
+      firstDebateId: null,
+      firstReceiptId: null,
       setFirstDebateTopic: jest.fn(),
       setDebateError: jest.fn(),
       updateProgress: jest.fn(),
+      setFirstReceiptId: jest.fn(),
       selectedIndustry: 'general',
       trialDebateResult: null,
       setTrialDebateResult: jest.fn(),
@@ -116,6 +128,48 @@ describe('Onboarding backend selection', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.aragora.ai/api/v1/playground/debate',
         expect.objectContaining({ method: 'POST' }),
+      );
+    });
+  });
+
+  it('FirstDebateStep starts onboarding debates against the selected backend', async () => {
+    mockStoreState = {
+      ...mockStoreState,
+      firstDebateTopic: 'Should we launch on the production backend?',
+      selectedTemplate: {
+        id: 'hiring',
+        name: 'Hiring',
+        rounds: 5,
+        agentsCount: 2,
+      },
+    };
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ debate_id: 'debate-first' }),
+    });
+
+    render(<FirstDebateStep />);
+    fireEvent.click(screen.getByRole('button', { name: /start debate/i }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.aragora.ai/api/debate',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+  });
+
+  it('IntegrationSelector checks integrations against the selected backend', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ integrations: {} }),
+    });
+
+    render(<IntegrationSelector onComplete={jest.fn()} />);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.aragora.ai/api/v1/integrations/status',
       );
     });
   });
