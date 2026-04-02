@@ -2974,7 +2974,7 @@ class BossLoop:
                 target_branch=self.config.target_branch,
                 budget_limit_usd=self.config.budget_limit_usd,
                 max_ticks=self.config.dispatch_max_ticks,
-                wait_for_completion=self.config.max_iterations > 1,
+                wait_for_completion=True,
                 default_target_agent=requested_target_agent,
                 default_reviewer_agent=self.config.default_reviewer_agent,
                 # The supervisor already provisions the worktree, so the session
