@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +45,23 @@ ADAPTER_CIRCUIT_CONFIGS["obsidian"] = AdapterCircuitBreakerConfig(
     timeout_seconds=20.0,
     half_open_max_calls=2,
 )
+
+
+@dataclass
+class ConflictRecord:
+    """Record of a sync conflict between Obsidian vault and Knowledge Mound."""
+
+    note_path: str
+    vault_modified: datetime
+    km_modified: datetime
+    winner: str  # "vault" or "km"
+    resolved_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __str__(self) -> str:
+        return (
+            f"Conflict on '{self.note_path}': vault={self.vault_modified.isoformat()}, "
+            f"km={self.km_modified.isoformat()}, winner={self.winner}"
+        )
 
 
 @dataclass
@@ -98,6 +115,7 @@ class ObsidianAdapter(KnowledgeMoundAdapter):
         self._config = config or getattr(connector, "_config", None)
         self._sync_config = sync_config or ObsidianSyncConfig(workspace_id=workspace_id)
         self._event_callback = event_callback
+        self._conflict_log: list[ConflictRecord] = []
 
         if self._sync_config.watch_tags is None and self._config is not None:
             self._sync_config.watch_tags = list(self._config.watch_tags)
@@ -106,6 +124,11 @@ class ObsidianAdapter(KnowledgeMoundAdapter):
     def connector(self) -> ObsidianConnector | None:
         """Return the underlying Obsidian connector."""
         return self._connector
+
+    @property
+    def conflict_log(self) -> list[ConflictRecord]:
+        """Return the list of recorded sync conflicts."""
+        return self._conflict_log
 
     def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Emit event via callback if configured."""
@@ -139,6 +162,85 @@ class ObsidianAdapter(KnowledgeMoundAdapter):
             return get_knowledge_mound(workspace_id=self._sync_config.workspace_id)
         except (RuntimeError, ValueError, OSError, AttributeError) as e:
             logger.debug("Could not get knowledge mound: %s", e)
+            return None
+
+    def resolve_conflict(
+        self,
+        note_path: str,
+        vault_modified: datetime,
+        km_modified: datetime,
+    ) -> str:
+        """Resolve a sync conflict using last-write-wins strategy.
+
+        Compares modification timestamps from both sides and returns the
+        winner.  The conflict is logged for manual review.
+
+        Args:
+            note_path: Path of the conflicting note.
+            vault_modified: Last modification time on the vault side.
+            km_modified: Last modification time on the KM side.
+
+        Returns:
+            ``"vault"`` if the vault version is newer or equal,
+            ``"km"`` if the KM version is newer.
+        """
+        winner = "vault" if vault_modified >= km_modified else "km"
+        record = ConflictRecord(
+            note_path=note_path,
+            vault_modified=vault_modified,
+            km_modified=km_modified,
+            winner=winner,
+        )
+        self._conflict_log.append(record)
+        logger.info("Obsidian sync conflict resolved: %s", record)
+        return winner
+
+    async def _check_conflict(
+        self,
+        mound: Any,
+        document_id: str,
+        vault_modified: datetime,
+    ) -> str | None:
+        """Check for an existing KM entry and resolve conflict if needed.
+
+        Returns ``None`` when there is no conflict (note does not exist in KM
+        yet), ``"vault"`` when the vault version wins, or ``"km"`` when the KM
+        version wins.
+        """
+        try:
+            results = await mound.query(
+                query=f"document_id:{document_id}",
+                limit=1,
+            )
+            if not results:
+                return None
+            entry = results[0] if isinstance(results, list) else None
+            if entry is None:
+                return None
+
+            meta = entry.get("metadata", {}) if isinstance(entry, dict) else {}
+            km_ts = meta.get("km_validated_at") or meta.get("ingested_at")
+            if km_ts is None:
+                return None
+
+            if isinstance(km_ts, str):
+                # Handle ISO format strings
+                km_modified = datetime.fromisoformat(km_ts.replace("Z", "+00:00"))
+            elif isinstance(km_ts, (int, float)):
+                km_modified = datetime.fromtimestamp(km_ts, tz=timezone.utc)
+            else:
+                return None
+
+            # Ensure vault_modified is tz-aware for comparison
+            vault_aware = vault_modified
+            if vault_aware.tzinfo is None:
+                vault_aware = vault_aware.replace(tzinfo=timezone.utc)
+            if km_modified.tzinfo is None:
+                km_modified = km_modified.replace(tzinfo=timezone.utc)
+
+            return self.resolve_conflict(document_id, vault_aware, km_modified)
+        except (RuntimeError, ValueError, AttributeError, KeyError, TypeError) as e:  # noqa: BLE001
+            logger.debug("Conflict check failed for %s: %s", document_id, e)
             return None
 
     async def sync_to_km(
@@ -209,6 +311,28 @@ class ObsidianAdapter(KnowledgeMoundAdapter):
                             continue
 
                     try:
+                        # Check for conflict with existing KM entry
+                        vault_mod_time = None
+                        if isinstance(item.metadata, dict):
+                            raw_ts = item.metadata.get("modified_at") or item.metadata.get("mtime")
+                            if isinstance(raw_ts, (int, float)):
+                                vault_mod_time = datetime.fromtimestamp(raw_ts, tz=timezone.utc)
+                            elif isinstance(raw_ts, str):
+                                vault_mod_time = datetime.fromisoformat(
+                                    raw_ts.replace("Z", "+00:00")
+                                )
+                            elif isinstance(raw_ts, datetime):
+                                vault_mod_time = raw_ts
+
+                        if vault_mod_time is not None:
+                            winner = await self._check_conflict(
+                                mound, item.source_id, vault_mod_time
+                            )
+                            if winner == "km":
+                                # KM version is newer — skip vault ingestion
+                                skipped += 1
+                                continue
+
                         req = IngestionRequest(
                             content=item.content,
                             workspace_id=self._sync_config.workspace_id,
@@ -390,4 +514,4 @@ class ObsidianAdapter(KnowledgeMoundAdapter):
         return None
 
 
-__all__ = ["ObsidianAdapter", "ObsidianSyncConfig"]
+__all__ = ["ConflictRecord", "ObsidianAdapter", "ObsidianSyncConfig"]
