@@ -116,10 +116,18 @@ const EMPTY_RISK_SUMMARY: RiskSummary = {
   low: 0,
 };
 
+const DEBATE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
 function safeString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function safeDebateId(value: unknown): string | undefined {
+  const candidate = safeString(value);
+  if (!candidate) return undefined;
+  return DEBATE_ID_PATTERN.test(candidate) ? candidate : undefined;
 }
 
 function safeNumber(value: unknown): number | undefined {
@@ -265,7 +273,7 @@ function normalizeListItem(
     status: normalizeStatus(raw.status),
     receiptId,
     gauntletId,
-    debateId: safeString(raw.debate_id) ?? safeString(metadata?.debate_id),
+    debateId: safeDebateId(raw.debate_id) ?? safeDebateId(metadata?.debate_id),
     verdict: normalizeVerdict(raw.verdict),
     confidence: safeNumber(raw.confidence),
     created_at: normalizeTimestamp(raw.created_at ?? raw.timestamp ?? raw.completed_at),
@@ -587,7 +595,7 @@ function normalizeReceiptDetail(
       safeString(raw.gauntlet_id) ??
       sourceItem.gauntletId ??
       sourceItem.id,
-    debate_id: safeString(raw.debate_id) ?? sourceItem.debateId,
+    debate_id: safeDebateId(raw.debate_id) ?? sourceItem.debateId,
     timestamp: normalizeTimestamp(raw.timestamp ?? raw.created_at ?? sourceItem.created_at),
     input_summary:
       safeString(raw.input_summary) ??
@@ -1117,6 +1125,9 @@ export default function ReceiptsPage() {
     const totalTokens =
       (receipt.cost_summary?.total_tokens_in ?? 0) +
       (receipt.cost_summary?.total_tokens_out ?? 0);
+    const resultHref = receipt.debate_id
+      ? `/debates/${encodeURIComponent(receipt.debate_id)}`
+      : null;
 
     return (
       <div className="space-y-6">
@@ -1135,9 +1146,9 @@ export default function ReceiptsPage() {
             >
               Back
             </button>
-            {receipt.debate_id && (
+            {resultHref && (
               <Link
-                href={`/debates/${receipt.debate_id}`}
+                href={resultHref}
                 className="px-3 py-1 text-sm font-mono bg-acid-cyan/20 border border-acid-cyan text-acid-cyan rounded hover:bg-acid-cyan/30"
               >
                 View result

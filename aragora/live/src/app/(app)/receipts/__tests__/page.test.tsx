@@ -321,4 +321,19 @@ describe('ReceiptsPage', () => {
       '/debates/debate-456'
     );
   });
+
+  it('does not render a view result handoff when the debate id is malformed', async () => {
+    configureDetailFetch({
+      debate_id: 'debate-456?tab=private',
+    });
+
+    const user = userEvent.setup();
+
+    render(<ReceiptsPage />);
+
+    await user.click(await screen.findByRole('button', { name: /Receipt 123 summary/i }));
+
+    await screen.findByText('Decision Receipt');
+    expect(screen.queryByRole('link', { name: 'View result' })).not.toBeInTheDocument();
+  });
 });
