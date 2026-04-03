@@ -40,6 +40,7 @@ from aragora.swarm.boss_loop import (
     dispatch_bounded_spec,
     extract_pre_dispatch_validation_commands,
     extract_issue_validation_contract,
+    find_missing_pre_dispatch_validation_targets,
     run_pre_dispatch_validation_commands,
     sanitize_issue_body_for_dispatch,
     select_eligible_issue,
@@ -249,6 +250,21 @@ Acceptance Criteria:
             'python3 -m aragora.cli.main quickstart --topic "test" --rounds 1 --json | '
             "python3 -c \"import json,sys; d=json.load(sys.stdin); assert 'receipt_id' in d\"",
             "pytest tests/cli/test_quickstart.py -x -q",
+        ]
+
+    def test_find_missing_pre_dispatch_validation_targets_reports_missing_pytest_file(
+        self, tmp_path: Path
+    ):
+        commands = [
+            "pytest tests/webhooks/test_delivery_retry.py -x -q",
+            "python -m pytest tests/swarm/test_boss_loop.py -q",
+        ]
+        existing = tmp_path / "tests" / "swarm"
+        existing.mkdir(parents=True)
+        (existing / "test_boss_loop.py").write_text("# test")
+
+        assert find_missing_pre_dispatch_validation_targets(commands, repo_root=tmp_path) == [
+            "tests/webhooks/test_delivery_retry.py"
         ]
 
     def test_run_pre_dispatch_validation_commands_stops_on_failure(self, monkeypatch):
@@ -2120,6 +2136,51 @@ async def test_dispatch_issue_builds_clean_spec_from_issue_body() -> None:
             scoped_paths.update(str(path) for path in work_order.get("file_scope", []))
     assert "aragora/swarm/supervisor.py" in scoped_paths
     assert spec.acceptance_criteria == ["pytest -q tests/swarm/test_boss_loop.py"]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_issue_blocks_on_missing_validation_target_before_dispatch() -> None:
+    issue = _make_issue(
+        2031,
+        "Add missing handler tests for webhook delivery retry logic",
+        body=(
+            "The webhook delivery system has retry and dead-letter queue logic but limited test coverage.\n\n"
+            "## Files\n"
+            "- `tests/webhooks/test_delivery_retry.py` (new or extend)\n"
+            "- Reference: `aragora/webhooks/delivery.py`, `aragora/webhooks/dead_letter.py`\n\n"
+            "## Acceptance\n"
+            "`pytest tests/webhooks/test_delivery_retry.py -x -q` passes\n"
+        ),
+    )
+    loop = BossLoop(config=_boss_config(max_iterations=1))
+    loop._claim_runner_for_dispatch = lambda freshness, *, requested_target_agent=None: (None, None)
+    loop._selected_runner_for_dispatch = lambda freshness, *, requested_target_agent=None: {
+        "runner_id": "codex-runner-1",
+        "runner_type": "codex",
+    }
+
+    with (
+        patch(
+            "aragora.swarm.prompt_refiner.refine_worker_prompt",
+            new=AsyncMock(
+                return_value={
+                    "refined_prompt": "",
+                    "files_to_change": [],
+                    "test_patterns": [],
+                    "constraints": [],
+                    "context_gathered": False,
+                }
+            ),
+        ),
+        patch("aragora.swarm.commander.SwarmCommander") as mock_commander_cls,
+    ):
+        result = await loop._dispatch_issue(issue, _fresh_result(fresh=True))
+
+    assert result["status"] == "needs_human"
+    assert result["outcome"] == "verification_target_missing"
+    assert "missing validation targets" in result["reasons"][0]
+    assert "tests/webhooks/test_delivery_retry.py" in result["reasons"][0]
+    mock_commander_cls.return_value.run_supervised_from_spec.assert_not_called()
 
 
 @pytest.mark.asyncio
