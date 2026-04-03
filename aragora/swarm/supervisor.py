@@ -647,6 +647,7 @@ class SwarmSupervisor:
                     self._mark_waiting_conflict(item, exc.conflicts)
                 except RuntimeError as exc:
                     if self._is_resource_constraint_error(exc):
+                        self._clear_waiting_state(item)
                         item["status"] = "waiting_resource"
                         item["resource_error"] = str(exc)
                     else:
@@ -4269,6 +4270,7 @@ class SwarmSupervisor:
         item: dict[str, Any],
         conflicts: list[dict[str, Any]],
     ) -> None:
+        cls._clear_waiting_state(item)
         item["status"] = "waiting_conflict"
         item["conflicts"] = list(conflicts)
         item["failure_reason"] = "waiting_conflict"
@@ -4302,8 +4304,53 @@ class SwarmSupervisor:
         if not blockers:
             blockers.append("waiting_conflict")
         item["blockers"] = blockers
-        item.pop("dispatch_error", None)
-        item.pop("pid", None)
+
+    @staticmethod
+    def _clear_waiting_state(item: dict[str, Any]) -> None:
+        """Drop stale lease, deliverable, and review state before waiting."""
+        item["review_status"] = "pending"
+        for key in (
+            "lease_id",
+            "owner_session_id",
+            "branch",
+            "worktree_path",
+            "dispatch_error",
+            "resource_error",
+            "failure_reason",
+            "blocking_question",
+            "blocker",
+            "conflicts",
+            "receipt_id",
+            "confidence",
+            "worker_outcome",
+            "completed_at",
+            "exit_code",
+            "initial_head",
+            "head_sha",
+            "commit_shas",
+            "changed_paths",
+            "diff",
+            "diff_lines",
+            "stdout_tail",
+            "stderr_tail",
+            "tests_run",
+            "verification_results",
+            "merge_gate",
+            "verification_missing_reason",
+            "pr_url",
+            "adopted_pr",
+            "scope_violation",
+            "pid",
+            "dispatched_at",
+            "last_observed_at",
+            "last_progress_at",
+            "first_output_at",
+            "last_output_at",
+            "progress_fingerprint",
+            "output_fingerprint",
+        ):
+            item.pop(key, None)
+        item.pop("blockers", None)
 
     def _mark_scope_violation(
         self,
