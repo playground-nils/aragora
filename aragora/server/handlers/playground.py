@@ -1828,6 +1828,36 @@ class PlaygroundHandler(BaseHandler):
                     cached["cached"] = True
                     cached["cached_at"] = time.time()
                     logger.info("Cache hit for debate key %.12s…", cache_key)
+                    # Emit spectate events for cached results too (landing page demo)
+                    try:
+                        from aragora.spectate.ws_bridge import get_spectate_bridge
+
+                        bridge = get_spectate_bridge()
+                        if bridge.running:
+                            debate_id = cached.get("id", "cached")
+                            answer = str(cached.get("final_answer", ""))[:500]
+                            bridge._forward_event(
+                                event_type="debate_start",
+                                agent="oracle",
+                                details=str(cached.get("topic", ""))[:200],
+                                debate_id=debate_id,
+                            )
+                            bridge._forward_event(
+                                event_type="proposal",
+                                agent="oracle",
+                                details=answer,
+                                debate_id=debate_id,
+                                round_number=1,
+                            )
+                            bridge._forward_event(
+                                event_type="consensus",
+                                agent="oracle",
+                                details="Oracle verdict delivered",
+                                debate_id=debate_id,
+                                round_number=1,
+                            )
+                    except Exception:
+                        pass
                     return json_response(cached)
         except (ImportError, RuntimeError, OSError, ValueError):
             logger.debug("Cache lookup unavailable, proceeding to debate", exc_info=True)
