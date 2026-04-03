@@ -3201,6 +3201,10 @@ async def test_collect_results_marks_scope_violation_needs_human(
                 "review_status": "pending",
                 "receipt_id": "receipt-stale",
                 "confidence": 0.88,
+                "pr_url": "https://github.com/synaptent/aragora/pull/9999",
+                "adopted_pr": "https://github.com/synaptent/aragora/pull/9999",
+                "merge_gate": {"checks_passed": True},
+                "verification_missing_reason": "missing_verification_plan",
             }
         ],
         status="active",
@@ -3242,9 +3246,12 @@ async def test_collect_results_marks_scope_violation_needs_human(
     assert wo["review_status"] == "changes_requested"
     assert "outside permitted scope" in wo["dispatch_error"]
     assert wo["failure_reason"] == "scope_violation"
+    assert wo["worker_outcome"] == "scope_violation"
     assert "stay in scope" in wo["blocking_question"]
     assert wo.get("receipt_id") is None
     assert "confidence" not in wo
+    for cleared_key in ("pr_url", "adopted_pr", "merge_gate", "verification_missing_reason"):
+        assert cleared_key not in wo
     assert wo["lease_id"] == lease.lease_id
     assert wo["scope_violation"]["violations"][0]["type"] == "out_of_scope"
 

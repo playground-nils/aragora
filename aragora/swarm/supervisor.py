@@ -2979,6 +2979,15 @@ class SwarmSupervisor:
                     )
                     item["review_status"] = "changes_requested"
                     item["receipt_id"] = None
+                    item.pop("confidence", None)
+                    item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
+                    for key in (
+                        "pr_url",
+                        "adopted_pr",
+                        "merge_gate",
+                        "verification_missing_reason",
+                    ):
+                        item.pop(key, None)
                     item["scope_violation"] = {
                         "violations": list(exc.violations),
                         "changed_paths": clean_paths,
@@ -4456,6 +4465,13 @@ class SwarmSupervisor:
         item["blockers"] = blockers
         item.pop("receipt_id", None)
         item.pop("confidence", None)
+        for key in (
+            "pr_url",
+            "adopted_pr",
+            "merge_gate",
+            "verification_missing_reason",
+        ):
+            item.pop(key, None)
         item.pop("pid", None)
 
         # Write violation metadata into the lease so status_summary() surfaces
