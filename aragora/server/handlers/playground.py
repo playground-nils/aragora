@@ -1775,7 +1775,9 @@ class PlaygroundHandler(BaseHandler):
 
         # Source: "oracle" for Oracle page, "landing" for main site, etc.
         # Controls prompt flavour — Oracle uses tentacle language, landing uses neutral.
-        source = str(body.get("source", "") or "").strip() or "oracle"
+        # Default to "landing" so unauthenticated visitors get multi-agent debates
+        # instead of single-agent oracle. The Oracle page explicitly sends source=oracle.
+        source = str(body.get("source", "") or "").strip() or "landing"
 
         # Session ID for follow-up conversation memory
         session_id = str(body.get("session_id", "") or "").strip() or None
