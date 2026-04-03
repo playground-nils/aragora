@@ -3122,6 +3122,26 @@ def test_merge_gate_state_allows_docs_only_lane_without_verification_plan() -> N
     assert state["blocked_reasons"] == []
 
 
+def test_merge_gate_state_allows_dependency_deferred_verification_lane() -> None:
+    state = SwarmSupervisor._merge_gate_state(
+        {
+            "file_scope": ["aragora/webhooks/retry_queue.py"],
+            "changed_paths": ["aragora/webhooks/retry_queue.py"],
+            "expected_tests": ["python -m pytest tests/webhooks/test_retry_queue.py -q"],
+            "verification_results": [],
+            "metadata": {
+                "deferred_verification_to_dependency_ids": ["micro-task-3"],
+            },
+        }
+    )
+
+    assert state["checks_passed"] is True
+    assert state["merge_eligible"] is True
+    assert state["verification_missing_reason"] is None
+    assert state["blocked_reasons"] == []
+    assert state["verification_deferred_to_dependency_ids"] == ["micro-task-3"]
+
+
 def test_merge_gate_state_normalizes_python_command_equivalence() -> None:
     state = SwarmSupervisor._merge_gate_state(
         {

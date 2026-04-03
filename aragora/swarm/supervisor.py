@@ -4115,6 +4115,27 @@ class SwarmSupervisor:
             )
             and not bool(entry.get("passed", False))
         ]
+        deferred_dependency_ids = [
+            str(dep).strip()
+            for dep in (
+                dict(item.get("metadata") or {}).get("deferred_verification_to_dependency_ids")
+                or []
+            )
+            if str(dep).strip()
+        ]
+
+        if deferred_dependency_ids:
+            return {
+                "enabled": True,
+                "expected_checks": expected_checks,
+                "verification_results": verification_results,
+                "verification_missing_reason": None,
+                "checks_passed": True,
+                "human_approval_required": True,
+                "merge_eligible": True,
+                "blocked_reasons": [],
+                "verification_deferred_to_dependency_ids": deferred_dependency_ids,
+            }
 
         blocked_reasons: list[str] = []
         verification_missing_reason: str | None = None
