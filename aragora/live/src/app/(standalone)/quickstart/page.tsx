@@ -1,18 +1,10 @@
-import { Metadata } from 'next';
-import Link from 'next/link';
-import { ConnectOpenRouterButton } from '@/components/openrouter/ConnectOpenRouterButton';
+'use client';
 
-export const metadata: Metadata = {
-  title: 'Quickstart | ARAGORA',
-  description:
-    'Get from zero to a working adversarial AI debate in under a minute. Install, run, and share decisions.',
-  openGraph: {
-    title: 'Quickstart — ARAGORA',
-    description:
-      'Get from zero to a working adversarial AI debate in under a minute.',
-    siteName: 'ARAGORA',
-  },
-};
+import Link from 'next/link';
+import { useTheme } from '@/context/ThemeContext';
+import { Header } from '@/components/landing/Header';
+import { Footer } from '@/components/landing/Footer';
+import { ConnectOpenRouterButton } from '@/components/openrouter/ConnectOpenRouterButton';
 
 function CodeBlock({
   children,
@@ -22,13 +14,15 @@ function CodeBlock({
   lang?: string;
 }) {
   return (
-    <div className="relative group">
+    <div className="relative group rounded-lg overflow-hidden border border-[var(--border)]">
       {lang && (
-        <span className="absolute top-2 right-3 text-[10px] font-mono text-[var(--text-muted)] uppercase">
-          {lang}
-        </span>
+        <div className="flex items-center justify-between px-4 py-2 bg-[var(--surface-elevated)] border-b border-[var(--border)]">
+          <span className="text-[11px] font-mono text-[var(--text-muted)] uppercase tracking-wider">
+            {lang}
+          </span>
+        </div>
       )}
-      <pre className="p-4 bg-[var(--bg)] border border-[var(--border)] overflow-x-auto text-sm font-mono text-[var(--text)] leading-relaxed">
+      <pre className="p-4 bg-[var(--surface)] overflow-x-auto text-[13px] font-mono text-[var(--text)] leading-relaxed">
         <code>{children}</code>
       </pre>
     </div>
@@ -45,69 +39,57 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-12">
-      <div className="flex items-center gap-3 mb-4">
-        <span className="flex items-center justify-center w-8 h-8 text-sm font-mono font-bold bg-[var(--acid-green)]/20 text-[var(--acid-green)] border border-[var(--acid-green)]/30">
+    <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/30 p-6 md:p-8">
+      <div className="flex items-center gap-3 mb-5">
+        <span className="flex items-center justify-center w-9 h-9 text-sm font-semibold rounded-full bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25">
           {number}
         </span>
-        <h2 className="text-lg font-mono font-bold text-[var(--text)]">
+        <h2 className="text-xl font-semibold text-[var(--text)]">
           {title}
         </h2>
       </div>
-      <div className="ml-11 space-y-4">{children}</div>
+      <div className="space-y-4">{children}</div>
     </section>
   );
 }
 
 export default function QuickstartPage() {
+  const { theme } = useTheme();
+
   return (
-    <main className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      {/* Header */}
-      <nav className="border-b border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link
-            href="/"
-            className="font-mono text-[var(--acid-green)] font-bold text-sm tracking-wider"
-          >
-            ARAGORA
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/docs"
-              className="text-xs font-mono text-[var(--text-muted)] hover:text-[var(--acid-green)] transition-colors"
-            >
-              API DOCS
-            </Link>
-            <Link
-              href="/try"
-              className="text-xs font-mono text-[var(--acid-green)] hover:text-[var(--acid-green)]/80 transition-colors"
-            >
-              TRY IT
-            </Link>
-          </div>
-        </div>
-      </nav>
+    <div
+      className="min-h-screen"
+      style={{
+        backgroundColor: 'var(--bg)',
+        color: 'var(--text)',
+      }}
+      data-landing-theme={theme}
+    >
+      <Header />
 
-      <div className="max-w-3xl mx-auto px-4 py-12">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 pt-16 pb-20">
         {/* Title */}
-        <h1 className="text-2xl md:text-3xl font-mono font-bold text-[var(--acid-green)] mb-2">
-          Quickstart
-        </h1>
-        <p className="text-sm font-mono text-[var(--text-muted)] mb-12">
-          Get from zero to a working adversarial debate in under a minute.
-        </p>
-
-        {/* Step 1 */}
-        <Step number={1} title="Install">
-          <CodeBlock lang="bash">pip install aragora-debate</CodeBlock>
-        </Step>
-
-        {/* Step 2 */}
-        <Step number={2} title="Zero-Key Demo">
-          <p className="text-sm font-mono text-[var(--text-muted)]">
-            No API keys needed — runs with styled mock agents locally:
+        <div className="text-center mb-14">
+          <h1 className="text-3xl md:text-4xl font-bold text-[var(--accent)] mb-3">
+            Quickstart
+          </h1>
+          <p className="text-[var(--text-muted)] text-lg">
+            Get from zero to a working adversarial debate in under a minute.
           </p>
-          <CodeBlock lang="python">{`from aragora_debate.arena import Arena
+        </div>
+
+        <div className="space-y-8">
+          {/* Step 1 */}
+          <Step number={1} title="Install">
+            <CodeBlock lang="bash">pip install aragora-debate</CodeBlock>
+          </Step>
+
+          {/* Step 2 */}
+          <Step number={2} title="Zero-Key Demo">
+            <p className="text-[var(--text-muted)]">
+              No API keys needed — runs with styled mock agents locally:
+            </p>
+            <CodeBlock lang="python">{`from aragora_debate.arena import Arena
 from aragora_debate.styled_mock import StyledMockAgent
 import asyncio
 
@@ -119,25 +101,31 @@ agents = [
 arena = Arena(question='Should we migrate to microservices?', agents=agents)
 result = asyncio.run(arena.run())
 print(result.receipt.to_markdown())`}</CodeBlock>
-          <p className="text-sm font-mono text-[var(--text-muted)]">
-            Three agents debate, critique each other, vote, and produce an
-            audit-ready decision receipt.
-          </p>
-        </Step>
+            <p className="text-[var(--text-muted)] text-sm">
+              Three agents debate, critique each other, vote, and produce an
+              audit-ready decision receipt.
+            </p>
+          </Step>
 
-        {/* Step 3 */}
-        <Step number={3} title="Add Real AI Models">
-          <ConnectOpenRouterButton />
-          <p className="text-sm font-mono text-[var(--text-muted)] mt-4">
-            Or set API keys manually:
-          </p>
-          <CodeBlock lang="bash">{`export ANTHROPIC_API_KEY="sk-ant-..."   # Claude
+          {/* Step 3 */}
+          <Step number={3} title="Add Real AI Models">
+            <div className="rounded-lg border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-[var(--text)]">One-click setup via OpenRouter</p>
+                <p className="text-sm text-[var(--text-muted)]">Connect your account and set a budget — no key pasting needed.</p>
+              </div>
+              <ConnectOpenRouterButton />
+            </div>
+            <p className="text-[var(--text-muted)]">
+              Or set API keys manually:
+            </p>
+            <CodeBlock lang="bash">{`export ANTHROPIC_API_KEY="sk-ant-..."   # Claude
 # or
 export OPENAI_API_KEY="sk-..."          # GPT`}</CodeBlock>
-          <p className="text-sm font-mono text-[var(--text-muted)]">
-            Then run a real multi-model debate:
-          </p>
-          <CodeBlock lang="python">{`import asyncio
+            <p className="text-[var(--text-muted)]">
+              Then run a real multi-model debate:
+            </p>
+            <CodeBlock lang="python">{`import asyncio
 from aragora import Arena, Environment, DebateProtocol
 
 env = Environment(task="Design a rate limiter for our API")
@@ -147,12 +135,12 @@ protocol = DebateProtocol(rounds=3, consensus="majority")
 arena = Arena(env, protocol=protocol)
 result = asyncio.run(arena.run())
 print(result.summary)`}</CodeBlock>
-        </Step>
+          </Step>
 
-        {/* Step 4 */}
-        <Step number={4} title="TypeScript SDK">
-          <CodeBlock lang="bash">npm install @aragora/sdk</CodeBlock>
-          <CodeBlock lang="typescript">{`import { AragoraClient } from "@aragora/sdk";
+          {/* Step 4 */}
+          <Step number={4} title="TypeScript SDK">
+            <CodeBlock lang="bash">npm install @aragora/sdk</CodeBlock>
+            <CodeBlock lang="typescript">{`import { AragoraClient } from "@aragora/sdk";
 
 const client = new AragoraClient({ baseUrl: "http://localhost:8080" });
 const result = await client.debates.create({
@@ -161,82 +149,69 @@ const result = await client.debates.create({
   rounds: 3,
 });
 console.log(result.summary);`}</CodeBlock>
-        </Step>
+          </Step>
 
-        {/* Step 5 */}
-        <Step number={5} title="Self-Host">
-          <CodeBlock lang="bash">
-            docker compose -f deploy/demo/docker-compose.yml up
-          </CodeBlock>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm font-mono">
-            <div className="p-3 border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[var(--acid-green)]">Landing page</span>
-              <span className="text-[var(--text-muted)] ml-2">
-                localhost:3000
-              </span>
+          {/* Step 5 */}
+          <Step number={5} title="Self-Host">
+            <CodeBlock lang="bash">
+              docker compose -f deploy/demo/docker-compose.yml up
+            </CodeBlock>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { label: 'Landing page', url: 'localhost:3000' },
+                { label: 'API docs', url: 'localhost:8080/api/v2/docs' },
+                { label: 'Playground', url: 'localhost:3000/playground' },
+                { label: 'CLI', url: 'aragora debate "your question"' },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="p-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+                >
+                  <span className="text-sm font-semibold text-[var(--accent)]">
+                    {item.label}
+                  </span>
+                  <span className="text-sm text-[var(--text-muted)] ml-2 font-mono">
+                    {item.url}
+                  </span>
+                </div>
+              ))}
             </div>
-            <div className="p-3 border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[var(--acid-green)]">API docs</span>
-              <span className="text-[var(--text-muted)] ml-2">
-                localhost:8080/api/v2/docs
-              </span>
-            </div>
-            <div className="p-3 border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[var(--acid-green)]">Playground</span>
-              <span className="text-[var(--text-muted)] ml-2">
-                localhost:3000/playground
-              </span>
-            </div>
-            <div className="p-3 border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[var(--acid-green)]">CLI</span>
-              <span className="text-[var(--text-muted)] ml-2">
-                aragora debate &quot;your question&quot;
-              </span>
-            </div>
-          </div>
-        </Step>
+          </Step>
+        </div>
 
-        {/* Next steps */}
-        <div className="border-t border-[var(--border)] pt-8 mt-4">
-          <h2 className="text-sm font-mono text-[var(--text-muted)] uppercase tracking-wider mb-4">
+        {/* Next Steps */}
+        <div className="mt-14">
+          <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-5">
             Next Steps
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Link
               href="/try"
-              className="p-4 border border-[var(--acid-green)]/30 bg-[var(--acid-green)]/5 hover:bg-[var(--acid-green)]/10 transition-colors"
+              className="p-5 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/5 hover:bg-[var(--accent)]/10 transition-colors"
             >
-              <span className="text-sm font-mono font-bold text-[var(--acid-green)]">
+              <span className="text-base font-semibold text-[var(--accent)]">
                 Try a debate now
               </span>
-              <p className="text-xs font-mono text-[var(--text-muted)] mt-1">
+              <p className="text-sm text-[var(--text-muted)] mt-1">
                 No install needed — run in your browser
               </p>
             </Link>
             <Link
               href="/docs"
-              className="p-4 border border-[var(--border)] hover:border-[var(--acid-green)]/30 transition-colors"
+              className="p-5 rounded-xl border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors"
             >
-              <span className="text-sm font-mono font-bold text-[var(--text)]">
+              <span className="text-base font-semibold text-[var(--text)]">
                 API Reference
               </span>
-              <p className="text-xs font-mono text-[var(--text-muted)] mt-1">
-                Swagger + Redoc for all 3,000+ endpoints
+              <p className="text-sm text-[var(--text-muted)] mt-1">
+                Full REST API documentation
               </p>
             </Link>
           </div>
         </div>
+      </main>
 
-        {/* Footer */}
-        <div className="text-center py-8 mt-8 border-t border-[var(--border)]">
-          <Link
-            href="/"
-            className="text-xs font-mono text-[var(--text-muted)] hover:text-[var(--acid-green)] transition-colors"
-          >
-            ARAGORA // DECISION INTEGRITY PLATFORM
-          </Link>
-        </div>
-      </div>
-    </main>
+      <Footer />
+    </div>
   );
 }
