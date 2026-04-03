@@ -140,7 +140,7 @@ _MIN_AGENTS = 2
 
 _DEFAULT_TOPIC = "Should we use microservices or a monolith?"
 _DEFAULT_ROUNDS = 2
-_DEFAULT_AGENTS = 3
+_DEFAULT_AGENTS = 4  # 4 agents for diverse multi-model debates
 
 _AGENT_STYLES: list[Literal["supportive", "critical", "balanced", "contrarian"]] = [
     "supportive",
@@ -395,18 +395,18 @@ _TENTACLE_MODELS: list[dict[str, str]] = [
         "openrouter_model": "x-ai/grok-3-fast",
     },
     {
+        "provider": "google",
+        "model": "gemini-2.5-pro",
+        "name": "gemini",
+        "env": "GEMINI_API_KEY",
+        "openrouter_model": "google/gemini-2.5-pro-preview",
+    },
+    {
         "provider": "openrouter",
         "model": "deepseek/deepseek-chat-v3-0324",
         "name": "deepseek",
         "env": "OPENROUTER_API_KEY",
         "openrouter_model": "deepseek/deepseek-chat-v3-0324",
-    },
-    {
-        "provider": "google",
-        "model": "gemini-2.5-flash",
-        "name": "gemini",
-        "env": "GEMINI_API_KEY",
-        "openrouter_model": "google/gemini-2.5-flash-preview",
     },
     {
         "provider": "openrouter",
