@@ -4183,6 +4183,102 @@ async def test_collect_finished_results_keeps_explicit_target_agent_sticky_on_ca
     assert breaker["last_failure_detail"] == "Credit balance is too low"
 
 
+@pytest.mark.asyncio
+async def test_collect_finished_results_failed_worker_clears_stale_completion_metadata(
+    repo: Path,
+) -> None:
+    store = DevCoordinationStore(repo_root=repo)
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        path=repo,
+        branch="swarm-failed-cleanup",
+        session_id="dispatch-sess-failed-cleanup",
+        agent="codex",
+        created=True,
+        reconcile_status=None,
+        payload={},
+    )
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    mock_launcher.collect_finished = AsyncMock(
+        return_value=[
+            WorkerProcess(
+                work_order_id="failed-cleanup-task",
+                agent="codex",
+                worktree_path=str(repo),
+                branch="swarm-failed-cleanup",
+                pid=779,
+                session_id="dispatch-sess-failed-cleanup",
+                lease_id="lease-1",
+                exit_code=1,
+                completed_at="2026-03-06T00:00:00+00:00",
+                stdout="worker crashed\n",
+                stderr="fatal: boom",
+            )
+        ]
+    )
+    mock_launcher.collect_detached_finished = AsyncMock(return_value=None)
+
+    decomposer = MagicMock()
+    decomposer.analyze.return_value = TaskDecomposition(
+        original_task="Goal",
+        complexity_score=2,
+        complexity_level="low",
+        should_decompose=True,
+        subtasks=[
+            SubTask(
+                id="failed-cleanup-task",
+                title="Failure cleanup test",
+                description="Clear stale completion metadata on crash without deliverable",
+                file_scope=["README.md"],
+            )
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        launcher=mock_launcher,
+        decomposer=decomposer,
+    )
+    run = supervisor.start_run(
+        spec=SwarmSpec(raw_goal="Goal", refined_goal="Goal"),
+        default_target_agent="codex",
+        max_concurrency=4,
+        managed_dir_pattern=".worktrees/phase0b-{agent}",
+    )
+    run.work_orders[0]["status"] = "dispatched"
+    run.work_orders[0]["target_agent"] = "codex"
+    run.work_orders[0]["reviewer_agent"] = "claude"
+    run.work_orders[0]["pid"] = 779
+    run.work_orders[0]["receipt_id"] = "receipt-stale"
+    run.work_orders[0]["confidence"] = 0.93
+    run.work_orders[0]["pr_url"] = "https://github.com/synaptent/aragora/pull/9999"
+    run.work_orders[0]["merge_gate"] = {"checks_passed": True}
+    run.work_orders[0]["verification_missing_reason"] = "missing_verification_plan"
+    store.update_supervisor_run(run.run_id, work_orders=run.work_orders, status="active")
+
+    completed = await supervisor.collect_finished_results(run.run_id)
+
+    assert len(completed) == 1
+    refreshed = store.get_supervisor_run(run.run_id)
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["status"] == "failed"
+    assert work_order["review_status"] == "changes_requested"
+    assert work_order["failure_reason"] == "worker_crash"
+    assert work_order["dispatch_error"] == "fatal: boom"
+    for cleared_key in (
+        "receipt_id",
+        "confidence",
+        "pr_url",
+        "merge_gate",
+        "verification_missing_reason",
+    ):
+        assert cleared_key not in work_order
+
+
 def test_reset_worker_type_circuit_breaker_preserves_run_metadata(
     repo: Path, store: DevCoordinationStore
 ) -> None:
