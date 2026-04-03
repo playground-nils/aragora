@@ -151,6 +151,11 @@ def mock_state_store():
     """Create a mock OAuth state store."""
     store = MagicMock()
     store.generate.return_value = "test-state-token-abc123"
+    store.peek.return_value = {
+        "tenant_id": "tenant-1",
+        "provider": "slack",
+        "created_at": time.time(),
+    }
     store.validate_and_consume.return_value = {
         "tenant_id": "tenant-1",
         "provider": "slack",
@@ -978,6 +983,11 @@ class TestCallback:
     async def test_callback_rejects_state_from_other_provider(
         self, handler, mock_state_store, mock_workspace_store
     ):
+        mock_state_store.peek.return_value = {
+            "tenant_id": "tenant-1",
+            "provider": "google",
+            "created_at": time.time(),
+        }
         mock_state_store.validate_and_consume.return_value = {
             "tenant_id": "tenant-1",
             "provider": "google",
@@ -1209,6 +1219,12 @@ class TestCallback:
         self, handler, handler_module, mock_state_store, mock_workspace_store, monkeypatch
     ):
         monkeypatch.setattr(handler_module, "SLACK_REDIRECT_URI", None)
+        mock_state_store.peek.return_value = {
+            "tenant_id": "tenant-1",
+            "provider": "slack",
+            "redirect_uri": "http://localhost:3000/api/integrations/slack/callback",
+            "created_at": time.time(),
+        }
         mock_state_store.validate_and_consume.return_value = {
             "tenant_id": "tenant-1",
             "provider": "slack",
