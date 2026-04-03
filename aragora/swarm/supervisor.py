@@ -3032,12 +3032,24 @@ class SwarmSupervisor:
         ):
             return
 
-        deliverable_present = bool(self._work_order_deliverable_type(item))
         salvage_outcome = str(item.get("worker_outcome", "")).strip()
         is_salvage = salvage_outcome in {
             WorkerOutcome.CRASH_WITH_SALVAGE.value,
             WorkerOutcome.TIMEOUT_WITH_SALVAGE.value,
         }
+        if not clean_paths and not result.commit_shas and not is_salvage:
+            # Fail closed: a non-zero exit without current commits or real file
+            # changes must not inherit an older PR/receipt and look salvageable.
+            for key in (
+                "receipt_id",
+                "confidence",
+                "pr_url",
+                "adopted_pr",
+                "merge_gate",
+                "verification_missing_reason",
+            ):
+                item.pop(key, None)
+        deliverable_present = bool(self._work_order_deliverable_type(item))
         if deliverable_present and is_salvage:
             # Salvaged deliverables proceed to completion — the recovery was
             # intentional and the deliverable (commits/PR) is real.
@@ -3065,6 +3077,15 @@ class SwarmSupervisor:
 
         if lease_id:
             self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
+        for key in (
+            "receipt_id",
+            "confidence",
+            "pr_url",
+            "adopted_pr",
+            "merge_gate",
+            "verification_missing_reason",
+        ):
+            item.pop(key, None)
         failure_reason = (
             "worker_timeout_no_deliverable" if result.exit_code == -1 else "worker_crash"
         )
