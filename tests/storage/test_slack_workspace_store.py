@@ -12,7 +12,7 @@ Tests cover:
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -454,6 +454,49 @@ class TestSlackWorkspaceStoreErrors:
             result = store.list_active()
 
         assert result == []
+
+
+class TestSlackWorkspaceStoreTokenRefresh:
+    """Tests for store-level Slack token refresh handling."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_workspace_token_rejects_missing_access_token(
+        self, workspace_store, sample_workspace
+    ):
+        sample_workspace.refresh_token = "xoxr-refresh-token"
+        sample_workspace.token_expires_at = time.time() + 3600
+        assert workspace_store.save(sample_workspace) is True
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "ok": True,
+            "access_token": "",
+            "refresh_token": "xoxr-rotated-refresh",
+            "expires_in": 7200,
+        }
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = False
+        mock_client.post.return_value = mock_response
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(workspace_store, "save", wraps=workspace_store.save) as spy_save,
+        ):
+            result = await workspace_store.refresh_workspace_token(
+                "T12345678",
+                client_id="test-client-id",
+                client_secret="test-client-secret",
+            )
+
+        assert result is None
+        spy_save.assert_not_called()
+
+        persisted = workspace_store.get("T12345678")
+        assert persisted is not None
+        assert persisted.access_token == "xoxb-test-token-12345"
+        assert persisted.refresh_token == "xoxr-refresh-token"
 
 
 # ===========================================================================
