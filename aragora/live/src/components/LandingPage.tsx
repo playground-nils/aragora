@@ -649,6 +649,7 @@ export function LandingPage({ apiBase, wsUrl, onEnterDashboard }: LandingPagePro
   const abortRef = useRef<AbortController | null>(null);
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const focusFrameRef = useRef<number | null>(null);
 
   const resolvedApiBase = apiBase || 'https://api.aragora.ai';
   const livePreviewApiBase = useMemo(() => resolvedApiBase.replace(/\/$/, ''), [resolvedApiBase]);
@@ -664,7 +665,13 @@ export function LandingPage({ apiBase, wsUrl, onEnterDashboard }: LandingPagePro
       textareaRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
     };
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(focus);
+      if (focusFrameRef.current !== null && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(focusFrameRef.current);
+      }
+      focusFrameRef.current = window.requestAnimationFrame(() => {
+        focusFrameRef.current = null;
+        focus();
+      });
       return;
     }
     setTimeout(focus, 0);
@@ -672,6 +679,10 @@ export function LandingPage({ apiBase, wsUrl, onEnterDashboard }: LandingPagePro
 
   useEffect(() => {
     return () => {
+      if (focusFrameRef.current !== null && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(focusFrameRef.current);
+        focusFrameRef.current = null;
+      }
       abortRef.current?.abort();
       if (progressRef.current) {
         clearInterval(progressRef.current);

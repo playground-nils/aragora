@@ -450,4 +450,95 @@ describe('LandingPage submission flow', () => {
     expect(screen.getByText('Choose which version of the question to debate')).toBeInTheDocument();
     expect(telemetryBodies.some((entry) => entry.event_type === 'wrong_answer_clicked')).toBe(true);
   });
+
+  it('cancels a pending focus frame when the page unmounts after a wrong answer', async () => {
+    const telemetryBodies: Array<Record<string, unknown>> = [];
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalCancelAnimationFrame = window.cancelAnimationFrame;
+    const cancelAnimationFrame = jest.fn();
+
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      value: jest.fn(() => 77),
+    });
+    Object.defineProperty(window, 'cancelAnimationFrame', {
+      configurable: true,
+      value: cancelAnimationFrame,
+    });
+
+    installBaseFetchMock(async () => (
+      createHttpResponse({
+        id: 'debate-preview-3',
+        topic: 'Should I microwave chicken nuggets for my kid?',
+        status: 'completed',
+        rounds_used: 1,
+        consensus_reached: false,
+        confidence: 0,
+        verdict: 'needs_review',
+        duration_seconds: 2.2,
+        participants: ['gpt', 'claude'],
+        proposals: {
+          gpt: 'Yes. Reheat the nuggets until hot all the way through.',
+          claude: 'Microwaving pre-cooked nuggets is practical for a child meal.',
+        },
+        critiques: [],
+        votes: [],
+        dissenting_views: [],
+        final_answer: 'Yes. Reheat the nuggets until hot all the way through.',
+        result_mode: 'preview',
+        receipt: {
+          receipt_id: 'LV-20260403-test03',
+          question: 'Should I microwave chicken nuggets for my kid?',
+          verdict: 'needs_review',
+          confidence: 0,
+          consensus: {
+            reached: false,
+            method: 'landing_preview',
+            confidence: 0,
+            supporting_agents: ['gpt', 'claude'],
+            dissenting_agents: [],
+          },
+          agents: ['gpt', 'claude'],
+          rounds_used: 1,
+          timestamp: '2026-04-03T12:00:00Z',
+          signature: null,
+          signature_algorithm: null,
+        },
+        receipt_hash: 'hash-preview-3',
+      })
+    ), { telemetryBodies });
+
+    try {
+      const view = render(<LandingPage apiBase="https://api.example.com" wsUrl="ws://spectate.example.com/ws" />);
+
+      fireEvent.change(screen.getByPlaceholderText('What decision are you facing?'), {
+        target: {
+          value: 'I warmed up chicken nuggets in the microwave for my 4 year old, but what if the chickens are alive or dead?',
+        },
+      });
+      fireEvent.submit(screen.getByRole('button', { name: 'Run a free debate' }).closest('form') as HTMLFormElement);
+      fireEvent.click(await screen.findByRole('button', { name: /Practical food-safety first/i }));
+      expect(await screen.findByText('Quick Read')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'This answer seems wrong' }));
+
+      expect(
+        await screen.findByText('Pick a narrower interpretation or edit the wording below before rerunning.'),
+      ).toBeInTheDocument();
+      expect(window.requestAnimationFrame).toHaveBeenCalled();
+
+      view.unmount();
+
+      expect(cancelAnimationFrame).toHaveBeenCalledWith(77);
+      expect(telemetryBodies.some((entry) => entry.event_type === 'wrong_answer_clicked')).toBe(true);
+    } finally {
+      Object.defineProperty(window, 'requestAnimationFrame', {
+        configurable: true,
+        value: originalRequestAnimationFrame,
+      });
+      Object.defineProperty(window, 'cancelAnimationFrame', {
+        configurable: true,
+        value: originalCancelAnimationFrame,
+      });
+    }
+  });
 });

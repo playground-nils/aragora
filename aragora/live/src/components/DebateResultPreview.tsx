@@ -218,13 +218,20 @@ export function DebateResultPreview({
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/debate/${result.id}`;
     const shareText = `I stress-tested "${result.topic}" with AI agents on Aragora.`;
+    const completeShare = (showFeedback: boolean) => {
+      if (showFeedback) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+      onShare?.(result);
+    };
 
     // Prefer Web Share API on mobile
     if (typeof navigator.share === 'function') {
       try {
         await navigator.share({ title: 'Aragora Debate', text: shareText, url: shareUrl });
         // Native share sheet provides its own feedback
-        onShare?.(result);
+        completeShare(false);
         return;
       } catch {
         // User cancelled or share failed — fall through to clipboard
@@ -251,9 +258,7 @@ export function DebateResultPreview({
       }
     }
     // Always show confirmation so the user knows the action registered
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    onShare?.(result);
+    completeShare(true);
   };
 
   return (
