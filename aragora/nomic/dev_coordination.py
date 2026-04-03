@@ -7075,6 +7075,7 @@ def _work_order_should_archive_failed_no_deliverable(
 ) -> bool:
     status = _optional_text(work_order.get("status")).lower()
     timeout_like_needs_human = False
+    empty_launch_crash_needs_human = False
     if status == "needs_human":
         worker_outcome = _optional_text(work_order.get("worker_outcome")).lower()
         failure_reason = _optional_text(work_order.get("failure_reason")).lower()
@@ -7088,7 +7089,25 @@ def _work_order_should_archive_failed_no_deliverable(
             or any("timeout" in blocker for blocker in blockers)
             or "timeout" in failure_reason
         )
-    if status not in {"failed", "dispatch_failed", "timed_out"} and not timeout_like_needs_human:
+        changed_paths = [
+            _optional_text(path)
+            for path in work_order.get("changed_paths", [])
+            if _optional_text(path)
+        ]
+        empty_launch_crash_needs_human = (
+            failure_reason == "worker_exited_without_receipt"
+            and worker_outcome in {"", "crash"}
+            and not changed_paths
+            and not _optional_text(work_order.get("stdout_tail"))
+            and not _optional_text(work_order.get("stderr_tail"))
+            and not _optional_text(work_order.get("diff"))
+            and int(work_order.get("diff_lines", 0) or 0) == 0
+        )
+    if (
+        status not in {"failed", "dispatch_failed", "timed_out"}
+        and not timeout_like_needs_human
+        and not empty_launch_crash_needs_human
+    ):
         return False
     if _optional_text(lease_status).lower() == LeaseStatus.ACTIVE.value:
         return False

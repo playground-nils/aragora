@@ -514,6 +514,15 @@ class SwarmSupervisor:
             ),
         }
 
+    @staticmethod
+    def _optional_snapshot_text(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text or text.lower() in {"none", "null"}:
+            return None
+        return text
+
     def _apply_launcher_config_snapshot(self, snapshot: dict[str, Any] | None) -> None:
         if not isinstance(snapshot, dict) or not snapshot:
             return
@@ -527,17 +536,15 @@ class SwarmSupervisor:
         if "no_progress_timeout_seconds" in snapshot:
             config.no_progress_timeout_seconds = float(snapshot["no_progress_timeout_seconds"])
         if "claude_model" in snapshot:
-            value = str(snapshot["claude_model"]).strip()
-            config.claude_model = value or None
+            config.claude_model = self._optional_snapshot_text(snapshot["claude_model"])
         if "codex_model" in snapshot:
-            value = str(snapshot["codex_model"]).strip()
-            config.codex_model = value or None
+            config.codex_model = self._optional_snapshot_text(snapshot["codex_model"])
         if "claude_profile" in snapshot:
-            value = str(snapshot["claude_profile"]).strip()
-            config.claude_profile = value or None
+            config.claude_profile = self._optional_snapshot_text(snapshot["claude_profile"])
         if "claude_profile_script" in snapshot:
-            value = str(snapshot["claude_profile_script"]).strip()
-            config.claude_profile_script = value or None
+            config.claude_profile_script = self._optional_snapshot_text(
+                snapshot["claude_profile_script"]
+            )
         if "auto_commit" in snapshot:
             config.auto_commit = bool(snapshot["auto_commit"])
         if "use_managed_session_script" in snapshot:

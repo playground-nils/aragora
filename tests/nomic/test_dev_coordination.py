@@ -1476,6 +1476,66 @@ def test_archive_failed_no_deliverable_work_orders_discards_old_timeout_needs_hu
     assert work_order["metadata"]["previous_status"] == "needs_human"
 
 
+def test_archive_failed_no_deliverable_work_orders_discards_empty_launch_crash_backlog(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive empty launch crash backlog",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Archive empty launch crash backlog",
+            "refined_goal": "Archive empty launch crash backlog",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-empty-launch-crash",
+                "title": "Dead launch lane",
+                "file_scope": ["aragora/swarm/worker_launcher.py"],
+                "status": "needs_human",
+                "failure_reason": "worker_exited_without_receipt",
+                "worker_outcome": "crash",
+                "changed_paths": [],
+                "diff_lines": 0,
+                "stdout_tail": "",
+                "stderr_tail": "",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                run["run_id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_failed_no_deliverable_work_orders(grace_period_hours=24.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["status"] == "discarded"
+    assert work_order["failure_reason"] == "worker_exited_without_receipt"
+    assert work_order["metadata"]["archived_due_to"] == "failed_no_deliverable"
+    assert work_order["metadata"]["archive_reason"] == "worker_exited_without_receipt"
+    assert work_order["metadata"]["previous_status"] == "needs_human"
+
+
 def test_archive_terminal_dependency_failure_work_orders_discards_blocked_successors(
     store: DevCoordinationStore,
 ) -> None:
