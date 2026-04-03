@@ -45,11 +45,19 @@ logger = logging.getLogger(__name__)
 # Rate limiting (in-memory, per-IP, 5 req/min for mock, 1/10min for live)
 # ---------------------------------------------------------------------------
 
-_PLAYGROUND_RATE_LIMIT = 5  # requests per window
+_PLAYGROUND_RATE_LIMIT = 2  # debates per window per IP (was 5 — tighter for multi-agent)
 _PLAYGROUND_RATE_WINDOW = 60.0  # seconds
 
 _LIVE_RATE_LIMIT = 1  # 1 live debate per window per IP
 _LIVE_RATE_WINDOW = 600.0  # 10 minutes
+
+# Global daily budget cap — stop serving multi-agent debates when exceeded.
+# Each 4-agent debate costs ~$0.02-0.05 via OpenRouter.
+# At 2 req/min sustained = ~$1.50-3.00/hour. Cap at $10/day.
+_DAILY_BUDGET_CAP_USD = float(os.environ.get("ARAGORA_PLAYGROUND_DAILY_BUDGET", "10.0"))
+_daily_debate_count = 0
+_daily_debate_reset_time = 0.0
+_ESTIMATED_COST_PER_DEBATE = 0.04  # ~$0.04 for 4 parallel LLM calls
 
 # OpenRouter model diversity for playground debates.
 # Each agent gets a different model architecture for genuine adversarial diversity.
@@ -117,10 +125,41 @@ def _check_live_rate_limit(client_ip: str) -> tuple[bool, int]:
     return True, 0
 
 
+def _check_daily_budget() -> tuple[bool, str]:
+    """Check whether the daily playground budget has been exceeded.
+
+    Returns (allowed, reason). Resets at midnight UTC.
+    """
+    global _daily_debate_count, _daily_debate_reset_time  # noqa: PLW0603
+
+    now = time.time()
+    # Reset counter at midnight UTC (86400s = 24h)
+    if now - _daily_debate_reset_time > 86400:
+        _daily_debate_count = 0
+        _daily_debate_reset_time = now
+
+    estimated_spend = _daily_debate_count * _ESTIMATED_COST_PER_DEBATE
+    if estimated_spend >= _DAILY_BUDGET_CAP_USD:
+        return (
+            False,
+            f"Daily playground budget (${_DAILY_BUDGET_CAP_USD:.0f}) reached. Resets at midnight UTC.",
+        )
+    return True, ""
+
+
+def _record_debate_cost() -> None:
+    """Record that a debate was served (for budget tracking)."""
+    global _daily_debate_count  # noqa: PLW0603
+    _daily_debate_count += 1
+
+
 def _reset_rate_limits() -> None:
     """Reset all rate limit state. Used by tests."""
+    global _daily_debate_count, _daily_debate_reset_time  # noqa: PLW0603
     _request_timestamps.clear()
     _live_request_timestamps.clear()
+    _daily_debate_count = 0
+    _daily_debate_reset_time = 0.0
 
 
 def _reset_oracle_sessions() -> None:
@@ -1885,6 +1924,18 @@ class PlaygroundHandler(BaseHandler):
                 },
                 status=429,
             )
+
+        # Daily budget cap — prevents runaway OpenRouter costs
+        budget_ok, budget_reason = _check_daily_budget()
+        if not budget_ok:
+            return json_response(
+                {
+                    "error": budget_reason,
+                    "code": "budget_exceeded",
+                },
+                status=429,
+            )
+        _record_debate_cost()
 
         return self._run_debate(
             topic,
