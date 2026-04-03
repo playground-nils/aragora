@@ -968,6 +968,35 @@ def _try_oracle_response(
     debate_id = uuid.uuid4().hex[:16]
     now_iso = datetime.now(timezone.utc).isoformat()
     receipt_id = f"OR-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}"
+
+    # Emit spectate events so the landing page bridge shows activity
+    try:
+        from aragora.spectate.ws_bridge import get_spectate_bridge
+
+        bridge = get_spectate_bridge()
+        if bridge.running:
+            bridge._forward_event(
+                event_type="debate_start",
+                agent="oracle",
+                details=question[:200],
+                debate_id=debate_id,
+            )
+            bridge._forward_event(
+                event_type="proposal",
+                agent="oracle",
+                details=text[:500],
+                debate_id=debate_id,
+                round_number=1,
+            )
+            bridge._forward_event(
+                event_type="consensus",
+                agent="oracle",
+                details="Oracle verdict delivered",
+                debate_id=debate_id,
+                round_number=1,
+            )
+    except Exception:
+        pass  # Never block oracle response for spectate
     receipt_hash = hashlib.sha256(f"{receipt_id}:{question}:approved:0.85".encode()).hexdigest()
 
     return {
