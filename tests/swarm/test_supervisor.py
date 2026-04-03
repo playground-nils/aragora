@@ -2221,6 +2221,79 @@ def test_start_run_fails_closed_when_work_order_scope_remains_empty(
     assert work_order["lease_id"] is None
 
 
+def test_refresh_run_invalid_scope_clears_stale_deliverable_state(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    session_path = repo / "wt-invalid-refresh-scope"
+    session_path.mkdir()
+    (session_path / ".git").write_text("gitdir: /tmp/fake\n", encoding="utf-8")
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="swarm-invalid-refresh-scope",
+        agent="codex",
+        branch="codex/swarm-invalid-refresh-scope",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, lifecycle=lifecycle)
+    run_record = store.create_supervisor_run(
+        goal="invalid scope clears stale deliverable state",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "invalid scope clears stale deliverable state"},
+        metadata={"max_concurrency": 1},
+        work_orders=[
+            {
+                "work_order_id": "wo-invalid-refresh-scope",
+                "title": "Invalid scope lane",
+                "description": "Invalid scope lane",
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["src/not-real.py"],
+                "review_status": "pending_heterogeneous_review",
+                "receipt_id": "receipt-stale",
+                "confidence": 0.93,
+                "worker_outcome": "completed",
+                "commit_shas": ["deadbeef"],
+                "changed_paths": ["README.md"],
+                "head_sha": "deadbeef",
+                "pr_url": "https://github.com/synaptent/aragora/pull/9999",
+                "merge_gate": {"checks_passed": True},
+                "verification_missing_reason": "missing_verification_plan",
+            }
+        ],
+        status="active",
+    )
+
+    refreshed = supervisor.refresh_run(run_record["run_id"])
+
+    lifecycle.ensure_managed_worktree.assert_called_once()
+    work_order = refreshed.work_orders[0]
+    assert work_order["status"] == "needs_human"
+    assert work_order["failure_reason"] == "scope_violation"
+    assert work_order["review_status"] == "changes_requested"
+    assert (
+        work_order["dispatch_error"]
+        == "Declared file scope resolved to no valid in-repo paths; declare scope before dispatch."
+    )
+    for key in (
+        "receipt_id",
+        "confidence",
+        "worker_outcome",
+        "commit_shas",
+        "changed_paths",
+        "head_sha",
+        "pr_url",
+        "merge_gate",
+        "verification_missing_reason",
+    ):
+        assert key not in work_order
+
+
 def test_start_run_fails_closed_when_validated_scope_resolves_to_empty(
     repo: Path, store: DevCoordinationStore
 ) -> None:
