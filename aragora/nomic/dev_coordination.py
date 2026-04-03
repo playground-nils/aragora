@@ -5255,6 +5255,15 @@ class DevCoordinationStore:
                     changed = True
                     break
                 item.update(update)
+                if _optional_text(update.get("status")) == "completed":
+                    for key in (
+                        "failure_reason",
+                        "blocking_question",
+                        "blocker",
+                        "dispatch_error",
+                    ):
+                        item.pop(key, None)
+                    item["blockers"] = []
                 changed = True
                 break
             if not changed:
