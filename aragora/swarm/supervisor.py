@@ -4289,10 +4289,19 @@ class SwarmSupervisor:
         except (TypeError, ValueError):
             return 120.0
 
-    def _exceeded_no_progress_timeout(self, item: dict[str, Any]) -> bool:
+    def _no_progress_anchor(self, item: dict[str, Any]) -> datetime | None:
         since = self._parse_timestamp(item.get("last_progress_at")) or self._parse_timestamp(
             item.get("dispatched_at")
         )
+        output_state = self._output_fingerprint(item.get("output_fingerprint"))
+        if output_state.get("has_output"):
+            last_output_at = self._parse_timestamp(item.get("last_output_at"))
+            if last_output_at is not None and (since is None or last_output_at > since):
+                since = last_output_at
+        return since
+
+    def _exceeded_no_progress_timeout(self, item: dict[str, Any]) -> bool:
+        since = self._no_progress_anchor(item)
         if since is None:
             return False
         elapsed = (datetime.now(UTC) - since).total_seconds()
