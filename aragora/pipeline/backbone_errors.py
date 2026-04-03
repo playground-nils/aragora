@@ -22,14 +22,22 @@ class BackbonePersistenceError(RuntimeError):
             self.status_code = status_code
 
 
-def ensure_backbone_persisted(ok: bool, message: str) -> None:
+class FailClosedBackboneError(BackbonePersistenceError):
+    """Raised when interactive handlers must fail closed on backbone persistence errors."""
+
+
+def ensure_backbone_persisted(
+    ok: bool,
+    message: str = FAIL_CLOSED_BACKBONE_MESSAGE,
+) -> None:
     """Raise a typed error when a required backbone write did not persist."""
     if not ok:
-        raise BackbonePersistenceError(message)
+        raise FailClosedBackboneError(message)
 
 
 __all__ = [
     "BackbonePersistenceError",
+    "FailClosedBackboneError",
     "FAIL_CLOSED_BACKBONE_MESSAGE",
     "FAIL_CLOSED_HTTP_STATUS",
     "ensure_backbone_persisted",
