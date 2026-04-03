@@ -66,7 +66,7 @@ describe('FirstDebateStep', () => {
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8080/api/debates',
+        '/api/debates',
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
