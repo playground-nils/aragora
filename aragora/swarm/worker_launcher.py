@@ -507,9 +507,11 @@ class WorkerLauncher:
                 session_meta = self._read_session_meta(worker.worktree_path)
                 session_exit_code, _ = self._terminal_session_result(session_meta)
                 if proc is not None and proc.returncode is None:
-                    observed_pid = self._normalized_pid(worker.pid)
-                    if observed_pid is None:
-                        observed_pid = self._normalized_pid(session_meta.get("pid"))
+                    observed_pid = self._pid_for_active_lock(
+                        worker.worktree_path,
+                        worker.pid,
+                        session_meta,
+                    )
                     if self._active_session_lock_blocks_collection(
                         worker.worktree_path, observed_pid
                     ):
@@ -539,11 +541,12 @@ class WorkerLauncher:
         }
         if not worktree_path:
             return snapshot
+        session_meta = self._read_session_meta(worktree_path)
         if pid is None:
-            session_meta = self._read_session_meta(worktree_path)
             pid = self._normalized_pid(session_meta.get("pid"))
             snapshot["pid_alive"] = self._is_pid_running(pid) if pid is not None else False
-        if self._active_session_lock_blocks_collection(worktree_path, pid):
+        lock_pid = self._pid_for_active_lock(worktree_path, pid, session_meta)
+        if self._active_session_lock_blocks_collection(worktree_path, lock_pid):
             snapshot["pid_alive"] = True
 
         head_sha = await self._git_output(worktree_path, "rev-parse", "HEAD")
@@ -1249,12 +1252,13 @@ class WorkerLauncher:
         session_meta = cls._read_session_meta(worktree_path)
         session_exit_code, session_completed_at = cls._terminal_session_result(session_meta)
         observed_pid = cls._normalized_pid(pid)
+        lock_pid = cls._pid_for_active_lock(worktree_path, observed_pid, session_meta)
         if observed_pid is None:
             observed_pid = cls._normalized_pid(session_meta.get("pid"))
         missing_terminal_marker = session_exit_code is None
         cleanup_artifacts = True
         preserve_terminal_evidence = False
-        if cls._active_session_lock_blocks_collection(worktree_path, observed_pid):
+        if cls._active_session_lock_blocks_collection(worktree_path, lock_pid):
             return None
         elif (
             missing_terminal_marker
@@ -1380,6 +1384,28 @@ class WorkerLauncher:
         if pid is None:
             return True
         return cls._is_pid_running(pid)
+
+    @classmethod
+    def _pid_for_active_lock(
+        cls,
+        worktree_path: str,
+        pid: int | None,
+        session_meta: dict[str, Any],
+    ) -> int | None:
+        """Prefer a live session-meta PID when the active-session lock still exists."""
+        active_lock = Path(worktree_path) / ".codex_session_active"
+        if not active_lock.exists():
+            return pid
+        meta_pid = cls._normalized_pid(session_meta.get("pid"))
+        if pid is None:
+            return meta_pid
+        if meta_pid is None or meta_pid == pid:
+            return pid
+        if cls._is_pid_running(pid):
+            return pid
+        if cls._is_pid_running(meta_pid):
+            return meta_pid
+        return pid
 
     @staticmethod
     def _cleanup_session_artifacts(worktree_path: str) -> None:
