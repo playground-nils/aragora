@@ -5751,6 +5751,15 @@ def test_refresh_run_marks_invalid_dependency_ref_needs_human(
                 "file_scope": ["README.md"],
                 "target_agent": "codex",
                 "reviewer_agent": "claude",
+                "receipt_id": "rcpt-stale",
+                "confidence": 0.91,
+                "worker_outcome": "completed",
+                "commit_shas": ["deadbeef"],
+                "changed_paths": ["README.md"],
+                "head_sha": "deadbeef",
+                "pr_url": "https://github.com/synaptent/aragora/pull/9999",
+                "merge_gate": {"checks_passed": True},
+                "verification_missing_reason": "missing_verification_plan",
             },
         ],
         status="active",
@@ -5766,6 +5775,19 @@ def test_refresh_run_marks_invalid_dependency_ref_needs_human(
     assert dependent["dependency_base_ref"] == "-bad-ref"
     assert dependent["dependency_base_source"] == "micro-task-1"
     assert "unsafe dependency base reference" in dependent["dispatch_error"]
+    assert dependent["review_status"] == "changes_requested"
+    for key in (
+        "receipt_id",
+        "confidence",
+        "worker_outcome",
+        "commit_shas",
+        "changed_paths",
+        "head_sha",
+        "pr_url",
+        "merge_gate",
+        "verification_missing_reason",
+    ):
+        assert key not in dependent
 
 
 def test_refresh_run_reaps_stale_leased_work_order(repo: Path, store: DevCoordinationStore) -> None:
