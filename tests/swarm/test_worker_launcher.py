@@ -1165,6 +1165,44 @@ class TestCollectFinishedSync:
         mock_diff.assert_not_called()
         assert "wo-sync-active-lock" in launcher._processes
 
+    def test_collect_finished_sync_defers_on_active_lock_even_after_returncode_set(
+        self, tmp_path: Path
+    ):
+        launcher = WorkerLauncher(LaunchConfig(auto_commit=False))
+        (tmp_path / ".codex_session_active").write_text("1\n", encoding="utf-8")
+        worker = WorkerProcess(
+            work_order_id="wo-sync-active-lock-returncode",
+            agent="codex",
+            worktree_path=str(tmp_path),
+            branch="main",
+            pid=333,
+            initial_head="def456",
+        )
+        launcher._workers["wo-sync-active-lock-returncode"] = worker
+        proc = MagicMock()
+        proc.returncode = 0
+        launcher._processes["wo-sync-active-lock-returncode"] = proc
+
+        session_meta = {
+            "pid": 333,
+            "exit_code": 0,
+            "ended_at": "2026-03-31T12:34:56+00:00",
+        }
+
+        with (
+            patch.object(WorkerLauncher, "_read_session_meta", return_value=session_meta),
+            patch.object(WorkerLauncher, "_is_pid_running", return_value=True) as mock_running,
+            patch.object(WorkerLauncher, "_collect_diff_sync") as mock_diff,
+        ):
+            completed = launcher.collect_finished_sync(
+                work_order_ids=["wo-sync-active-lock-returncode"]
+            )
+
+        assert completed == []
+        mock_running.assert_called_once_with(333)
+        mock_diff.assert_not_called()
+        assert "wo-sync-active-lock-returncode" in launcher._processes
+
     def test_collect_finished_sync_prefers_live_session_meta_pid_when_worker_pid_is_stale(
         self, tmp_path: Path
     ):
