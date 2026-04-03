@@ -353,7 +353,7 @@ _MOCK_CONFIDENCE: dict[str, float] = {
 _ORACLE_MODEL_ANTHROPIC = "claude-sonnet-4-6"
 _ORACLE_MODEL_OPENAI = "gpt-5.3-chat"
 _ORACLE_MODEL_OPENROUTER = "anthropic/claude-opus-4.6"  # OpenRouter fallback
-_ORACLE_CALL_TIMEOUT = 10.0  # seconds — tight timeout to keep playground responsive
+_ORACLE_CALL_TIMEOUT = 25.0  # seconds — allows 4 parallel LLM calls with OpenRouter fallback
 
 
 def _get_api_key(name: str) -> str | None:
