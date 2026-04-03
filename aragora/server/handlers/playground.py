@@ -2488,6 +2488,10 @@ def _get_available_live_agents(count: int) -> list[str]:
         candidates.append("openai-api")
     if _get_api_key("MISTRAL_API_KEY"):
         candidates.append("mistral")
+    if _get_api_key("XAI_API_KEY"):
+        candidates.append("xai")
+    if _get_api_key("GEMINI_API_KEY"):
+        candidates.append("google")
 
     # If we have enough primary agents, use them
     if len(candidates) >= count:
