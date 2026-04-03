@@ -1086,6 +1086,7 @@ def _try_oracle_response(
     question: str,
     topic: str | None = None,
     session_id: str | None = None,
+    client_debate_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Generate a real LLM response for Oracle Phase 1 (initial take).
 
@@ -1114,7 +1115,7 @@ def _try_oracle_response(
     _append_session_turn(session_id, "oracle", text)
 
     duration = time.monotonic() - start
-    debate_id = uuid.uuid4().hex[:16]
+    debate_id = client_debate_id or uuid.uuid4().hex[:16]
     now_iso = datetime.now(timezone.utc).isoformat()
     receipt_id = f"OR-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}"
 
@@ -1651,6 +1652,7 @@ def _try_oracle_tentacles(
     topic: str | None = None,
     source: str = "oracle",
     summary_depth: str = "light",
+    client_debate_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Generate multi-perspective Oracle responses using genuinely different AI models.
 
@@ -1759,7 +1761,7 @@ def _try_oracle_tentacles(
             }
     consensus_reached = False if is_landing_preview else len(results) >= 2
     confidence = 0.0 if is_landing_preview else 0.7
-    debate_id = uuid.uuid4().hex[:16]
+    debate_id = client_debate_id or uuid.uuid4().hex[:16]
     now_iso = datetime.now(timezone.utc).isoformat()
     receipt_id = f"LV-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}"
     receipt_hash = hashlib.sha256(
@@ -2268,6 +2270,10 @@ class PlaygroundHandler(BaseHandler):
         # Session ID for follow-up conversation memory
         session_id = str(body.get("session_id", "") or "").strip() or None
 
+        # Client-provided debate ID — allows the frontend to subscribe to
+        # spectate WebSocket events *before* the HTTP POST returns.
+        client_debate_id = str(body.get("debate_id", "") or "").strip() or None
+
         try:
             rounds = int(body.get("rounds", _DEFAULT_ROUNDS))
         except (TypeError, ValueError):
@@ -2390,6 +2396,7 @@ class PlaygroundHandler(BaseHandler):
             source=source,
             cache_key=cache_key,
             model_ids=model_ids,
+            client_debate_id=client_debate_id,
         )
 
     def _handle_landing_event(self, handler: Any) -> HandlerResult:
@@ -2617,6 +2624,7 @@ class PlaygroundHandler(BaseHandler):
         source: str = "oracle",
         cache_key: str | None = None,
         model_ids: list[str] | None = None,
+        client_debate_id: str | None = None,
     ) -> HandlerResult:
         _cache_kw: dict[str, Any] = {}
         if cache_key is not None:
@@ -2626,7 +2634,11 @@ class PlaygroundHandler(BaseHandler):
             if source == "oracle":
                 # Oracle mode: try single-agent Oracle response first
                 oracle_result = _try_oracle_response(
-                    mode=mode, question=question, topic=topic, session_id=session_id
+                    mode=mode,
+                    question=question,
+                    topic=topic,
+                    session_id=session_id,
+                    client_debate_id=client_debate_id,
                 )
                 if oracle_result:
                     proposals = oracle_result.get("proposals", {})
@@ -2647,7 +2659,7 @@ class PlaygroundHandler(BaseHandler):
                 )
                 # Return an Oracle-themed placeholder instead of a generic mock debate
                 # (the generic mock talks about microservices which is nonsensical for Oracle)
-                debate_id = uuid.uuid4().hex[:16]
+                debate_id = client_debate_id or uuid.uuid4().hex[:16]
                 return self._persist_and_respond(
                     json_response(
                         {
@@ -2684,6 +2696,7 @@ class PlaygroundHandler(BaseHandler):
                     topic=topic,
                     source=source,
                     summary_depth="none",  # no essay context for non-Oracle sources
+                    client_debate_id=client_debate_id,
                 )
                 if tentacle_result:
                     if (
