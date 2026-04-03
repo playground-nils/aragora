@@ -382,16 +382,13 @@ class WorkerLauncher:
             if worker is not None:
                 session_meta = self._read_session_meta(worker.worktree_path)
                 session_exit_code, _ = self._terminal_session_result(session_meta)
-                if proc is not None and proc.returncode is None:
-                    observed_pid = self._pid_for_active_lock(
-                        worker.worktree_path,
-                        worker.pid,
-                        session_meta,
-                    )
-                    if self._active_session_lock_blocks_collection(
-                        worker.worktree_path, observed_pid
-                    ):
-                        continue
+                observed_pid = self._pid_for_active_lock(
+                    worker.worktree_path,
+                    worker.pid,
+                    session_meta,
+                )
+                if self._active_session_lock_blocks_collection(worker.worktree_path, observed_pid):
+                    continue
             if proc is None or (proc.returncode is None and session_exit_code is None):
                 continue
             completed.append(self._wait_sync(work_order_id))
