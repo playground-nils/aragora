@@ -2067,7 +2067,32 @@ class SwarmSupervisor:
         dependency_ref: str,
         dependency_id: str,
     ) -> bool:
+        def _clear_stale_deliverable_state() -> None:
+            for key in (
+                "receipt_id",
+                "confidence",
+                "worker_outcome",
+                "completed_at",
+                "exit_code",
+                "head_sha",
+                "commit_shas",
+                "changed_paths",
+                "diff",
+                "diff_lines",
+                "stdout_tail",
+                "stderr_tail",
+                "tests_run",
+                "verification_results",
+                "merge_gate",
+                "verification_missing_reason",
+                "pr_url",
+                "adopted_pr",
+                "scope_violation",
+            ):
+                work_order.pop(key, None)
+
         if not self._is_safe_dependency_ref(str(session.path), dependency_ref):
+            _clear_stale_deliverable_state()
             self._mark_needs_human(
                 work_order,
                 (
@@ -2087,6 +2112,7 @@ class SwarmSupervisor:
         session_path = str(session.path)
         status_proc = self._run_git_capture_sync(session_path, "status", "--porcelain")
         if status_proc.returncode != 0:
+            _clear_stale_deliverable_state()
             self._mark_needs_human(
                 work_order,
                 (
@@ -2107,6 +2133,7 @@ class SwarmSupervisor:
             work_order["dependency_base_source"] = dependency_id
             return False
         if status_proc.stdout.strip():
+            _clear_stale_deliverable_state()
             self._mark_needs_human(
                 work_order,
                 (
@@ -2133,6 +2160,7 @@ class SwarmSupervisor:
             dependency_ref,
         )
         if checkout_proc.returncode != 0:
+            _clear_stale_deliverable_state()
             self._mark_needs_human(
                 work_order,
                 (
