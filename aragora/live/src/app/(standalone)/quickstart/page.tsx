@@ -14,15 +14,37 @@ function CodeBlock({
   lang?: string;
 }) {
   return (
-    <div className="relative group rounded-lg overflow-hidden border border-[var(--border)]">
+    <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border)' }}>
       {lang && (
-        <div className="flex items-center justify-between px-4 py-2 bg-[var(--surface-elevated)] border-b border-[var(--border)]">
-          <span className="text-[11px] font-mono text-[var(--text-muted)] uppercase tracking-wider">
-            {lang}
-          </span>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '8px 16px',
+            backgroundColor: 'var(--surface-elevated)',
+            borderBottom: '1px solid var(--border)',
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono, monospace)',
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase' as const,
+            letterSpacing: '0.06em',
+          }}
+        >
+          {lang}
         </div>
       )}
-      <pre className="p-4 bg-[var(--surface)] overflow-x-auto text-[13px] font-mono text-[var(--text)] leading-relaxed">
+      <pre
+        style={{
+          margin: 0,
+          padding: '16px',
+          backgroundColor: 'var(--surface)',
+          overflowX: 'auto',
+          fontSize: '13px',
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          color: 'var(--text)',
+          lineHeight: 1.7,
+        }}
+      >
         <code>{children}</code>
       </pre>
     </div>
@@ -39,16 +61,46 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/30 p-6 md:p-8">
-      <div className="flex items-center gap-3 mb-5">
-        <span className="flex items-center justify-center w-9 h-9 text-sm font-semibold rounded-full bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25">
+    <section
+      style={{
+        borderRadius: '14px',
+        border: '1px solid var(--border)',
+        backgroundColor: 'color-mix(in srgb, var(--surface) 40%, transparent)',
+        padding: '28px 32px',
+        marginBottom: '24px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '36px',
+            height: '36px',
+            fontSize: '14px',
+            fontWeight: 600,
+            borderRadius: '50%',
+            backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+            color: 'var(--accent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
+          }}
+        >
           {number}
         </span>
-        <h2 className="text-xl font-semibold text-[var(--text)]">
+        <h2
+          style={{
+            margin: 0,
+            fontSize: '20px',
+            fontWeight: 600,
+            color: 'var(--text)',
+            fontFamily: 'var(--font-landing)',
+          }}
+        >
           {title}
         </h2>
       </div>
-      <div className="space-y-4">{children}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>{children}</div>
     </section>
   );
 }
@@ -58,38 +110,59 @@ export default function QuickstartPage() {
 
   return (
     <div
-      className="min-h-screen"
       style={{
+        minHeight: '100vh',
         backgroundColor: 'var(--bg)',
         color: 'var(--text)',
+        fontFamily: 'var(--font-landing)',
       }}
       data-landing-theme={theme}
     >
       <Header />
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 pt-16 pb-20">
+      <main
+        style={{
+          maxWidth: '780px',
+          margin: '0 auto',
+          padding: '56px 24px 80px',
+        }}
+      >
         {/* Title */}
-        <div className="text-center mb-14">
-          <h1 className="text-3xl md:text-4xl font-bold text-[var(--accent)] mb-3">
+        <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+          <h1
+            style={{
+              fontSize: '36px',
+              fontWeight: 700,
+              color: 'var(--accent)',
+              marginBottom: '10px',
+              fontFamily: 'var(--font-landing)',
+            }}
+          >
             Quickstart
           </h1>
-          <p className="text-[var(--text-muted)] text-lg">
+          <p
+            style={{
+              color: 'var(--text-muted)',
+              fontSize: '18px',
+              fontFamily: 'var(--font-landing)',
+              margin: 0,
+            }}
+          >
             Get from zero to a working adversarial debate in under a minute.
           </p>
         </div>
 
-        <div className="space-y-8">
-          {/* Step 1 */}
-          <Step number={1} title="Install">
-            <CodeBlock lang="bash">pip install aragora-debate</CodeBlock>
-          </Step>
+        {/* Step 1 */}
+        <Step number={1} title="Install">
+          <CodeBlock lang="bash">pip install aragora-debate</CodeBlock>
+        </Step>
 
-          {/* Step 2 */}
-          <Step number={2} title="Zero-Key Demo">
-            <p className="text-[var(--text-muted)]">
-              No API keys needed — runs with styled mock agents locally:
-            </p>
-            <CodeBlock lang="python">{`from aragora_debate.arena import Arena
+        {/* Step 2 */}
+        <Step number={2} title="Zero-Key Demo">
+          <p style={{ color: 'var(--text-muted)', margin: 0, fontFamily: 'var(--font-landing)' }}>
+            No API keys needed — runs with styled mock agents locally:
+          </p>
+          <CodeBlock lang="python">{`from aragora_debate.arena import Arena
 from aragora_debate.styled_mock import StyledMockAgent
 import asyncio
 
@@ -101,31 +174,47 @@ agents = [
 arena = Arena(question='Should we migrate to microservices?', agents=agents)
 result = asyncio.run(arena.run())
 print(result.receipt.to_markdown())`}</CodeBlock>
-            <p className="text-[var(--text-muted)] text-sm">
-              Three agents debate, critique each other, vote, and produce an
-              audit-ready decision receipt.
-            </p>
-          </Step>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', margin: 0, fontFamily: 'var(--font-landing)' }}>
+            Three agents debate, critique each other, vote, and produce an
+            audit-ready decision receipt.
+          </p>
+        </Step>
 
-          {/* Step 3 */}
-          <Step number={3} title="Add Real AI Models">
-            <div className="rounded-lg border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-4 flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-[var(--text)]">One-click setup via OpenRouter</p>
-                <p className="text-sm text-[var(--text-muted)]">Connect your account and set a budget — no key pasting needed.</p>
-              </div>
-              <ConnectOpenRouterButton />
+        {/* Step 3 */}
+        <Step number={3} title="Add Real AI Models">
+          <div
+            style={{
+              borderRadius: '10px',
+              border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
+              backgroundColor: 'color-mix(in srgb, var(--accent) 5%, transparent)',
+              padding: '16px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div>
+              <p style={{ fontWeight: 600, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-landing)' }}>
+                One-click setup via OpenRouter
+              </p>
+              <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '4px 0 0', fontFamily: 'var(--font-landing)' }}>
+                Connect your account and set a budget — no key pasting needed.
+              </p>
             </div>
-            <p className="text-[var(--text-muted)]">
-              Or set API keys manually:
-            </p>
-            <CodeBlock lang="bash">{`export ANTHROPIC_API_KEY="sk-ant-..."   # Claude
+            <ConnectOpenRouterButton />
+          </div>
+          <p style={{ color: 'var(--text-muted)', margin: 0, fontFamily: 'var(--font-landing)' }}>
+            Or set API keys manually:
+          </p>
+          <CodeBlock lang="bash">{`export ANTHROPIC_API_KEY="sk-ant-..."   # Claude
 # or
 export OPENAI_API_KEY="sk-..."          # GPT`}</CodeBlock>
-            <p className="text-[var(--text-muted)]">
-              Then run a real multi-model debate:
-            </p>
-            <CodeBlock lang="python">{`import asyncio
+          <p style={{ color: 'var(--text-muted)', margin: 0, fontFamily: 'var(--font-landing)' }}>
+            Then run a real multi-model debate:
+          </p>
+          <CodeBlock lang="python">{`import asyncio
 from aragora import Arena, Environment, DebateProtocol
 
 env = Environment(task="Design a rate limiter for our API")
@@ -135,12 +224,12 @@ protocol = DebateProtocol(rounds=3, consensus="majority")
 arena = Arena(env, protocol=protocol)
 result = asyncio.run(arena.run())
 print(result.summary)`}</CodeBlock>
-          </Step>
+        </Step>
 
-          {/* Step 4 */}
-          <Step number={4} title="TypeScript SDK">
-            <CodeBlock lang="bash">npm install @aragora/sdk</CodeBlock>
-            <CodeBlock lang="typescript">{`import { AragoraClient } from "@aragora/sdk";
+        {/* Step 4 */}
+        <Step number={4} title="TypeScript SDK">
+          <CodeBlock lang="bash">npm install @aragora/sdk</CodeBlock>
+          <CodeBlock lang="typescript">{`import { AragoraClient } from "@aragora/sdk";
 
 const client = new AragoraClient({ baseUrl: "http://localhost:8080" });
 const result = await client.debates.create({
@@ -149,61 +238,86 @@ const result = await client.debates.create({
   rounds: 3,
 });
 console.log(result.summary);`}</CodeBlock>
-          </Step>
+        </Step>
 
-          {/* Step 5 */}
-          <Step number={5} title="Self-Host">
-            <CodeBlock lang="bash">
-              docker compose -f deploy/demo/docker-compose.yml up
-            </CodeBlock>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { label: 'Landing page', url: 'localhost:3000' },
-                { label: 'API docs', url: 'localhost:8080/api/v2/docs' },
-                { label: 'Playground', url: 'localhost:3000/playground' },
-                { label: 'CLI', url: 'aragora debate "your question"' },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="p-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]"
-                >
-                  <span className="text-sm font-semibold text-[var(--accent)]">
-                    {item.label}
-                  </span>
-                  <span className="text-sm text-[var(--text-muted)] ml-2 font-mono">
-                    {item.url}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Step>
-        </div>
+        {/* Step 5 */}
+        <Step number={5} title="Self-Host">
+          <CodeBlock lang="bash">docker compose -f deploy/demo/docker-compose.yml up</CodeBlock>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            {[
+              { label: 'Landing page', url: 'localhost:3000' },
+              { label: 'API docs', url: 'localhost:8080/api/v2/docs' },
+              { label: 'Playground', url: 'localhost:3000/playground' },
+              { label: 'CLI', url: 'aragora debate "your question"' },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border)',
+                  backgroundColor: 'var(--surface)',
+                }}
+              >
+                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>
+                  {item.label}
+                </span>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: '8px', fontFamily: "'JetBrains Mono', monospace" }}>
+                  {item.url}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Step>
 
         {/* Next Steps */}
-        <div className="mt-14">
-          <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-5">
+        <div style={{ marginTop: '48px' }}>
+          <h2
+            style={{
+              fontSize: '13px',
+              fontWeight: 600,
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase' as const,
+              letterSpacing: '0.06em',
+              marginBottom: '16px',
+              fontFamily: 'var(--font-landing)',
+            }}
+          >
             Next Steps
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
             <Link
               href="/try"
-              className="p-5 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/5 hover:bg-[var(--accent)]/10 transition-colors"
+              style={{
+                padding: '20px',
+                borderRadius: '14px',
+                border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
+                backgroundColor: 'color-mix(in srgb, var(--accent) 5%, transparent)',
+                textDecoration: 'none',
+                display: 'block',
+              }}
             >
-              <span className="text-base font-semibold text-[var(--accent)]">
+              <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--accent)', fontFamily: 'var(--font-landing)' }}>
                 Try a debate now
               </span>
-              <p className="text-sm text-[var(--text-muted)] mt-1">
+              <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '6px 0 0', fontFamily: 'var(--font-landing)' }}>
                 No install needed — run in your browser
               </p>
             </Link>
             <Link
               href="/docs"
-              className="p-5 rounded-xl border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors"
+              style={{
+                padding: '20px',
+                borderRadius: '14px',
+                border: '1px solid var(--border)',
+                textDecoration: 'none',
+                display: 'block',
+              }}
             >
-              <span className="text-base font-semibold text-[var(--text)]">
+              <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-landing)' }}>
                 API Reference
               </span>
-              <p className="text-sm text-[var(--text-muted)] mt-1">
+              <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '6px 0 0', fontFamily: 'var(--font-landing)' }}>
                 Full REST API documentation
               </p>
             </Link>
