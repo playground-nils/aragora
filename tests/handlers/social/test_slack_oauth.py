@@ -2699,6 +2699,35 @@ class TestNotFound:
         assert _status(result) == 404
 
     @pytest.mark.asyncio
+    async def test_workspace_status_suffix_skips_dynamic_dispatch(
+        self, handler, mock_workspace_store
+    ):
+        scoped_ctx = AuthorizationContext(
+            user_id="tenant-user",
+            org_id="tenant-1",
+            roles={"member"},
+            permissions={"connectors.read"},
+        )
+        handler.get_auth_context = AsyncMock(return_value=scoped_ctx)
+        handler.check_permission = MagicMock(return_value=True)
+
+        with patch(
+            "aragora.storage.slack_workspace_store.get_slack_workspace_store",
+            return_value=mock_workspace_store,
+        ):
+            result = await handler.handle(
+                "GET",
+                "/api/integrations/slack/workspaces/W123/status/extra",
+                {},
+                {},
+                {},
+                None,
+            )
+
+        assert _status(result) == 404
+        mock_workspace_store.get.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_workspace_refresh_suffix_returns_404(self, handler):
         result = await handler.handle(
             "POST",
@@ -2709,6 +2738,35 @@ class TestNotFound:
             None,
         )
         assert _status(result) == 404
+
+    @pytest.mark.asyncio
+    async def test_workspace_refresh_suffix_skips_dynamic_dispatch(
+        self, handler, mock_workspace_store
+    ):
+        scoped_ctx = AuthorizationContext(
+            user_id="tenant-user",
+            org_id="tenant-1",
+            roles={"member"},
+            permissions={"connectors.authorize"},
+        )
+        handler.get_auth_context = AsyncMock(return_value=scoped_ctx)
+        handler.check_permission = MagicMock(return_value=True)
+
+        with patch(
+            "aragora.storage.slack_workspace_store.get_slack_workspace_store",
+            return_value=mock_workspace_store,
+        ):
+            result = await handler.handle(
+                "POST",
+                "/api/integrations/slack/workspaces/W123/refresh/extra",
+                {},
+                {},
+                {},
+                None,
+            )
+
+        assert _status(result) == 404
+        mock_workspace_store.get.assert_not_called()
 
 
 # ============================================================================
