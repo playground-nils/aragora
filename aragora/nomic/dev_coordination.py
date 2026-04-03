@@ -1309,6 +1309,71 @@ class DevCoordinationStore:
             conn.close()
         return archived
 
+    def archive_terminal_dependency_failure_work_orders(self) -> int:
+        """Archive queued lanes that are blocked by a terminal failed dependency."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            archived = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    if not isinstance(item, dict):
+                        continue
+                    dependency_failure = _terminal_dependency_failure_for_work_order(
+                        item,
+                        work_orders=record["work_orders"],
+                    )
+                    if dependency_failure is None:
+                        continue
+                    dependency_id = dependency_failure["dependency_id"]
+                    dependency_status = dependency_failure["dependency_status"]
+                    dependency_reason = dependency_failure["dependency_reason"]
+                    metadata = dict(item.get("metadata") or {})
+                    metadata.update(
+                        {
+                            "archived_due_to": "terminal_dependency_failure",
+                            "archived_at": now,
+                            "archive_reason": f"terminal_dependency_failure:{dependency_id}",
+                            "previous_status": _optional_text(item.get("status")) or "queued",
+                            "blocking_dependency_id": dependency_id,
+                            "blocking_dependency_status": dependency_status,
+                            "blocking_dependency_reason": dependency_reason,
+                        }
+                    )
+                    item["metadata"] = metadata
+                    item["status"] = "discarded"
+                    item["failure_reason"] = "terminal_dependency_failure"
+                    item["blocking_question"] = (
+                        f"Dependency {dependency_id} ended in {dependency_status}; "
+                        "should that dependency be rerun or replaced before retrying this lane?"
+                    )
+                    item["blocker"] = {
+                        "reason": "terminal_dependency_failure",
+                        "dependency_id": dependency_id,
+                        "dependency_status": dependency_status,
+                        "dependency_reason": dependency_reason,
+                    }
+                    item["blockers"] = [
+                        (
+                            f"Dependency {dependency_id} ended in {dependency_status} "
+                            f"without a deliverable: {dependency_reason}"
+                        )
+                    ]
+                    changed = True
+                    archived += 1
+                if not changed:
+                    continue
+                record["status"] = self._derive_supervisor_run_status(record["work_orders"])
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return archived
+
     def archive_clean_exit_no_deliverable_work_orders(
         self,
         *,
@@ -3375,6 +3440,7 @@ class DevCoordinationStore:
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
+        self.archive_terminal_dependency_failure_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_work_order_leasing_failed_work_orders()
         self.archive_worker_type_blocked_work_orders()
@@ -3721,6 +3787,7 @@ class DevCoordinationStore:
         self.archive_reaped_no_receipt_work_orders()
         self.archive_scope_violation_no_deliverable_work_orders()
         self.archive_failed_no_deliverable_work_orders()
+        self.archive_terminal_dependency_failure_work_orders()
         self.archive_clean_exit_no_deliverable_work_orders()
         self.archive_work_order_leasing_failed_work_orders()
         self.archive_worker_type_blocked_work_orders()
@@ -6882,6 +6949,85 @@ def _work_order_failed_no_deliverable_reason(work_order: dict[str, Any]) -> str:
         if text:
             return text
     return _optional_text(work_order.get("failure_reason")) or "failed_no_deliverable"
+
+
+def _terminal_dependency_failure_for_work_order(
+    work_order: dict[str, Any],
+    *,
+    work_orders: list[dict[str, Any]],
+) -> dict[str, str] | None:
+    status = _optional_text(work_order.get("status")).lower()
+    if status not in {"queued", "waiting_conflict"}:
+        return None
+    metadata = work_order.get("metadata")
+    if isinstance(metadata, dict) and _optional_text(metadata.get("archived_due_to")):
+        return None
+    if _optional_text(work_order.get("receipt_id")) or _work_order_has_concrete_deliverable(
+        work_order
+    ):
+        return None
+    dependency_ids = [
+        _optional_text(dep) for dep in work_order.get("dependency_ids", []) if _optional_text(dep)
+    ]
+    if not dependency_ids:
+        return None
+
+    dependency_lookup: dict[str, dict[str, Any]] = {}
+    for candidate in work_orders:
+        if not isinstance(candidate, dict):
+            continue
+        for key in ("pipeline_task_id", "work_order_id", "task_key"):
+            candidate_id = _optional_text(candidate.get(key))
+            if candidate_id:
+                dependency_lookup[candidate_id] = candidate
+
+    for dependency_id in dependency_ids:
+        dependency = dependency_lookup.get(dependency_id)
+        if not isinstance(dependency, dict):
+            continue
+        if _optional_text(dependency.get("receipt_id")) or _work_order_has_concrete_deliverable(
+            dependency
+        ):
+            continue
+        dependency_status = _optional_text(dependency.get("status")).lower()
+        dependency_metadata = dependency.get("metadata")
+        dependency_archived_due_to = (
+            _optional_text(dependency_metadata.get("archived_due_to"))
+            if isinstance(dependency_metadata, dict)
+            else ""
+        )
+        dependency_reason = _optional_text(
+            dependency.get("failure_reason"),
+            dependency.get("dispatch_error"),
+            dependency_metadata.get("archive_reason")
+            if isinstance(dependency_metadata, dict)
+            else "",
+            dependency_archived_due_to,
+            dependency.get("worker_outcome"),
+            dependency_status,
+        )
+        if dependency_status in {"discarded", "failed", "timed_out", "scope_violation"}:
+            return {
+                "dependency_id": dependency_id,
+                "dependency_status": dependency_status,
+                "dependency_reason": dependency_reason or dependency_status,
+            }
+        if dependency_status == "dispatch_failed":
+            return {
+                "dependency_id": dependency_id,
+                "dependency_status": dependency_status,
+                "dependency_reason": dependency_reason or dependency_status,
+            }
+        if dependency_status == "needs_human":
+            non_terminal_reasons = {"stale_lease_reaped", "expired_lease_reaped", "needs_human"}
+            if dependency_reason.lower() in non_terminal_reasons and not dependency_archived_due_to:
+                continue
+            return {
+                "dependency_id": dependency_id,
+                "dependency_status": dependency_status,
+                "dependency_reason": dependency_reason or dependency_status,
+            }
+    return None
 
 
 def _work_order_clean_exit_no_deliverable_reason(work_order: dict[str, Any]) -> str:

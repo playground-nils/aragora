@@ -1476,6 +1476,62 @@ def test_archive_failed_no_deliverable_work_orders_discards_old_timeout_needs_hu
     assert work_order["metadata"]["previous_status"] == "needs_human"
 
 
+def test_archive_terminal_dependency_failure_work_orders_discards_blocked_successors(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive queued successors blocked by a terminal dependency failure",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={"raw_goal": "dependency cleanup"},
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "status": "completed",
+                "branch": "codex/swarm-micro-1",
+                "commit_shas": ["abc123"],
+                "receipt_id": "receipt-micro-1",
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "status": "discarded",
+                "failure_reason": "code_exec requires explicit approval: missing approval record",
+                "dispatch_error": "code_exec requires explicit approval: missing approval record",
+                "metadata": {
+                    "archived_due_to": "failed_no_deliverable",
+                    "archive_reason": "code_exec requires explicit approval: missing approval record",
+                },
+            },
+            {
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
+                "status": "queued",
+                "dependency_ids": ["micro-task-1", "micro-task-2"],
+            },
+        ],
+        status="active",
+    )
+
+    archived = store.archive_terminal_dependency_failure_work_orders()
+    assert archived == 1
+
+    refreshed = store.get_supervisor_run(run["run_id"])
+    assert refreshed is not None
+    work_orders = {item["work_order_id"]: item for item in refreshed["work_orders"]}
+    blocked = work_orders["micro-3"]
+    assert blocked["status"] == "discarded"
+    assert blocked["failure_reason"] == "terminal_dependency_failure"
+    assert blocked["metadata"]["archived_due_to"] == "terminal_dependency_failure"
+    assert blocked["metadata"]["blocking_dependency_id"] == "micro-task-2"
+    assert blocked["metadata"]["blocking_dependency_status"] == "discarded"
+    assert blocked["blocker"]["reason"] == "terminal_dependency_failure"
+    assert "micro-task-2" in blocked["blockers"][0]
+    assert refreshed["status"] == "completed"
+
+
 def test_archive_clean_exit_no_deliverable_work_orders_discards_old_backlog(
     store: DevCoordinationStore,
 ) -> None:
