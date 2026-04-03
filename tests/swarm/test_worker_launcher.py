@@ -1535,7 +1535,7 @@ class TestCollectDetachedResult:
 
         assert result is None
         mock_running.assert_not_called()
-        mock_cleanup.assert_called_once_with(str(tmp_path))
+        mock_cleanup.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_uses_session_meta_pid_to_defer_when_marker_missing(self):
