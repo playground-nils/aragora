@@ -433,10 +433,18 @@ def _create_triage_agents(*, max_agents: int | None = None) -> list[Any]:
 
 
 def _attach_display_metadata(intent: ActionIntent, msg: dict[str, Any], body: str) -> None:
-    """Attach non-persisted email display metadata for CLI summaries."""
-    intent._subject = msg.get("subject", "(no subject)")  # type: ignore[attr-defined]
-    intent._sender = msg.get("from_address", msg.get("sender", "(unknown)"))  # type: ignore[attr-defined]
-    intent._snippet = msg.get("snippet", body[:120])  # type: ignore[attr-defined]
+    """Attach email display metadata for CLI summaries and receipt auditability."""
+    subject = msg.get("subject", "(no subject)")
+    sender = msg.get("from_address", msg.get("sender", "(unknown)"))
+    snippet = msg.get("snippet", body[:120])
+    # Set dataclass fields (survive replace() for receipt persistence)
+    object.__setattr__(intent, "email_subject", str(subject))
+    object.__setattr__(intent, "email_from", str(sender))
+    object.__setattr__(intent, "email_snippet", str(snippet)[:200])
+    # Keep private attrs for backward compat with CLI display code
+    intent._subject = subject  # type: ignore[attr-defined]
+    intent._sender = sender  # type: ignore[attr-defined]
+    intent._snippet = snippet  # type: ignore[attr-defined]
 
 
 @contextmanager
