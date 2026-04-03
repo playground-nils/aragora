@@ -539,7 +539,7 @@ class SlackOAuthHandler(SecureHandler):
         # Check for dynamic workspace routes
         import re
 
-        status_match = re.match(r"/api/integrations/slack/workspaces/([^/]+)/status", path)
+        status_match = re.fullmatch(r"/api/integrations/slack/workspaces/([^/]+)/status", path)
         if status_match:
             workspace_id = status_match.group(1)
             if method == "GET":
@@ -562,7 +562,7 @@ class SlackOAuthHandler(SecureHandler):
                 )
             return error_response("Method not allowed", 405)
 
-        refresh_match = re.match(r"/api/integrations/slack/workspaces/([^/]+)/refresh", path)
+        refresh_match = re.fullmatch(r"/api/integrations/slack/workspaces/([^/]+)/refresh", path)
         if refresh_match:
             workspace_id = refresh_match.group(1)
             if method == "POST":
