@@ -511,6 +511,58 @@ def test_start_run_discards_specific_pytest_child_when_broader_explicit_spec_exi
     assert work_order["metadata"]["canonical_task_key"].endswith(":existing")
 
 
+def test_start_run_preserves_dependent_validation_work_order_in_same_batch(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+
+    goal = "Add codex runner probe parser coverage to swarm CLI tests."
+    spec = SwarmSpec(
+        raw_goal=goal,
+        refined_goal=goal,
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Write tests for parser.py",
+                "description": "Write tests only for codex runner probe parsing.",
+                "file_scope": ["tests/cli/test_swarm_command.py"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "approval_required": True,
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Run validation and fix failures",
+                "description": "Run the acceptance tests and fix any failures.",
+                "file_scope": [
+                    "tests/cli/test_swarm_command.py",
+                    "aragora/cli/parser.py",
+                ],
+                "dependency_ids": ["micro-task-1"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "approval_required": True,
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+        ],
+    )
+
+    run = supervisor.start_run(spec=spec, refresh_scaling=False)
+
+    assert [item["status"] for item in run.work_orders] == ["queued", "queued"]
+    assert (
+        run.work_orders[1].get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
+    )
+
+
 def test_start_run_discards_duplicate_scope_less_explicit_lane_by_tranche_lane_id(
     repo: Path, store: DevCoordinationStore
 ) -> None:
@@ -5052,6 +5104,85 @@ def test_refresh_run_requeues_conflict_only_needs_human_when_fleet_claims_are_st
     assert "exit_code" not in work_order
     assert "diff_lines" not in work_order
     assert "scope_violation" not in work_order
+
+
+def test_refresh_run_leases_dependent_work_order_from_completed_dependency_branch(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    dependency_branch = "codex/swarm-dependency-base"
+    _run(repo, "git", "checkout", "-b", dependency_branch)
+    (repo / "README.md").write_text("hello\ndependency\n", encoding="utf-8")
+    _run(repo, "git", "add", "README.md")
+    _run(repo, "git", "commit", "-m", "dependency commit")
+    dependency_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+    _run(repo, "git", "checkout", "main")
+
+    session_path = repo / "wt-dependent-base"
+    _run(
+        repo,
+        "git",
+        "worktree",
+        "add",
+        "-b",
+        "codex/swarm-dependent-base",
+        str(session_path),
+        "main",
+    )
+
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="swarm-dependent-base",
+        agent="codex",
+        branch="codex/swarm-dependent-base",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, lifecycle=lifecycle)
+    run_record = store.create_supervisor_run(
+        goal="validate dependency branch reuse",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "validate dependency branch reuse"},
+        metadata={"max_concurrency": 1},
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Write tests",
+                "status": "completed",
+                "review_status": "pending_heterogeneous_review",
+                "branch": dependency_branch,
+                "head_sha": dependency_head,
+                "file_scope": ["README.md"],
+                "target_agent": "codex",
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Run validation and fix failures",
+                "status": "queued",
+                "review_status": "pending",
+                "dependency_ids": ["micro-task-1"],
+                "file_scope": ["README.md"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            },
+        ],
+        status="active",
+    )
+
+    refreshed = supervisor.refresh_run(run_record["run_id"])
+
+    dependent = next(
+        item for item in refreshed.work_orders if item.get("pipeline_task_id") == "micro-task-2"
+    )
+    assert dependent["status"] == "leased"
+    assert dependent["dependency_base_ref"] == dependency_branch
+    assert dependent["dependency_base_source"] == "micro-task-1"
+    assert _run(session_path, "git", "rev-parse", "HEAD").stdout.strip() == dependency_head
 
 
 def test_refresh_run_reaps_stale_leased_work_order(repo: Path, store: DevCoordinationStore) -> None:
