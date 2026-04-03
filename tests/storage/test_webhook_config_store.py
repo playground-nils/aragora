@@ -1088,6 +1088,18 @@ class TestSQLiteWebhookConfigStore:
         assert updated.delivery_count == 1
         assert updated.failure_count == 0
 
+    def test_record_delivery_updates_revision(self, sqlite_store):
+        """Delivery metadata updates must advance the durable cache revision."""
+        webhook = sqlite_store.register(url="https://a.com", events=["debate_end"])
+        revised_at = webhook.updated_at + 10
+
+        with patch("aragora.storage.webhook_config_store.time.time", return_value=revised_at):
+            sqlite_store.record_delivery(webhook.id, 200, success=True)
+
+        updated = sqlite_store.get(webhook.id)
+        assert updated.updated_at == revised_at
+        assert sqlite_store.get_cache_revision(webhook.id) == revised_at
+
     def test_record_delivery_failure(self, sqlite_store):
         """Test recording failed delivery."""
         webhook = sqlite_store.register(url="https://a.com", events=["debate_end"])
@@ -1309,6 +1321,51 @@ class TestRedisWebhookConfigStore:
         assert retrieved is not None
         assert retrieved.secret == webhook.secret
         mock_decrypt.assert_called_once_with("ENCRYPTED-SECRET")
+        store.close()
+
+    def test_with_mocked_redis_get_cache_hit_bypasses_deleted_sqlite_row(self, tmp_path):
+        """A stale Redis hit must not resurrect a webhook deleted by another instance."""
+        db_path = tmp_path / "test.db"
+        store = RedisWebhookConfigStore(db_path)
+
+        mock_redis = MagicMock()
+        mock_redis.ping.return_value = True
+        store._redis = mock_redis
+        store._redis_checked = True
+
+        webhook = store._sqlite.register(url="https://example.com", events=["debate_end"])
+        mock_redis.get.return_value = webhook.to_json()
+        assert store._sqlite.delete(webhook.id) is True
+
+        retrieved = store.get(webhook.id)
+
+        assert retrieved is None
+        mock_redis.get.assert_called_once_with(f"aragora:webhook_configs:{webhook.id}")
+        mock_redis.delete.assert_called_once_with(f"aragora:webhook_configs:{webhook.id}")
+        store.close()
+
+    def test_with_mocked_redis_get_cache_hit_refreshes_stale_delivery_state(self, tmp_path):
+        """A stale Redis hit must refresh from SQLite when delivery metadata changed elsewhere."""
+        db_path = tmp_path / "test.db"
+        store = RedisWebhookConfigStore(db_path)
+
+        mock_redis = MagicMock()
+        mock_redis.ping.return_value = True
+        store._redis = mock_redis
+        store._redis_checked = True
+
+        webhook = store._sqlite.register(url="https://example.com", events=["debate_end"])
+        mock_redis.get.return_value = webhook.to_json()
+        store._sqlite.record_delivery(webhook.id, 500, success=False)
+
+        retrieved = store.get(webhook.id)
+
+        assert retrieved is not None
+        assert retrieved.last_delivery_status == 500
+        assert retrieved.delivery_count == 1
+        assert retrieved.failure_count == 1
+        mock_redis.get.assert_called_once_with(f"aragora:webhook_configs:{webhook.id}")
+        mock_redis.setex.assert_called_once()
         store.close()
 
     def test_with_mocked_redis_get_cache_miss(self, tmp_path):
