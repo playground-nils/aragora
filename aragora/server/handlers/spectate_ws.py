@@ -26,7 +26,7 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
-_RECENT_ACTIVITY_WINDOW_SECONDS = 120
+_RECENT_ACTIVITY_WINDOW_SECONDS = 300  # 5 min — matches demo loop interval
 _STATUS_ACTIVITY_SCAN_LIMIT = 200
 
 
