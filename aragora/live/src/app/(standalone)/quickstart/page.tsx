@@ -182,29 +182,7 @@ print(result.receipt.to_markdown())`}</CodeBlock>
 
         {/* Step 3 */}
         <Step number={3} title="Add Real AI Models">
-          <div
-            style={{
-              borderRadius: '10px',
-              border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-              backgroundColor: 'color-mix(in srgb, var(--accent) 5%, transparent)',
-              padding: '16px 20px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px',
-              flexWrap: 'wrap',
-            }}
-          >
-            <div>
-              <p style={{ fontWeight: 600, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-landing)' }}>
-                One-click setup via OpenRouter
-              </p>
-              <p style={{ fontSize: '14px', color: 'var(--text-muted)', margin: '4px 0 0', fontFamily: 'var(--font-landing)' }}>
-                Connect your account and set a budget — no key pasting needed.
-              </p>
-            </div>
-            <ConnectOpenRouterButton />
-          </div>
+          <ConnectOpenRouterButton />
           <p style={{ color: 'var(--text-muted)', margin: 0, fontFamily: 'var(--font-landing)' }}>
             Or set API keys manually:
           </p>
