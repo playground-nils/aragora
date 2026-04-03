@@ -37,6 +37,12 @@ def _parse_body(result: HandlerResult) -> dict[str, Any]:
     return json.loads(result.body)
 
 
+def _close_scheduled_coroutine(coro, *args, **kwargs):
+    """Close scheduled coroutines in tests to avoid background execution."""
+    coro.close()
+    return None
+
+
 class MockPlanStatus(str, Enum):
     CREATED = "created"
     AWAITING_APPROVAL = "awaiting_approval"
@@ -526,7 +532,7 @@ class TestExecutePlan:
             ) as mock_execute,
             patch(
                 "aragora.pipeline.canonical_execution.schedule_coroutine",
-                side_effect=lambda coro, name=None: getattr(coro, "close", lambda: None)(),
+                side_effect=_close_scheduled_coroutine,
             ) as mock_schedule,
             patch(
                 "aragora.server.handlers.plans._fire_plan_notification",
