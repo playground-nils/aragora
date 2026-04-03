@@ -257,6 +257,10 @@ class WebhookHandler(SecureHandler):
         """Check whether the authenticated requester may access this webhook."""
         if user is None:
             return True
+        # Fail closed on orphaned rows: without either an owning user or an
+        # owning workspace, the record has no legitimate caller-scoped owner.
+        if not webhook.user_id and not webhook.workspace_id:
+            return True
         user_id = str(getattr(user, "user_id", "") or "").strip()
         org_id = str(getattr(user, "org_id", "") or "").strip()
         if webhook.user_id and webhook.user_id != user_id:
