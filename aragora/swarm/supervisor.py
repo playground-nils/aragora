@@ -1460,6 +1460,9 @@ class SwarmSupervisor:
                     worker_type_circuit_breakers=worker_type_circuit_breakers,
                 )
                 if not fallback_requeued:
+                    lease_id = str(item.get("lease_id", "")).strip()
+                    if lease_id:
+                        self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
                     self._mark_dispatch_failed(item, str(exc))
                 import logging
 
@@ -1733,6 +1736,7 @@ class SwarmSupervisor:
                                 for test in item.get("expected_tests", [])
                                 if str(test).strip()
                             ],
+                            allow_session_meta_pid_fallback=False,
                         )
                     except Exception:
                         logger.debug("Timeout result collection failed for %s", woid, exc_info=True)
@@ -2236,6 +2240,14 @@ class SwarmSupervisor:
         goal: str,
         work_orders: list[dict[str, Any]],
     ) -> None:
+        try:
+            self.store.rehabilitate_dependency_deferred_missing_verification_plan_work_orders()
+            self.store.archive_failed_no_deliverable_work_orders(grace_period_hours=0.0)
+        except Exception:
+            logger.debug(
+                "duplicate suppression pre-maintenance skipped",
+                exc_info=True,
+            )
         active_duplicate_statuses = {
             "queued",
             "leased",

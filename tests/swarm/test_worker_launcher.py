@@ -1504,6 +1504,40 @@ class TestCollectDetachedResult:
         mock_diff.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_skips_session_meta_pid_fallback_when_disabled(self, tmp_path: Path):
+        (tmp_path / ".codex_session_active").write_text("1\n", encoding="utf-8")
+
+        with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={"pid": 24680},
+            ),
+            patch.object(WorkerLauncher, "_is_pid_running", return_value=True) as mock_running,
+            patch.object(WorkerLauncher, "_collect_diff", return_value=""),
+            patch.object(
+                WorkerLauncher, "_has_working_tree_changes", new=AsyncMock(return_value=False)
+            ),
+            patch.object(WorkerLauncher, "_git_output", return_value="abc123"),
+            patch.object(WorkerLauncher, "_read_log_file", return_value=""),
+            patch.object(WorkerLauncher, "_collect_commit_shas", return_value=[]),
+            patch.object(WorkerLauncher, "_collect_changed_paths", return_value=[]),
+            patch.object(WorkerLauncher, "_cleanup_session_artifacts") as mock_cleanup,
+        ):
+            result = await WorkerLauncher.collect_detached_result(
+                work_order_id="wo-ignore-stale-meta-pid",
+                agent="codex",
+                worktree_path=str(tmp_path),
+                branch="main",
+                pid=None,
+                allow_session_meta_pid_fallback=False,
+            )
+
+        assert result is None
+        mock_running.assert_not_called()
+        mock_cleanup.assert_called_once_with(str(tmp_path))
+
+    @pytest.mark.asyncio
     async def test_uses_session_meta_pid_to_defer_when_marker_missing(self):
         with (
             patch.object(WorkerLauncher, "_read_session_meta", return_value={"pid": 24680}),
@@ -1750,6 +1784,24 @@ class TestCollectCommitShas:
         assert shas == []
         assert ("rev-list", "--reverse", "origin/main..HEAD") not in calls
 
+    @pytest.mark.asyncio
+    async def test_skips_origin_main_fallback_when_initial_head_matches_head_sha(self):
+        calls: list[tuple[str, ...]] = []
+
+        async def _git_output(_worktree_path: str, *args: str) -> str:
+            calls.append(tuple(args))
+            return "568aa6da5e5f997439bc09a9fc97b88ad6b6ab1f\n"
+
+        with patch.object(WorkerLauncher, "_git_output", side_effect=_git_output):
+            shas = await WorkerLauncher._collect_commit_shas(
+                "/tmp/wt",
+                initial_head="abc123",
+                head_sha="abc123",
+            )
+
+        assert shas == []
+        assert ("rev-list", "--reverse", "origin/main..HEAD") not in calls
+
     def test_returns_empty_sync_without_initial_head_instead_of_falling_back_to_origin_main(self):
         calls: list[tuple[str, ...]] = []
 
@@ -1762,6 +1814,25 @@ class TestCollectCommitShas:
                 "/tmp/wt",
                 initial_head="",
                 head_sha="def456",
+            )
+
+        assert shas == []
+        assert ("rev-list", "--reverse", "origin/main..HEAD") not in calls
+
+    def test_collect_commit_shas_sync_skips_origin_main_fallback_when_initial_head_matches_head_sha(
+        self,
+    ):
+        calls: list[tuple[str, ...]] = []
+
+        def _git_output_sync(_worktree_path: str, *args: str) -> str:
+            calls.append(tuple(args))
+            return "568aa6da5e5f997439bc09a9fc97b88ad6b6ab1f\n"
+
+        with patch.object(WorkerLauncher, "_git_output_sync", side_effect=_git_output_sync):
+            shas = WorkerLauncher._collect_commit_shas_sync(
+                "/tmp/wt",
+                initial_head="abc123",
+                head_sha="abc123",
             )
 
         assert shas == []

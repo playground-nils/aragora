@@ -994,6 +994,53 @@ class DevCoordinationStore:
             conn.close()
         return updated
 
+    def rehabilitate_dependency_deferred_missing_verification_plan_work_orders(self) -> int:
+        """Restore historical implementation lanes whose verification is deferred downstream."""
+        now = _utcnow().isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT * FROM supervisor_runs ORDER BY updated_at DESC").fetchall()
+            updated = 0
+            for row in rows:
+                record = self._supervisor_run_from_row(row)
+                changed = False
+                for item in record["work_orders"]:
+                    deferred_dependency_ids = _dependency_deferred_verification_ids_for_work_order(
+                        item,
+                        work_orders=record["work_orders"],
+                    )
+                    if not deferred_dependency_ids:
+                        continue
+                    metadata = dict(item.get("metadata") or {})
+                    metadata["deferred_verification_to_dependency_ids"] = deferred_dependency_ids
+                    metadata["dependency_deferred_verification_rehabilitated_at"] = now
+                    item["metadata"] = metadata
+                    item["merge_gate"] = _merge_gate_state_for_work_order(item)
+                    item["verification_missing_reason"] = item["merge_gate"].get(
+                        "verification_missing_reason"
+                    )
+                    item["status"] = "completed"
+                    item["review_status"] = "pending_heterogeneous_review"
+                    item["worker_outcome"] = "completed"
+                    for key in (
+                        "failure_reason",
+                        "blocking_question",
+                        "blocker",
+                        "dispatch_error",
+                    ):
+                        item.pop(key, None)
+                    item["blockers"] = []
+                    changed = True
+                    updated += 1
+                if not changed:
+                    continue
+                record["updated_at"] = now
+                self._persist_supervisor_run(conn, record)
+            conn.commit()
+        finally:
+            conn.close()
+        return updated
+
     def rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders(self) -> int:
         """Restore contradictory clean-exit lanes that already have receipt-backed deliverables."""
         now = _utcnow().isoformat()
@@ -4669,6 +4716,7 @@ class DevCoordinationStore:
         self.backfill_missing_blocker_metadata()
         self.backfill_missing_verification_plans()
         self.rehabilitate_docs_only_missing_verification_plan_work_orders()
+        self.rehabilitate_dependency_deferred_missing_verification_plan_work_orders()
         self.rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders()
         self.reclassify_branch_snapshot_stale_review_work_orders()
         self.reclassify_deliverable_changes_requested_work_orders()
@@ -5627,6 +5675,27 @@ def _merge_gate_state_for_work_order(work_order: dict[str, Any]) -> dict[str, An
         )
         and not bool(entry.get("passed", False))
     ]
+    deferred_dependency_ids = [
+        str(dep).strip()
+        for dep in (
+            dict(work_order.get("metadata") or {}).get("deferred_verification_to_dependency_ids")
+            or []
+        )
+        if str(dep).strip()
+    ]
+
+    if deferred_dependency_ids:
+        return {
+            "enabled": True,
+            "expected_checks": expected_checks,
+            "verification_results": verification_results,
+            "verification_missing_reason": None,
+            "checks_passed": True,
+            "human_approval_required": True,
+            "merge_eligible": True,
+            "blocked_reasons": [],
+            "verification_deferred_to_dependency_ids": deferred_dependency_ids,
+        }
 
     blocked_reasons: list[str] = []
     verification_missing_reason: str | None = None
@@ -6017,6 +6086,87 @@ def _work_order_should_rehabilitate_docs_only_missing_verification_plan(
     if not candidates or not all(_is_docs_only_path(path) for path in candidates):
         return False
     return _work_order_has_concrete_deliverable(work_order)
+
+
+def _work_order_is_validation_successor(work_order: dict[str, Any]) -> bool:
+    expected_tests = [
+        str(item).strip() for item in work_order.get("expected_tests", []) if str(item).strip()
+    ]
+    if expected_tests:
+        return True
+    text = " ".join(
+        part
+        for part in (
+            _optional_text(work_order.get("title")),
+            _optional_text(work_order.get("description")),
+            " ".join(
+                str(item).strip()
+                for item in ((work_order.get("metadata") or {}).get("acceptance_criteria") or [])
+                if str(item).strip()
+            ),
+        )
+        if part
+    ).lower()
+    return any(
+        token in text
+        for token in (
+            "run validation",
+            "validation and fix failures",
+            "acceptance tests",
+            "pytest ",
+            "fix any failures",
+        )
+    )
+
+
+def _work_order_rehabilitation_identifier(work_order: dict[str, Any]) -> str:
+    return (
+        _optional_text(work_order.get("pipeline_task_id"))
+        or _work_order_identifier(work_order)
+        or _optional_text(work_order.get("task_key"))
+    )
+
+
+def _dependency_deferred_verification_ids_for_work_order(
+    work_order: dict[str, Any],
+    *,
+    work_orders: list[dict[str, Any]],
+) -> list[str]:
+    if not isinstance(work_order, dict):
+        return []
+    status = _optional_text(work_order.get("status")).lower()
+    if status not in {"needs_human", "changes_requested"}:
+        return []
+    if _infer_missing_failure_reason_for_work_order(work_order) != "missing_verification_plan":
+        return []
+    if not _work_order_has_concrete_deliverable(work_order):
+        return []
+
+    work_order_ids = {
+        identifier
+        for identifier in (
+            _optional_text(work_order.get("pipeline_task_id")),
+            _work_order_identifier(work_order),
+            _optional_text(work_order.get("task_key")),
+        )
+        if identifier
+    }
+    if not work_order_ids:
+        return []
+
+    deferred_dependency_ids: list[str] = []
+    for candidate in work_orders:
+        if not isinstance(candidate, dict) or candidate is work_order:
+            continue
+        dependency_ids = set(_work_order_dependency_ids(candidate))
+        if not dependency_ids or not dependency_ids.intersection(work_order_ids):
+            continue
+        if not _work_order_is_validation_successor(candidate):
+            continue
+        candidate_id = _work_order_rehabilitation_identifier(candidate)
+        if candidate_id and candidate_id not in deferred_dependency_ids:
+            deferred_dependency_ids.append(candidate_id)
+    return deferred_dependency_ids
 
 
 def _work_order_dependency_ids(work_order: dict[str, Any]) -> list[str]:
