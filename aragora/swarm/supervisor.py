@@ -26,6 +26,7 @@ from aragora.docs_only import (
     is_docs_safe_path,
     is_docs_safe_top_level_file,
 )
+from aragora.pipeline.execution_mode import ExecutionMode
 from aragora.nomic.dev_coordination import (
     DevCoordinationStore,
     FileScopeViolationError,
@@ -41,7 +42,12 @@ from aragora.swarm.terminal_truth import (
     qualify_run_terminal_state,
     qualify_work_order_terminal_state,
 )
-from aragora.swarm.worker_launcher import SESSION_ARTIFACTS, WorkerLauncher, WorkerProcess
+from aragora.swarm.worker_launcher import (
+    SESSION_ARTIFACTS,
+    LaunchConfig,
+    WorkerLauncher,
+    WorkerProcess,
+)
 from aragora.worktree.lifecycle import WorktreeLifecycleService
 
 if TYPE_CHECKING:
@@ -56,6 +62,7 @@ WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY = "worker_type_circuit_breaker_policy"
 CAMPAIGN_OUTCOME_METADATA_KEY = "campaign_outcome"
 CAMPAIGN_REQUEUE_ELIGIBLE_METADATA_KEY = "campaign_requeue_eligible"
 CAMPAIGN_BLOCKERS_METADATA_KEY = "campaign_blockers"
+LAUNCHER_CONFIG_METADATA_KEY = "worker_launcher_config"
 MAX_WORKER_LOG_TAIL_CHARS = 4000
 DEFAULT_BREAKER_FAILURE_THRESHOLD = 2
 DEFAULT_BREAKER_RESET_TIMEOUT_SECONDS = 900.0
@@ -480,6 +487,93 @@ class SwarmSupervisor:
             self._pr_registry = PullRequestRegistry(state_dir=state_dir)
         return self._pr_registry
 
+    @staticmethod
+    def _launcher_config_snapshot(config: LaunchConfig) -> dict[str, Any]:
+        return {
+            "claude_path": str(config.claude_path),
+            "codex_path": str(config.codex_path),
+            "timeout_seconds": float(config.timeout_seconds),
+            "no_progress_timeout_seconds": float(config.no_progress_timeout_seconds),
+            "claude_model": config.claude_model,
+            "codex_model": config.codex_model,
+            "claude_profile": config.claude_profile,
+            "claude_profile_script": config.claude_profile_script,
+            "auto_commit": bool(config.auto_commit),
+            "use_managed_session_script": bool(config.use_managed_session_script),
+            "base_branch": str(config.base_branch),
+            "detach": bool(config.detach),
+            "require_explicit_approval": bool(config.require_explicit_approval),
+            "allow_claude_dangerously_skip_permissions": bool(
+                config.allow_claude_dangerously_skip_permissions
+            ),
+            "allow_codex_full_auto": bool(config.allow_codex_full_auto),
+            "execution_mode": (
+                config.execution_mode.value
+                if isinstance(config.execution_mode, ExecutionMode)
+                else str(config.execution_mode)
+            ),
+        }
+
+    def _apply_launcher_config_snapshot(self, snapshot: dict[str, Any] | None) -> None:
+        if not isinstance(snapshot, dict) or not snapshot:
+            return
+        config = self.launcher.config
+        if "claude_path" in snapshot:
+            config.claude_path = str(snapshot["claude_path"])
+        if "codex_path" in snapshot:
+            config.codex_path = str(snapshot["codex_path"])
+        if "timeout_seconds" in snapshot:
+            config.timeout_seconds = float(snapshot["timeout_seconds"])
+        if "no_progress_timeout_seconds" in snapshot:
+            config.no_progress_timeout_seconds = float(snapshot["no_progress_timeout_seconds"])
+        if "claude_model" in snapshot:
+            value = str(snapshot["claude_model"]).strip()
+            config.claude_model = value or None
+        if "codex_model" in snapshot:
+            value = str(snapshot["codex_model"]).strip()
+            config.codex_model = value or None
+        if "claude_profile" in snapshot:
+            value = str(snapshot["claude_profile"]).strip()
+            config.claude_profile = value or None
+        if "claude_profile_script" in snapshot:
+            value = str(snapshot["claude_profile_script"]).strip()
+            config.claude_profile_script = value or None
+        if "auto_commit" in snapshot:
+            config.auto_commit = bool(snapshot["auto_commit"])
+        if "use_managed_session_script" in snapshot:
+            config.use_managed_session_script = bool(snapshot["use_managed_session_script"])
+        if "base_branch" in snapshot:
+            config.base_branch = str(snapshot["base_branch"]).strip() or config.base_branch
+        if "detach" in snapshot:
+            config.detach = bool(snapshot["detach"])
+        if "require_explicit_approval" in snapshot:
+            config.require_explicit_approval = bool(snapshot["require_explicit_approval"])
+        if "allow_claude_dangerously_skip_permissions" in snapshot:
+            config.allow_claude_dangerously_skip_permissions = bool(
+                snapshot["allow_claude_dangerously_skip_permissions"]
+            )
+        if "allow_codex_full_auto" in snapshot:
+            config.allow_codex_full_auto = bool(snapshot["allow_codex_full_auto"])
+        if "execution_mode" in snapshot:
+            try:
+                config.execution_mode = ExecutionMode(str(snapshot["execution_mode"]).strip())
+            except ValueError:
+                logger.debug(
+                    "Ignoring unknown execution mode in launcher snapshot: %r",
+                    snapshot.get("execution_mode"),
+                )
+
+    def _launcher_config(self) -> LaunchConfig:
+        config = getattr(self.launcher, "config", None)
+        if isinstance(config, LaunchConfig):
+            return config
+        fallback = LaunchConfig()
+        try:
+            self.launcher.config = fallback
+        except Exception:
+            logger.debug("Unable to attach fallback LaunchConfig to launcher", exc_info=True)
+        return fallback
+
     def start_run(
         self,
         *,
@@ -545,6 +639,9 @@ class SwarmSupervisor:
             metadata={
                 "max_concurrency": min(max(1, int(max_concurrency)), 8),
                 "managed_dir_pattern": managed_dir_pattern,
+                LAUNCHER_CONFIG_METADATA_KEY: self._launcher_config_snapshot(
+                    self._launcher_config()
+                ),
                 WORKER_TYPE_CIRCUIT_BREAKERS_KEY: {},
                 WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
                     "failure_threshold": DEFAULT_BREAKER_FAILURE_THRESHOLD,
@@ -1373,104 +1470,109 @@ class SwarmSupervisor:
         worker_type_circuit_breakers = self._worker_type_circuit_breakers(metadata)
         self._expire_worker_type_circuit_breakers(worker_type_circuit_breakers)
         launched: list[WorkerProcess] = []
+        previous_launcher_config = self._launcher_config_snapshot(self._launcher_config())
+        self._apply_launcher_config_snapshot(metadata.get(LAUNCHER_CONFIG_METADATA_KEY))
 
-        for item in work_orders:
-            if str(item.get("status", "")) != "leased":
-                continue
-            target_agent = str(item.get("target_agent", "claude")).strip().lower() or "claude"
-            if self._worker_type_circuit_breaker_is_open(
-                worker_type_circuit_breakers,
-                target_agent,
-            ):
-                breaker = dict(worker_type_circuit_breakers.get(target_agent) or {})
-                detail = self._worker_type_circuit_breaker_detail(target_agent, breaker)
-                fallback_requeued = self._requeue_with_fallback(
-                    item,
-                    reason="worker_type_blocked",
-                    detail=detail,
-                    worker_type_circuit_breakers=worker_type_circuit_breakers,
-                )
-                if not fallback_requeued:
-                    self._mark_worker_type_blocked(
+        try:
+            for item in work_orders:
+                if str(item.get("status", "")) != "leased":
+                    continue
+                target_agent = str(item.get("target_agent", "claude")).strip().lower() or "claude"
+                if self._worker_type_circuit_breaker_is_open(
+                    worker_type_circuit_breakers,
+                    target_agent,
+                ):
+                    breaker = dict(worker_type_circuit_breakers.get(target_agent) or {})
+                    detail = self._worker_type_circuit_breaker_detail(target_agent, breaker)
+                    fallback_requeued = self._requeue_with_fallback(
                         item,
-                        worker_type=target_agent,
+                        reason="worker_type_blocked",
                         detail=detail,
+                        worker_type_circuit_breakers=worker_type_circuit_breakers,
                     )
-                continue
-            worktree_path = str(item.get("worktree_path", "")).strip()
-            branch = str(item.get("branch", "main")).strip()
-            if not worktree_path:
-                continue
-
-            try:
-                worker = await self.launcher.launch(
-                    item,
-                    worktree_path=worktree_path,
-                    branch=branch,
-                )
-                self._record_worker_type_success(
-                    worker_type_circuit_breakers,
-                    target_agent,
-                )
-                dispatch_time = datetime.now(UTC).isoformat()
-                item["status"] = "dispatched"
-                item["pid"] = worker.pid
-                item["initial_head"] = worker.initial_head
-                item["dispatched_at"] = dispatch_time
-                item["last_observed_at"] = dispatch_time
-                item["last_progress_at"] = dispatch_time
-                item["first_output_at"] = None
-                item["last_output_at"] = None
-                item["progress_fingerprint"] = {
-                    "head_sha": worker.initial_head,
-                    "changed_paths": [],
-                    "diff_lines": 0,
-                }
-                item["output_fingerprint"] = {
-                    "stdout_size": 0,
-                    "stderr_size": 0,
-                    "stdout_mtime_ns": 0,
-                    "stderr_mtime_ns": 0,
-                    "has_output": False,
-                }
-                # Persist worker PID in lease metadata so reap_stale_leases
-                # can detect dead processes even if this supervisor dies.
-                lease_id = str(item.get("lease_id", "")).strip()
-                if lease_id and worker.pid is not None:
-                    try:
-                        self.store.update_lease_metadata(lease_id, {"worker_pid": worker.pid})
-                    except Exception:
-                        logger.debug(
-                            "Failed to persist worker PID to lease %s",
-                            lease_id,
-                            exc_info=True,
+                    if not fallback_requeued:
+                        self._mark_worker_type_blocked(
+                            item,
+                            worker_type=target_agent,
+                            detail=detail,
                         )
-                launched.append(worker)
-            except (FileNotFoundError, RuntimeError, OSError) as exc:
-                self._record_worker_type_failure(
-                    worker_type_circuit_breakers,
-                    target_agent,
-                    reason=self._dispatch_failure_reason(exc),
-                    detail=str(exc),
-                    policy=worker_type_circuit_breaker_policy,
-                )
-                fallback_requeued = self._requeue_after_dispatch_error(
-                    item,
-                    exc,
-                    worker_type_circuit_breakers=worker_type_circuit_breakers,
-                )
-                if not fallback_requeued:
-                    lease_id = str(item.get("lease_id", "")).strip()
-                    if lease_id:
-                        self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
-                    self._mark_dispatch_failed(item, str(exc))
-                import logging
+                    continue
+                worktree_path = str(item.get("worktree_path", "")).strip()
+                branch = str(item.get("branch", "main")).strip()
+                if not worktree_path:
+                    continue
 
-                logging.getLogger(__name__).warning(
-                    "Failed to dispatch %s: %s",
-                    item.get("work_order_id"),
-                    exc,
-                )
+                try:
+                    worker = await self.launcher.launch(
+                        item,
+                        worktree_path=worktree_path,
+                        branch=branch,
+                    )
+                    self._record_worker_type_success(
+                        worker_type_circuit_breakers,
+                        target_agent,
+                    )
+                    dispatch_time = datetime.now(UTC).isoformat()
+                    item["status"] = "dispatched"
+                    item["pid"] = worker.pid
+                    item["initial_head"] = worker.initial_head
+                    item["dispatched_at"] = dispatch_time
+                    item["last_observed_at"] = dispatch_time
+                    item["last_progress_at"] = dispatch_time
+                    item["first_output_at"] = None
+                    item["last_output_at"] = None
+                    item["progress_fingerprint"] = {
+                        "head_sha": worker.initial_head,
+                        "changed_paths": [],
+                        "diff_lines": 0,
+                    }
+                    item["output_fingerprint"] = {
+                        "stdout_size": 0,
+                        "stderr_size": 0,
+                        "stdout_mtime_ns": 0,
+                        "stderr_mtime_ns": 0,
+                        "has_output": False,
+                    }
+                    # Persist worker PID in lease metadata so reap_stale_leases
+                    # can detect dead processes even if this supervisor dies.
+                    lease_id = str(item.get("lease_id", "")).strip()
+                    if lease_id and worker.pid is not None:
+                        try:
+                            self.store.update_lease_metadata(lease_id, {"worker_pid": worker.pid})
+                        except Exception:
+                            logger.debug(
+                                "Failed to persist worker PID to lease %s",
+                                lease_id,
+                                exc_info=True,
+                            )
+                    launched.append(worker)
+                except (FileNotFoundError, RuntimeError, OSError) as exc:
+                    self._record_worker_type_failure(
+                        worker_type_circuit_breakers,
+                        target_agent,
+                        reason=self._dispatch_failure_reason(exc),
+                        detail=str(exc),
+                        policy=worker_type_circuit_breaker_policy,
+                    )
+                    fallback_requeued = self._requeue_after_dispatch_error(
+                        item,
+                        exc,
+                        worker_type_circuit_breakers=worker_type_circuit_breakers,
+                    )
+                    if not fallback_requeued:
+                        lease_id = str(item.get("lease_id", "")).strip()
+                        if lease_id:
+                            self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
+                        self._mark_dispatch_failed(item, str(exc))
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        "Failed to dispatch %s: %s",
+                        item.get("work_order_id"),
+                        exc,
+                    )
+        finally:
+            self._apply_launcher_config_snapshot(previous_launcher_config)
 
         self.store.update_supervisor_run(
             run_id,

@@ -16,11 +16,12 @@ from aragora.nomic.task_decomposer import SubTask, TaskDecomposition
 from aragora.swarm.spec import SwarmSpec
 from aragora.swarm.supervisor import (
     CAMPAIGN_OUTCOME_METADATA_KEY,
+    LAUNCHER_CONFIG_METADATA_KEY,
     WORKER_TYPE_CIRCUIT_BREAKERS_KEY,
     WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY,
     SwarmSupervisor,
 )
-from aragora.swarm.worker_launcher import WorkerLauncher, WorkerProcess
+from aragora.swarm.worker_launcher import LaunchConfig, WorkerLauncher, WorkerProcess
 from aragora.worktree.lifecycle import ManagedWorktreeSession
 
 
@@ -116,6 +117,110 @@ def test_start_run_creates_leased_work_orders(repo: Path, store: DevCoordination
     assert {item["status"] for item in run.work_orders} == {"leased"}
     assert store.status_summary()["counts"]["supervisor_runs"] == 1
     assert store.status_summary()["counts"]["active_leases"] == 2
+
+
+@pytest.mark.asyncio
+async def test_dispatch_workers_reuses_persisted_launcher_profile(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    session = ManagedWorktreeSession(
+        session_id="swarm-test",
+        agent="codex",
+        branch="codex/swarm-test",
+        path=repo / "wt-test",
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    session.path.mkdir()
+
+    seed_launcher = MagicMock(spec=WorkerLauncher)
+    seed_launcher.config = LaunchConfig(
+        require_explicit_approval=False,
+        use_managed_session_script=False,
+        detach=True,
+    )
+    seed_supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+        launcher=seed_launcher,
+    )
+    run = seed_supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal="Add a test",
+            refined_goal="Add a test",
+            work_orders=[
+                {
+                    "work_order_id": "micro-1",
+                    "title": "Write the test",
+                    "description": "Add the regression test.",
+                    "file_scope": ["README.md"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                }
+            ],
+        ),
+        refresh_scaling=False,
+    )
+
+    persisted = run.metadata[LAUNCHER_CONFIG_METADATA_KEY]
+    assert persisted["require_explicit_approval"] is False
+    assert persisted["use_managed_session_script"] is False
+    assert persisted["detach"] is True
+
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = session
+    resume_launcher = MagicMock(spec=WorkerLauncher)
+    resume_launcher.config = LaunchConfig()
+    resume_launcher.collect_finished_sync.return_value = []
+    observed: dict[str, bool] = {}
+
+    async def _launch(
+        work_order: dict[str, object],
+        *,
+        worktree_path: str,
+        branch: str = "main",
+    ) -> WorkerProcess:
+        observed["require_explicit_approval"] = resume_launcher.config.require_explicit_approval
+        observed["use_managed_session_script"] = resume_launcher.config.use_managed_session_script
+        observed["detach"] = resume_launcher.config.detach
+        return WorkerProcess(
+            work_order_id=str(work_order["work_order_id"]),
+            agent="codex",
+            worktree_path=worktree_path,
+            branch=branch,
+            pid=1234,
+            initial_head="abc123",
+        )
+
+    resume_launcher.launch = AsyncMock(side_effect=_launch)
+    resume_supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=MagicMock(),
+        launcher=resume_launcher,
+    )
+
+    refreshed = resume_supervisor.refresh_run(run.run_id)
+    assert refreshed.work_orders[0]["status"] == "leased"
+
+    launched = await resume_supervisor.dispatch_workers(run.run_id)
+    assert len(launched) == 1
+    assert observed == {
+        "require_explicit_approval": False,
+        "use_managed_session_script": False,
+        "detach": True,
+    }
+    stored = store.get_supervisor_run(run.run_id)
+    assert stored is not None
+    assert stored["work_orders"][0]["status"] == "dispatched"
+    assert resume_launcher.config.require_explicit_approval is True
+    assert resume_launcher.config.use_managed_session_script is True
+    assert resume_launcher.config.detach is False
 
 
 def test_start_run_discards_duplicate_open_non_deliverable_lane(
