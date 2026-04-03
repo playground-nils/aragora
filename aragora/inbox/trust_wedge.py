@@ -1517,6 +1517,8 @@ class InboxTrustWedgeService:
             provider = envelope.intent.provider
             user_id = envelope.intent.user_id
             message_id = envelope.intent.message_id
+            if not message_id:
+                raise ValueError("receipt missing message_id")
 
             if action == InboxWedgeAction.ARCHIVE:
                 result = await self.email_actions_service.archive(provider, user_id, message_id)
