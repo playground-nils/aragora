@@ -1742,7 +1742,7 @@ def test_refresh_run_keeps_conflict_for_live_managed_session(
 
     work_order = run.work_orders[0]
     assert work_order["status"] == "waiting_conflict"
-    assert not work_order["lease_id"]
+    assert not work_order.get("lease_id")
     assert work_order["conflicts"][0]["lease_id"] == blocking.lease_id
     assert work_order["failure_reason"] == "waiting_conflict"
     assert "overlapping lane" in work_order["blocking_question"]
@@ -5260,6 +5260,176 @@ def test_refresh_run_requeues_conflict_only_needs_human_when_fleet_claims_are_st
     assert "exit_code" not in work_order
     assert "diff_lines" not in work_order
     assert "scope_violation" not in work_order
+
+
+def test_refresh_run_waiting_conflict_clears_stale_terminal_state(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    blocking_path = repo / "wt-blocking-conflict"
+    blocking_path.mkdir()
+    store.claim_lease(
+        task_id="blocking-lane",
+        title="Blocking lane",
+        owner_agent="codex",
+        owner_session_id="blocking-session",
+        branch="codex/blocking-lane",
+        worktree_path=str(blocking_path),
+        claimed_paths=["aragora/swarm/supervisor.py"],
+    )
+
+    session_path = repo / "wt-waiting-conflict-cleanup"
+    session_path.mkdir()
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="swarm-waiting-conflict-cleanup",
+        agent="claude",
+        branch="codex/swarm-waiting-conflict-cleanup",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, lifecycle=lifecycle)
+    run_record = store.create_supervisor_run(
+        goal="waiting conflict clears stale terminal state",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "waiting conflict clears stale terminal state"},
+        metadata={"max_concurrency": 1},
+        work_orders=[
+            {
+                "work_order_id": "wo-waiting-conflict-cleanup",
+                "title": "Conflict cleanup lane",
+                "description": "Conflict cleanup lane",
+                "status": "queued",
+                "target_agent": "claude",
+                "reviewer_agent": "codex",
+                "file_scope": ["aragora/swarm/supervisor.py"],
+                "review_status": "pending_heterogeneous_review",
+                "lease_id": "lease-stale",
+                "owner_session_id": "stale-session",
+                "branch": "codex/stale-lane",
+                "worktree_path": str(repo / "wt-stale-lane"),
+                "receipt_id": "receipt-stale",
+                "confidence": 0.91,
+                "worker_outcome": "completed",
+                "completed_at": "2026-04-02T00:00:00+00:00",
+                "head_sha": "deadbeef",
+                "commit_shas": ["deadbeef"],
+                "changed_paths": ["aragora/swarm/supervisor.py"],
+                "merge_gate": {"checks_passed": True},
+                "dispatch_error": "old dispatch failure",
+                "failure_reason": "worker_crash",
+                "blocking_question": "Old blocker?",
+                "blocker": {"reason": "worker_crash", "question": "Old blocker?"},
+                "blockers": ["old blocker"],
+            }
+        ],
+        status="active",
+    )
+
+    refreshed = supervisor.refresh_run(run_record["run_id"])
+
+    work_order = refreshed.work_orders[0]
+    assert work_order["status"] == "waiting_conflict"
+    assert work_order["review_status"] == "pending"
+    assert work_order["failure_reason"] == "waiting_conflict"
+    assert work_order["blocker"]["reason"] == "waiting_conflict"
+    assert any(
+        str(entry).startswith("scope already claimed:") for entry in work_order.get("blockers", [])
+    )
+    for cleared_key in (
+        "lease_id",
+        "owner_session_id",
+        "branch",
+        "worktree_path",
+        "receipt_id",
+        "confidence",
+        "worker_outcome",
+        "completed_at",
+        "head_sha",
+        "commit_shas",
+        "changed_paths",
+        "merge_gate",
+        "dispatch_error",
+    ):
+        assert cleared_key not in work_order
+
+
+def test_refresh_run_waiting_resource_clears_stale_terminal_state(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.side_effect = RuntimeError("No space left on device")
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, lifecycle=lifecycle)
+    run_record = store.create_supervisor_run(
+        goal="waiting resource clears stale terminal state",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "waiting resource clears stale terminal state"},
+        metadata={"max_concurrency": 1},
+        work_orders=[
+            {
+                "work_order_id": "wo-waiting-resource-cleanup",
+                "title": "Resource cleanup lane",
+                "description": "Resource cleanup lane",
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["aragora/swarm/supervisor.py"],
+                "review_status": "pending_heterogeneous_review",
+                "lease_id": "lease-stale",
+                "owner_session_id": "stale-session",
+                "branch": "codex/stale-lane",
+                "worktree_path": str(repo / "wt-stale-lane"),
+                "receipt_id": "receipt-stale",
+                "confidence": 0.88,
+                "worker_outcome": "completed",
+                "completed_at": "2026-04-02T00:00:00+00:00",
+                "head_sha": "deadbeef",
+                "commit_shas": ["deadbeef"],
+                "changed_paths": ["aragora/swarm/supervisor.py"],
+                "merge_gate": {"checks_passed": True},
+                "resource_error": "old resource wait",
+                "dispatch_error": "old dispatch failure",
+                "failure_reason": "worker_crash",
+                "blocking_question": "Old blocker?",
+                "blocker": {"reason": "worker_crash", "question": "Old blocker?"},
+                "blockers": ["old blocker"],
+            }
+        ],
+        status="active",
+    )
+
+    refreshed = supervisor.refresh_run(run_record["run_id"])
+
+    work_order = refreshed.work_orders[0]
+    assert refreshed.status == "needs_human"
+    assert work_order["status"] == "waiting_resource"
+    assert work_order["review_status"] == "pending"
+    assert work_order["resource_error"] == "No space left on device"
+    for cleared_key in (
+        "lease_id",
+        "owner_session_id",
+        "branch",
+        "worktree_path",
+        "receipt_id",
+        "confidence",
+        "worker_outcome",
+        "completed_at",
+        "head_sha",
+        "commit_shas",
+        "changed_paths",
+        "merge_gate",
+        "dispatch_error",
+        "failure_reason",
+        "blocking_question",
+        "blocker",
+        "blockers",
+    ):
+        assert cleared_key not in work_order
 
 
 def test_refresh_run_leases_dependent_work_order_from_completed_dependency_branch(
