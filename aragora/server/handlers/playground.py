@@ -971,30 +971,31 @@ def _try_oracle_response(
 
     # Emit spectate events so the landing page bridge shows activity
     try:
-        from aragora.spectate.ws_bridge import get_spectate_bridge
+        from aragora.spectate.ws_bridge import (
+            get_spectate_bridge,
+            bind_spectate_context,
+        )
 
         bridge = get_spectate_bridge()
         if bridge.running:
-            bridge._forward_event(
-                event_type="debate_start",
-                agent="oracle",
-                details=question[:200],
-                debate_id=debate_id,
-            )
-            bridge._forward_event(
-                event_type="proposal",
-                agent="oracle",
-                details=text[:500],
-                debate_id=debate_id,
-                round_number=1,
-            )
-            bridge._forward_event(
-                event_type="consensus",
-                agent="oracle",
-                details="Oracle verdict delivered",
-                debate_id=debate_id,
-                round_number=1,
-            )
+            with bind_spectate_context(debate_id=debate_id):
+                bridge._forward_event(
+                    event_type="debate_start",
+                    agent="oracle",
+                    details=question[:200],
+                )
+                bridge._forward_event(
+                    event_type="proposal",
+                    agent="oracle",
+                    details=text[:500],
+                    round_number=1,
+                )
+                bridge._forward_event(
+                    event_type="consensus",
+                    agent="oracle",
+                    details="Oracle verdict delivered",
+                    round_number=1,
+                )
     except Exception:
         pass  # Never block oracle response for spectate
     receipt_hash = hashlib.sha256(f"{receipt_id}:{question}:approved:0.85".encode()).hexdigest()
@@ -1830,32 +1831,33 @@ class PlaygroundHandler(BaseHandler):
                     logger.info("Cache hit for debate key %.12s…", cache_key)
                     # Emit spectate events for cached results too (landing page demo)
                     try:
-                        from aragora.spectate.ws_bridge import get_spectate_bridge
+                        from aragora.spectate.ws_bridge import (
+                            get_spectate_bridge,
+                            bind_spectate_context,
+                        )
 
                         bridge = get_spectate_bridge()
                         if bridge.running:
                             debate_id = cached.get("id", "cached")
                             answer = str(cached.get("final_answer", ""))[:500]
-                            bridge._forward_event(
-                                event_type="debate_start",
-                                agent="oracle",
-                                details=str(cached.get("topic", ""))[:200],
-                                debate_id=debate_id,
-                            )
-                            bridge._forward_event(
-                                event_type="proposal",
-                                agent="oracle",
-                                details=answer,
-                                debate_id=debate_id,
-                                round_number=1,
-                            )
-                            bridge._forward_event(
-                                event_type="consensus",
-                                agent="oracle",
-                                details="Oracle verdict delivered",
-                                debate_id=debate_id,
-                                round_number=1,
-                            )
+                            with bind_spectate_context(debate_id=debate_id):
+                                bridge._forward_event(
+                                    event_type="debate_start",
+                                    agent="oracle",
+                                    details=str(cached.get("topic", ""))[:200],
+                                )
+                                bridge._forward_event(
+                                    event_type="proposal",
+                                    agent="oracle",
+                                    details=answer,
+                                    round_number=1,
+                                )
+                                bridge._forward_event(
+                                    event_type="consensus",
+                                    agent="oracle",
+                                    details="Oracle verdict delivered",
+                                    round_number=1,
+                                )
                     except Exception:
                         pass
                     return json_response(cached)
