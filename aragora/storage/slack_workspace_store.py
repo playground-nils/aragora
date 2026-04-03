@@ -692,18 +692,30 @@ class SlackWorkspaceStore:
                     self.deactivate(workspace_id)
                 return None
 
-            # Update workspace with new tokens
-            workspace.access_token = result.get("access_token", workspace.access_token)
+            new_access_token = str(result.get("access_token") or "").strip()
+            if not new_access_token:
+                logger.error(
+                    "Token refresh returned no access token for workspace: %s",
+                    workspace_id,
+                )
+                return None
 
             # Handle new refresh token (rotation)
             new_refresh = result.get("refresh_token")
-            if new_refresh:
-                workspace.refresh_token = new_refresh
+            new_refresh_token = (
+                str(new_refresh).strip()
+                if str(new_refresh or "").strip()
+                else workspace.refresh_token
+            )
 
             # Calculate expiration time
             expires_in = result.get("expires_in")
-            if expires_in:
-                workspace.token_expires_at = time.time() + expires_in
+            new_expires_at = time.time() + expires_in if expires_in else workspace.token_expires_at
+
+            # Update workspace with validated tokens
+            workspace.access_token = new_access_token
+            workspace.refresh_token = new_refresh_token
+            workspace.token_expires_at = new_expires_at
 
             # Save updated workspace
             if self.save(workspace):
