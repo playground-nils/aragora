@@ -20,6 +20,7 @@ from typing import Any
 from .base import (
     BaseHandler,
     HandlerResult,
+    error_response,
     handle_errors,
     json_response,
 )
@@ -160,6 +161,7 @@ class SpectateStreamHandler(BaseHandler):
         "/api/v1/spectate/recent",
         "/api/v1/spectate/status",
         "/api/v1/spectate/stream",
+        "/api/v1/spectate/emit",
     ]
 
     STREAM_MODE = "snapshot"
@@ -190,6 +192,40 @@ class SpectateStreamHandler(BaseHandler):
             return self._handle_stream(query_params, handler)
 
         return None
+
+    @handle_errors("spectate")
+    def handle_post(
+        self, path: str, query_params: dict[str, Any], handler: Any
+    ) -> HandlerResult | None:
+        """POST /api/v1/spectate/emit — inject events into the bridge (internal use)."""
+        if path != "/api/v1/spectate/emit":
+            return None
+        body = self.read_json_body(handler) if handler else {}
+        if not body:
+            return error_response("Missing JSON body", 400)
+        try:
+            from aragora.spectate.ws_bridge import get_spectate_bridge, bind_spectate_context
+
+            bridge = get_spectate_bridge()
+            if not bridge.running:
+                return json_response({"error": "Bridge not running"}, status=503)
+            debate_id = str(body.get("debate_id", "")).strip()
+            events = body.get("events", [])
+            if not events:
+                events = [body]
+            emitted = 0
+            with bind_spectate_context(debate_id=debate_id or None):
+                for event in events:
+                    bridge._forward_event(
+                        event_type=str(event.get("event_type", "info")),
+                        agent=str(event.get("agent", "")),
+                        details=str(event.get("details", "")),
+                        round_number=event.get("round_number"),
+                    )
+                    emitted += 1
+            return json_response({"emitted": emitted, "debate_id": debate_id})
+        except ImportError:
+            return json_response({"error": "Bridge module unavailable"}, status=503)
 
     def _handle_recent(self, query_params: dict[str, Any]) -> HandlerResult:
         """GET /api/v1/spectate/recent -- get recent events from the buffer."""
