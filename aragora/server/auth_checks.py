@@ -316,6 +316,7 @@ class AuthChecksMixin:
             "/api/v1/spectate/recent",
             "/api/v1/spectate/status",
             "/api/v1/spectate/stream",
+            "/api/v1/spectate/emit",
             # OAuth callbacks from external providers (redirects carry no auth headers)
             "/api/integrations/slack/callback",
             "/api/integrations/teams/callback",
