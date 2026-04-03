@@ -1632,6 +1632,26 @@ class TestSnapshotProgress:
 
 class TestCollectChangedPaths:
     @pytest.mark.asyncio
+    async def test_skips_origin_main_fallback_when_initial_head_is_missing(self):
+        calls: list[tuple[str, ...]] = []
+
+        async def _git_output(_worktree_path: str, *args: str) -> str:
+            calls.append(tuple(args))
+            if args[:2] == ("status", "--porcelain"):
+                return ""
+            return "aragora/swarm/boss_loop.py\n"
+
+        with patch.object(WorkerLauncher, "_git_output", side_effect=_git_output):
+            changed = await WorkerLauncher._collect_changed_paths(
+                "/tmp/wt",
+                initial_head="",
+                head_sha="def456",
+            )
+
+        assert changed == []
+        assert ("diff", "--name-only", "origin/main..HEAD") not in calls
+
+    @pytest.mark.asyncio
     async def test_skips_origin_main_fallback_when_initial_head_matches_head_sha(self):
         calls: list[tuple[str, ...]] = []
 
@@ -1671,6 +1691,43 @@ class TestCollectChangedPaths:
 
         assert changed == ["real.py"]
         assert ("diff", "--name-only", "abc123..def456") in calls
+
+
+class TestCollectCommitShas:
+    @pytest.mark.asyncio
+    async def test_returns_empty_without_initial_head_instead_of_falling_back_to_origin_main(self):
+        calls: list[tuple[str, ...]] = []
+
+        async def _git_output(_worktree_path: str, *args: str) -> str:
+            calls.append(tuple(args))
+            return "abc123\n"
+
+        with patch.object(WorkerLauncher, "_git_output", side_effect=_git_output):
+            shas = await WorkerLauncher._collect_commit_shas(
+                "/tmp/wt",
+                initial_head="",
+                head_sha="def456",
+            )
+
+        assert shas == []
+        assert ("rev-list", "--reverse", "origin/main..HEAD") not in calls
+
+    def test_returns_empty_sync_without_initial_head_instead_of_falling_back_to_origin_main(self):
+        calls: list[tuple[str, ...]] = []
+
+        def _git_output_sync(_worktree_path: str, *args: str) -> str:
+            calls.append(tuple(args))
+            return "abc123\n"
+
+        with patch.object(WorkerLauncher, "_git_output_sync", side_effect=_git_output_sync):
+            shas = WorkerLauncher._collect_commit_shas_sync(
+                "/tmp/wt",
+                initial_head="",
+                head_sha="def456",
+            )
+
+        assert shas == []
+        assert ("rev-list", "--reverse", "origin/main..HEAD") not in calls
 
 
 class TestIsPidRunning:
