@@ -398,6 +398,37 @@ class TestSlackWorkspaceStoreEncryption:
         workspace = store.get("T12345678")
         assert workspace.access_token == "xoxb-test-token-12345"
 
+    def test_token_encrypted_when_env_key_arrives_after_import(
+        self, temp_db_path, sample_workspace
+    ):
+        """Encryption should use the live env key, not a stale import snapshot."""
+        from cryptography.fernet import Fernet  # noqa: F401
+
+        with (
+            patch("aragora.storage.slack_workspace_store.ENCRYPTION_KEY", ""),
+            patch.dict(
+                "os.environ",
+                {"ARAGORA_ENCRYPTION_KEY": "test-encryption-key-32chars!!"},
+                clear=False,
+            ),
+        ):
+            store = SlackWorkspaceStore(db_path=temp_db_path)
+            store.save(sample_workspace)
+
+            conn = store._get_connection()
+            cursor = conn.execute(
+                "SELECT access_token FROM slack_workspaces WHERE workspace_id = ?",
+                ("T12345678",),
+            )
+            row = cursor.fetchone()
+            raw_token = row["access_token"]
+
+            assert not raw_token.startswith("xoxb-")
+
+            workspace = store.get("T12345678")
+            assert workspace is not None
+            assert workspace.access_token == "xoxb-test-token-12345"
+
     def test_decrypt_unencrypted_token(self, workspace_store):
         """Test decrypting an already unencrypted token returns as-is."""
         # Simulate token that's already unencrypted
