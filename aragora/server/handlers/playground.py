@@ -766,7 +766,7 @@ _MOCK_CONFIDENCE: dict[str, float] = {
 _ORACLE_MODEL_ANTHROPIC = "claude-sonnet-4-6"
 _ORACLE_MODEL_OPENAI = "gpt-5.3-chat"
 _ORACLE_MODEL_OPENROUTER = "anthropic/claude-opus-4.6"  # OpenRouter fallback
-_ORACLE_CALL_TIMEOUT = 25.0  # seconds — allows 4 parallel LLM calls with OpenRouter fallback
+_ORACLE_CALL_TIMEOUT = 90.0  # seconds — allows 4 parallel LLM calls with OpenRouter fallback
 
 
 def _get_api_key(name: str) -> str | None:
@@ -1350,6 +1350,7 @@ def _try_oracle_response(
     question: str,
     topic: str | None = None,
     session_id: str | None = None,
+    client_debate_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Generate a real LLM response for Oracle Phase 1 (initial take).
 
@@ -1378,7 +1379,7 @@ def _try_oracle_response(
     _append_session_turn(session_id, "oracle", text)
 
     duration = time.monotonic() - start
-    debate_id = uuid.uuid4().hex[:16]
+    debate_id = client_debate_id or uuid.uuid4().hex[:16]
     now_iso = datetime.now(timezone.utc).isoformat()
     receipt_id = f"OR-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}"
 
@@ -1915,6 +1916,7 @@ def _try_oracle_tentacles(
     topic: str | None = None,
     source: str = "oracle",
     summary_depth: str = "light",
+    client_debate_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Generate multi-perspective Oracle responses using genuinely different AI models.
 
@@ -2023,7 +2025,7 @@ def _try_oracle_tentacles(
             }
     consensus_reached = False if is_landing_preview else len(results) >= 2
     confidence = 0.0 if is_landing_preview else 0.7
-    debate_id = uuid.uuid4().hex[:16]
+    debate_id = client_debate_id or uuid.uuid4().hex[:16]
     now_iso = datetime.now(timezone.utc).isoformat()
     receipt_id = f"LV-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}"
     receipt_hash = hashlib.sha256(
@@ -2547,6 +2549,8 @@ class PlaygroundHandler(BaseHandler):
             return self._handle_landing_event(handler)
         if path == "/api/v1/playground/landing/feedback":
             return self._handle_landing_feedback(handler)
+        if path == "/api/v1/playground/assess":
+            return self._handle_assess(handler)
         if path == "/api/v1/playground/debate/live/cost-estimate":
             return self._handle_cost_estimate(handler)
         if path == "/api/v1/playground/debate/live":
@@ -2582,6 +2586,10 @@ class PlaygroundHandler(BaseHandler):
 
         # Session ID for follow-up conversation memory
         session_id = str(body.get("session_id", "") or "").strip() or None
+
+        # Client-provided debate ID — allows the frontend to subscribe to
+        # spectate WebSocket events *before* the HTTP POST returns.
+        client_debate_id = str(body.get("debate_id", "") or "").strip() or None
 
         try:
             rounds = int(body.get("rounds", _DEFAULT_ROUNDS))
@@ -2705,6 +2713,7 @@ class PlaygroundHandler(BaseHandler):
             source=source,
             cache_key=cache_key,
             model_ids=model_ids,
+            client_debate_id=client_debate_id,
         )
 
     def _handle_landing_event(self, handler: Any) -> HandlerResult:
@@ -2738,6 +2747,203 @@ class PlaygroundHandler(BaseHandler):
         )
         return json_response({"ok": True, "report_id": report["id"]}, status=202)
 
+    # ------------------------------------------------------------------
+    # Question assessment (ambiguity detection via frontier model)
+    # ------------------------------------------------------------------
+
+    def _handle_assess(self, handler: Any) -> HandlerResult:
+        """Assess question ambiguity using a frontier model."""
+        body = json.loads(handler.body or b"{}")
+        question = str(body.get("question", "")).strip()
+        if not question:
+            return json_response({"type": "ready", "option": self._build_ready_option("")})
+
+        # Rate limit: reuse the existing per-IP check (10 per 60s for assess)
+        client_ip = _extract_client_ip(handler)
+        allowed, retry_after = _check_rate_limit(
+            f"assess:{client_ip}",
+            limit=10,
+            window=60.0,
+        )
+        if not allowed:
+            return json_response(
+                {
+                    "error": "Rate limit exceeded. Please try again later.",
+                    "code": "rate_limit_exceeded",
+                    "retry_after": retry_after,
+                },
+                status=429,
+            )
+
+        prompt = (
+            "You are a question-assessment system. Analyze this user question and determine if it is "
+            "clear enough to debate directly, or if it could be interpreted multiple ways.\n\n"
+            f"Question: {question}\n\n"
+            "Respond with JSON only:\n"
+            '- If clear: {"clear": true, "topic": "<the question as-is>"}\n'
+            '- If ambiguous: {"clear": false, "interpretations": ["interpretation 1", "interpretation 2", "interpretation 3"]}\n'
+            "JSON response:"
+        )
+
+        try:
+            raw = self._call_frontier_model(prompt, timeout=5.0)
+            # Extract JSON from response (model might wrap it in markdown code blocks)
+            import re as _re
+
+            json_match = _re.search(r"\{.*\}", raw, _re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+            else:
+                parsed = json.loads(raw)
+        except (TimeoutError, ConnectionError, json.JSONDecodeError, RuntimeError, OSError) as exc:
+            logger.debug("Assess call failed, returning ready: %s", exc)
+            return json_response({"type": "ready", "option": self._build_ready_option(question)})
+
+        if parsed.get("clear", True):
+            topic = parsed.get("topic", question)
+            return json_response({"type": "ready", "option": self._build_ready_option(topic)})
+
+        # Build preflight options from interpretations
+        interpretations = parsed.get("interpretations", [])
+        options = []
+        for i, interp in enumerate(interpretations[:4]):
+            options.append(
+                {
+                    "id": f"interp-{i}",
+                    "label": interp[:80],
+                    "description": interp,
+                    "originalQuestion": question,
+                    "interpretedQuestion": interp,
+                    "debatePrompt": interp,
+                    "agents": 3,
+                    "rounds": 2,
+                    "recommended": i == 0,
+                }
+            )
+        # Always include "use original wording" as last option
+        options.append(
+            {
+                "id": "original",
+                "label": "Use original wording",
+                "description": "Debate the question exactly as written.",
+                "originalQuestion": question,
+                "interpretedQuestion": question,
+                "debatePrompt": question,
+                "agents": 3,
+                "rounds": 2,
+            }
+        )
+
+        return json_response(
+            {
+                "type": "confirm",
+                "preflight": {
+                    "title": "This question could mean a few things",
+                    "prompt": "Pick the interpretation you want Aragora to debate.",
+                    "options": options,
+                },
+            }
+        )
+
+    def _build_ready_option(self, question: str) -> dict:
+        """Build a ready-to-debate option payload."""
+        return {
+            "id": "original",
+            "label": "Use original wording",
+            "description": question,
+            "originalQuestion": question,
+            "interpretedQuestion": question,
+            "debatePrompt": question,
+            "agents": 3,
+            "rounds": 2,
+        }
+
+    # ------------------------------------------------------------------
+    # TL;DR synthesis helpers
+    # ------------------------------------------------------------------
+
+    def _call_frontier_model(self, prompt: str, timeout: float = 5.0) -> str:
+        """Call the fastest available frontier model for a short generation task.
+
+        Tries Anthropic (Claude Sonnet) first, falls back to OpenRouter.
+        Runs the async agent.generate() call in a sync context with a timeout.
+
+        Raises:
+            TimeoutError: If the generation exceeds *timeout* seconds.
+            RuntimeError: If no agent is available.
+        """
+        agent = None
+
+        # Try Anthropic first
+        try:
+            from aragora.agents.api_agents.anthropic import (
+                AnthropicAPIAgent as _Anthropic,
+            )
+
+            agent = _Anthropic(
+                name="tldr-synth",
+                model="claude-sonnet-4-6",
+            )
+        except (ImportError, RuntimeError, ValueError, OSError) as exc:
+            logger.debug("Anthropic agent unavailable for TL;DR: %s", exc)
+
+        # Fall back to OpenRouter
+        if agent is None:
+            try:
+                from aragora.agents.api_agents.openrouter import (
+                    OpenRouterAgent as _OpenRouter,
+                )
+
+                agent = _OpenRouter(
+                    name="tldr-synth",
+                    model="anthropic/claude-sonnet-4.6",
+                )
+            except (ImportError, RuntimeError, ValueError, OSError) as exc:
+                logger.debug("OpenRouter agent unavailable for TL;DR: %s", exc)
+
+        if agent is None:
+            raise RuntimeError("No frontier model available for TL;DR synthesis")
+
+        async def _generate() -> str:
+            return await asyncio.wait_for(agent.generate(prompt), timeout=timeout)
+
+        return asyncio.run(_generate())
+
+    def _synthesize_tldr(
+        self,
+        question: str,
+        proposals: dict[str, str],
+        fallback_text: str | None = None,
+    ) -> str:
+        """Synthesize a one-sentence TL;DR from agent proposals.
+
+        Uses ``_call_frontier_model`` to generate a concise answer.  On any
+        failure (timeout, connection error, missing agent), extracts the first
+        sentence from *fallback_text* instead.
+        """
+        prompt = (
+            "Given these agent proposals responding to the question below, "
+            "write a single-sentence direct answer. Be practical, not philosophical. "
+            "Do not mention the agents or the debate process.\n\n"
+            f"Question: {question}\n\n"
+        )
+        for agent_name, text in proposals.items():
+            prompt += f"{agent_name}: {text[:500]}\n\n"
+        prompt += "One-sentence answer:"
+
+        try:
+            return self._call_frontier_model(prompt, timeout=5.0)
+        except (TimeoutError, OSError, RuntimeError, ConnectionError, ValueError) as exc:
+            logger.debug("TL;DR synthesis failed, using fallback: %s", exc)
+
+        # Fallback: extract first sentence from fallback_text
+        if not fallback_text:
+            return ""
+        first_dot = fallback_text.find(". ")
+        if first_dot > 0:
+            return fallback_text[: first_dot + 1]
+        return fallback_text[:200]
+
     def _run_debate(
         self,
         topic: str,
@@ -2749,6 +2955,7 @@ class PlaygroundHandler(BaseHandler):
         source: str = "oracle",
         cache_key: str | None = None,
         model_ids: list[str] | None = None,
+        client_debate_id: str | None = None,
     ) -> HandlerResult:
         _cache_kw: dict[str, Any] = {}
         if cache_key is not None:
@@ -2758,9 +2965,20 @@ class PlaygroundHandler(BaseHandler):
             if source == "oracle":
                 # Oracle mode: try single-agent Oracle response first
                 oracle_result = _try_oracle_response(
-                    mode=mode, question=question, topic=topic, session_id=session_id
+                    mode=mode,
+                    question=question,
+                    topic=topic,
+                    session_id=session_id,
+                    client_debate_id=client_debate_id,
                 )
                 if oracle_result:
+                    proposals = oracle_result.get("proposals", {})
+                    if proposals:
+                        oracle_result["tldr"] = self._synthesize_tldr(
+                            question or topic,
+                            proposals,
+                            fallback_text=oracle_result.get("final_answer", ""),
+                        )
                     return self._persist_and_respond(
                         json_response(oracle_result),
                         topic,
@@ -2772,7 +2990,7 @@ class PlaygroundHandler(BaseHandler):
                 )
                 # Return an Oracle-themed placeholder instead of a generic mock debate
                 # (the generic mock talks about microservices which is nonsensical for Oracle)
-                debate_id = uuid.uuid4().hex[:16]
+                debate_id = client_debate_id or uuid.uuid4().hex[:16]
                 return self._persist_and_respond(
                     json_response(
                         {
@@ -2809,6 +3027,7 @@ class PlaygroundHandler(BaseHandler):
                     topic=topic,
                     source=source,
                     summary_depth="none",  # no essay context for non-Oracle sources
+                    client_debate_id=client_debate_id,
                 )
                 if tentacle_result:
                     if (
@@ -2818,6 +3037,13 @@ class PlaygroundHandler(BaseHandler):
                         logger.info("Landing preview drifted off-topic — asking for clarification")
                         return _build_landing_preview_clarification_response(
                             str(tentacle_result.get("message") or "").strip() or None
+                        )
+                    proposals = tentacle_result.get("proposals", {})
+                    if proposals:
+                        tentacle_result["tldr"] = self._synthesize_tldr(
+                            question or topic,
+                            proposals,
+                            fallback_text=tentacle_result.get("final_answer", ""),
                         )
                     return self._persist_and_respond(
                         json_response(tentacle_result), topic, source, **_cache_kw
@@ -2832,11 +3058,24 @@ class PlaygroundHandler(BaseHandler):
             live_result = self._run_live_debate(question or topic, rounds, agent_count)
             # Check if live debate returned an error response (status >= 400)
             if live_result.status_code < 400:
+                # Inject TL;DR into live debate result
+                try:
+                    live_data = json.loads(live_result.body.decode("utf-8"))
+                    proposals = live_data.get("proposals", {})
+                    if isinstance(proposals, dict) and proposals:
+                        live_data["tldr"] = self._synthesize_tldr(
+                            question or topic,
+                            proposals,
+                            fallback_text=live_data.get("final_answer", ""),
+                        )
+                        live_result = json_response(live_data, status=live_result.status_code)
+                except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+                    logger.debug("Could not inject TL;DR into live debate result")
                 return self._persist_and_respond(live_result, topic, source, **_cache_kw)
             logger.info(
                 "Live debate returned status %d, falling back to mock", live_result.status_code
             )
-        except (TimeoutError, ValueError, RuntimeError, OSError) as exc:
+        except Exception as exc:  # noqa: BLE001 — landing page must never error
             logger.warning("Live debate failed, falling back to mock: %s", exc)
 
         if source == "demo":
@@ -2850,6 +3089,13 @@ class PlaygroundHandler(BaseHandler):
             _run_inline_mock_debate(topic, rounds, agent_count, question=question),
             reason="Live agents were unavailable, so the public beta returned a deterministic fallback.",
         )
+        proposals = mock_data.get("proposals", {})
+        if proposals:
+            mock_data["tldr"] = self._synthesize_tldr(
+                question or topic,
+                proposals,
+                fallback_text=mock_data.get("final_answer", ""),
+            )
         return self._persist_and_respond(json_response(mock_data), topic, source, **_cache_kw)
 
     @staticmethod
@@ -3174,6 +3420,13 @@ class PlaygroundHandler(BaseHandler):
             )
             if tentacle_result:
                 tentacle_result["upgrade_cta"] = _build_upgrade_cta()
+                proposals = tentacle_result.get("proposals", {})
+                if proposals:
+                    tentacle_result["tldr"] = self._synthesize_tldr(
+                        question or topic,
+                        proposals,
+                        fallback_text=tentacle_result.get("final_answer", ""),
+                    )
                 return self._persist_and_respond(
                     json_response(tentacle_result),
                     topic,
@@ -3324,7 +3577,7 @@ class PlaygroundHandler(BaseHandler):
 # Live debate execution
 # ---------------------------------------------------------------------------
 
-_LIVE_TIMEOUT = 15  # seconds — playground must respond quickly
+_LIVE_TIMEOUT = 90  # seconds — playground must respond quickly
 _LIVE_BUDGET_CAP = 0.05  # USD
 _LIVE_MAX_CONCURRENT = 2
 _LIVE_DEFAULT_AGENTS = ["anthropic-api", "openai-api"]
