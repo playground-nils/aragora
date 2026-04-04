@@ -3006,6 +3006,16 @@ class SwarmSupervisor:
             # strip) and detached workers (changed_paths already stripped by
             # _collect_changed_paths, but commit_shas populated from auto-commit).
             if not clean_paths and (result.changed_paths or result.commit_shas):
+                for key in (
+                    "receipt_id",
+                    "confidence",
+                    "pr_url",
+                    "adopted_pr",
+                    "merge_gate",
+                    "verification_missing_reason",
+                ):
+                    item.pop(key, None)
+                item["commit_shas"] = []
                 self._mark_needs_human(
                     item,
                     "worker produced only session artifacts, no real deliverables",
@@ -3019,6 +3029,15 @@ class SwarmSupervisor:
 
             # Clean exit with zero changes of any kind — fail closed
             if not clean_paths and not result.commit_shas:
+                for key in (
+                    "receipt_id",
+                    "confidence",
+                    "pr_url",
+                    "adopted_pr",
+                    "merge_gate",
+                    "verification_missing_reason",
+                ):
+                    item.pop(key, None)
                 if not _pre_outcome:
                     item["worker_outcome"] = WorkerOutcome.CLEAN_EXIT_NO_EFFECT.value
                 logger.warning(
