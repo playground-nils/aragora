@@ -48,6 +48,10 @@ from aragora.server.handlers.playground import (
     _LIVE_RATE_LIMIT,
     _LIVE_RATE_WINDOW,
 )
+from aragora.storage.landing_review_store import (
+    get_landing_review_store,
+    reset_landing_review_store,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +108,17 @@ def handler():
 
 
 @pytest.fixture(autouse=True)
-def _clear_rate_limits():
-    """Reset rate limit state before each test."""
+def _clear_rate_limits(tmp_path, monkeypatch):
+    """Reset rate limit and landing review state before each test."""
+    monkeypatch.setenv(
+        "ARAGORA_LANDING_REVIEW_DB_PATH",
+        str(tmp_path / "landing_review.sqlite3"),
+    )
+    reset_landing_review_store()
     _reset_rate_limits()
     yield
     _reset_rate_limits()
+    reset_landing_review_store()
 
 
 # ============================================================================
@@ -514,8 +524,6 @@ class TestLandingTelemetry:
     """Tests for the landing telemetry endpoint."""
 
     def test_records_bounded_public_event(self, handler):
-        from aragora.server.handlers import playground as playground_module
-
         mock_h = _MockHTTPHandler(
             "POST",
             body={
@@ -529,10 +537,11 @@ class TestLandingTelemetry:
         )
         result = handler.handle_post("/api/v1/playground/landing/events", {}, mock_h)
         assert _status(result) == 202
-        assert len(playground_module._landing_events) == 1
-        assert playground_module._landing_events[0]["event_type"] == "preflight_shown"
-        assert playground_module._landing_events[0]["data"]["question_length"] == 91
-        assert len(playground_module._landing_events[0]["data"]["raw_prompt"]) == 160
+        events = get_landing_review_store().list_recent_events(window_seconds=3600)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "preflight_shown"
+        assert events[0]["data"]["question_length"] == 91
+        assert len(events[0]["data"]["raw_prompt"]) == 160
 
     def test_rejects_unknown_event_type(self, handler):
         mock_h = _MockHTTPHandler(
@@ -543,47 +552,42 @@ class TestLandingTelemetry:
         assert _status(result) == 400
 
     def test_returns_recent_landing_summary(self, handler):
-        from aragora.server.handlers import playground as playground_module
-
         now = datetime.now(timezone.utc)
-        playground_module._landing_events.extend(
-            [
-                {
-                    "event_type": "preflight_shown",
-                    "client_ip": "203.0.113.10",
-                    "data": {"question_length": 120},
-                    "timestamp": now.isoformat(),
-                },
-                {
-                    "event_type": "preflight_selected",
-                    "client_ip": "203.0.113.10",
-                    "data": {
-                        "option_id": "practical-food",
-                        "recommended": True,
-                        "rewritten": True,
-                        "question_length": 120,
-                    },
-                    "timestamp": now.isoformat(),
-                },
-                {
-                    "event_type": "preview_rendered",
-                    "client_ip": "203.0.113.10",
-                    "data": {"participant_count": 3, "has_warning": True},
-                    "timestamp": now.isoformat(),
-                },
-                {
-                    "event_type": "wrong_answer_clicked",
-                    "client_ip": "203.0.113.10",
-                    "data": {"result_mode": "preview", "rewritten": True},
-                    "timestamp": now.isoformat(),
-                },
-                {
-                    "event_type": "preflight_shown",
-                    "client_ip": "198.51.100.8",
-                    "data": {"question_length": 40},
-                    "timestamp": (now - timedelta(days=2)).isoformat(),
-                },
-            ]
+        store = get_landing_review_store()
+        store.record_event(
+            event_type="preflight_shown",
+            client_tag="ip:test-client",
+            data={"question_length": 120},
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="preflight_selected",
+            client_tag="ip:test-client",
+            data={
+                "option_id": "practical-food",
+                "recommended": True,
+                "rewritten": True,
+                "question_length": 120,
+            },
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="preview_rendered",
+            client_tag="ip:test-client",
+            data={"participant_count": 3, "has_warning": True},
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="wrong_answer_clicked",
+            client_tag="ip:test-client",
+            data={"result_mode": "preview", "rewritten": True},
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="preflight_shown",
+            client_tag="ip:old-client",
+            data={"question_length": 40},
+            timestamp=(now - timedelta(days=2)).isoformat(),
         )
 
         result = handler.handle(
@@ -631,8 +635,6 @@ class TestLandingTelemetry:
         assert body["question_length"]["samples"] == 0
 
     def test_records_bounded_wrong_answer_report(self, handler):
-        from aragora.server.handlers import playground as playground_module
-
         mock_h = _MockHTTPHandler(
             "POST",
             body={
@@ -651,8 +653,9 @@ class TestLandingTelemetry:
         result = handler.handle_post("/api/v1/playground/landing/feedback", {}, mock_h)
 
         assert _status(result) == 202
-        assert len(playground_module._landing_feedback_reports) == 1
-        report = playground_module._landing_feedback_reports[0]
+        reports = get_landing_review_store().list_recent_feedback(window_seconds=3600, limit=10)
+        assert len(reports) == 1
+        report = reports[0]
         assert report["question"] == "x" * 500
         assert len(report["final_answer_preview"]) == 1200
         assert len(report["result_warning"]) == 280
@@ -677,40 +680,39 @@ class TestLandingTelemetry:
         assert _status(result) == 403
 
     def test_feedback_list_returns_recent_reports_for_admin(self, handler):
-        from aragora.server.handlers import playground as playground_module
-
         now = datetime.now(timezone.utc)
-        playground_module._landing_feedback_reports.extend(
-            [
-                {
-                    "id": "lfb_1",
-                    "timestamp": now.isoformat(),
-                    "client_tag": "ip:abc123",
-                    "question": "Should I microwave chicken nuggets for my child?",
-                    "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
-                    "final_answer_preview": "Yes, reheat until hot all the way through.",
-                    "result_warning": None,
-                    "result_mode": "preview",
-                    "debate_id": "debate-123",
-                    "verdict": "needs_review",
-                    "participant_count": 3,
-                    "rewritten": True,
-                },
-                {
-                    "id": "lfb_2",
-                    "timestamp": (now - timedelta(days=10)).isoformat(),
-                    "client_tag": "ip:def456",
-                    "question": "Old report",
-                    "interpreted_question": "Old interpreted question",
-                    "final_answer_preview": "Old answer",
-                    "result_warning": None,
-                    "result_mode": "preview",
-                    "debate_id": "debate-456",
-                    "verdict": "needs_review",
-                    "participant_count": 2,
-                    "rewritten": False,
-                },
-            ]
+        store = get_landing_review_store()
+        store.record_feedback(
+            {
+                "id": "lfb_1",
+                "timestamp": now.isoformat(),
+                "client_tag": "ip:abc123",
+                "question": "Should I microwave chicken nuggets for my child?",
+                "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
+                "final_answer_preview": "Yes, reheat until hot all the way through.",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "verdict": "needs_review",
+                "participant_count": 3,
+                "rewritten": True,
+            }
+        )
+        store.record_feedback(
+            {
+                "id": "lfb_2",
+                "timestamp": (now - timedelta(days=10)).isoformat(),
+                "client_tag": "ip:def456",
+                "question": "Old report",
+                "interpreted_question": "Old interpreted question",
+                "final_answer_preview": "Old answer",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-456",
+                "verdict": "needs_review",
+                "participant_count": 2,
+                "rewritten": False,
+            }
         )
 
         with patch.object(handler, "require_admin_or_error", return_value=(MagicMock(), None)):
