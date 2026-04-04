@@ -181,13 +181,18 @@ async def run_decide(
             title = spec_dict.get("title", task)
             print(f"[decide] Using spec: {title}")
 
+        # Convert dict to namespace so SpecBundle.from_prompt_spec can use getattr
+        from types import SimpleNamespace
+
+        spec_obj = SimpleNamespace(**spec_dict)
         plan = DecisionPlanFactory.from_specification(
-            spec_dict,
+            spec_obj,
             task=task,
             budget_limit_usd=budget_limit,
             approval_mode=approval_mode,
             metadata=metadata,
             validation_result=validation_result,
+            fail_closed_spec_validation=False,
         )
         run_id = _seed_cli_backbone_run(
             plan,
