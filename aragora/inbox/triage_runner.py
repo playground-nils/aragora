@@ -406,6 +406,13 @@ def _create_triage_agents(*, max_agents: int | None = None) -> list[Any]:
             role="proposer",
             model="claude-haiku-4-5-20251001",
         )
+    elif os.environ.get("OPENROUTER_API_KEY") and "openrouter" not in providers_used:
+        _append_agent(
+            "openrouter",
+            name="triage-proposer",
+            role="proposer",
+            model="anthropic/claude-haiku-4-5-20251001",
+        )
 
     if os.environ.get("OPENROUTER_API_KEY"):
         _append_agent(
@@ -442,6 +449,13 @@ def _create_triage_agents(*, max_agents: int | None = None) -> list[Any]:
             name="triage-reviewer",
             role="synthesizer",
             model="gpt-4.1-mini",
+        )
+    elif os.environ.get("OPENROUTER_API_KEY") and len(agents) < 2:
+        _append_agent(
+            "openrouter",
+            name="triage-reviewer",
+            role="synthesizer",
+            model="anthropic/claude-haiku-4-5-20251001",
         )
 
     if max_agents is not None:
@@ -1011,13 +1025,24 @@ class InboxTriageRunner:
                     "status": "insufficient_participation",
                 }
             except (RuntimeError, OSError, ValueError, TypeError) as exc:
-                logger.warning("Debate failed, returning blocked triage result: %s", exc)
-                return {
-                    "final_answer": "",
-                    "confidence": 0.0,
-                    "debate_id": f"err-{uuid.uuid4().hex[:8]}",
-                    "status": "failed",
-                }
+                logger.warning("Debate failed (%s), falling back to fast-tier", exc)
+                # Fall back to fast-tier rather than blocking — a single-model
+                # decision is better than no decision on escalated emails.
+                try:
+                    fast_fallback = await self._run_fast_tier_once(msg)
+                    fast_fallback["metadata"] = {
+                        **(fast_fallback.get("metadata") or {}),
+                        "debate_fallback": True,
+                        "debate_error": str(exc)[:200],
+                    }
+                    return fast_fallback
+                except Exception:
+                    return {
+                        "final_answer": "",
+                        "confidence": 0.0,
+                        "debate_id": f"err-{uuid.uuid4().hex[:8]}",
+                        "status": "failed",
+                    }
 
     async def _execute_action(self, decision: TriageDecision) -> None:
         """Execute an approved triage action via the Gmail connector.
