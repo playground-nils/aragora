@@ -184,13 +184,15 @@ class BossLoopConfig:
     issue_number: int | None = None
     issue_numbers: list[int] | None = None
     issue_limit: int = 25
-    skip_labels: set[str] = field(default_factory=lambda: {"wontfix", "duplicate", "invalid"})
+    skip_labels: set[str] = field(
+        default_factory=lambda: {"wontfix", "duplicate", "invalid", "boss-stuck"}
+    )
     require_labels: set[str] | None = None
     require_validation_contract: bool = True
 
     # Retry / self-correction
     max_consecutive_failures: int = 3
-    max_retries_per_issue: int = 5  # Generous: allows initial attempt + 2 repairs + 2 retries
+    max_retries_per_issue: int = 3  # initial attempt + 1 ping-pong + 1 repair
 
     # Dispatch
     target_branch: str = "main"
@@ -1810,12 +1812,49 @@ class BossLoop:
             )
 
         # Step 2: Select eligible issue
-        # Skip issues that have exceeded retry limits
-        already_maxed = {
-            num
-            for num, count in self._issue_attempt_counts.items()
-            if count >= self.config.max_retries_per_issue
-        }
+        # Skip issues that have exceeded retry limits and auto-label them
+        already_maxed = set()
+        for num, count in self._issue_attempt_counts.items():
+            if count >= self.config.max_retries_per_issue:
+                already_maxed.add(num)
+                # Auto-comment and label exhausted issues (best-effort, once)
+                if count == self.config.max_retries_per_issue and self.config.repo:
+                    try:
+                        import subprocess
+
+                        subprocess.run(
+                            [
+                                "gh",
+                                "issue",
+                                "comment",
+                                str(num),
+                                "--repo",
+                                self.config.repo,
+                                "--body",
+                                f"Boss loop exhausted {count} attempts on this issue without "
+                                f"producing a deliverable. The issue may be too complex for "
+                                f"autonomous micro-task workers. Consider decomposing it into "
+                                f"smaller single-file tasks or handling it manually.",
+                            ],
+                            capture_output=True,
+                            timeout=15,
+                        )
+                        subprocess.run(
+                            [
+                                "gh",
+                                "issue",
+                                "edit",
+                                str(num),
+                                "--repo",
+                                self.config.repo,
+                                "--add-label",
+                                "boss-stuck",
+                            ],
+                            capture_output=True,
+                            timeout=15,
+                        )
+                    except Exception:
+                        pass
         pending_handoffs = self._pending_handoff_candidates(issues)
         pending_issue_numbers = {issue.number for issue in pending_handoffs}
         candidate_issues = [
