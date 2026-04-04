@@ -537,6 +537,14 @@ class TestWait:
         ]
 
         with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "exit_code": 0,
+                    "ended_at": "2026-04-04T12:34:56+00:00",
+                },
+            ),
             patch.object(WorkerLauncher, "_collect_diff", return_value="diff --git a/file"),
             patch.object(
                 WorkerLauncher,
@@ -587,6 +595,14 @@ class TestWait:
         launcher._start_live_log_capture("wo-live-logs", str(worktree), mock_proc)
 
         with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "exit_code": 0,
+                    "ended_at": "2026-04-04T12:34:56+00:00",
+                },
+            ),
             patch.object(WorkerLauncher, "_collect_diff", return_value=""),
             patch.object(WorkerLauncher, "_git_output", return_value="abc123"),
             patch.object(WorkerLauncher, "_collect_commit_shas", return_value=[]),
@@ -754,6 +770,14 @@ class TestWait:
         ]
 
         with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "exit_code": 0,
+                    "ended_at": "2026-04-04T12:34:56+00:00",
+                },
+            ),
             patch.object(WorkerLauncher, "_collect_diff", return_value=""),
             patch.object(WorkerLauncher, "_git_output", return_value="abc123"),
             patch.object(WorkerLauncher, "_collect_commit_shas", return_value=["abc123"]),
@@ -768,6 +792,102 @@ class TestWait:
 
         assert result.tests_run == ["python -m pytest tests/swarm/test_worker_launcher.py -q"]
         assert result.verification_results == verification_results
+
+    @pytest.mark.asyncio
+    async def test_wait_prefers_session_exit_code_over_returncode(self):
+        launcher = WorkerLauncher(LaunchConfig(auto_commit=False))
+
+        worker = WorkerProcess(
+            work_order_id="wo-session-exit-code",
+            agent="codex",
+            worktree_path="/tmp/wt",
+            branch="main",
+            pid=100,
+            expected_tests=["python -m pytest tests/swarm/test_worker_launcher.py -q"],
+        )
+        launcher._workers["wo-session-exit-code"] = worker
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"worker output", b""))
+        mock_proc.returncode = 0
+        launcher._processes["wo-session-exit-code"] = mock_proc
+
+        with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "exit_code": 42,
+                    "ended_at": "2026-04-04T12:34:56+00:00",
+                },
+            ),
+            patch.object(WorkerLauncher, "_collect_diff", return_value=""),
+            patch.object(WorkerLauncher, "_git_output", return_value="abc123"),
+            patch.object(WorkerLauncher, "_collect_commit_shas", return_value=["abc123"]),
+            patch.object(WorkerLauncher, "_collect_changed_paths", return_value=["file.py"]),
+            patch.object(WorkerLauncher, "_auto_push", new_callable=AsyncMock) as mock_push,
+            patch.object(
+                WorkerLauncher,
+                "_run_verification_commands",
+                new_callable=AsyncMock,
+            ) as mock_verify,
+        ):
+            result = await launcher.wait("wo-session-exit-code")
+
+        assert result.exit_code == 42
+        assert result.completed_at == "2026-04-04T12:34:56+00:00"
+        mock_verify.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_wait_skips_auto_push_and_verification_without_terminal_marker(self):
+        launcher = WorkerLauncher(LaunchConfig(auto_commit=True))
+        expected_test = "python -m pytest tests/swarm/test_worker_launcher.py -q"
+
+        worker = WorkerProcess(
+            work_order_id="wo-wait-no-terminal-marker",
+            agent="codex",
+            worktree_path="/tmp/wt",
+            branch="main",
+            pid=100,
+            initial_head="def456",
+            expected_tests=[expected_test],
+        )
+        launcher._workers["wo-wait-no-terminal-marker"] = worker
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"worker output", b""))
+        mock_proc.returncode = 0
+        launcher._processes["wo-wait-no-terminal-marker"] = mock_proc
+
+        with (
+            patch.object(WorkerLauncher, "_read_session_meta", return_value={}),
+            patch.object(WorkerLauncher, "_collect_diff", return_value="diff --git a/x"),
+            patch.object(
+                WorkerLauncher,
+                "_has_working_tree_changes",
+                new=AsyncMock(return_value=True),
+            ),
+            patch.object(WorkerLauncher, "_git_output", return_value="abc123"),
+            patch.object(WorkerLauncher, "_collect_commit_shas", return_value=["abc123"]),
+            patch.object(WorkerLauncher, "_collect_changed_paths", return_value=["file.py"]),
+            patch.object(WorkerLauncher, "_auto_commit", new_callable=AsyncMock) as mock_commit,
+            patch.object(WorkerLauncher, "_auto_push", new_callable=AsyncMock) as mock_push,
+            patch.object(
+                WorkerLauncher,
+                "_run_verification_commands",
+                new_callable=AsyncMock,
+            ) as mock_verify,
+        ):
+            result = await launcher.wait("wo-wait-no-terminal-marker")
+
+        assert result.exit_code == 1
+        assert result.commit_shas == ["abc123"]
+        assert result.changed_paths == ["file.py"]
+        assert result.tests_run == []
+        assert result.verification_results == []
+        mock_commit.assert_not_awaited()
+        mock_push.assert_not_awaited()
+        mock_verify.assert_not_awaited()
 
 
 class TestLaunchAndWait:
@@ -795,6 +915,14 @@ class TestLaunchAndWait:
             patch("shutil.which", return_value="/usr/bin/claude"),
             patch.object(WorkerLauncher, "_git_output", return_value=""),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "exit_code": 0,
+                    "ended_at": "2026-04-04T12:34:56+00:00",
+                },
+            ),
             patch.object(WorkerLauncher, "_collect_diff", return_value=""),
         ):
             result = await launcher.launch_and_wait(wo, worktree_path=str(worktree))
@@ -960,6 +1088,14 @@ class TestWaitDetached:
         launcher._processes["wo-detach"] = mock_proc
 
         with (
+            patch.object(
+                WorkerLauncher,
+                "_read_session_meta",
+                return_value={
+                    "exit_code": 0,
+                    "ended_at": "2026-04-04T12:34:56+00:00",
+                },
+            ),
             patch.object(WorkerLauncher, "_collect_diff", return_value=""),
             patch.object(WorkerLauncher, "_read_log_file", return_value="log output"),
         ):
