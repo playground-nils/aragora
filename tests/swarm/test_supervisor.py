@@ -828,7 +828,6 @@ def test_refresh_run_requeues_stale_reaped_needs_human_lane(
             },
         ],
     )
-
     lifecycle = MagicMock()
     session_path = repo / "wt-stale-requeue"
     session_path.mkdir()
@@ -3554,6 +3553,10 @@ async def test_collect_results_blocks_merge_gate_when_required_checks_fail(
                 "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
                 "receipt_id": "receipt-stale",
                 "confidence": 0.91,
+                "resource_error": "old resource wait",
+                "conflicts": [{"source": "lease", "lease_id": "lease-stale"}],
+                "scope_violation": {"violations": [{"path": "old.py"}]},
+                "blockers": ["old blocker"],
             }
         ],
         status="active",
@@ -3607,6 +3610,9 @@ async def test_collect_results_blocks_merge_gate_when_required_checks_fail(
     assert wo["worker_outcome"] == "merge_gate_failed"
     assert wo["merge_gate"]["checks_passed"] is False
     assert "merge gate blocked" in wo["dispatch_error"]
+    for cleared_key in ("resource_error", "conflicts", "scope_violation"):
+        assert cleared_key not in wo
+    assert wo["blockers"] == [wo["dispatch_error"]]
 
     summary = store.status_summary()
     assert summary["counts"]["active_leases"] == 0
@@ -5197,6 +5203,9 @@ async def test_collect_finished_results_failed_worker_clears_stale_completion_me
     run.work_orders[0]["merge_gate"] = {"checks_passed": True}
     run.work_orders[0]["verification_missing_reason"] = "missing_verification_plan"
     run.work_orders[0]["scope_violation"] = {"violations": [{"path": "README.md"}]}
+    run.work_orders[0]["resource_error"] = "old resource wait"
+    run.work_orders[0]["conflicts"] = [{"source": "lease", "lease_id": "lease-stale"}]
+    run.work_orders[0]["blockers"] = ["old blocker"]
     store.update_supervisor_run(run.run_id, work_orders=run.work_orders, status="active")
 
     completed = await supervisor.collect_finished_results(run.run_id)
@@ -5216,8 +5225,11 @@ async def test_collect_finished_results_failed_worker_clears_stale_completion_me
         "merge_gate",
         "verification_missing_reason",
         "scope_violation",
+        "resource_error",
+        "conflicts",
     ):
         assert cleared_key not in work_order
+    assert work_order["blockers"] == ["fatal: boom"]
 
 
 def test_reset_worker_type_circuit_breaker_preserves_run_metadata(
@@ -6141,6 +6153,75 @@ async def test_collect_finished_results_defers_with_active_lock_and_no_usable_pi
     assert work_order["status"] == "dispatched"
     assert work_order["review_status"] == "pending"
     assert "dispatch_error" not in work_order
+
+
+@pytest.mark.asyncio
+async def test_no_progress_timeout_defers_with_active_lock_and_no_usable_pid(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    (repo / ".codex_session_active").write_text("1\n", encoding="utf-8")
+    stale = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    run_record = store.create_supervisor_run(
+        goal="active lock timeout without usable pid",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "active lock timeout without usable pid"},
+        work_orders=[
+            {
+                "work_order_id": "wo-active-lock-timeout",
+                "status": "dispatched",
+                "review_status": "pending",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "codex",
+                "pid": "oops",
+                "initial_head": "abc123",
+                "dispatched_at": stale,
+                "last_progress_at": stale,
+                "progress_fingerprint": {
+                    "head_sha": "abc123",
+                    "changed_paths": [],
+                    "diff_lines": 0,
+                },
+            }
+        ],
+        status="active",
+    )
+
+    launcher = MagicMock(spec=WorkerLauncher)
+    launcher.collect_finished = AsyncMock(return_value=[])
+    launcher.snapshot_progress = AsyncMock(
+        return_value={
+            "pid_alive": True,
+            "head_sha": "abc123",
+            "changed_paths": [],
+            "diff_lines": 0,
+        }
+    )
+    launcher.config = SimpleNamespace(auto_commit=True, no_progress_timeout_seconds=60.0)
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=launcher)
+
+    with (
+        patch.object(WorkerLauncher, "_read_session_meta", return_value={"pid": "oops"}),
+        patch.object(
+            WorkerLauncher,
+            "collect_detached_result",
+            new=AsyncMock(return_value=None),
+        ) as mock_collect,
+    ):
+        completed = await supervisor.collect_finished_results(run_record["run_id"])
+
+    assert completed == []
+    assert mock_collect.await_count == 1
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    work_order = updated["work_orders"][0]
+    assert work_order["status"] == "dispatched"
+    assert work_order["review_status"] == "pending"
+    assert "dispatch_error" not in work_order
+    assert work_order["pid"] == "oops"
 
 
 def test_session_key_unique_per_work_order() -> None:

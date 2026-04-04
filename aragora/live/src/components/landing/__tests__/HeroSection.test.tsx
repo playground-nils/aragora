@@ -22,7 +22,7 @@ jest.mock('../../DebateResultPreview', () => ({
 jest.mock('../CompactDebateResult', () => ({
   CompactDebateResult: (props: Record<string, unknown>) => {
     mockCompactDebateResult(props);
-    return <div data-testid="debate-result-preview">Debate result</div>;
+    return <div data-testid="debate-result-preview">Aragora&apos;s Answer</div>;
   },
 }));
 
@@ -118,8 +118,8 @@ describe('HeroSection', () => {
     it('renders ASCII banner on larger screens', () => {
       render(<HeroSection {...defaultProps} />);
 
-      // ASCII banner is in a pre element with specific class
-      const banner = document.querySelector('pre.text-acid-green');
+      // ASCII banner is rendered in the desktop-only preformatted block.
+      const banner = document.querySelector('pre.hidden.sm\\:block');
       expect(banner).toBeInTheDocument();
       // Banner is stylized ASCII art, just verify it has content
       expect(banner?.textContent?.length).toBeGreaterThan(100);
@@ -380,7 +380,6 @@ describe('HeroSection', () => {
           }),
         }),
       );
-      expect(screen.getByRole('button', { name: /try another/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /try another/i })).toBeInTheDocument();
     });
   });
