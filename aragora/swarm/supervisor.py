@@ -1936,6 +1936,12 @@ class SwarmSupervisor:
                     "worker exceeded no-progress timeout "
                     f"({int(self._no_progress_timeout_seconds())}s)"
                 )
+                if (
+                    worktree_path
+                    and WorkerLauncher._normalized_pid(item.get("pid")) is None
+                    and WorkerLauncher._active_session_lock_blocks_collection(worktree_path, None)
+                ):
+                    continue
                 # Kill the worker before collecting results so the process
                 # releases file handles and the worktree is stable for git.
                 await self._kill_worker(item)
