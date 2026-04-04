@@ -3234,6 +3234,14 @@ async def test_collect_results_records_passed_merge_gate_checks(
                 "file_scope": ["aragora/swarm/supervisor.py"],
                 "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
                 "receipt_id": None,
+                "dispatch_error": "old dispatch failure",
+                "resource_error": "old resource error",
+                "failure_reason": "worker_crash",
+                "blocking_question": "Old blocker?",
+                "blocker": {"reason": "worker_crash", "question": "Old blocker?"},
+                "blockers": ["old blocker"],
+                "conflicts": [{"source": "lease", "lease_id": "old-lease"}],
+                "scope_violation": {"violations": [{"path": "old.py"}]},
             }
         ],
         status="active",
@@ -3286,6 +3294,17 @@ async def test_collect_results_records_passed_merge_gate_checks(
     assert store.get_completion_receipt(wo["receipt_id"]) is not None
     assert wo["merge_gate"]["checks_passed"] is True
     assert wo["merge_gate"]["human_approval_required"] is True
+    for cleared_key in (
+        "dispatch_error",
+        "resource_error",
+        "failure_reason",
+        "blocking_question",
+        "blocker",
+        "blockers",
+        "conflicts",
+        "scope_violation",
+    ):
+        assert cleared_key not in wo
 
 
 @pytest.mark.asyncio
