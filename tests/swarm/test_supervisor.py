@@ -5343,6 +5343,12 @@ async def test_collect_finished_results_marks_dead_dispatched_worker_needs_human
                 "initial_head": "abc123",
                 "dispatched_at": "2026-03-06T00:00:00+00:00",
                 "last_progress_at": "2026-03-06T00:00:00+00:00",
+                "receipt_id": "receipt-stale",
+                "confidence": 0.97,
+                "commit_shas": ["stale123"],
+                "pr_url": "https://example.com/pr/123",
+                "merge_gate": {"checks_passed": True},
+                "verification_missing_reason": "stale-check",
                 "progress_fingerprint": {
                     "head_sha": "abc123",
                     "changed_paths": [],
@@ -5380,6 +5386,17 @@ async def test_collect_finished_results_marks_dead_dispatched_worker_needs_human
     assert work_order["failure_reason"] == "worker_exited_without_receipt"
     assert "existing worktree" in work_order["blocking_question"]
     assert "pid" not in work_order
+    assert work_order["worker_outcome"] == "crash"
+    for key in (
+        "receipt_id",
+        "confidence",
+        "commit_shas",
+        "pr_url",
+        "merge_gate",
+        "verification_missing_reason",
+        "exit_code",
+    ):
+        assert key not in work_order
 
 
 @pytest.mark.asyncio
@@ -5648,6 +5665,14 @@ async def test_collect_finished_results_marks_no_progress_timeout_needs_human(
                 "initial_head": "abc123",
                 "dispatched_at": stale_time,
                 "last_progress_at": stale_time,
+                "receipt_id": "receipt-stale",
+                "confidence": 0.99,
+                "commit_shas": ["stale456"],
+                "pr_url": "https://example.com/pr/456",
+                "merge_gate": {"checks_passed": True},
+                "verification_missing_reason": "stale-plan",
+                "stdout_tail": "stalled output\n",
+                "stderr_tail": "stalled warning\n",
                 "progress_fingerprint": {
                     "head_sha": "abc123",
                     "changed_paths": [],
@@ -5684,6 +5709,17 @@ async def test_collect_finished_results_marks_no_progress_timeout_needs_human(
     assert "no-progress timeout" in work_order["dispatch_error"]
     assert work_order["failure_reason"] == "worker_no_progress_timeout"
     assert "stalled lane" in work_order["blocking_question"]
+    assert work_order["worker_outcome"] == "timeout_no_progress"
+    for key in (
+        "receipt_id",
+        "confidence",
+        "commit_shas",
+        "pr_url",
+        "merge_gate",
+        "verification_missing_reason",
+        "exit_code",
+    ):
+        assert key not in work_order
 
 
 def test_no_progress_timeout_uses_recent_output_when_bytes_exist(
