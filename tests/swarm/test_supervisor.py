@@ -5146,6 +5146,9 @@ async def test_collect_finished_results_failed_worker_clears_stale_completion_me
     run.work_orders[0]["merge_gate"] = {"checks_passed": True}
     run.work_orders[0]["verification_missing_reason"] = "missing_verification_plan"
     run.work_orders[0]["scope_violation"] = {"violations": [{"path": "README.md"}]}
+    run.work_orders[0]["resource_error"] = "old resource wait"
+    run.work_orders[0]["conflicts"] = [{"source": "lease", "lease_id": "lease-stale"}]
+    run.work_orders[0]["blockers"] = ["old blocker"]
     store.update_supervisor_run(run.run_id, work_orders=run.work_orders, status="active")
 
     completed = await supervisor.collect_finished_results(run.run_id)
@@ -5165,8 +5168,11 @@ async def test_collect_finished_results_failed_worker_clears_stale_completion_me
         "merge_gate",
         "verification_missing_reason",
         "scope_violation",
+        "resource_error",
+        "conflicts",
     ):
         assert cleared_key not in work_order
+    assert work_order["blockers"] == ["fatal: boom"]
 
 
 def test_reset_worker_type_circuit_breaker_preserves_run_metadata(
