@@ -162,7 +162,7 @@ export function SocialLoginButtons({ mode }: SocialLoginButtonsProps) {
       </div>
 
       {error && (
-        <p className="text-xs font-mono text-warning text-center">{error}</p>
+        <p className="text-xs font-theme-data text-warning text-center">{error}</p>
       )}
     </div>
   );
