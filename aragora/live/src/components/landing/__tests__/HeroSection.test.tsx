@@ -5,6 +5,7 @@ import { HeroSection } from '../HeroSection';
 const mockPush = jest.fn();
 const mockBackendConfig = { api: 'http://localhost:8080' };
 const mockDebateResultPreview = jest.fn();
+const mockCompactDebateResult = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -21,6 +22,13 @@ jest.mock('../../DebateResultPreview', () => ({
   },
   RETURN_URL_KEY: 'return_url',
   PENDING_DEBATE_KEY: 'pending_debate',
+}));
+
+jest.mock('../CompactDebateResult', () => ({
+  CompactDebateResult: (props: Record<string, unknown>) => {
+    mockCompactDebateResult(props);
+    return <div data-testid="compact-debate-result">Compact result</div>;
+  },
 }));
 
 jest.mock('../../BackendSelector', () => ({
@@ -204,9 +212,30 @@ describe('HeroSection', () => {
   describe('landing mode backend resolution', () => {
     it('uses the same-origin API proxy when the backend hook resolves an empty local API base', async () => {
       const user = userEvent.setup();
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: 'completed' }),
+      const fetchMock = jest.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/assess')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              type: 'ready',
+              option: {
+                id: 'original',
+                label: 'Demo',
+                description: 'Demo debate',
+                originalQuestion: 'Should we migrate our monolithic app to microservices?',
+                interpretedQuestion: 'Should we migrate our monolithic app to microservices?',
+                debatePrompt: 'Should we migrate our monolithic app to microservices?',
+                agents: 3,
+                rounds: 2,
+              },
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'completed', id: null }),
+        });
       });
       mockBackendConfig.api = '';
       global.fetch = fetchMock as typeof fetch;
@@ -225,9 +254,47 @@ describe('HeroSection', () => {
 
     it('shows a preflight chooser for ambiguous landing prompts before debating', async () => {
       const user = userEvent.setup();
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({}),
+      const fetchMock = jest.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/assess')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              type: 'confirm',
+              preflight: {
+                title: 'This question could mean a few things',
+                prompt: 'Pick the interpretation you want AI to debate:',
+                options: [
+                  {
+                    id: 'food-safety',
+                    label: 'Practical food-safety first',
+                    description: 'Is it safe to microwave chicken from a food safety standpoint?',
+                    originalQuestion: 'Should I cook my chickens in a microwave?',
+                    interpretedQuestion: 'Is it safe to microwave chicken from a food safety standpoint?',
+                    debatePrompt: 'Is it safe to microwave chicken from a food safety standpoint?',
+                    agents: 3,
+                    rounds: 2,
+                    recommended: true,
+                  },
+                  {
+                    id: 'live-chicken',
+                    label: 'Ethical concern: live animals',
+                    description: 'Should live animals ever be cooked in a microwave?',
+                    originalQuestion: 'Should I cook my chickens in a microwave?',
+                    interpretedQuestion: 'Should live animals ever be cooked in a microwave?',
+                    debatePrompt: 'Should live animals ever be cooked in a microwave?',
+                    agents: 3,
+                    rounds: 2,
+                  },
+                ],
+              },
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({}),
+        });
       });
       global.fetch = fetchMock as typeof fetch;
 
@@ -239,9 +306,11 @@ describe('HeroSection', () => {
       );
       await user.click(screen.getByRole('button', { name: /start debate/i }));
 
-      expect(
-        screen.getByRole('heading', { name: /choose which version of the question to debate/i })
-      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.getByRole('heading', { name: /this question could mean a few things/i })
+        ).toBeInTheDocument();
+      });
       expect(screen.getByRole('button', { name: /practical food-safety first/i })).toBeInTheDocument();
       expect(fetchMock).not.toHaveBeenCalledWith(
         expect.stringContaining('/api/v1/playground/debate'),
@@ -251,35 +320,48 @@ describe('HeroSection', () => {
 
     it('renders the landing preview in condensed mode after a successful debate', async () => {
       const user = userEvent.setup();
+      const debateResponse = {
+        id: 'debate-123',
+        topic: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+        status: 'completed',
+        rounds_used: 1,
+        consensus_reached: false,
+        confidence: 0.7,
+        verdict: 'needs_review',
+        duration_seconds: 8,
+        participants: ['gpt', 'claude', 'grok'],
+        proposals: { gpt: 'Yes, if heated safely.' },
+        critiques: [],
+        votes: [],
+        dissenting_views: [],
+        final_answer: 'Yes, if heated safely.',
+        receipt: null,
+        receipt_hash: null,
+        result_mode: 'preview',
+      };
       const fetchMock = jest.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/api/v1/playground/landing/events')) {
+        if (url.includes('/assess')) {
           return Promise.resolve({
             ok: true,
-            json: async () => ({}),
+            json: async () => ({
+              type: 'ready',
+              option: {
+                id: 'original',
+                label: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                description: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                originalQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                interpretedQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                debatePrompt: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                agents: 3,
+                rounds: 2,
+              },
+            }),
           });
         }
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            id: 'debate-123',
-            topic: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
-            status: 'completed',
-            rounds_used: 1,
-            consensus_reached: false,
-            confidence: 0.7,
-            verdict: 'needs_review',
-            duration_seconds: 8,
-            participants: ['gpt', 'claude', 'grok'],
-            proposals: { gpt: 'Yes, if heated safely.' },
-            critiques: [],
-            votes: [],
-            dissenting_views: [],
-            final_answer: 'Yes, if heated safely.',
-            receipt: null,
-            receipt_hash: null,
-            result_mode: 'preview',
-          }),
+          json: async () => debateResponse,
         });
       });
       global.fetch = fetchMock as typeof fetch;
@@ -293,14 +375,12 @@ describe('HeroSection', () => {
       await user.click(screen.getByRole('button', { name: /start debate/i }));
 
       await waitFor(() => {
-        expect(screen.getByTestId('debate-result-preview')).toBeInTheDocument();
+        expect(screen.getByTestId('compact-debate-result')).toBeInTheDocument();
       });
 
-      expect(mockDebateResultPreview).toHaveBeenCalledWith(
+      expect(mockCompactDebateResult).toHaveBeenCalledWith(
         expect.objectContaining({
-          condensed: true,
-          onFlagWrongAnswer: expect.any(Function),
-          onOpenFullDebate: expect.any(Function),
+          onWrongAnswer: expect.any(Function),
           onShare: expect.any(Function),
           result: expect.objectContaining({
             original_question: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
