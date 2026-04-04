@@ -3739,6 +3739,7 @@ class SwarmSupervisor:
         worker_type: str,
         detail: str,
     ) -> None:
+        self._clear_stale_prelaunch_deliverable_state(item)
         metadata = dict(item.get("metadata") or {})
         metadata.update(
             {
