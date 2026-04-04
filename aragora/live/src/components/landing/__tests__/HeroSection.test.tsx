@@ -118,8 +118,8 @@ describe('HeroSection', () => {
     it('renders ASCII banner on larger screens', () => {
       render(<HeroSection {...defaultProps} />);
 
-      // ASCII banner is in a pre element with specific class
-      const banner = document.querySelector('pre.text-acid-green');
+      // ASCII banner is rendered in the desktop-only preformatted block.
+      const banner = document.querySelector('pre.hidden.sm\\:block');
       expect(banner).toBeInTheDocument();
       // Banner is stylized ASCII art, just verify it has content
       expect(banner?.textContent?.length).toBeGreaterThan(100);
@@ -366,7 +366,7 @@ describe('HeroSection', () => {
       await user.click(screen.getByRole('button', { name: /start debate/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/Aragora's Answer/i)).toBeInTheDocument();
+        expect(screen.getByTestId('debate-result-preview')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /view full debate/i })).toBeInTheDocument();
       });
 
@@ -380,7 +380,6 @@ describe('HeroSection', () => {
           }),
         }),
       );
-      expect(screen.getByRole('button', { name: /try another/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /try another/i })).toBeInTheDocument();
     });
   });
