@@ -2273,6 +2273,10 @@ class PlaygroundHandler(BaseHandler):
         # Client-provided debate ID — allows the frontend to subscribe to
         # spectate WebSocket events *before* the HTTP POST returns.
         client_debate_id = str(body.get("debate_id", "") or "").strip() or None
+        if client_debate_id and (
+            len(str(client_debate_id)) > 64 or not str(client_debate_id).isascii()
+        ):
+            client_debate_id = None
 
         try:
             rounds = int(body.get("rounds", _DEFAULT_ROUNDS))
@@ -2427,11 +2431,16 @@ class PlaygroundHandler(BaseHandler):
         if not question:
             return json_response({"type": "ready", "option": self._build_ready_option("")})
 
-        # Rate limit: reuse the existing per-IP check (10 per 60s for assess)
+        if len(question) > _MAX_TOPIC_LENGTH:
+            return json_response(
+                {"type": "ready", "option": self._build_ready_option(question[:200])}
+            )
+
+        # Rate limit: reuse the existing per-IP check (5 per 60s for assess)
         client_ip = _extract_client_ip(handler)
         allowed, retry_after = _check_rate_limit(
             f"assess:{client_ip}",
-            limit=10,
+            limit=5,
             window=60.0,
         )
         if not allowed:

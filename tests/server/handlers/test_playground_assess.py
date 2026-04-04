@@ -16,12 +16,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from aragora.server.handlers.playground import PlaygroundHandler
+from aragora.server.handlers.playground import PlaygroundHandler, _reset_rate_limits
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits() -> None:
+    """Reset rate limit state before each test to prevent cross-test interference."""
+    _reset_rate_limits()
 
 
 @pytest.fixture()
