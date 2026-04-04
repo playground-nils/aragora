@@ -24,15 +24,8 @@ test.describe('Debate Viewing', () => {
     await aragoraPage.dismissAllOverlays();
     await page.waitForLoadState('domcontentloaded');
 
-    // Should show debate topic somewhere on page (h1, h2, task section, or any text container)
-    const topicElement = page.locator('h1, h2, [class*="topic"], [class*="task"], .font-mono').filter({
-      hasText: new RegExp(mockDebate.topic.substring(0, 10), 'i')
-    }).first();
-
-    // May also just show general debate content without exact topic match
-    const debateContent = page.locator('main').first();
-
-    await expect(topicElement.or(debateContent)).toBeVisible({ timeout: 10000 });
+    const topicHeading = page.getByRole('heading', { name: new RegExp(mockDebate.topic, 'i') }).first();
+    await expect(topicHeading).toBeVisible({ timeout: 10000 });
   });
 
   test('should display agent messages', async ({ page, aragoraPage }) => {
@@ -99,11 +92,8 @@ test.describe('Debate Viewing', () => {
     await aragoraPage.dismissAllOverlays();
     await page.waitForLoadState('domcontentloaded');
 
-    // Should show round information (or general debate content)
-    const roundElement = page.locator('text=/round|r1|r2|cycle/i').first();
-    const mainContent = page.locator('main').first();
-
-    await expect(roundElement.or(mainContent)).toBeVisible({ timeout: 10000 });
+    const roundElement = page.getByText(/rounds?/i).first();
+    await expect(roundElement).toBeVisible({ timeout: 10000 });
   });
 });
 
