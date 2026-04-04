@@ -6269,6 +6269,75 @@ async def test_collect_finished_results_defers_with_active_lock_and_no_usable_pi
     assert "dispatch_error" not in work_order
 
 
+@pytest.mark.asyncio
+async def test_no_progress_timeout_defers_with_active_lock_and_no_usable_pid(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    (repo / ".codex_session_active").write_text("1\n", encoding="utf-8")
+    stale = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    run_record = store.create_supervisor_run(
+        goal="active lock timeout without usable pid",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "active lock timeout without usable pid"},
+        work_orders=[
+            {
+                "work_order_id": "wo-active-lock-timeout",
+                "status": "dispatched",
+                "review_status": "pending",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "codex",
+                "pid": "oops",
+                "initial_head": "abc123",
+                "dispatched_at": stale,
+                "last_progress_at": stale,
+                "progress_fingerprint": {
+                    "head_sha": "abc123",
+                    "changed_paths": [],
+                    "diff_lines": 0,
+                },
+            }
+        ],
+        status="active",
+    )
+
+    launcher = MagicMock(spec=WorkerLauncher)
+    launcher.collect_finished = AsyncMock(return_value=[])
+    launcher.snapshot_progress = AsyncMock(
+        return_value={
+            "pid_alive": True,
+            "head_sha": "abc123",
+            "changed_paths": [],
+            "diff_lines": 0,
+        }
+    )
+    launcher.config = SimpleNamespace(auto_commit=True, no_progress_timeout_seconds=60.0)
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=launcher)
+
+    with (
+        patch.object(WorkerLauncher, "_read_session_meta", return_value={"pid": "oops"}),
+        patch.object(
+            WorkerLauncher,
+            "collect_detached_result",
+            new=AsyncMock(return_value=None),
+        ) as mock_collect,
+    ):
+        completed = await supervisor.collect_finished_results(run_record["run_id"])
+
+    assert completed == []
+    assert mock_collect.await_count == 1
+    updated = store.get_supervisor_run(run_record["run_id"])
+    assert updated is not None
+    work_order = updated["work_orders"][0]
+    assert work_order["status"] == "dispatched"
+    assert work_order["review_status"] == "pending"
+    assert "dispatch_error" not in work_order
+    assert work_order["pid"] == "oops"
+
+
 def test_session_key_unique_per_work_order() -> None:
     """Regression: subtask_1/subtask_2/subtask_3 must NOT collide into one worktree."""
     run_id = "abcdef12-3456"
