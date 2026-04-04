@@ -27,6 +27,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlencode
 
+import httpx
 import pytest
 from aragora.rbac.models import AuthorizationContext
 
@@ -1091,6 +1092,30 @@ class TestCallback:
         assert _status(result) == 400
         body = _body(result)
         assert "invalid_code" in body.get("error", "")
+
+    @pytest.mark.asyncio
+    async def test_callback_http_status_error_returns_500(self, handler):
+        mock_client, mock_response = _make_httpx_mock({"ok": False, "error": "invalid_code"}, 400)
+        request = httpx.Request("POST", "https://slack.com/api/oauth.v2.access")
+        response = httpx.Response(400, request=request)
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "400 Client Error",
+            request=request,
+            response=response,
+        )
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await handler.handle(
+                "GET",
+                "/api/integrations/slack/callback",
+                {},
+                {"code": "bad-code", "state": "test-state-token-abc123"},
+                {},
+                None,
+            )
+        assert _status(result) == 500
+        body = _body(result)
+        assert "token exchange failed" in body.get("error", "").lower()
 
     @pytest.mark.asyncio
     async def test_callback_missing_workspace_id_returns_500(self, handler):
