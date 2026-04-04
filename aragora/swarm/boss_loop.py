@@ -1062,6 +1062,124 @@ class BossLoop:
             "comment": comment,
         }
 
+    def _auto_decompose_stuck_issue(
+        self,
+        issue_number: int | str,
+        issues: list[GitHubIssue],
+    ) -> None:
+        """When an issue exhausts retries, try to decompose it into sub-issues.
+
+        Uses the TaskDecomposer to break the issue into smaller pieces, then
+        creates sub-issues on GitHub with the boss-ready label. If decomposition
+        fails or produces nothing useful, falls back to labeling boss-stuck.
+        """
+        import subprocess
+
+        repo = self.config.repo or ""
+        issue = next((i for i in issues if i.number == int(issue_number)), None)
+        if not issue:
+            return
+
+        # Try LLM-based decomposition
+        sub_issues_created = 0
+        try:
+            from aragora.nomic.task_decomposer import TaskDecomposer
+
+            decomposer = TaskDecomposer()
+            result = decomposer.analyze(
+                issue.body or issue.title,
+                file_scope_hints=list(self._extract_file_scope_hints(issue.body or "")),
+            )
+
+            if result.should_decompose and result.subtasks:
+                for subtask in result.subtasks[:5]:  # Cap at 5 sub-issues
+                    title = f"[from #{issue.number}] {subtask.title}"
+                    scope_lines = (
+                        "\n".join(f"- `{f}`" for f in subtask.file_scope)
+                        if subtask.file_scope
+                        else "- (infer from context)"
+                    )
+                    body = (
+                        f"Auto-decomposed from #{issue.number} after {self.config.max_retries_per_issue} "
+                        f"failed autonomous attempts.\n\n"
+                        f"## Task\n{subtask.description}\n\n"
+                        f"## Files\n{scope_lines}\n\n"
+                        f"## Acceptance\n"
+                        f"`pytest` on the changed files passes\n\n"
+                        f"## Constraints\n"
+                        f"- Single-file change preferred\n"
+                        f"- Under 100 lines of new/changed code\n"
+                        f"- Estimated complexity: {subtask.estimated_complexity}\n"
+                    )
+                    try:
+                        proc = subprocess.run(
+                            [
+                                "gh",
+                                "issue",
+                                "create",
+                                "--repo",
+                                repo,
+                                "--title",
+                                title,
+                                "--body",
+                                body,
+                                "--label",
+                                "boss-ready",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                        )
+                        if proc.returncode == 0:
+                            sub_issues_created += 1
+                    except Exception:
+                        pass
+
+        except Exception as exc:
+            logger.debug("Auto-decomposition failed for #%s: %s", issue_number, exc)
+
+        # Comment on the parent issue
+        if sub_issues_created > 0:
+            comment = (
+                f"Boss loop exhausted {self.config.max_retries_per_issue} attempts. "
+                f"Auto-decomposed into {sub_issues_created} smaller sub-issues with `boss-ready` label."
+            )
+        else:
+            comment = (
+                f"Boss loop exhausted {self.config.max_retries_per_issue} attempts without "
+                f"producing a deliverable. The issue may be too complex for autonomous workers."
+            )
+
+        try:
+            subprocess.run(
+                ["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment],
+                capture_output=True,
+                timeout=15,
+            )
+            subprocess.run(
+                [
+                    "gh",
+                    "issue",
+                    "edit",
+                    str(issue_number),
+                    "--repo",
+                    repo,
+                    "--add-label",
+                    "boss-stuck",
+                ],
+                capture_output=True,
+                timeout=15,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _extract_file_scope_hints(body: str) -> list[str]:
+        """Extract file paths from an issue body."""
+        import re
+
+        return re.findall(r"`((?:aragora|tests)/[a-zA-Z0-9_/.-]+\.py)`", body)
+
     def _maybe_publish_deliverable(
         self,
         issue: GitHubIssue,
@@ -1817,44 +1935,9 @@ class BossLoop:
         for num, count in self._issue_attempt_counts.items():
             if count >= self.config.max_retries_per_issue:
                 already_maxed.add(num)
-                # Auto-comment and label exhausted issues (best-effort, once)
+                # Auto-decompose exhausted issues into sub-issues (best-effort, once)
                 if count == self.config.max_retries_per_issue and self.config.repo:
-                    try:
-                        import subprocess
-
-                        subprocess.run(
-                            [
-                                "gh",
-                                "issue",
-                                "comment",
-                                str(num),
-                                "--repo",
-                                self.config.repo,
-                                "--body",
-                                f"Boss loop exhausted {count} attempts on this issue without "
-                                f"producing a deliverable. The issue may be too complex for "
-                                f"autonomous micro-task workers. Consider decomposing it into "
-                                f"smaller single-file tasks or handling it manually.",
-                            ],
-                            capture_output=True,
-                            timeout=15,
-                        )
-                        subprocess.run(
-                            [
-                                "gh",
-                                "issue",
-                                "edit",
-                                str(num),
-                                "--repo",
-                                self.config.repo,
-                                "--add-label",
-                                "boss-stuck",
-                            ],
-                            capture_output=True,
-                            timeout=15,
-                        )
-                    except Exception:
-                        pass
+                    self._auto_decompose_stuck_issue(num, issues)
         pending_handoffs = self._pending_handoff_candidates(issues)
         pending_issue_numbers = {issue.number for issue in pending_handoffs}
         candidate_issues = [

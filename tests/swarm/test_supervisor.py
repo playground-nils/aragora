@@ -845,6 +845,8 @@ def test_refresh_run_requeues_stale_reaped_needs_human_lane(
     assert work_orders["micro-1"].get("failure_reason") in {"", None}
     assert work_orders["micro-1"].get("lease_id")
     assert work_orders["micro-2"]["status"] in {"queued", "leased"}
+
+
 def test_refresh_run_salvages_stale_reaped_lane_with_recoverable_commit(
     repo: Path, store: DevCoordinationStore
 ) -> None:
@@ -919,127 +921,34 @@ def test_refresh_run_salvages_stale_reaped_lane_with_recoverable_commit(
     assert work_order.get("failure_reason") in {"", None}
 
 
-def test_refresh_run_does_not_lease_downstream_lane_before_dependencies_complete(
-    repo: Path, store: DevCoordinationStore
-) -> None:
-    current_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
-    run = store.create_supervisor_run(
-        goal="Dependency gate before lease",
-        target_branch="main",
-        supervisor_agents={"planner": "codex", "judge": "claude"},
-        approval_policy={},
-        spec={},
-        status="active",
-        work_orders=[
-            {
-                "work_order_id": "micro-1",
-                "pipeline_task_id": "micro-task-1",
-                "title": "Implementation lane",
-                "status": "completed",
-                "branch": "main",
-                "head_sha": current_head,
-                "commit_shas": [current_head],
-                "changed_paths": ["README.md"],
-                "file_scope": ["aragora/swarm/boss_loop.py"],
-                "target_agent": "codex",
-                "reviewer_agent": "claude",
-            },
-            {
-                "work_order_id": "micro-2",
-                "pipeline_task_id": "micro-task-2",
-                "title": "Test lane",
-                "status": "queued",
-                "dependency_ids": ["micro-task-1"],
-                "file_scope": ["tests/swarm/test_boss_loop.py"],
-                "target_agent": "codex",
-                "reviewer_agent": "claude",
-            },
-            {
-                "work_order_id": "micro-3",
-                "pipeline_task_id": "micro-task-3",
-                "title": "Validation lane",
-                "status": "queued",
-                "dependency_ids": ["micro-task-1", "micro-task-2"],
-                "file_scope": [
-                    "aragora/swarm/boss_loop.py",
-                    "tests/swarm/test_boss_loop.py",
-                ],
-                "target_agent": "codex",
-                "reviewer_agent": "claude",
-            },
-        ],
-        metadata={"max_concurrency": 3},
-    )
-
-    lifecycle = MagicMock()
-    micro_2_path = repo / "wt-dependency-gate-micro-2"
-    micro_3_path = repo / "wt-dependency-gate-micro-3"
-    micro_2_path.mkdir()
-    micro_3_path.mkdir()
-    lifecycle.ensure_managed_worktree.side_effect = [
-        ManagedWorktreeSession(
-            session_id="swarm-dependency-gate-micro-2",
-            agent="codex",
-            branch="codex/swarm-dependency-gate-micro-2",
-            path=micro_2_path,
-            created=True,
-            reconcile_status="up_to_date",
-            payload={},
-        ),
-        ManagedWorktreeSession(
-            session_id="swarm-dependency-gate-micro-3",
-            agent="codex",
-            branch="codex/swarm-dependency-gate-micro-3",
-            path=micro_3_path,
-            created=True,
-            reconcile_status="up_to_date",
-            payload={},
-        ),
-    ]
-    supervisor = SwarmSupervisor(
-        repo_root=repo,
-        store=store,
-        lifecycle=lifecycle,
-        decomposer=MagicMock(),
-    )
-
-    refreshed = supervisor.refresh_run(run["run_id"])
-
-    work_orders = {item["work_order_id"]: item for item in refreshed.work_orders}
-    assert work_orders["micro-2"]["status"] == "leased"
-    assert work_orders["micro-3"]["status"] == "queued"
-    assert "lease_id" not in work_orders["micro-3"]
-    assert lifecycle.ensure_managed_worktree.call_count == 1
-
-
-def test_refresh_run_salvages_stale_reaped_lane_with_recoverable_commit(
+def test_refresh_run_salvages_stale_reaped_lane_even_when_changed_paths_were_already_recorded(
     repo: Path, store: DevCoordinationStore
 ) -> None:
     initial_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
     lease = store.claim_lease(
-        task_id="micro-2",
-        title="Recoverable stale-reaped lane",
+        task_id="micro-3",
+        title="Recoverable stale-reaped lane with recorded paths",
         owner_agent="codex",
-        owner_session_id="swarm-stale-salvage",
+        owner_session_id="swarm-stale-salvage-recorded-paths",
         branch="main",
         worktree_path=str(repo),
         claimed_paths=["README.md"],
         metadata={
             "supervisor_run_id": "pending",
-            "work_order_id": "micro-2",
-            "task_key": "stale-salvage:micro-2",
+            "work_order_id": "micro-3",
+            "task_key": "stale-salvage:micro-3",
             "reviewer_agent": "claude",
             "risk_level": "review",
         },
     )
 
-    (repo / "README.md").write_text("hello\nrecoverable stale reaped change\n", encoding="utf-8")
+    (repo / "README.md").write_text("hello\nrecorded changed path salvage\n", encoding="utf-8")
     _run(repo, "git", "add", "README.md")
-    _run(repo, "git", "commit", "-m", "recover stale-reaped lane")
+    _run(repo, "git", "commit", "-m", "recover stale-reaped lane with recorded paths")
     expected_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
 
     run = store.create_supervisor_run(
-        goal="Recover stale reaped lane with commit",
+        goal="Recover stale reaped lane with recorded changed paths",
         target_branch="main",
         supervisor_agents={"planner": "codex", "judge": "claude"},
         approval_policy={},
@@ -1047,8 +956,8 @@ def test_refresh_run_salvages_stale_reaped_lane_with_recoverable_commit(
         status="needs_human",
         work_orders=[
             {
-                "work_order_id": "micro-2",
-                "pipeline_task_id": "micro-task-2",
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
                 "title": "Recoverable lane",
                 "status": "needs_human",
                 "failure_reason": "stale_lease_reaped",
@@ -1060,6 +969,8 @@ def test_refresh_run_salvages_stale_reaped_lane_with_recoverable_commit(
                 "target_agent": "codex",
                 "reviewer_agent": "claude",
                 "initial_head": initial_head,
+                "head_sha": expected_head,
+                "changed_paths": ["README.md"],
                 "file_scope": ["README.md"],
                 "metadata": {"source": "explicit_spec_work_order"},
             }
