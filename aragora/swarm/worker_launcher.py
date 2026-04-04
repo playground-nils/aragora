@@ -1090,6 +1090,7 @@ class WorkerLauncher:
         initial_head: str = "",
         auto_commit: bool = True,
         expected_tests: list[str] | None = None,
+        allow_session_meta_pid_fallback: bool = True,
     ) -> WorkerProcess | None:
         """Collect results from a detached worker by checking PID and worktree state.
 
@@ -1099,13 +1100,20 @@ class WorkerLauncher:
         session_meta = cls._read_session_meta(worktree_path)
         session_exit_code, session_completed_at = cls._terminal_session_result(session_meta)
         observed_pid = cls._normalized_pid(pid)
-        lock_pid = cls._pid_for_active_lock(worktree_path, observed_pid, session_meta)
-        if observed_pid is None:
+        if observed_pid is None and allow_session_meta_pid_fallback:
             observed_pid = cls._normalized_pid(session_meta.get("pid"))
+        lock_pid = (
+            cls._pid_for_active_lock(worktree_path, observed_pid, session_meta)
+            if allow_session_meta_pid_fallback
+            else observed_pid
+        )
         missing_terminal_marker = session_exit_code is None
         cleanup_artifacts = True
         preserve_terminal_evidence = False
-        if cls._active_session_lock_blocks_collection(worktree_path, lock_pid):
+        should_honor_active_lock = allow_session_meta_pid_fallback or observed_pid is not None
+        if should_honor_active_lock and cls._active_session_lock_blocks_collection(
+            worktree_path, lock_pid
+        ):
             return None
         elif (
             missing_terminal_marker

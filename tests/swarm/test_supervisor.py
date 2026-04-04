@@ -16,11 +16,12 @@ from aragora.nomic.task_decomposer import SubTask, TaskDecomposition
 from aragora.swarm.spec import SwarmSpec
 from aragora.swarm.supervisor import (
     CAMPAIGN_OUTCOME_METADATA_KEY,
+    LAUNCHER_CONFIG_METADATA_KEY,
     WORKER_TYPE_CIRCUIT_BREAKERS_KEY,
     WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY,
     SwarmSupervisor,
 )
-from aragora.swarm.worker_launcher import WorkerLauncher, WorkerProcess
+from aragora.swarm.worker_launcher import LaunchConfig, WorkerLauncher, WorkerProcess
 from aragora.worktree.lifecycle import ManagedWorktreeSession
 
 
@@ -116,6 +117,131 @@ def test_start_run_creates_leased_work_orders(repo: Path, store: DevCoordination
     assert {item["status"] for item in run.work_orders} == {"leased"}
     assert store.status_summary()["counts"]["supervisor_runs"] == 1
     assert store.status_summary()["counts"]["active_leases"] == 2
+
+
+@pytest.mark.asyncio
+async def test_dispatch_workers_reuses_persisted_launcher_profile(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    session = ManagedWorktreeSession(
+        session_id="swarm-test",
+        agent="codex",
+        branch="codex/swarm-test",
+        path=repo / "wt-test",
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    session.path.mkdir()
+
+    seed_launcher = MagicMock(spec=WorkerLauncher)
+    seed_launcher.config = LaunchConfig(
+        require_explicit_approval=False,
+        use_managed_session_script=False,
+        detach=True,
+    )
+    seed_supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+        launcher=seed_launcher,
+    )
+    run = seed_supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal="Add a test",
+            refined_goal="Add a test",
+            work_orders=[
+                {
+                    "work_order_id": "micro-1",
+                    "title": "Write the test",
+                    "description": "Add the regression test.",
+                    "file_scope": ["README.md"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                }
+            ],
+        ),
+        refresh_scaling=False,
+    )
+
+    persisted = run.metadata[LAUNCHER_CONFIG_METADATA_KEY]
+    assert persisted["require_explicit_approval"] is False
+    assert persisted["use_managed_session_script"] is False
+    assert persisted["detach"] is True
+
+    lifecycle = MagicMock()
+    lifecycle.ensure_managed_worktree.return_value = session
+    resume_launcher = MagicMock(spec=WorkerLauncher)
+    resume_launcher.config = LaunchConfig()
+    resume_launcher.collect_finished_sync.return_value = []
+    observed: dict[str, bool] = {}
+
+    async def _launch(
+        work_order: dict[str, object],
+        *,
+        worktree_path: str,
+        branch: str = "main",
+    ) -> WorkerProcess:
+        observed["require_explicit_approval"] = resume_launcher.config.require_explicit_approval
+        observed["use_managed_session_script"] = resume_launcher.config.use_managed_session_script
+        observed["detach"] = resume_launcher.config.detach
+        return WorkerProcess(
+            work_order_id=str(work_order["work_order_id"]),
+            agent="codex",
+            worktree_path=worktree_path,
+            branch=branch,
+            pid=1234,
+            initial_head="abc123",
+        )
+
+    resume_launcher.launch = AsyncMock(side_effect=_launch)
+    resume_supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=MagicMock(),
+        launcher=resume_launcher,
+    )
+
+    refreshed = resume_supervisor.refresh_run(run.run_id)
+    assert refreshed.work_orders[0]["status"] == "leased"
+
+    launched = await resume_supervisor.dispatch_workers(run.run_id)
+    assert len(launched) == 1
+    assert observed == {
+        "require_explicit_approval": False,
+        "use_managed_session_script": False,
+        "detach": True,
+    }
+    stored = store.get_supervisor_run(run.run_id)
+    assert stored is not None
+    assert stored["work_orders"][0]["status"] == "dispatched"
+
+
+def test_apply_launcher_snapshot_preserves_null_optional_fields(repo: Path) -> None:
+    supervisor = SwarmSupervisor(repo_root=repo)
+    supervisor.launcher.config = LaunchConfig(
+        claude_model="claude-opus-4-6",
+        codex_model="gpt-4.1-codex",
+        claude_profile="existing-profile",
+        claude_profile_script="/tmp/profile.sh",
+    )
+
+    supervisor._apply_launcher_config_snapshot(
+        {
+            "claude_model": None,
+            "codex_model": "None",
+            "claude_profile": " null ",
+            "claude_profile_script": "",
+        }
+    )
+
+    assert supervisor.launcher.config.claude_model is None
+    assert supervisor.launcher.config.codex_model is None
+    assert supervisor.launcher.config.claude_profile is None
+    assert supervisor.launcher.config.claude_profile_script is None
 
 
 def test_start_run_discards_duplicate_open_non_deliverable_lane(
@@ -652,6 +778,241 @@ def test_start_run_preserves_rerun_when_existing_duplicate_chain_was_stale_reape
     )
 
     assert [item["status"] for item in run.work_orders] == ["queued", "queued"]
+    for work_order in run.work_orders:
+        assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
+
+
+def test_start_run_preserves_rerun_when_existing_missing_verification_plan_is_deferred(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    goal = "[Issue #2031] Clear stale retry failure state on successful webhook delivery"
+    store.create_supervisor_run(
+        goal=goal,
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        status="needs_human",
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Update retry_queue.py",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "worker_outcome": "merge_gate_failed",
+                "failure_reason": "missing_verification_plan",
+                "dispatch_error": "merge gate blocked: missing verification plan or verification command",
+                "branch": "codex/swarm-old-micro-1",
+                "commit_shas": ["deadbeef"],
+                "receipt_id": "receipt-old-micro-1",
+                "changed_paths": ["aragora/webhooks/retry_queue.py"],
+                "file_scope": ["aragora/webhooks/retry_queue.py"],
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "acceptance_criteria": [
+                        "`pytest tests/webhooks/test_retry_queue.py -x -q` passes"
+                    ],
+                },
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Write tests for retry_queue.py",
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "dependency_ids": ["micro-task-1"],
+                "file_scope": ["tests/webhooks/test_retry_queue.py"],
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+            {
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
+                "title": "Run validation and fix failures",
+                "status": "queued",
+                "dependency_ids": ["micro-task-1", "micro-task-2"],
+                "expected_tests": ["python -m pytest tests/webhooks/test_retry_queue.py -q"],
+                "file_scope": [
+                    "tests/webhooks/test_retry_queue.py",
+                    "aragora/webhooks/retry_queue.py",
+                ],
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal=goal,
+            refined_goal=goal,
+            work_orders=[
+                {
+                    "work_order_id": "micro-1",
+                    "pipeline_task_id": "micro-task-1",
+                    "title": "Update retry_queue.py",
+                    "description": "Edit retry_queue.py to clear stale retry failure state after success.",
+                    "file_scope": ["aragora/webhooks/retry_queue.py"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {"source": "explicit_spec_work_order"},
+                },
+                {
+                    "work_order_id": "micro-2",
+                    "pipeline_task_id": "micro-task-2",
+                    "title": "Write tests for retry_queue.py",
+                    "description": "Add the regression test in tests/webhooks/test_retry_queue.py.",
+                    "file_scope": ["tests/webhooks/test_retry_queue.py"],
+                    "dependency_ids": ["micro-task-1"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {"source": "explicit_spec_work_order"},
+                },
+                {
+                    "work_order_id": "micro-3",
+                    "pipeline_task_id": "micro-task-3",
+                    "title": "Run validation and fix failures",
+                    "description": "Run the acceptance tests and fix any failures.",
+                    "file_scope": [
+                        "tests/webhooks/test_retry_queue.py",
+                        "aragora/webhooks/retry_queue.py",
+                    ],
+                    "dependency_ids": ["micro-task-1", "micro-task-2"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {"source": "explicit_spec_work_order"},
+                },
+            ],
+        ),
+        refresh_scaling=False,
+    )
+
+    assert [item["status"] for item in run.work_orders] == ["queued", "queued", "queued"]
+    for work_order in run.work_orders:
+        assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
+
+
+def test_start_run_preserves_rerun_when_existing_failed_validation_lane_has_no_deliverable(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    goal = "[Issue #2031] Clear stale retry failure state on successful webhook delivery"
+    store.create_supervisor_run(
+        goal=goal,
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        status="needs_human",
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Update retry_queue.py",
+                "status": "completed",
+                "review_status": "pending_heterogeneous_review",
+                "worker_outcome": "completed",
+                "branch": "codex/swarm-old-micro-1",
+                "commit_shas": ["deadbeef"],
+                "receipt_id": "receipt-old-micro-1",
+                "changed_paths": ["aragora/webhooks/retry_queue.py"],
+                "file_scope": ["aragora/webhooks/retry_queue.py"],
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "deferred_verification_to_dependency_ids": ["micro-task-3"],
+                },
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Write tests for retry_queue.py",
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "dependency_ids": ["micro-task-1"],
+                "file_scope": ["tests/webhooks/test_retry_queue.py"],
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+            {
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
+                "title": "Run validation and fix failures",
+                "status": "dispatch_failed",
+                "dependency_ids": ["micro-task-1", "micro-task-2"],
+                "expected_tests": ["python -m pytest tests/webhooks/test_retry_queue.py -q"],
+                "file_scope": [
+                    "tests/webhooks/test_retry_queue.py",
+                    "aragora/webhooks/retry_queue.py",
+                ],
+                "dispatch_error": "code_exec requires explicit approval: missing approval record",
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal=goal,
+            refined_goal=goal,
+            work_orders=[
+                {
+                    "work_order_id": "micro-1",
+                    "pipeline_task_id": "micro-task-1",
+                    "title": "Update retry_queue.py",
+                    "description": "Edit retry_queue.py to clear stale retry failure state after success.",
+                    "file_scope": ["aragora/webhooks/retry_queue.py"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {"source": "explicit_spec_work_order"},
+                },
+                {
+                    "work_order_id": "micro-2",
+                    "pipeline_task_id": "micro-task-2",
+                    "title": "Write tests for retry_queue.py",
+                    "description": "Add the regression test in tests/webhooks/test_retry_queue.py.",
+                    "file_scope": ["tests/webhooks/test_retry_queue.py"],
+                    "dependency_ids": ["micro-task-1"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {"source": "explicit_spec_work_order"},
+                },
+                {
+                    "work_order_id": "micro-3",
+                    "pipeline_task_id": "micro-task-3",
+                    "title": "Run validation and fix failures",
+                    "description": "Run the acceptance tests and fix any failures.",
+                    "file_scope": [
+                        "tests/webhooks/test_retry_queue.py",
+                        "aragora/webhooks/retry_queue.py",
+                    ],
+                    "dependency_ids": ["micro-task-1", "micro-task-2"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {"source": "explicit_spec_work_order"},
+                },
+            ],
+        ),
+        refresh_scaling=False,
+    )
+
+    assert [item["status"] for item in run.work_orders] == ["queued", "queued", "queued"]
     for work_order in run.work_orders:
         assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
 
@@ -3122,6 +3483,26 @@ def test_merge_gate_state_allows_docs_only_lane_without_verification_plan() -> N
     assert state["blocked_reasons"] == []
 
 
+def test_merge_gate_state_allows_dependency_deferred_verification_lane() -> None:
+    state = SwarmSupervisor._merge_gate_state(
+        {
+            "file_scope": ["aragora/webhooks/retry_queue.py"],
+            "changed_paths": ["aragora/webhooks/retry_queue.py"],
+            "expected_tests": ["python -m pytest tests/webhooks/test_retry_queue.py -q"],
+            "verification_results": [],
+            "metadata": {
+                "deferred_verification_to_dependency_ids": ["micro-task-3"],
+            },
+        }
+    )
+
+    assert state["checks_passed"] is True
+    assert state["merge_eligible"] is True
+    assert state["verification_missing_reason"] is None
+    assert state["blocked_reasons"] == []
+    assert state["verification_deferred_to_dependency_ids"] == ["micro-task-3"]
+
+
 def test_merge_gate_state_normalizes_python_command_equivalence() -> None:
     state = SwarmSupervisor._merge_gate_state(
         {
@@ -3796,6 +4177,7 @@ async def test_dispatch_workers_keeps_explicit_target_agent_sticky(repo: Path) -
     assert work_order["metadata"]["fallback_suppressed_reason"] == "sticky_requested_target_agent"
     assert work_order["metadata"]["fallback_suppressed_agent"] == "claude"
     assert "attempted_agents" not in work_order["metadata"]
+    assert all(active.lease_id != lease.lease_id for active in store.list_active_leases())
 
 
 @pytest.mark.asyncio
@@ -5248,6 +5630,50 @@ async def test_collect_finished_results_marks_no_progress_timeout_needs_human(
     assert "no-progress timeout" in work_order["dispatch_error"]
     assert work_order["failure_reason"] == "worker_no_progress_timeout"
     assert "stalled lane" in work_order["blocking_question"]
+
+
+def test_no_progress_timeout_uses_recent_output_when_bytes_exist(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(repo_root=repo, store=store)
+    supervisor.launcher.config.no_progress_timeout_seconds = 60.0
+    now = datetime.now(UTC)
+    item = {
+        "dispatched_at": (now - timedelta(minutes=10)).isoformat(),
+        "last_progress_at": (now - timedelta(minutes=10)).isoformat(),
+        "last_output_at": (now - timedelta(seconds=15)).isoformat(),
+        "output_fingerprint": {
+            "stdout_size": 128,
+            "stderr_size": 0,
+            "stdout_mtime_ns": 123,
+            "stderr_mtime_ns": 0,
+            "has_output": True,
+        },
+    }
+
+    assert supervisor._exceeded_no_progress_timeout(item) is False
+
+
+def test_no_progress_timeout_ignores_last_output_at_without_actual_output(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(repo_root=repo, store=store)
+    supervisor.launcher.config.no_progress_timeout_seconds = 60.0
+    now = datetime.now(UTC)
+    item = {
+        "dispatched_at": (now - timedelta(minutes=10)).isoformat(),
+        "last_progress_at": (now - timedelta(minutes=10)).isoformat(),
+        "last_output_at": (now - timedelta(seconds=15)).isoformat(),
+        "output_fingerprint": {
+            "stdout_size": 0,
+            "stderr_size": 0,
+            "stdout_mtime_ns": 0,
+            "stderr_mtime_ns": 0,
+            "has_output": False,
+        },
+    }
+
+    assert supervisor._exceeded_no_progress_timeout(item) is True
 
 
 @pytest.mark.asyncio

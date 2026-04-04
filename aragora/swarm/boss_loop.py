@@ -43,6 +43,7 @@ from aragora.swarm.boss_validation import (  # noqa: F401
     sanitize_issue_body_for_dispatch,
     extract_issue_validation_contract,
     extract_pre_dispatch_validation_commands,
+    find_missing_pre_dispatch_validation_targets,
     run_pre_dispatch_validation_commands,
     discover_focused_tests,
 )
@@ -2604,6 +2605,24 @@ class BossLoop:
                 "next_actions": [
                     "Add an Acceptance Criteria, Validation, Definition of Done, or Test Plan section to the issue body.",
                     "Include at least one concrete verification step such as a pytest command or observable success criterion.",
+                ],
+            }
+
+        missing_validation_targets = find_missing_pre_dispatch_validation_targets(
+            extract_pre_dispatch_validation_commands(issue.body or ""),
+            repo_root=Path.cwd(),
+        )
+        if missing_validation_targets:
+            targets_text = ", ".join(missing_validation_targets)
+            return {
+                "status": "needs_human",
+                "outcome": "verification_target_missing",
+                "reasons": [
+                    f"Issue #{issue.number} references missing validation targets: {targets_text}"
+                ],
+                "next_actions": [
+                    "Refresh the issue's Acceptance Criteria or Test Plan so pytest points at current repo paths.",
+                    "Update the Files/Reference section or add explicit work orders before rerunning Boss dispatch.",
                 ],
             }
 
