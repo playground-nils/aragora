@@ -235,8 +235,8 @@ function QuickActionButton({
 }) {
   const variantClasses = {
     primary: 'border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10',
-    secondary: 'border-[var(--acid-cyan)] text-[var(--acid-cyan)] hover:bg-acid-cyan/10',
-    danger: 'border-crimson text-crimson hover:bg-crimson/10',
+    secondary: 'border-[var(--acid-cyan)] text-[var(--acid-cyan)] hover:bg-[var(--acid-cyan)]/10',
+    danger: 'border-[var(--crimson)] text-[var(--crimson)] hover:bg-[var(--crimson)]/10',
   };
 
   return (
@@ -348,7 +348,7 @@ function DebateQueuePanel({
             <div className="text-xs font-theme-data text-text-muted">Done</div>
           </div>
           <div>
-            <div className="text-lg font-theme-data text-crimson">{queue.failed_today}</div>
+            <div className="text-lg font-theme-data text-[var(--crimson)]">{queue.failed_today}</div>
             <div className="text-xs font-theme-data text-text-muted">Failed</div>
           </div>
         </div>
@@ -644,7 +644,7 @@ export default function MissionControlPage() {
             {/* Column 3: Alerts + Resource Utilization */}
             <div className="space-y-6">
               {/* Alert Panel */}
-              <div className={`card p-4 ${hasAlerts ? 'border-crimson/40' : ''}`}>
+              <div className={`card p-4 ${hasAlerts ? 'border-[var(--crimson)]/40' : ''}`}>
                 <h2 className={`text-sm font-theme-data font-bold mb-4 uppercase tracking-wide ${hasAlerts ? 'text-[var(--crimson)]' : 'text-[var(--acid-green)]'}`}>
                   {'>'} {hasAlerts ? 'ALERTS' : 'Alert Panel'}
                 </h2>
@@ -663,9 +663,9 @@ export default function MissionControlPage() {
                       {failingAgents.map((agent) => (
                         <div
                           key={agent.agent_id}
-                          className="flex items-center justify-between px-2 py-1.5 bg-crimson/10 border border-crimson/30 rounded text-xs font-theme-data"
+                          className="flex items-center justify-between px-2 py-1.5 bg-[var(--crimson)]/10 border border-[var(--crimson)]/30 rounded text-xs font-theme-data"
                         >
-                          <span className="text-crimson">{agent.agent_id}</span>
+                          <span className="text-[var(--crimson)]">{agent.agent_id}</span>
                           <span className="text-text-muted">
                             {agent.last_heartbeat ? timeAgo(agent.last_heartbeat) : 'no heartbeat'}
                           </span>
@@ -728,8 +728,8 @@ export default function MissionControlPage() {
                 {Object.entries(health.subsystems).map(([name, status]) => {
                   const isHealthy = status === 'healthy' || status === 'ok';
                   const isDegraded = status === 'degraded' || status === 'warning';
-                  const color = isHealthy ? 'border-[var(--accent)]/30 text-[var(--accent)]' : isDegraded ? 'border-acid-yellow/30 text-[var(--acid-yellow)]' : 'border-crimson/30 text-crimson';
-                  const bg = isHealthy ? 'bg-[var(--accent)]/5' : isDegraded ? 'bg-acid-yellow/5' : 'bg-crimson/5';
+                  const color = isHealthy ? 'border-[var(--accent)]/30 text-[var(--accent)]' : isDegraded ? 'border-acid-yellow/30 text-[var(--acid-yellow)]' : 'border-[var(--crimson)]/30 text-[var(--crimson)]';
+                  const bg = isHealthy ? 'bg-[var(--accent)]/5' : isDegraded ? 'bg-acid-yellow/5' : 'bg-[var(--crimson)]/5';
 
                   return (
                     <div

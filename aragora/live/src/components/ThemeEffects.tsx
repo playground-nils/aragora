@@ -29,22 +29,22 @@ export function useThemeFont(): { display: string; body: string; mono: string } 
   switch (theme) {
     case 'dark':
       return {
-        display: 'font-mono',
-        body: 'font-mono',
-        mono: 'font-mono',
+        display: 'font-theme-data',
+        body: 'font-theme-data',
+        mono: 'font-theme-data',
       };
     case 'warm':
       return {
         display: 'font-[var(--font-display)]',
         body: 'font-[var(--font-landing)]',
-        mono: 'font-mono',
+        mono: 'font-theme-data',
       };
     case 'professional':
     default:
       return {
         display: 'font-[var(--font-display)]',
         body: 'font-[var(--font-display)]',
-        mono: 'font-mono',
+        mono: 'font-theme-data',
       };
   }
 }
@@ -74,9 +74,9 @@ export function useThemeButton(): { primary: string; secondary: string } {
     case 'dark':
       return {
         primary:
-          'bg-[var(--accent)] text-[var(--bg)] font-mono font-bold hover:opacity-80 transition-colors',
+          'bg-[var(--accent)] text-[var(--bg)] font-theme-data font-bold hover:opacity-80 transition-colors',
         secondary:
-          'border border-[var(--accent)]/30 text-[var(--accent)] font-mono hover:border-[var(--accent)] transition-colors',
+          'border border-[var(--accent)]/30 text-[var(--accent)] font-theme-data hover:border-[var(--accent)] transition-colors',
       };
     case 'warm':
       return {
