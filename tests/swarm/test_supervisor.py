@@ -3906,6 +3906,19 @@ async def test_dispatch_workers_marks_needs_human_when_all_worker_types_blocked(
                 "target_agent": "claude",
                 "reviewer_agent": "codex",
                 "lease_id": lease.lease_id,
+                "receipt_id": "receipt-stale",
+                "confidence": 0.97,
+                "worker_outcome": "completed",
+                "completed_at": "2026-04-03T00:00:00+00:00",
+                "exit_code": 0,
+                "head_sha": "abc123",
+                "commit_shas": ["abc123"],
+                "changed_paths": ["docs/notes.md"],
+                "merge_gate": {"checks_passed": True},
+                "verification_missing_reason": "old-state",
+                "pr_url": "https://github.com/synaptent/aragora/pull/9999",
+                "adopted_pr": "https://github.com/synaptent/aragora/pull/9999",
+                "scope_violation": {"violations": []},
             }
         ],
         status="active",
@@ -3951,6 +3964,22 @@ async def test_dispatch_workers_marks_needs_human_when_all_worker_types_blocked(
     assert "worker dispatch blocked" in work_order["dispatch_error"]
     assert work_order["failure_reason"] == "worker_type_blocked"
     assert "worker type or capacity issue" in work_order["blocking_question"]
+    for key in (
+        "receipt_id",
+        "confidence",
+        "worker_outcome",
+        "completed_at",
+        "exit_code",
+        "head_sha",
+        "commit_shas",
+        "changed_paths",
+        "merge_gate",
+        "verification_missing_reason",
+        "pr_url",
+        "adopted_pr",
+        "scope_violation",
+    ):
+        assert key not in work_order
     assert updated["status"] == "needs_human"
     assert updated["metadata"][CAMPAIGN_OUTCOME_METADATA_KEY] == "needs_human"
     assert store.status_summary()["counts"]["active_leases"] == 0
