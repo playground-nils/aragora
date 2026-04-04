@@ -412,7 +412,7 @@ class WorkerLauncher:
         pid = self._normalized_pid(work_order.get("pid"))
 
         snapshot: dict[str, Any] = {
-            "pid_alive": self._is_pid_running(pid) if pid is not None else False,
+            "pid_alive": False,
             "head_sha": "",
             "changed_paths": [],
             "diff_lines": 0,
@@ -427,9 +427,8 @@ class WorkerLauncher:
         if not worktree_path:
             return snapshot
         session_meta = self._read_session_meta(worktree_path)
-        if pid is None:
-            pid = self._normalized_pid(session_meta.get("pid"))
-            snapshot["pid_alive"] = self._is_pid_running(pid) if pid is not None else False
+        pid = self._authoritative_session_pid(pid, session_meta)
+        snapshot["pid_alive"] = self._is_pid_running(pid) if pid is not None else False
         lock_pid = self._pid_for_active_lock(worktree_path, pid, session_meta)
         if self._active_session_lock_blocks_collection(worktree_path, lock_pid):
             snapshot["pid_alive"] = True
@@ -1120,8 +1119,8 @@ class WorkerLauncher:
         session_meta = cls._read_session_meta(worktree_path)
         session_exit_code, session_completed_at = cls._terminal_session_result(session_meta)
         observed_pid = cls._normalized_pid(pid)
-        if observed_pid is None and allow_session_meta_pid_fallback:
-            observed_pid = cls._normalized_pid(session_meta.get("pid"))
+        if allow_session_meta_pid_fallback:
+            observed_pid = cls._authoritative_session_pid(observed_pid, session_meta)
         lock_pid = (
             cls._pid_for_active_lock(worktree_path, observed_pid, session_meta)
             if allow_session_meta_pid_fallback
@@ -1256,6 +1255,16 @@ class WorkerLauncher:
         return pid if pid > 0 else None
 
     @classmethod
+    def _authoritative_session_pid(
+        cls, pid: int | None, session_meta: dict[str, Any]
+    ) -> int | None:
+        """Prefer the harness-owned session PID over stale caller metadata."""
+        meta_pid = cls._normalized_pid(session_meta.get("pid"))
+        if meta_pid is not None:
+            return meta_pid
+        return pid
+
+    @classmethod
     def _active_session_lock_blocks_collection(cls, worktree_path: str, pid: int | None) -> bool:
         active_lock = Path(worktree_path) / ".codex_session_active"
         if not active_lock.exists():
@@ -1274,20 +1283,11 @@ class WorkerLauncher:
         pid: int | None,
         session_meta: dict[str, Any],
     ) -> int | None:
-        """Prefer a live session-meta PID when the active-session lock still exists."""
+        """Return the harness-owned PID that should qualify an active-session lock."""
         active_lock = Path(worktree_path) / ".codex_session_active"
         if not active_lock.exists():
             return pid
-        meta_pid = cls._normalized_pid(session_meta.get("pid"))
-        if pid is None:
-            return meta_pid
-        if meta_pid is None or meta_pid == pid:
-            return pid
-        if cls._is_pid_running(pid):
-            return pid
-        if cls._is_pid_running(meta_pid):
-            return meta_pid
-        return pid
+        return cls._authoritative_session_pid(pid, session_meta)
 
     @staticmethod
     def _cleanup_session_artifacts(worktree_path: str) -> None:
@@ -2162,9 +2162,7 @@ class WorkerLauncher:
                     if str(item.get("command", "")).strip()
                 ]
         finally:
-            cleanup_pid = worker.pid
-            if cleanup_pid is None:
-                cleanup_pid = self._normalized_pid(session_meta.get("pid"))
+            cleanup_pid = self._authoritative_session_pid(worker.pid, session_meta)
             if cleanup_pid is not None:
                 self._wait_for_pid_exit_sync(cleanup_pid)
             self._cleanup_session_artifacts(worker.worktree_path)
