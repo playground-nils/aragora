@@ -4437,6 +4437,60 @@ async def test_dispatch_workers_dispatch_failed_clears_stale_deliverable_state(
         assert cleared_key not in work_order
 
 
+def test_apply_worker_result_clean_exit_no_deliverable_clears_stale_deliverable_state(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo, store=store, launcher=MagicMock(spec=WorkerLauncher)
+    )
+
+    work_order = {
+        "work_order_id": "wo-clean-no-deliverable",
+        "status": "dispatched",
+        "branch": "main",
+        "target_agent": "codex",
+        "review_status": "pending_heterogeneous_review",
+        "receipt_id": "receipt-stale",
+        "confidence": 0.99,
+        "pr_url": "https://github.com/synaptent/aragora/pull/9999",
+        "adopted_pr": "https://github.com/synaptent/aragora/pull/9999",
+        "merge_gate": {"checks_passed": True},
+        "verification_missing_reason": "stale",
+        "lease_id": "lease-123",
+    }
+    result = WorkerProcess(
+        work_order_id="wo-clean-no-deliverable",
+        agent="codex",
+        worktree_path=str(repo),
+        branch="main",
+        exit_code=0,
+        completed_at="2026-04-04T00:00:00+00:00",
+        diff="",
+        initial_head="base123",
+        head_sha="abc123",
+        changed_paths=[".codex_session_meta.json"],
+        commit_shas=["abc123"],
+    )
+
+    with patch.object(supervisor, "_release_terminal_lease") as mock_release:
+        supervisor._apply_worker_result(work_order, result)
+
+    assert work_order["status"] == "needs_human"
+    assert work_order["failure_reason"] == "clean_exit_no_deliverable"
+    assert work_order["worker_outcome"] == "clean_exit_no_effect"
+    assert work_order["commit_shas"] == []
+    for cleared_key in (
+        "receipt_id",
+        "confidence",
+        "pr_url",
+        "adopted_pr",
+        "merge_gate",
+        "verification_missing_reason",
+    ):
+        assert cleared_key not in work_order
+    mock_release.assert_called_once_with(work_order)
+
+
 @pytest.mark.asyncio
 async def test_dispatch_workers_resets_closed_worker_type_circuit_breaker_after_successful_launch(
     repo: Path, store: DevCoordinationStore
