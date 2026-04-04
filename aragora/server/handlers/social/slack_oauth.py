@@ -1143,7 +1143,14 @@ class SlackOAuthHandler(SecureHandler):
 
         except ImportError:
             return error_response("httpx not available", 503)
-        except (ConnectionError, TimeoutError, OSError, ValueError, TypeError) as e:
+        except (
+            ConnectionError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            TypeError,
+            httpx.HTTPError,
+        ) as e:
             logger.error("[%s] Slack token exchange failed: %s", request_id, e)
             return error_response("Token exchange failed", 500)
 

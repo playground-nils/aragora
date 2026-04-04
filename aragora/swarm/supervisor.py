@@ -1063,7 +1063,7 @@ class SwarmSupervisor:
                 continue
             if str(item.get("receipt_id") or "").strip():
                 continue
-            if item.get("commit_shas") or item.get("changed_paths"):
+            if item.get("commit_shas"):
                 continue
             worktree_path = str(item.get("worktree_path", "")).strip()
             initial_head = str(item.get("initial_head", "")).strip()

@@ -931,6 +931,82 @@ def test_refresh_run_salvages_stale_reaped_lane_with_recoverable_commit(
     assert work_order.get("failure_reason") in {"", None}
 
 
+def test_refresh_run_salvages_stale_reaped_lane_even_when_changed_paths_were_already_recorded(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    initial_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+    lease = store.claim_lease(
+        task_id="micro-3",
+        title="Recoverable stale-reaped lane with recorded paths",
+        owner_agent="codex",
+        owner_session_id="swarm-stale-salvage-recorded-paths",
+        branch="main",
+        worktree_path=str(repo),
+        claimed_paths=["README.md"],
+        metadata={
+            "supervisor_run_id": "pending",
+            "work_order_id": "micro-3",
+            "task_key": "stale-salvage:micro-3",
+            "reviewer_agent": "claude",
+            "risk_level": "review",
+        },
+    )
+
+    (repo / "README.md").write_text("hello\nrecorded changed path salvage\n", encoding="utf-8")
+    _run(repo, "git", "add", "README.md")
+    _run(repo, "git", "commit", "-m", "recover stale-reaped lane with recorded paths")
+    expected_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+
+    run = store.create_supervisor_run(
+        goal="Recover stale reaped lane with recorded changed paths",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        status="needs_human",
+        work_orders=[
+            {
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
+                "title": "Recoverable lane",
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "lease_id": lease.lease_id,
+                "receipt_id": None,
+                "owner_session_id": lease.owner_session_id,
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "initial_head": initial_head,
+                "head_sha": expected_head,
+                "changed_paths": ["README.md"],
+                "file_scope": ["README.md"],
+                "metadata": {"source": "explicit_spec_work_order"},
+            }
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+
+    refreshed = supervisor.refresh_run(run["run_id"])
+
+    assert refreshed.status == "completed"
+    work_order = refreshed.work_orders[0]
+    assert work_order["status"] == "completed"
+    assert work_order["worker_outcome"] == "crash_with_salvage"
+    assert work_order["receipt_id"]
+    assert work_order["head_sha"] == expected_head
+    assert work_order["commit_shas"] == [expected_head]
+    assert work_order["changed_paths"] == ["README.md"]
+    assert work_order.get("failure_reason") in {"", None}
+
+
 def test_refresh_run_does_not_lease_downstream_lane_before_dependencies_complete(
     repo: Path, store: DevCoordinationStore
 ) -> None:
