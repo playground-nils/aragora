@@ -9,7 +9,7 @@ import {
   type LandingDebatePreflight,
   type LandingPreparedDebateOption,
 } from './landing/landingPreflight';
-import { trackLandingEvent } from './landing/landingTelemetry';
+import { submitLandingFeedback, trackLandingEvent } from './landing/landingTelemetry';
 import { getCurrentReturnUrl, normalizeReturnUrl } from '@/utils/returnUrl';
 
 interface LandingPageProps {
@@ -837,6 +837,9 @@ export function LandingPage({ apiBase, wsUrl, onEnterDashboard }: LandingPagePro
       || question
       || lastTopic
       || currentResult.topic;
+    const rewritten =
+      Boolean(currentResult.interpreted_question)
+      && currentResult.interpreted_question !== (currentResult.original_question || currentResult.topic);
     const preflight = prepareLandingDebate(sourceQuestion);
 
     setQuestion(sourceQuestion);
@@ -859,14 +862,23 @@ export function LandingPage({ apiBase, wsUrl, onEnterDashboard }: LandingPagePro
       setEditorNotice('Edit the wording below and rerun the debate with one more specific detail.');
     }
 
+    submitLandingFeedback(resolvedApiBase, {
+      question: sourceQuestion,
+      interpreted_question: currentResult.interpreted_question || currentResult.topic,
+      final_answer: currentResult.final_answer,
+      result_warning: currentResult.result_warning || null,
+      result_mode: currentResult.result_mode || 'full',
+      debate_id: currentResult.id || null,
+      verdict: currentResult.verdict || null,
+      participant_count: currentResult.participants.length,
+      rewritten,
+    });
     trackEvent('wrong_answer_clicked', {
       result_mode: currentResult.result_mode || 'full',
-      rewritten:
-        Boolean(currentResult.interpreted_question)
-        && currentResult.interpreted_question !== (currentResult.original_question || currentResult.topic),
+      rewritten,
     });
     focusComposer();
-  }, [focusComposer, lastTopic, question, trackEvent]);
+  }, [focusComposer, lastTopic, question, resolvedApiBase, trackEvent]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();

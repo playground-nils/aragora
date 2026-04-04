@@ -13,6 +13,8 @@ Routes:
     POST /api/v1/playground/debate              - Run a mock debate
     POST /api/v1/playground/debate/live          - Run a live debate with real agents
     POST /api/v1/playground/debate/live/cost-estimate - Pre-flight cost estimate
+    POST /api/v1/playground/landing/feedback    - Capture bounded landing wrong-answer reports
+    GET  /api/v1/playground/landing/feedback    - List recent landing wrong-answer reports
     GET  /api/v1/playground/landing/events/summary - Aggregate recent landing telemetry
     GET  /api/v1/playground/debate/{id}          - Retrieve a saved debate (shareable link)
     GET  /api/v1/playground/status               - Health check for the playground
@@ -79,6 +81,9 @@ _live_request_timestamps: dict[str, list[float]] = {}
 _landing_event_lock = threading.Lock()
 _landing_events: list[dict[str, Any]] = []
 _LANDING_EVENT_LIMIT = 5000
+_landing_feedback_lock = threading.Lock()
+_landing_feedback_reports: list[dict[str, Any]] = []
+_LANDING_FEEDBACK_LIMIT = 1000
 _LANDING_EVENT_TYPE_ORDER = (
     "preflight_shown",
     "preflight_selected",
@@ -179,6 +184,8 @@ def _reset_rate_limits() -> None:
     _live_request_timestamps.clear()
     with _landing_event_lock:
         _landing_events.clear()
+    with _landing_feedback_lock:
+        _landing_feedback_reports.clear()
     _daily_debate_count = 0
     _daily_debate_reset_time = 0.0
 
@@ -212,6 +219,25 @@ def _sanitize_landing_event_data(data: Any) -> dict[str, Any]:
     return clean
 
 
+def _truncate_feedback_text(value: Any, *, limit: int) -> str | None:
+    """Normalize user-visible feedback text to a bounded string."""
+    if not isinstance(value, str):
+        return None
+    text = re.sub(r"\s+", " ", value).strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _client_tag(client_ip: str) -> str:
+    """Return a stable, privacy-safer tag for client grouping."""
+    normalized = client_ip.strip()
+    if not normalized or normalized == "unknown":
+        return "unknown"
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return f"ip:{digest[:12]}"
+
+
 def _record_landing_event(
     event_type: str,
     *,
@@ -233,6 +259,41 @@ def _record_landing_event(
         )
         if len(_landing_events) > _LANDING_EVENT_LIMIT:
             del _landing_events[:-_LANDING_EVENT_LIMIT]
+
+
+def _record_landing_feedback(
+    *,
+    client_ip: str,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record a bounded wrong-answer report for internal review."""
+    payload = data if isinstance(data, dict) else {}
+    report = {
+        "id": f"lfb_{uuid.uuid4().hex[:12]}",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "client_tag": _client_tag(client_ip),
+        "question": _truncate_feedback_text(payload.get("question"), limit=500),
+        "interpreted_question": _truncate_feedback_text(
+            payload.get("interpreted_question"), limit=500
+        ),
+        "final_answer_preview": _truncate_feedback_text(payload.get("final_answer"), limit=1200),
+        "result_warning": _truncate_feedback_text(payload.get("result_warning"), limit=280),
+        "result_mode": _truncate_feedback_text(payload.get("result_mode"), limit=32) or "preview",
+        "debate_id": _truncate_feedback_text(payload.get("debate_id"), limit=64),
+        "verdict": _truncate_feedback_text(payload.get("verdict"), limit=64),
+        "participant_count": None,
+        "rewritten": payload.get("rewritten") is True,
+    }
+    participant_count = payload.get("participant_count")
+    if isinstance(participant_count, int):
+        report["participant_count"] = max(0, min(20, participant_count))
+
+    with _landing_feedback_lock:
+        _landing_feedback_reports.append(report)
+        if len(_landing_feedback_reports) > _LANDING_FEEDBACK_LIMIT:
+            del _landing_feedback_reports[:-_LANDING_FEEDBACK_LIMIT]
+
+    return report
 
 
 def _parse_landing_event_timestamp(value: Any) -> datetime | None:
@@ -384,6 +445,53 @@ def _build_landing_event_summary(
             else None,
         },
         "top_options": top_options,
+    }
+
+
+def _build_landing_feedback_summary(
+    *,
+    window_seconds: float = 604_800.0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Return recent landing wrong-answer reports for internal review."""
+    now = datetime.now(timezone.utc)
+    cutoff = now.timestamp() - window_seconds
+
+    with _landing_feedback_lock:
+        snapshot = list(_landing_feedback_reports)
+
+    recent_reports: list[tuple[datetime, dict[str, Any]]] = []
+    for report in snapshot:
+        report_dt = _parse_landing_event_timestamp(report.get("timestamp"))
+        if report_dt is None or report_dt.timestamp() < cutoff:
+            continue
+        recent_reports.append((report_dt, report))
+
+    recent_reports.sort(key=lambda item: item[0], reverse=True)
+    trimmed = [report for _, report in recent_reports[:limit]]
+    rewritten_count = sum(1 for report in trimmed if report.get("rewritten") is True)
+    preview_mode_count = sum(1 for report in trimmed if report.get("result_mode") == "preview")
+    unique_clients = {
+        str(report.get("client_tag", "") or "").strip()
+        for _, report in recent_reports
+        if str(report.get("client_tag", "") or "").strip()
+    }
+    last_report_at = recent_reports[0][0].isoformat() if recent_reports else None
+
+    return {
+        "generated_at": now.isoformat(),
+        "window_seconds": window_seconds,
+        "total_reports": len(recent_reports),
+        "returned_reports": len(trimmed),
+        "unique_client_count": len(unique_clients),
+        "last_report_at": last_report_at,
+        "stats": {
+            "rewritten_count": rewritten_count,
+            "rewritten_rate": _ratio(rewritten_count, len(trimmed)),
+            "preview_mode_count": preview_mode_count,
+            "preview_mode_rate": _ratio(preview_mode_count, len(trimmed)),
+        },
+        "reports": trimmed,
     }
 
 
@@ -2208,6 +2316,7 @@ class PlaygroundHandler(BaseHandler):
         "/api/v1/playground/debate/live/cost-estimate",
         "/api/v1/playground/landing/events",
         "/api/v1/playground/landing/events/summary",
+        "/api/v1/playground/landing/feedback",
         "/api/v1/playground/status",
         "/api/v1/playground/tts",
     ]
@@ -2228,6 +2337,7 @@ class PlaygroundHandler(BaseHandler):
             "/api/v1/playground/debate/live/cost-estimate",
             "/api/v1/playground/landing/events",
             "/api/v1/playground/landing/events/summary",
+            "/api/v1/playground/landing/feedback",
             "/api/v1/playground/status",
             "/api/v1/playground/tts",
         ):
@@ -2248,6 +2358,8 @@ class PlaygroundHandler(BaseHandler):
             return self._handle_status()
         if path == "/api/v1/playground/landing/events/summary":
             return self._handle_landing_event_summary(query_params)
+        if path == "/api/v1/playground/landing/feedback":
+            return self._handle_landing_feedback_list(query_params, handler)
 
         # GET /api/v1/playground/debate/{debate_id} — retrieve saved debate
         m = self._DEBATE_ID_PATTERN.match(path)
@@ -2280,6 +2392,7 @@ class PlaygroundHandler(BaseHandler):
                 "max_agents": _MAX_AGENTS,
                 "rate_limit": f"{_PLAYGROUND_RATE_LIMIT} requests per {int(_PLAYGROUND_RATE_WINDOW)}s",
                 "landing_event_count": len(_landing_events),
+                "landing_feedback_count": len(_landing_feedback_reports),
             }
         )
 
@@ -2297,6 +2410,31 @@ class PlaygroundHandler(BaseHandler):
             _build_landing_event_summary(
                 window_seconds=window_seconds,
                 option_limit=option_limit,
+            )
+        )
+
+    def _handle_landing_feedback_list(
+        self,
+        query_params: dict[str, Any],
+        handler: Any,
+    ) -> HandlerResult:
+        """List recent wrong-answer reports for admins."""
+        _user, err = self.require_admin_or_error(handler)
+        if err:
+            return err
+
+        window_seconds = safe_query_float(
+            query_params,
+            "window",
+            default=604_800.0,
+            min_val=300.0,
+            max_val=2_592_000.0,
+        )
+        limit = safe_query_int(query_params, "limit", default=50, min_val=1, max_val=200)
+        return json_response(
+            _build_landing_feedback_summary(
+                window_seconds=window_seconds,
+                limit=limit,
             )
         )
 
@@ -2407,6 +2545,8 @@ class PlaygroundHandler(BaseHandler):
             return self._handle_tts(handler)
         if path == "/api/v1/playground/landing/events":
             return self._handle_landing_event(handler)
+        if path == "/api/v1/playground/landing/feedback":
+            return self._handle_landing_feedback(handler)
         if path == "/api/v1/playground/debate/live/cost-estimate":
             return self._handle_cost_estimate(handler)
         if path == "/api/v1/playground/debate/live":
@@ -2583,6 +2723,20 @@ class PlaygroundHandler(BaseHandler):
             data=body.get("data") if isinstance(body, dict) else {},
         )
         return json_response({"ok": True}, status=202)
+
+    def _handle_landing_feedback(self, handler: Any) -> HandlerResult:
+        """Accept a bounded wrong-answer report from the landing page."""
+        body = self.read_json_body(handler) if handler else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return error_response("Invalid landing feedback payload", 400)
+
+        report = _record_landing_feedback(
+            client_ip=_extract_client_ip(handler),
+            data=body,
+        )
+        return json_response({"ok": True, "report_id": report["id"]}, status=202)
 
     def _run_debate(
         self,

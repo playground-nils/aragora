@@ -134,6 +134,9 @@ class TestCanHandle:
     def test_landing_summary_path(self, handler):
         assert handler.can_handle("/api/v1/playground/landing/events/summary")
 
+    def test_landing_feedback_path(self, handler):
+        assert handler.can_handle("/api/v1/playground/landing/feedback")
+
     def test_tts_path(self, handler):
         assert handler.can_handle("/api/v1/playground/tts")
 
@@ -626,6 +629,121 @@ class TestLandingTelemetry:
         assert body["top_options"] == []
         assert body["rates"]["preflight_selection_rate"] is None
         assert body["question_length"]["samples"] == 0
+
+    def test_records_bounded_wrong_answer_report(self, handler):
+        from aragora.server.handlers import playground as playground_module
+
+        mock_h = _MockHTTPHandler(
+            "POST",
+            body={
+                "question": "x" * 700,
+                "interpreted_question": "Microwave pre-cooked nuggets for a 4 year old?",
+                "final_answer": "y" * 1600,
+                "result_warning": "z" * 400,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "participant_count": 3,
+                "rewritten": True,
+                "verdict": "needs_review",
+            },
+            client_address=("203.0.113.12", 9000),
+        )
+        result = handler.handle_post("/api/v1/playground/landing/feedback", {}, mock_h)
+
+        assert _status(result) == 202
+        assert len(playground_module._landing_feedback_reports) == 1
+        report = playground_module._landing_feedback_reports[0]
+        assert report["question"] == "x" * 500
+        assert len(report["final_answer_preview"]) == 1200
+        assert len(report["result_warning"]) == 280
+        assert report["client_tag"].startswith("ip:")
+        assert report["participant_count"] == 3
+        assert report["rewritten"] is True
+
+    def test_feedback_list_requires_admin(self, handler):
+        from aragora.server.handlers.base import error_response
+
+        with patch.object(
+            handler,
+            "require_admin_or_error",
+            return_value=(None, error_response("Admin access required", 403)),
+        ):
+            result = handler.handle(
+                "/api/v1/playground/landing/feedback",
+                {},
+                _MockHTTPHandler("GET"),
+            )
+
+        assert _status(result) == 403
+
+    def test_feedback_list_returns_recent_reports_for_admin(self, handler):
+        from aragora.server.handlers import playground as playground_module
+
+        now = datetime.now(timezone.utc)
+        playground_module._landing_feedback_reports.extend(
+            [
+                {
+                    "id": "lfb_1",
+                    "timestamp": now.isoformat(),
+                    "client_tag": "ip:abc123",
+                    "question": "Should I microwave chicken nuggets for my child?",
+                    "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
+                    "final_answer_preview": "Yes, reheat until hot all the way through.",
+                    "result_warning": None,
+                    "result_mode": "preview",
+                    "debate_id": "debate-123",
+                    "verdict": "needs_review",
+                    "participant_count": 3,
+                    "rewritten": True,
+                },
+                {
+                    "id": "lfb_2",
+                    "timestamp": (now - timedelta(days=10)).isoformat(),
+                    "client_tag": "ip:def456",
+                    "question": "Old report",
+                    "interpreted_question": "Old interpreted question",
+                    "final_answer_preview": "Old answer",
+                    "result_warning": None,
+                    "result_mode": "preview",
+                    "debate_id": "debate-456",
+                    "verdict": "needs_review",
+                    "participant_count": 2,
+                    "rewritten": False,
+                },
+            ]
+        )
+
+        with patch.object(handler, "require_admin_or_error", return_value=(MagicMock(), None)):
+            result = handler.handle(
+                "/api/v1/playground/landing/feedback",
+                {"window": "3600", "limit": "10"},
+                _MockHTTPHandler("GET"),
+            )
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["window_seconds"] == 3600.0
+        assert body["total_reports"] == 1
+        assert body["returned_reports"] == 1
+        assert body["unique_client_count"] == 1
+        assert body["stats"]["rewritten_count"] == 1
+        assert body["stats"]["preview_mode_count"] == 1
+        assert body["reports"] == [
+            {
+                "id": "lfb_1",
+                "timestamp": now.isoformat(),
+                "client_tag": "ip:abc123",
+                "question": "Should I microwave chicken nuggets for my child?",
+                "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
+                "final_answer_preview": "Yes, reheat until hot all the way through.",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "verdict": "needs_review",
+                "participant_count": 3,
+                "rewritten": True,
+            }
+        ]
 
 
 # ============================================================================

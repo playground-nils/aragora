@@ -251,9 +251,12 @@ describe('LandingPage submission flow', () => {
 
   function installBaseFetchMock(
     postHandler: (body: Record<string, unknown>) => Promise<unknown>,
-    options: { telemetryBodies?: Array<Record<string, unknown>> } = {},
+    options: {
+      telemetryBodies?: Array<Record<string, unknown>>;
+      feedbackBodies?: Array<Record<string, unknown>>;
+    } = {},
   ) {
-    const { telemetryBodies } = options;
+    const { telemetryBodies, feedbackBodies } = options;
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
@@ -279,6 +282,12 @@ describe('LandingPage submission flow', () => {
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
         telemetryBodies?.push(body);
         return createHttpResponse({ ok: true }, { status: 202 });
+      }
+
+      if (url.endsWith('/api/v1/playground/landing/feedback')) {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        feedbackBodies?.push(body);
+        return createHttpResponse({ ok: true, report_id: 'lfb_test_1' }, { status: 202 });
       }
 
       throw new Error(`Unexpected fetch URL: ${url}`);
@@ -389,6 +398,7 @@ describe('LandingPage submission flow', () => {
 
   it('lets the user flag a wrong answer and return to the editor flow', async () => {
     const telemetryBodies: Array<Record<string, unknown>> = [];
+    const feedbackBodies: Array<Record<string, unknown>> = [];
     installBaseFetchMock(async () => (
       createHttpResponse({
         id: 'debate-preview-2',
@@ -429,7 +439,7 @@ describe('LandingPage submission flow', () => {
         },
         receipt_hash: 'hash-preview-2',
       })
-    ), { telemetryBodies });
+    ), { telemetryBodies, feedbackBodies });
 
     render(<LandingPage apiBase="https://api.example.com" wsUrl="ws://spectate.example.com/ws" />);
 
@@ -449,10 +459,22 @@ describe('LandingPage submission flow', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Choose which version of the question to debate')).toBeInTheDocument();
     expect(telemetryBodies.some((entry) => entry.event_type === 'wrong_answer_clicked')).toBe(true);
+    expect(feedbackBodies).toHaveLength(1);
+    expect(feedbackBodies[0]).toEqual(expect.objectContaining({
+      question: 'I warmed up chicken nuggets in the microwave for my 4 year old, but what if the chickens are alive or dead?',
+      interpreted_question: expect.stringContaining('practical food-safety question'),
+      final_answer: 'Yes. Reheat the nuggets until hot all the way through.',
+      debate_id: 'debate-preview-2',
+      result_mode: 'preview',
+      verdict: 'needs_review',
+      participant_count: 2,
+      rewritten: true,
+    }));
   });
 
   it('cancels a pending focus frame when the page unmounts after a wrong answer', async () => {
     const telemetryBodies: Array<Record<string, unknown>> = [];
+    const feedbackBodies: Array<Record<string, unknown>> = [];
     const originalRequestAnimationFrame = window.requestAnimationFrame;
     const originalCancelAnimationFrame = window.cancelAnimationFrame;
     const cancelAnimationFrame = jest.fn();
@@ -506,7 +528,7 @@ describe('LandingPage submission flow', () => {
         },
         receipt_hash: 'hash-preview-3',
       })
-    ), { telemetryBodies });
+    ), { telemetryBodies, feedbackBodies });
 
     try {
       const view = render(<LandingPage apiBase="https://api.example.com" wsUrl="ws://spectate.example.com/ws" />);
@@ -530,6 +552,7 @@ describe('LandingPage submission flow', () => {
 
       expect(cancelAnimationFrame).toHaveBeenCalledWith(77);
       expect(telemetryBodies.some((entry) => entry.event_type === 'wrong_answer_clicked')).toBe(true);
+      expect(feedbackBodies).toHaveLength(1);
     } finally {
       Object.defineProperty(window, 'requestAnimationFrame', {
         configurable: true,
