@@ -1691,6 +1691,20 @@ class SlackOAuthHandler(SecureHandler):
             expected_workspace_id = str(
                 getattr(workspace, "workspace_id", "") or workspace_id
             ).strip()
+            if not response_workspace_id:
+                logger.error(
+                    "Token refresh returned no workspace identity for %s",
+                    workspace_id,
+                )
+                audit = _get_oauth_audit_logger()
+                if audit:
+                    audit.log_oauth(
+                        workspace_id=workspace_id,
+                        action="token_refresh",
+                        success=False,
+                        error="Invalid refresh response: missing workspace identity",
+                    )
+                return error_response("Invalid token refresh response", 502)
             if response_workspace_id and response_workspace_id != expected_workspace_id:
                 logger.error(
                     "Token refresh workspace mismatch for %s: got %s",
