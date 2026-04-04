@@ -30,7 +30,6 @@ import logging
 import os
 import random
 import re
-import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -44,6 +43,7 @@ from aragora.server.handlers.base import (
     handle_errors,
 )
 from aragora.server.validation.query_params import safe_query_float, safe_query_int
+from aragora.storage.landing_review_store import get_landing_review_store
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +78,6 @@ OPENROUTER_PLAYGROUND_MODELS: list[tuple[str, str]] = [
 # IP -> list of timestamps
 _request_timestamps: dict[str, list[float]] = {}
 _live_request_timestamps: dict[str, list[float]] = {}
-_landing_event_lock = threading.Lock()
-_landing_events: list[dict[str, Any]] = []
-_LANDING_EVENT_LIMIT = 5000
-_landing_feedback_lock = threading.Lock()
-_landing_feedback_reports: list[dict[str, Any]] = []
-_LANDING_FEEDBACK_LIMIT = 1000
 _LANDING_EVENT_TYPE_ORDER = (
     "preflight_shown",
     "preflight_selected",
@@ -182,10 +176,7 @@ def _reset_rate_limits() -> None:
     global _daily_debate_count, _daily_debate_reset_time  # noqa: PLW0603
     _request_timestamps.clear()
     _live_request_timestamps.clear()
-    with _landing_event_lock:
-        _landing_events.clear()
-    with _landing_feedback_lock:
-        _landing_feedback_reports.clear()
+    get_landing_review_store().clear()
     _daily_debate_count = 0
     _daily_debate_reset_time = 0.0
 
@@ -244,21 +235,19 @@ def _record_landing_event(
     client_ip: str,
     data: dict[str, Any] | None = None,
 ) -> None:
-    """Record a bounded in-memory landing telemetry event."""
+    """Record a bounded landing telemetry event."""
     if event_type not in _LANDING_EVENT_TYPES:
         return
 
-    with _landing_event_lock:
-        _landing_events.append(
-            {
-                "event_type": event_type,
-                "client_ip": client_ip,
-                "data": _sanitize_landing_event_data(data or {}),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
+    try:
+        get_landing_review_store().record_event(
+            event_type=event_type,
+            client_tag=_client_tag(client_ip),
+            data=_sanitize_landing_event_data(data or {}),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
-        if len(_landing_events) > _LANDING_EVENT_LIMIT:
-            del _landing_events[:-_LANDING_EVENT_LIMIT]
+    except Exception as exc:  # noqa: BLE001 - telemetry should not block user-facing requests
+        logger.warning("Failed to persist landing telemetry event: %s", exc)
 
 
 def _record_landing_feedback(
@@ -288,10 +277,10 @@ def _record_landing_feedback(
     if isinstance(participant_count, int):
         report["participant_count"] = max(0, min(20, participant_count))
 
-    with _landing_feedback_lock:
-        _landing_feedback_reports.append(report)
-        if len(_landing_feedback_reports) > _LANDING_FEEDBACK_LIMIT:
-            del _landing_feedback_reports[:-_LANDING_FEEDBACK_LIMIT]
+    try:
+        get_landing_review_store().record_feedback(report)
+    except Exception as exc:  # noqa: BLE001 - feedback capture should be best-effort
+        logger.warning("Failed to persist landing feedback report: %s", exc)
 
     return report
 
@@ -320,15 +309,16 @@ def _build_landing_event_summary(
 ) -> dict[str, Any]:
     """Aggregate recent landing telemetry into a compact funnel summary."""
     now = datetime.now(timezone.utc)
-    cutoff = now.timestamp() - window_seconds
-
-    with _landing_event_lock:
-        snapshot = list(_landing_events)
+    try:
+        snapshot = get_landing_review_store().list_recent_events(window_seconds=window_seconds)
+    except Exception as exc:  # noqa: BLE001 - degrade to an empty summary if storage is unavailable
+        logger.warning("Failed to load landing telemetry summary: %s", exc)
+        snapshot = []
 
     recent_events: list[tuple[datetime, dict[str, Any]]] = []
     for event in snapshot:
         event_dt = _parse_landing_event_timestamp(event.get("timestamp"))
-        if event_dt is None or event_dt.timestamp() < cutoff:
+        if event_dt is None:
             continue
         recent_events.append((event_dt, event))
 
@@ -347,9 +337,9 @@ def _build_landing_event_summary(
         if event_type in event_counts:
             event_counts[event_type] += 1
 
-        client_ip = str(event.get("client_ip", "") or "").strip()
-        if client_ip and client_ip != "unknown":
-            unique_clients.add(client_ip)
+        client_tag = str(event.get("client_tag", "") or "").strip()
+        if client_tag and client_tag != "unknown":
+            unique_clients.add(client_tag)
 
         if last_event_at is None or event_dt > last_event_at:
             last_event_at = event_dt
@@ -455,20 +445,24 @@ def _build_landing_feedback_summary(
 ) -> dict[str, Any]:
     """Return recent landing wrong-answer reports for internal review."""
     now = datetime.now(timezone.utc)
-    cutoff = now.timestamp() - window_seconds
-
-    with _landing_feedback_lock:
-        snapshot = list(_landing_feedback_reports)
+    try:
+        snapshot = get_landing_review_store().list_recent_feedback(
+            window_seconds=window_seconds,
+            limit=limit,
+        )
+    except Exception as exc:  # noqa: BLE001 - degrade to an empty queue if storage is unavailable
+        logger.warning("Failed to load landing feedback summary: %s", exc)
+        snapshot = []
 
     recent_reports: list[tuple[datetime, dict[str, Any]]] = []
     for report in snapshot:
         report_dt = _parse_landing_event_timestamp(report.get("timestamp"))
-        if report_dt is None or report_dt.timestamp() < cutoff:
+        if report_dt is None:
             continue
         recent_reports.append((report_dt, report))
 
     recent_reports.sort(key=lambda item: item[0], reverse=True)
-    trimmed = [report for _, report in recent_reports[:limit]]
+    trimmed = [report for _, report in recent_reports]
     rewritten_count = sum(1 for report in trimmed if report.get("rewritten") is True)
     preview_mode_count = sum(1 for report in trimmed if report.get("result_mode") == "preview")
     unique_clients = {
@@ -2385,6 +2379,15 @@ class PlaygroundHandler(BaseHandler):
             return error_response("Debate not found", 404)
 
     def _handle_status(self) -> HandlerResult:
+        try:
+            review_store = get_landing_review_store()
+            landing_event_count = review_store.count_events()
+            landing_feedback_count = review_store.count_feedback()
+        except Exception as exc:  # noqa: BLE001 - health endpoint should remain available
+            logger.warning("Failed to read landing review counts: %s", exc)
+            landing_event_count = 0
+            landing_feedback_count = 0
+
         return json_response(
             {
                 "status": "ok",
@@ -2393,8 +2396,8 @@ class PlaygroundHandler(BaseHandler):
                 "max_rounds": _MAX_ROUNDS,
                 "max_agents": _MAX_AGENTS,
                 "rate_limit": f"{_PLAYGROUND_RATE_LIMIT} requests per {int(_PLAYGROUND_RATE_WINDOW)}s",
-                "landing_event_count": len(_landing_events),
-                "landing_feedback_count": len(_landing_feedback_reports),
+                "landing_event_count": landing_event_count,
+                "landing_feedback_count": landing_feedback_count,
             }
         )
 
