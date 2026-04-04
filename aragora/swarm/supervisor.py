@@ -3409,8 +3409,11 @@ class SwarmSupervisor:
             "merge_gate",
             "verification_missing_reason",
             "scope_violation",
+            "resource_error",
+            "conflicts",
         ):
             item.pop(key, None)
+        item.pop("blockers", None)
         failure_reason = (
             "worker_timeout_no_deliverable" if result.exit_code == -1 else "worker_crash"
         )
@@ -3428,7 +3431,7 @@ class SwarmSupervisor:
             "reason": failure_reason,
             "question": blocking_question,
         }
-        blockers = [str(value).strip() for value in item.get("blockers", []) if str(value).strip()]
+        blockers: list[str] = []
         if item["dispatch_error"] not in blockers:
             blockers.append(item["dispatch_error"])
         item["blockers"] = blockers
