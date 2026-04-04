@@ -3196,6 +3196,9 @@ class SwarmSupervisor:
                     merge_gate["llm_override"] = True
                     item["merge_gate"] = merge_gate
                 else:
+                    for key in ("resource_error", "conflicts", "scope_violation"):
+                        item.pop(key, None)
+                    item.pop("blockers", None)
                     self._mark_needs_human(
                         item,
                         self._merge_gate_failure_reason(merge_gate),

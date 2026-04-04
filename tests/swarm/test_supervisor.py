@@ -3508,6 +3508,10 @@ async def test_collect_results_blocks_merge_gate_when_required_checks_fail(
                 "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
                 "receipt_id": "receipt-stale",
                 "confidence": 0.91,
+                "resource_error": "old resource wait",
+                "conflicts": [{"source": "lease", "lease_id": "lease-stale"}],
+                "scope_violation": {"violations": [{"path": "old.py"}]},
+                "blockers": ["old blocker"],
             }
         ],
         status="active",
@@ -3561,6 +3565,9 @@ async def test_collect_results_blocks_merge_gate_when_required_checks_fail(
     assert wo["worker_outcome"] == "merge_gate_failed"
     assert wo["merge_gate"]["checks_passed"] is False
     assert "merge gate blocked" in wo["dispatch_error"]
+    for cleared_key in ("resource_error", "conflicts", "scope_violation"):
+        assert cleared_key not in wo
+    assert wo["blockers"] == [wo["dispatch_error"]]
 
     summary = store.status_summary()
     assert summary["counts"]["active_leases"] == 0
