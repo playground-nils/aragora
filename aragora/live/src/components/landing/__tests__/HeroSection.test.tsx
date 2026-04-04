@@ -4,7 +4,7 @@ import { HeroSection } from '../HeroSection';
 
 const mockPush = jest.fn();
 const mockBackendConfig = { api: 'http://localhost:8080' };
-const mockDebateResultPreview = jest.fn();
+const mockCompactDebateResult = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -15,12 +15,15 @@ jest.mock('@/context/ThemeContext', () => ({
 }));
 
 jest.mock('../../DebateResultPreview', () => ({
-  DebateResultPreview: (props: Record<string, unknown>) => {
-    mockDebateResultPreview(props);
-    return <div data-testid="debate-result-preview">Debate result</div>;
-  },
   RETURN_URL_KEY: 'return_url',
   PENDING_DEBATE_KEY: 'pending_debate',
+}));
+
+jest.mock('../CompactDebateResult', () => ({
+  CompactDebateResult: (props: Record<string, unknown>) => {
+    mockCompactDebateResult(props);
+    return <div data-testid="debate-result-preview">Debate result</div>;
+  },
 }));
 
 jest.mock('../../BackendSelector', () => ({
@@ -227,7 +230,28 @@ describe('HeroSection', () => {
       const user = userEvent.setup();
       const fetchMock = jest.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({}),
+        json: async () => ({
+          type: 'confirm',
+          preflight: {
+            title: 'Choose which version of the question to debate',
+            prompt: 'Pick the interpretation that Aragora should debate first.',
+            warning: 'Ambiguous questions need a scoped reading before the live debate.',
+            options: [
+              {
+                id: 'food-safety-first',
+                label: 'Practical food-safety first',
+                description: 'Focus on whether cooked or frozen chicken is safe to microwave.',
+                originalQuestion:
+                  'Should I cook my chickens in a microwave? What if they are alive, and what if they are dead?',
+                interpretedQuestion: 'Is it safe to microwave chicken that is already dead?',
+                debatePrompt: 'Is it safe to microwave chicken that is already dead?',
+                agents: 3,
+                rounds: 2,
+                recommended: true,
+              },
+            ],
+          },
+        }),
       });
       global.fetch = fetchMock as typeof fetch;
 
@@ -253,6 +277,24 @@ describe('HeroSection', () => {
       const user = userEvent.setup();
       const fetchMock = jest.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/api/v1/playground/assess')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              type: 'proceed',
+              option: {
+                id: 'direct',
+                label: 'Direct debate',
+                description: 'Run the question as written.',
+                originalQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                interpretedQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                debatePrompt: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+                agents: 3,
+                rounds: 2,
+              },
+            }),
+          });
+        }
         if (url.includes('/api/v1/playground/landing/events')) {
           return Promise.resolve({
             ok: true,
@@ -296,11 +338,9 @@ describe('HeroSection', () => {
         expect(screen.getByTestId('debate-result-preview')).toBeInTheDocument();
       });
 
-      expect(mockDebateResultPreview).toHaveBeenCalledWith(
+      expect(mockCompactDebateResult).toHaveBeenCalledWith(
         expect.objectContaining({
-          condensed: true,
-          onFlagWrongAnswer: expect.any(Function),
-          onOpenFullDebate: expect.any(Function),
+          onWrongAnswer: expect.any(Function),
           onShare: expect.any(Function),
           result: expect.objectContaining({
             original_question: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
