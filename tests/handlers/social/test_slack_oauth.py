@@ -1337,6 +1337,7 @@ class TestCallback:
         self, handler, handler_module, mock_state_store
     ):
         """When centralized store returns None, fall back to in-memory."""
+        mock_state_store.peek.return_value = None
         mock_state_store.validate_and_consume.return_value = None
         handler_module._oauth_states_fallback["fallback-state"] = {
             "tenant_id": "t-1",
@@ -1501,6 +1502,50 @@ class TestCallback:
         body = _body(second)
         assert "invalid or expired state token" in body.get("error", "").lower()
         assert mock_client.post.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_callback_rejects_stale_fallback_when_central_state_was_peeked_but_not_consumed(
+        self, handler, handler_module, mock_state_store
+    ):
+        """A fallback copy must not resurrect a centralized state that was already consumed."""
+        handler_module._oauth_states_fallback["test-state-token-abc123"] = {
+            "tenant_id": "tenant-1",
+            "provider": "slack",
+            "created_at": time.time(),
+        }
+        mock_state_store.peek.return_value = {
+            "tenant_id": "tenant-1",
+            "provider": "slack",
+            "created_at": time.time(),
+        }
+        mock_state_store.validate_and_consume.return_value = None
+
+        mock_client, _ = _make_httpx_mock(
+            {
+                "ok": True,
+                "access_token": "xoxb-token",
+                "team": {"id": "W111", "name": "Replay Unsafe"},
+                "bot_user_id": "B1",
+                "authed_user": {"id": "U1"},
+                "scope": "channels:history",
+            }
+        )
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await handler.handle(
+                "GET",
+                "/api/integrations/slack/callback",
+                {},
+                {"code": "code", "state": "test-state-token-abc123"},
+                {},
+                None,
+            )
+
+        assert _status(result) == 400
+        body = _body(result)
+        assert "invalid or expired state token" in body.get("error", "").lower()
+        assert "test-state-token-abc123" not in handler_module._oauth_states_fallback
+        mock_client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_callback_state_from_oauth_state_object(

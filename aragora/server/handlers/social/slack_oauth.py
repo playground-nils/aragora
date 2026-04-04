@@ -1035,7 +1035,7 @@ class SlackOAuthHandler(SecureHandler):
         fallback_state_data = (
             _oauth_states_fallback.pop(state, None) if fallback_state_is_slack else None
         )
-        if not state_data:
+        if not state_data and peeked_state_data is None:
             state_data = fallback_state_data
         if not state_data:
             return error_response("Invalid or expired state token", 400)
