@@ -3295,9 +3295,17 @@ class SwarmSupervisor:
             self._register_pr_if_present(item, result)
             item["status"] = "completed"
             item["review_status"] = "pending_heterogeneous_review"
-            item.pop("failure_reason", None)
-            item.pop("blocking_question", None)
-            item.pop("blocker", None)
+            for key in (
+                "dispatch_error",
+                "resource_error",
+                "failure_reason",
+                "blocking_question",
+                "blocker",
+                "conflicts",
+                "scope_violation",
+            ):
+                item.pop(key, None)
+            item.pop("blockers", None)
             return
 
         # Non-zero exit: classify as crash (with or without salvage)
