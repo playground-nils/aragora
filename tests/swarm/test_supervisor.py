@@ -3492,6 +3492,14 @@ async def test_collect_results_backfills_receipt_for_salvaged_deliverable(
                 "review_status": "pending",
                 "file_scope": ["aragora/swarm/supervisor.py"],
                 "receipt_id": None,
+                "dispatch_error": "old crash",
+                "failure_reason": "worker_crash",
+                "blocking_question": "Old blocker?",
+                "blocker": {"reason": "worker_crash", "question": "Old blocker?"},
+                "blockers": ["old blocker"],
+                "merge_gate": {"checks_passed": False},
+                "verification_missing_reason": "missing_verification_plan",
+                "scope_violation": {"violations": [{"path": "old.py"}]},
             }
         ],
         status="active",
@@ -3531,6 +3539,17 @@ async def test_collect_results_backfills_receipt_for_salvaged_deliverable(
     receipt = store.get_completion_receipt(wo["receipt_id"])
     assert receipt is not None
     assert receipt.outcome == "deliverable_created"
+    for cleared_key in (
+        "dispatch_error",
+        "failure_reason",
+        "blocking_question",
+        "blocker",
+        "blockers",
+        "merge_gate",
+        "verification_missing_reason",
+        "scope_violation",
+    ):
+        assert cleared_key not in wo
 
 
 def test_merge_gate_state_allows_docs_only_lane_without_verification_plan() -> None:
