@@ -3040,6 +3040,7 @@ class SwarmSupervisor:
                     "adopted_pr",
                     "merge_gate",
                     "verification_missing_reason",
+                    "scope_violation",
                 ):
                     item.pop(key, None)
                 item["commit_shas"] = []
@@ -3063,6 +3064,7 @@ class SwarmSupervisor:
                     "adopted_pr",
                     "merge_gate",
                     "verification_missing_reason",
+                    "scope_violation",
                 ):
                     item.pop(key, None)
                 if not _pre_outcome:
@@ -3291,6 +3293,7 @@ class SwarmSupervisor:
             "adopted_pr",
             "merge_gate",
             "verification_missing_reason",
+            "scope_violation",
         ):
             item.pop(key, None)
         failure_reason = (

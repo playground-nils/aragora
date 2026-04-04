@@ -4522,6 +4522,7 @@ def test_apply_worker_result_clean_exit_no_deliverable_clears_stale_deliverable_
         "adopted_pr": "https://github.com/synaptent/aragora/pull/9999",
         "merge_gate": {"checks_passed": True},
         "verification_missing_reason": "stale",
+        "scope_violation": {"violations": [{"path": "README.md"}]},
         "lease_id": "lease-123",
     }
     result = WorkerProcess(
@@ -4552,6 +4553,7 @@ def test_apply_worker_result_clean_exit_no_deliverable_clears_stale_deliverable_
         "adopted_pr",
         "merge_gate",
         "verification_missing_reason",
+        "scope_violation",
     ):
         assert cleared_key not in work_order
     mock_release.assert_called_once_with(work_order)
@@ -4938,6 +4940,7 @@ async def test_collect_finished_results_failed_worker_clears_stale_completion_me
     run.work_orders[0]["pr_url"] = "https://github.com/synaptent/aragora/pull/9999"
     run.work_orders[0]["merge_gate"] = {"checks_passed": True}
     run.work_orders[0]["verification_missing_reason"] = "missing_verification_plan"
+    run.work_orders[0]["scope_violation"] = {"violations": [{"path": "README.md"}]}
     store.update_supervisor_run(run.run_id, work_orders=run.work_orders, status="active")
 
     completed = await supervisor.collect_finished_results(run.run_id)
@@ -4956,6 +4959,7 @@ async def test_collect_finished_results_failed_worker_clears_stale_completion_me
         "pr_url",
         "merge_gate",
         "verification_missing_reason",
+        "scope_violation",
     ):
         assert cleared_key not in work_order
 
