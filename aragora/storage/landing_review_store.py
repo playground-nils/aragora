@@ -11,11 +11,14 @@ from typing import Any
 
 from aragora.persistence.db_config import DatabaseType, get_db_path
 from aragora.storage.base_store import SQLiteStore
+from aragora.storage.schema import SchemaManager, safe_add_column
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_EVENT_LIMIT = 5_000
 _DEFAULT_FEEDBACK_LIMIT = 1_000
+_DEFAULT_REVIEW_STATUS = "pending"
+_REVIEW_STATUSES = frozenset({"pending", "reviewed", "resolved", "dismissed"})
 
 
 def _utc_now_iso() -> str:
@@ -32,7 +35,7 @@ class LandingReviewStore(SQLiteStore):
     """Persist bounded landing telemetry and wrong-answer reports."""
 
     SCHEMA_NAME = "landing_review_store"
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     INITIAL_SCHEMA = """
         CREATE TABLE IF NOT EXISTS landing_events (
             sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,13 +62,27 @@ class LandingReviewStore(SQLiteStore):
             debate_id TEXT,
             verdict TEXT,
             participant_count INTEGER,
-            rewritten INTEGER NOT NULL DEFAULT 0
+            rewritten INTEGER NOT NULL DEFAULT 0,
+            review_status TEXT NOT NULL DEFAULT 'pending',
+            reviewed_at TEXT,
+            reviewed_by TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_landing_feedback_timestamp
             ON landing_feedback_reports(timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_landing_feedback_client_tag
             ON landing_feedback_reports(client_tag, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_landing_feedback_review_status_timestamp
+            ON landing_feedback_reports(review_status, timestamp DESC);
     """
+
+    def register_migrations(self, manager: SchemaManager) -> None:
+        """Register schema migrations."""
+        manager.register_migration(
+            from_version=1,
+            to_version=2,
+            function=self._migrate_v1_to_v2,
+            description="Add landing feedback review status metadata",
+        )
 
     def record_event(
         self,
@@ -114,6 +131,7 @@ class LandingReviewStore(SQLiteStore):
 
     def record_feedback(self, report: dict[str, Any]) -> None:
         """Persist a bounded wrong-answer report."""
+        review_status = self._normalize_review_status(report.get("review_status"))
         with self.connection() as conn:
             conn.execute(
                 """
@@ -129,8 +147,11 @@ class LandingReviewStore(SQLiteStore):
                     debate_id,
                     verdict,
                     participant_count,
-                    rewritten
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    rewritten,
+                    review_status,
+                    reviewed_at,
+                    reviewed_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     report["id"],
@@ -145,6 +166,9 @@ class LandingReviewStore(SQLiteStore):
                     report.get("verdict"),
                     report.get("participant_count"),
                     1 if report.get("rewritten") is True else 0,
+                    review_status,
+                    report.get("reviewed_at") if review_status != _DEFAULT_REVIEW_STATUS else None,
+                    report.get("reviewed_by") if review_status != _DEFAULT_REVIEW_STATUS else None,
                 ),
             )
             self._trim_table(
@@ -152,6 +176,32 @@ class LandingReviewStore(SQLiteStore):
                 "landing_feedback_reports",
                 keep_limit=_DEFAULT_FEEDBACK_LIMIT,
             )
+
+    def update_feedback_review(
+        self,
+        *,
+        report_id: str,
+        review_status: str,
+        reviewed_at: str | None,
+        reviewed_by: str | None,
+    ) -> bool:
+        """Update review metadata for a persisted wrong-answer report."""
+        normalized_status = self._normalize_review_status(review_status)
+        with self.connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE landing_feedback_reports
+                SET review_status = ?, reviewed_at = ?, reviewed_by = ?
+                WHERE id = ?
+                """,
+                (
+                    normalized_status,
+                    reviewed_at if normalized_status != _DEFAULT_REVIEW_STATUS else None,
+                    reviewed_by if normalized_status != _DEFAULT_REVIEW_STATUS else None,
+                    report_id,
+                ),
+            )
+        return int(cursor.rowcount or 0) > 0
 
     def list_recent_feedback(
         self,
@@ -174,7 +224,10 @@ class LandingReviewStore(SQLiteStore):
                 debate_id,
                 verdict,
                 participant_count,
-                rewritten
+                rewritten,
+                review_status,
+                reviewed_at,
+                reviewed_by
             FROM landing_feedback_reports
             WHERE timestamp >= ?
             ORDER BY sequence DESC
@@ -196,6 +249,9 @@ class LandingReviewStore(SQLiteStore):
                 "verdict": row[9],
                 "participant_count": row[10],
                 "rewritten": bool(row[11]),
+                "review_status": row[12] or _DEFAULT_REVIEW_STATUS,
+                "reviewed_at": row[13],
+                "reviewed_by": row[14],
             }
             for row in rows
         ]
@@ -243,6 +299,34 @@ class LandingReviewStore(SQLiteStore):
             logger.warning("Corrupt landing event payload encountered")
             return {}
         return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _normalize_review_status(value: Any) -> str:
+        """Normalize review status to a supported bounded value."""
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in _REVIEW_STATUSES:
+                return normalized
+        return _DEFAULT_REVIEW_STATUS
+
+    @staticmethod
+    def _migrate_v1_to_v2(conn: Any) -> None:
+        """Add review metadata columns for landing feedback reports."""
+        safe_add_column(
+            conn,
+            "landing_feedback_reports",
+            "review_status",
+            "TEXT",
+            default="'pending'",
+        )
+        safe_add_column(conn, "landing_feedback_reports", "reviewed_at", "TEXT")
+        safe_add_column(conn, "landing_feedback_reports", "reviewed_by", "TEXT")
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_landing_feedback_review_status_timestamp
+            ON landing_feedback_reports(review_status, timestamp DESC)
+            """
+        )
 
 
 _store: LandingReviewStore | None = None

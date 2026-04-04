@@ -147,6 +147,9 @@ class TestCanHandle:
     def test_landing_feedback_path(self, handler):
         assert handler.can_handle("/api/v1/playground/landing/feedback")
 
+    def test_landing_feedback_review_path(self, handler):
+        assert handler.can_handle("/api/v1/playground/landing/feedback/review")
+
     def test_tts_path(self, handler):
         assert handler.can_handle("/api/v1/playground/tts")
 
@@ -730,6 +733,12 @@ class TestLandingTelemetry:
         assert body["unique_client_count"] == 1
         assert body["stats"]["rewritten_count"] == 1
         assert body["stats"]["preview_mode_count"] == 1
+        assert body["stats"]["review_status_counts"] == {
+            "dismissed": 0,
+            "pending": 1,
+            "resolved": 0,
+            "reviewed": 0,
+        }
         assert body["reports"] == [
             {
                 "id": "lfb_1",
@@ -744,8 +753,82 @@ class TestLandingTelemetry:
                 "verdict": "needs_review",
                 "participant_count": 3,
                 "rewritten": True,
+                "review_status": "pending",
+                "reviewed_at": None,
+                "reviewed_by": None,
             }
         ]
+
+    def test_feedback_review_update_requires_admin(self, handler):
+        from aragora.server.handlers.base import error_response
+
+        with patch.object(
+            handler,
+            "require_admin_or_error",
+            return_value=(None, error_response("Admin access required", 403)),
+        ):
+            result = handler.handle_post(
+                "/api/v1/playground/landing/feedback/review",
+                {},
+                _MockHTTPHandler("POST", body={"id": "lfb_1", "review_status": "resolved"}),
+            )
+
+        assert _status(result) == 403
+
+    def test_feedback_review_update_persists_status(self, handler):
+        now = datetime.now(timezone.utc)
+        store = get_landing_review_store()
+        store.record_feedback(
+            {
+                "id": "lfb_1",
+                "timestamp": now.isoformat(),
+                "client_tag": "ip:abc123",
+                "question": "Should I microwave chicken nuggets for my child?",
+                "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
+                "final_answer_preview": "Yes, reheat until hot all the way through.",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "verdict": "needs_review",
+                "participant_count": 3,
+                "rewritten": True,
+            }
+        )
+
+        admin_user = MagicMock()
+        admin_user.email = "owner@aragora.ai"
+
+        with patch.object(handler, "require_admin_or_error", return_value=(admin_user, None)):
+            result = handler.handle_post(
+                "/api/v1/playground/landing/feedback/review",
+                {},
+                _MockHTTPHandler("POST", body={"id": "lfb_1", "review_status": "resolved"}),
+            )
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["ok"] is True
+        assert body["review_status"] == "resolved"
+        assert body["reviewed_by"] == "owner@aragora.ai"
+        assert body["reviewed_at"] is not None
+
+        reports = get_landing_review_store().list_recent_feedback(window_seconds=3600, limit=10)
+        assert reports[0]["review_status"] == "resolved"
+        assert reports[0]["reviewed_by"] == "owner@aragora.ai"
+        assert reports[0]["reviewed_at"] is not None
+
+    def test_feedback_review_update_returns_404_when_missing(self, handler):
+        admin_user = MagicMock()
+        admin_user.email = "owner@aragora.ai"
+
+        with patch.object(handler, "require_admin_or_error", return_value=(admin_user, None)):
+            result = handler.handle_post(
+                "/api/v1/playground/landing/feedback/review",
+                {},
+                _MockHTTPHandler("POST", body={"id": "missing", "review_status": "resolved"}),
+            )
+
+        assert _status(result) == 404
 
 
 # ============================================================================
@@ -1661,6 +1744,19 @@ class TestPostDispatch:
             mock_h = _MockHTTPHandler("POST", body={})
             handler.handle_post("/api/v1/playground/landing/events", {}, mock_h)
             mock_events.assert_called_once()
+
+    def test_landing_feedback_review_path_dispatches(self, handler):
+        with patch.object(handler, "_handle_landing_feedback_review") as mock_review:
+            from aragora.server.handlers.utils.responses import HandlerResult
+
+            mock_review.return_value = HandlerResult(
+                status_code=200,
+                content_type="application/json",
+                body=json.dumps({"ok": True}).encode(),
+            )
+            mock_h = _MockHTTPHandler("POST", body={})
+            handler.handle_post("/api/v1/playground/landing/feedback/review", {}, mock_h)
+            mock_review.assert_called_once()
 
     def test_unknown_path_returns_none(self, handler):
         mock_h = _MockHTTPHandler("POST", body={})

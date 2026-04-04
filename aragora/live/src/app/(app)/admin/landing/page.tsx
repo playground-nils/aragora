@@ -57,6 +57,9 @@ interface LandingFeedbackReport {
   verdict: string | null;
   participant_count: number | null;
   rewritten: boolean;
+  review_status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+  reviewed_at: string | null;
+  reviewed_by: string | null;
 }
 
 interface LandingFeedbackSummary {
@@ -71,6 +74,12 @@ interface LandingFeedbackSummary {
     rewritten_rate: number | null;
     preview_mode_count: number;
     preview_mode_rate: number | null;
+    review_status_counts: {
+      pending: number;
+      reviewed: number;
+      resolved: number;
+      dismissed: number;
+    };
   };
   reports: LandingFeedbackReport[];
 }
@@ -128,10 +137,38 @@ function Badge({
   );
 }
 
+function reviewStatusTone(status: LandingFeedbackReport['review_status']): string {
+  switch (status) {
+    case 'reviewed':
+      return 'text-acid-cyan border-acid-cyan/30 bg-acid-cyan/10';
+    case 'resolved':
+      return 'text-acid-green border-acid-green/30 bg-acid-green/10';
+    case 'dismissed':
+      return 'text-acid-magenta border-acid-magenta/30 bg-acid-magenta/10';
+    default:
+      return 'text-acid-yellow border-acid-yellow/30 bg-acid-yellow/10';
+  }
+}
+
+function reviewStatusLabel(status: LandingFeedbackReport['review_status']): string {
+  switch (status) {
+    case 'reviewed':
+      return 'reviewed';
+    case 'resolved':
+      return 'resolved';
+    case 'dismissed':
+      return 'dismissed';
+    default:
+      return 'pending';
+  }
+}
+
 export default function LandingReviewPage() {
   const { config: backendConfig } = useBackend();
   const [windowHours, setWindowHours] = useState(24);
   const [reportLimit, setReportLimit] = useState(25);
+  const [updatingReportId, setUpdatingReportId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const windowSeconds = windowHours * 3600;
   const summaryEndpoint = useMemo(
@@ -168,6 +205,38 @@ export default function LandingReviewPage() {
   const refresh = useCallback(async () => {
     await Promise.all([mutateSummary(), mutateFeedback()]);
   }, [mutateFeedback, mutateSummary]);
+
+  const updateReviewStatus = useCallback(
+    async (reportId: string, reviewStatus: LandingFeedbackReport['review_status']) => {
+      setUpdatingReportId(reportId);
+      setActionError(null);
+      try {
+        const response = await fetch(
+          `${backendConfig.api.replace(/\/$/, '')}/api/v1/playground/landing/feedback/review`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: reportId, review_status: reviewStatus }),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Request failed with ${response.status}`);
+        }
+
+        await mutateFeedback();
+      } catch (error) {
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to update landing review status.',
+        );
+      } finally {
+        setUpdatingReportId((current) => (current === reportId ? null : current));
+      }
+    },
+    [backendConfig.api, mutateFeedback],
+  );
 
   const lastUpdated = summary?.generated_at || feedback?.generated_at || null;
   const reports = feedback?.reports ?? [];
@@ -266,7 +335,7 @@ export default function LandingReviewPage() {
         <MetricCard
           label="Reports"
           value={String(feedback?.total_reports ?? 0)}
-          sublabel={`${feedback?.returned_reports ?? 0} shown`}
+          sublabel={`${feedback?.stats.review_status_counts.pending ?? 0} pending`}
           tone="text-acid-cyan"
         />
       </div>
@@ -371,10 +440,30 @@ export default function LandingReviewPage() {
               Recent reports captured when visitors click “This answer seems wrong”.
             </p>
           </div>
-          <div className="font-mono text-xs text-text-muted">
-            Last report {formatTimestamp(feedback?.last_report_at)}
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="text-acid-yellow border-acid-yellow/30 bg-acid-yellow/10">
+              Pending {feedback?.stats.review_status_counts.pending ?? 0}
+            </Badge>
+            <Badge tone="text-acid-cyan border-acid-cyan/30 bg-acid-cyan/10">
+              Reviewed {feedback?.stats.review_status_counts.reviewed ?? 0}
+            </Badge>
+            <Badge tone="text-acid-green border-acid-green/30 bg-acid-green/10">
+              Resolved {feedback?.stats.review_status_counts.resolved ?? 0}
+            </Badge>
+            <Badge tone="text-acid-magenta border-acid-magenta/30 bg-acid-magenta/10">
+              Dismissed {feedback?.stats.review_status_counts.dismissed ?? 0}
+            </Badge>
+            <div className="font-mono text-xs text-text-muted">
+              Last report {formatTimestamp(feedback?.last_report_at)}
+            </div>
           </div>
         </div>
+
+        {actionError && (
+          <div className="mb-4 rounded border border-acid-red/40 bg-acid-red/10 p-3 font-mono text-xs text-acid-red">
+            {actionError}
+          </div>
+        )}
 
         {reports.length === 0 ? (
           <div className="rounded border border-dashed border-border p-8 font-mono text-sm text-text-muted">
@@ -385,6 +474,9 @@ export default function LandingReviewPage() {
             {reports.map((report) => (
               <article key={report.id} className="rounded border border-border bg-bg/60 p-5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <Badge tone={reviewStatusTone(report.review_status)}>
+                    {reviewStatusLabel(report.review_status)}
+                  </Badge>
                   <Badge tone="text-acid-red border-acid-red/30 bg-acid-red/10">
                     {report.verdict || 'needs_review'}
                   </Badge>
@@ -423,6 +515,41 @@ export default function LandingReviewPage() {
                       {report.final_answer_preview || '—'}
                     </p>
                   </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { void updateReviewStatus(report.id, 'reviewed'); }}
+                    disabled={updatingReportId === report.id || report.review_status === 'reviewed'}
+                    className="rounded border border-acid-cyan/40 bg-acid-cyan/10 px-3 py-1.5 font-mono text-xs text-acid-cyan transition-colors hover:bg-acid-cyan/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Mark reviewed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void updateReviewStatus(report.id, 'resolved'); }}
+                    disabled={updatingReportId === report.id || report.review_status === 'resolved'}
+                    className="rounded border border-acid-green/40 bg-acid-green/10 px-3 py-1.5 font-mono text-xs text-acid-green transition-colors hover:bg-acid-green/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Resolve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void updateReviewStatus(report.id, 'dismissed'); }}
+                    disabled={updatingReportId === report.id || report.review_status === 'dismissed'}
+                    className="rounded border border-acid-magenta/40 bg-acid-magenta/10 px-3 py-1.5 font-mono text-xs text-acid-magenta transition-colors hover:bg-acid-magenta/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Dismiss
+                  </button>
+                  {updatingReportId === report.id && (
+                    <span className="font-mono text-xs text-text-muted">Saving…</span>
+                  )}
+                  {(report.reviewed_by || report.reviewed_at) && (
+                    <span className="ml-auto font-mono text-[11px] text-text-muted">
+                      Reviewed {report.reviewed_by || 'admin'} · {formatTimestamp(report.reviewed_at)}
+                    </span>
+                  )}
                 </div>
 
                 {(report.result_warning || report.debate_id) && (

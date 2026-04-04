@@ -15,6 +15,7 @@ Routes:
     POST /api/v1/playground/debate/live/cost-estimate - Pre-flight cost estimate
     POST /api/v1/playground/landing/feedback    - Capture bounded landing wrong-answer reports
     GET  /api/v1/playground/landing/feedback    - List recent landing wrong-answer reports
+    POST /api/v1/playground/landing/feedback/review - Update admin review state for a report
     GET  /api/v1/playground/landing/events/summary - Aggregate recent landing telemetry
     GET  /api/v1/playground/debate/{id}          - Retrieve a saved debate (shareable link)
     GET  /api/v1/playground/status               - Health check for the playground
@@ -90,6 +91,7 @@ _LANDING_EVENT_TYPE_ORDER = (
     "share_clicked",
 )
 _LANDING_EVENT_TYPES = set(_LANDING_EVENT_TYPE_ORDER)
+_LANDING_REVIEW_STATUSES = frozenset({"pending", "reviewed", "resolved", "dismissed"})
 
 
 def _check_rate_limit(
@@ -272,6 +274,9 @@ def _record_landing_feedback(
         "verdict": _truncate_feedback_text(payload.get("verdict"), limit=64),
         "participant_count": None,
         "rewritten": payload.get("rewritten") is True,
+        "review_status": "pending",
+        "reviewed_at": None,
+        "reviewed_by": None,
     }
     participant_count = payload.get("participant_count")
     if isinstance(participant_count, int):
@@ -283,6 +288,28 @@ def _record_landing_feedback(
         logger.warning("Failed to persist landing feedback report: %s", exc)
 
     return report
+
+
+def _normalize_landing_review_status(value: Any) -> str:
+    """Normalize landing review state to a supported value."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _LANDING_REVIEW_STATUSES:
+            return normalized
+    return "pending"
+
+
+def _reviewer_label(user: Any) -> str:
+    """Build a compact admin identifier for queue triage metadata."""
+    if user is None:
+        return "admin"
+    email = getattr(user, "email", None)
+    if isinstance(email, str) and email.strip():
+        return email.strip()[:160]
+    user_id = getattr(user, "user_id", None) or getattr(user, "id", None)
+    if isinstance(user_id, str) and user_id.strip():
+        return user_id.strip()[:160]
+    return "admin"
 
 
 def _parse_landing_event_timestamp(value: Any) -> datetime | None:
@@ -465,6 +492,10 @@ def _build_landing_feedback_summary(
     trimmed = [report for _, report in recent_reports]
     rewritten_count = sum(1 for report in trimmed if report.get("rewritten") is True)
     preview_mode_count = sum(1 for report in trimmed if report.get("result_mode") == "preview")
+    review_status_counts = {status: 0 for status in sorted(_LANDING_REVIEW_STATUSES)}
+    for report in trimmed:
+        review_status = _normalize_landing_review_status(report.get("review_status"))
+        review_status_counts[review_status] += 1
     unique_clients = {
         str(report.get("client_tag", "") or "").strip()
         for _, report in recent_reports
@@ -484,6 +515,7 @@ def _build_landing_feedback_summary(
             "rewritten_rate": _ratio(rewritten_count, len(trimmed)),
             "preview_mode_count": preview_mode_count,
             "preview_mode_rate": _ratio(preview_mode_count, len(trimmed)),
+            "review_status_counts": review_status_counts,
         },
         "reports": trimmed,
     }
@@ -2313,6 +2345,7 @@ class PlaygroundHandler(BaseHandler):
         "/api/v1/playground/landing/events",
         "/api/v1/playground/landing/events/summary",
         "/api/v1/playground/landing/feedback",
+        "/api/v1/playground/landing/feedback/review",
         "/api/v1/playground/status",
         "/api/v1/playground/tts",
     ]
@@ -2334,6 +2367,7 @@ class PlaygroundHandler(BaseHandler):
             "/api/v1/playground/landing/events",
             "/api/v1/playground/landing/events/summary",
             "/api/v1/playground/landing/feedback",
+            "/api/v1/playground/landing/feedback/review",
             "/api/v1/playground/status",
             "/api/v1/playground/tts",
         ):
@@ -2441,6 +2475,53 @@ class PlaygroundHandler(BaseHandler):
                 window_seconds=window_seconds,
                 limit=limit,
             )
+        )
+
+    def _handle_landing_feedback_review(self, handler: Any) -> HandlerResult:
+        """Update admin review state for a wrong-answer report."""
+        user, err = self.require_admin_or_error(handler)
+        if err:
+            return err
+
+        body = self.read_json_body(handler) if handler else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return error_response("Invalid landing feedback review payload", 400)
+
+        report_id = str(body.get("id", "") or "").strip()
+        if not report_id:
+            return error_response("Missing landing feedback report id", 400)
+
+        review_status = _normalize_landing_review_status(body.get("review_status"))
+        reviewed_at = None
+        reviewed_by = None
+        if review_status != "pending":
+            reviewed_at = datetime.now(timezone.utc).isoformat()
+            reviewed_by = _reviewer_label(user)
+
+        try:
+            updated = get_landing_review_store().update_feedback_review(
+                report_id=report_id,
+                review_status=review_status,
+                reviewed_at=reviewed_at,
+                reviewed_by=reviewed_by,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep admin queue endpoint resilient
+            logger.warning("Failed to update landing feedback review state: %s", exc)
+            return error_response("Failed to update landing feedback review state", 500)
+
+        if not updated:
+            return error_response("Landing feedback report not found", 404)
+
+        return json_response(
+            {
+                "ok": True,
+                "id": report_id,
+                "review_status": review_status,
+                "reviewed_at": reviewed_at,
+                "reviewed_by": reviewed_by,
+            }
         )
 
     # ------------------------------------------------------------------
@@ -2552,6 +2633,8 @@ class PlaygroundHandler(BaseHandler):
             return self._handle_landing_event(handler)
         if path == "/api/v1/playground/landing/feedback":
             return self._handle_landing_feedback(handler)
+        if path == "/api/v1/playground/landing/feedback/review":
+            return self._handle_landing_feedback_review(handler)
         if path == "/api/v1/playground/assess":
             return self._handle_assess(handler)
         if path == "/api/v1/playground/debate/live/cost-estimate":
