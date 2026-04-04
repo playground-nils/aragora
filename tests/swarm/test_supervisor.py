@@ -520,7 +520,12 @@ def test_start_run_discards_duplicate_open_lane_when_goal_differs_only_by_boiler
                 "work_order_id": "existing",
                 "title": "Results lane",
                 "status": "waiting_conflict",
-                "file_scope": ["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+                "file_scope": [
+                    "aragora/live/**",
+                    "tests/e2e/**",
+                    "tests/handlers/**",
+                    "docs/**",
+                ],
             }
         ],
     )
@@ -537,7 +542,12 @@ def test_start_run_discards_duplicate_open_lane_when_goal_differs_only_by_boiler
                 id="subtask_1",
                 title="Results lane",
                 description="Connect the results page to backend endpoints and include empty-state handling.",
-                file_scope=["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+                file_scope=[
+                    "aragora/live/**",
+                    "tests/e2e/**",
+                    "tests/handlers/**",
+                    "docs/**",
+                ],
             )
         ],
     )
@@ -1204,7 +1214,11 @@ def test_start_run_preserves_rerun_when_existing_missing_verification_plan_is_de
         refresh_scaling=False,
     )
 
-    assert [item["status"] for item in run.work_orders] == ["queued", "queued", "queued"]
+    assert [item["status"] for item in run.work_orders] == [
+        "queued",
+        "queued",
+        "queued",
+    ]
     for work_order in run.work_orders:
         assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
 
@@ -1320,7 +1334,11 @@ def test_start_run_preserves_rerun_when_existing_failed_validation_lane_has_no_d
         refresh_scaling=False,
     )
 
-    assert [item["status"] for item in run.work_orders] == ["queued", "queued", "queued"]
+    assert [item["status"] for item in run.work_orders] == [
+        "queued",
+        "queued",
+        "queued",
+    ]
     for work_order in run.work_orders:
         assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
 
@@ -1538,7 +1556,10 @@ def test_start_run_passes_acceptance_and_constraints_to_decomposer(
     decomposer.analyze.assert_called_once()
     kwargs = decomposer.analyze.call_args.kwargs
     assert kwargs["acceptance_criteria"] == ["python -m pytest tests/swarm/test_supervisor.py -q"]
-    assert kwargs["constraints"] == ["Keep merge gate enabled", "Human approval required"]
+    assert kwargs["constraints"] == [
+        "Keep merge gate enabled",
+        "Human approval required",
+    ]
 
 
 def test_refresh_run_scales_queued_work_after_completion(
@@ -2194,7 +2215,10 @@ def test_refresh_run_respects_dispatched_workers_as_active(
         should_decompose=True,
         subtasks=[
             SubTask(
-                id=f"wo-{i}", title=f"Lane {i}", description=f"Lane {i}", file_scope=[f"file{i}.py"]
+                id=f"wo-{i}",
+                title=f"Lane {i}",
+                description=f"Lane {i}",
+                file_scope=[f"file{i}.py"],
             )
             for i in range(3)
         ],
@@ -2790,7 +2814,12 @@ def test_start_run_drops_explicit_spec_umbrella_lane_when_specific_sibling_exist
                     "empty-state handling, and tests, choosing the smallest verifiable page "
                     "from the issue instead of broad page churn."
                 ),
-                "file_scope": ["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+                "file_scope": [
+                    "aragora/live/**",
+                    "tests/e2e/**",
+                    "tests/handlers/**",
+                    "docs/**",
+                ],
             },
             {
                 "work_order_id": "proj-001",
@@ -2798,7 +2827,12 @@ def test_start_run_drops_explicit_spec_umbrella_lane_when_specific_sibling_exist
                 "description": (
                     "Connect the results page to backend endpoints to display debate outcomes."
                 ),
-                "file_scope": ["aragora/live/**", "tests/e2e/**", "tests/handlers/**", "docs/**"],
+                "file_scope": [
+                    "aragora/live/**",
+                    "tests/e2e/**",
+                    "tests/handlers/**",
+                    "docs/**",
+                ],
             },
         ],
     )
@@ -3095,13 +3129,19 @@ def test_start_run_collapses_redundant_identical_scope_work_orders(
                 id="wo-cli",
                 title="CLI Changes",
                 description="Update quickstart command output.",
-                file_scope=["aragora/cli/commands/quickstart.py", "tests/cli/test_quickstart.py"],
+                file_scope=[
+                    "aragora/cli/commands/quickstart.py",
+                    "tests/cli/test_quickstart.py",
+                ],
             ),
             SubTask(
                 id="wo-tests",
                 title="Tests Changes",
                 description="Add JSON output regression tests.",
-                file_scope=["aragora/cli/commands/quickstart.py", "tests/cli/test_quickstart.py"],
+                file_scope=[
+                    "aragora/cli/commands/quickstart.py",
+                    "tests/cli/test_quickstart.py",
+                ],
             ),
         ],
     )
@@ -3114,7 +3154,10 @@ def test_start_run_collapses_redundant_identical_scope_work_orders(
     spec = SwarmSpec(
         raw_goal="Add quickstart json output",
         refined_goal="Add --json output to quickstart",
-        file_scope_hints=["aragora/cli/commands/quickstart.py", "tests/cli/test_quickstart.py"],
+        file_scope_hints=[
+            "aragora/cli/commands/quickstart.py",
+            "tests/cli/test_quickstart.py",
+        ],
     )
 
     run = supervisor.start_run(spec=spec, max_concurrency=1)
@@ -3126,7 +3169,10 @@ def test_start_run_collapses_redundant_identical_scope_work_orders(
         "aragora/cli/commands/quickstart.py",
         "tests/cli/test_quickstart.py",
     ]
-    assert work_order["metadata"]["collapsed_redundant_work_orders"] == ["wo-cli", "wo-tests"]
+    assert work_order["metadata"]["collapsed_redundant_work_orders"] == [
+        "wo-cli",
+        "wo-tests",
+    ]
     lifecycle.ensure_managed_worktree.assert_called_once()
 
 
@@ -4057,7 +4103,12 @@ async def test_collect_results_marks_scope_violation_needs_human(
     assert "stay in scope" in wo["blocking_question"]
     assert wo.get("receipt_id") is None
     assert "confidence" not in wo
-    for cleared_key in ("pr_url", "adopted_pr", "merge_gate", "verification_missing_reason"):
+    for cleared_key in (
+        "pr_url",
+        "adopted_pr",
+        "merge_gate",
+        "verification_missing_reason",
+    ):
         assert cleared_key not in wo
     assert wo["lease_id"] == lease.lease_id
     assert wo["scope_violation"]["violations"][0]["type"] == "out_of_scope"
@@ -6273,7 +6324,10 @@ def test_worker_prompt_includes_boss_lane_contract() -> None:
         {
             "title": "Implement boss-facing reporter output",
             "description": "Emit stable coordinator output for one lane.",
-            "file_scope": ["aragora/swarm/reporter.py", "tests/swarm/test_supervisor.py"],
+            "file_scope": [
+                "aragora/swarm/reporter.py",
+                "tests/swarm/test_supervisor.py",
+            ],
             "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
             "approval_required": True,
             "lease_id": "lease-123",
@@ -7058,7 +7112,9 @@ def test_pre_reap_salvage_backfills_commit_shas_from_dead_worker(
 
     # Cleanup
     subprocess.run(
-        ["git", "worktree", "remove", str(wt_path), "--force"], cwd=repo, capture_output=True
+        ["git", "worktree", "remove", str(wt_path), "--force"],
+        cwd=repo,
+        capture_output=True,
     )
 
 
@@ -7245,7 +7301,10 @@ async def test_refresh_run_async_context_reconciles_dead_worker_salvage(
     test_file = wt_path / "salvage_async.py"
     test_file.write_text("print('salvage')\n", encoding="utf-8")
     subprocess.run(
-        ["git", "add", "salvage_async.py"], cwd=wt_path, capture_output=True, check=False
+        ["git", "add", "salvage_async.py"],
+        cwd=wt_path,
+        capture_output=True,
+        check=False,
     )
     subprocess.run(
         ["git", "commit", "-m", "async salvage commit"],

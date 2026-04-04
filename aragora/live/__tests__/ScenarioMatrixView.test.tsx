@@ -139,7 +139,7 @@ describe('ScenarioMatrixView', () => {
       expect(screen.getAllByText('Baseline').length).toBeGreaterThan(0);
     });
 
-    const baselineToggle = screen.getByText('Baseline', { selector: 'span.text-sm.font-mono.text-text' });
+    const baselineToggle = screen.getByText('Baseline', { selector: 'span.text-sm.font-theme-data.text-text' });
     fireEvent.click(baselineToggle);
 
     expect(
@@ -186,8 +186,8 @@ describe('ScenarioMatrixView', () => {
       screen.getByText(/compare them/i)
     ).toBeInTheDocument();
 
-    const baselineCard = screen.getByText('Baseline', { selector: 'span.text-xs.font-mono' });
-    const enterpriseCard = screen.getByText('Enterprise', { selector: 'span.text-xs.font-mono' });
+    const baselineCard = screen.getByText('Baseline', { selector: 'span.text-xs.font-theme-data' });
+    const enterpriseCard = screen.getByText('Enterprise', { selector: 'span.text-xs.font-theme-data' });
 
     fireEvent.click(baselineCard);
     fireEvent.click(enterpriseCard);
