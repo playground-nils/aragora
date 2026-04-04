@@ -782,6 +782,72 @@ def test_start_run_preserves_rerun_when_existing_duplicate_chain_was_stale_reape
         assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
 
 
+def test_refresh_run_requeues_stale_reaped_needs_human_lane(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Requeue stale reaped lane on refresh",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        status="needs_human",
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Primary lane",
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "lease_id": "lease-stale",
+                "file_scope": ["aragora/swarm/worker_launcher.py"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Dependent test lane",
+                "status": "queued",
+                "dependency_ids": ["micro-task-1"],
+                "file_scope": ["tests/swarm/test_worker_launcher.py"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+        ],
+    )
+
+    lifecycle = MagicMock()
+    session_path = repo / "wt-stale-requeue"
+    session_path.mkdir()
+    lifecycle.ensure_managed_worktree.return_value = ManagedWorktreeSession(
+        session_id="swarm-stale-requeue",
+        agent="codex",
+        branch="codex/swarm-stale-requeue",
+        path=session_path,
+        created=True,
+        reconcile_status="up_to_date",
+        payload={},
+    )
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=lifecycle,
+        decomposer=MagicMock(),
+    )
+
+    refreshed = supervisor.refresh_run(run["run_id"])
+
+    assert refreshed.status == "active"
+    work_orders = {item["work_order_id"]: item for item in refreshed.work_orders}
+    assert work_orders["micro-1"]["status"] == "leased"
+    assert work_orders["micro-1"].get("failure_reason") in {"", None}
+    assert work_orders["micro-1"].get("lease_id")
+    assert work_orders["micro-2"]["status"] in {"queued", "leased"}
+
+
 def test_start_run_preserves_rerun_when_existing_missing_verification_plan_is_deferred(
     repo: Path, store: DevCoordinationStore
 ) -> None:
