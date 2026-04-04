@@ -1027,6 +1027,9 @@ class SwarmSupervisor:
                 if self._should_requeue_stale_work_order(item, active_leases):
                     self._reset_work_order_for_requeue(item)
                     continue
+            if self._should_requeue_reaped_needs_human(item, active_leases):
+                self._reset_work_order_for_requeue(item)
+                continue
             if self._should_requeue_conflict_only_needs_human(item):
                 self._reset_work_order_for_requeue(item)
 
@@ -1271,6 +1274,28 @@ class SwarmSupervisor:
             if str(blocker_text).strip()
         ]
         if blockers:
+            return False
+        return True
+
+    @staticmethod
+    def _should_requeue_reaped_needs_human(
+        item: dict[str, Any],
+        active_leases: dict[str, Any],
+    ) -> bool:
+        if str(item.get("status", "")).strip() != "needs_human":
+            return False
+        failure_reason = str(item.get("failure_reason", "")).strip().lower()
+        if failure_reason not in {"stale_lease_reaped", "expired_lease_reaped"}:
+            return False
+        lease_id = str(item.get("lease_id", "")).strip()
+        if lease_id and lease_id in active_leases:
+            return False
+        if str(item.get("receipt_id", "")).strip():
+            return False
+        if item.get("commit_shas") or item.get("changed_paths") or item.get("pr_url"):
+            return False
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict) and str(metadata.get("archived_due_to", "")).strip():
             return False
         return True
 
