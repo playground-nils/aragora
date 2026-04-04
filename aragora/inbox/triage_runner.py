@@ -443,19 +443,20 @@ def _create_triage_agents(*, max_agents: int | None = None) -> list[Any]:
             role="synthesizer",
             model="claude-haiku-4-5-20251001",
         )
-    elif os.environ.get("OPENAI_API_KEY") and len(agents) < 2:
+    elif os.environ.get("OPENAI_API_KEY") and len(agents) < 3:
         _append_agent(
             "openai-api",
             name="triage-reviewer",
             role="synthesizer",
             model="gpt-4.1-mini",
         )
-    elif os.environ.get("OPENROUTER_API_KEY") and len(agents) < 2:
+    elif os.environ.get("OPENROUTER_API_KEY") and len(agents) < 3:
+        # Use a different model family for heterogeneous consensus
         _append_agent(
             "openrouter",
             name="triage-reviewer",
             role="synthesizer",
-            model="anthropic/claude-haiku-4-5-20251001",
+            model="google/gemini-2.0-flash-001",
         )
 
     if max_agents is not None:

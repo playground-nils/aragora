@@ -208,8 +208,7 @@ class TestJWTStoreTimingSafeComparison:
         fake_sig = "A" * len(signature)
         forged_state = f"{payload}.{fake_sig}"
 
-        # Both should be validated consistently - the forged one should fail
-        # This demonstrates that signature comparison is happening correctly
+        # Both should be validated consistently - the forged one should fail.
         valid_result = jwt_state_store.validate_and_consume(state)
         assert valid_result is not None, "Valid state should pass validation"
 

@@ -976,13 +976,19 @@ class SlackOAuthHandler(SecureHandler):
             except Exception:
                 logger.debug("Failed to peek Slack OAuth state", exc_info=True)
 
+        peeked_tenant_id, peeked_redirect_uri, peeked_provider = self._extract_state_metadata(
+            peeked_state_data
+        )
+        fallback_tenant_id, fallback_redirect_uri, fallback_provider = self._extract_state_metadata(
+            fallback_state_data
+        )
+        store_state_is_slack = peeked_provider == "slack"
+        fallback_state_is_slack = fallback_provider == "slack"
+
         # Check for error from Slack
         if "error" in query_params:
             if state:
-                _, _, state_provider = self._extract_state_metadata(
-                    peeked_state_data or fallback_state_data
-                )
-                if state_provider == "slack":
+                if store_state_is_slack:
                     try:
                         state_store.validate_and_consume(state)
                     except Exception:
@@ -990,6 +996,7 @@ class SlackOAuthHandler(SecureHandler):
                             "Failed to consume Slack OAuth state after callback error",
                             exc_info=True,
                         )
+                if fallback_state_is_slack:
                     _oauth_states_fallback.pop(state, None)
             error_code = query_params.get("error")
             logger.warning("Slack OAuth error: %s", error_code)
@@ -1014,16 +1021,21 @@ class SlackOAuthHandler(SecureHandler):
         if not (peeked_state_data or fallback_state_data):
             return error_response("Invalid or expired state token", 400)
 
-        tenant_id, state_redirect_uri, state_provider = self._extract_state_metadata(
-            peeked_state_data or fallback_state_data
-        )
-        if state_provider != "slack":
+        if store_state_is_slack:
+            tenant_id = peeked_tenant_id
+            state_redirect_uri = peeked_redirect_uri
+        elif peeked_state_data is None and fallback_state_is_slack:
+            tenant_id = fallback_tenant_id
+            state_redirect_uri = fallback_redirect_uri
+        else:
             return error_response("Invalid or expired state token", 400)
 
         # Consume only after verifying this state was actually minted for Slack.
-        state_data = state_store.validate_and_consume(state)
-        fallback_state_data = _oauth_states_fallback.pop(state, None)
-        if not state_data:
+        state_data = state_store.validate_and_consume(state) if store_state_is_slack else None
+        fallback_state_data = (
+            _oauth_states_fallback.pop(state, None) if fallback_state_is_slack else None
+        )
+        if not state_data and peeked_state_data is None:
             state_data = fallback_state_data
         if not state_data:
             return error_response("Invalid or expired state token", 400)

@@ -11,10 +11,13 @@ platform.
 
 Routes:
     POST /api/v1/playground/debate              - Run a mock debate
+    POST /api/v1/playground/assess              - Assess question ambiguity for landing preflight
     POST /api/v1/playground/debate/live          - Run a live debate with real agents
     POST /api/v1/playground/debate/live/cost-estimate - Pre-flight cost estimate
+    POST /api/v1/playground/landing/events      - Capture bounded landing telemetry
     POST /api/v1/playground/landing/feedback    - Capture bounded landing wrong-answer reports
     GET  /api/v1/playground/landing/feedback    - List recent landing wrong-answer reports
+    POST /api/v1/playground/landing/feedback/review - Update admin review state for a report
     GET  /api/v1/playground/landing/events/summary - Aggregate recent landing telemetry
     GET  /api/v1/playground/debate/{id}          - Retrieve a saved debate (shareable link)
     GET  /api/v1/playground/status               - Health check for the playground
@@ -90,6 +93,7 @@ _LANDING_EVENT_TYPE_ORDER = (
     "share_clicked",
 )
 _LANDING_EVENT_TYPES = set(_LANDING_EVENT_TYPE_ORDER)
+_LANDING_REVIEW_STATUSES = frozenset({"pending", "reviewed", "resolved", "dismissed"})
 
 
 def _check_rate_limit(
@@ -272,6 +276,9 @@ def _record_landing_feedback(
         "verdict": _truncate_feedback_text(payload.get("verdict"), limit=64),
         "participant_count": None,
         "rewritten": payload.get("rewritten") is True,
+        "review_status": "pending",
+        "reviewed_at": None,
+        "reviewed_by": None,
     }
     participant_count = payload.get("participant_count")
     if isinstance(participant_count, int):
@@ -283,6 +290,28 @@ def _record_landing_feedback(
         logger.warning("Failed to persist landing feedback report: %s", exc)
 
     return report
+
+
+def _normalize_landing_review_status(value: Any) -> str:
+    """Normalize landing review state to a supported value."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _LANDING_REVIEW_STATUSES:
+            return normalized
+    return "pending"
+
+
+def _reviewer_label(user: Any) -> str:
+    """Build a compact admin identifier for queue triage metadata."""
+    if user is None:
+        return "admin"
+    email = getattr(user, "email", None)
+    if isinstance(email, str) and email.strip():
+        return email.strip()[:160]
+    user_id = getattr(user, "user_id", None) or getattr(user, "id", None)
+    if isinstance(user_id, str) and user_id.strip():
+        return user_id.strip()[:160]
+    return "admin"
 
 
 def _parse_landing_event_timestamp(value: Any) -> datetime | None:
@@ -465,6 +494,10 @@ def _build_landing_feedback_summary(
     trimmed = [report for _, report in recent_reports]
     rewritten_count = sum(1 for report in trimmed if report.get("rewritten") is True)
     preview_mode_count = sum(1 for report in trimmed if report.get("result_mode") == "preview")
+    review_status_counts = {status: 0 for status in sorted(_LANDING_REVIEW_STATUSES)}
+    for report in trimmed:
+        review_status = _normalize_landing_review_status(report.get("review_status"))
+        review_status_counts[review_status] += 1
     unique_clients = {
         str(report.get("client_tag", "") or "").strip()
         for _, report in recent_reports
@@ -484,6 +517,7 @@ def _build_landing_feedback_summary(
             "rewritten_rate": _ratio(rewritten_count, len(trimmed)),
             "preview_mode_count": preview_mode_count,
             "preview_mode_rate": _ratio(preview_mode_count, len(trimmed)),
+            "review_status_counts": review_status_counts,
         },
         "reports": trimmed,
     }
@@ -1700,11 +1734,52 @@ _LANDING_INTENT_DRIFT_PHRASES = {
     "strategy": {"lyrics", "chorus", "verse", "recipe", "microwave", "nuggets", "4 year old"},
 }
 
+_LANDING_HEURISTIC_FOOD_TERMS = {
+    "chicken",
+    "cook",
+    "cooking",
+    "food",
+    "meal",
+    "microwave",
+    "microwaving",
+    "nugget",
+    "nuggets",
+    "reheat",
+    "reheating",
+}
+
+_LANDING_HEURISTIC_CHILD_TERMS = {
+    "4 year old",
+    "child",
+    "kid",
+    "parent",
+    "toddler",
+}
+
+_LANDING_HEURISTIC_ETHICS_TERMS = {
+    "alive",
+    "better person",
+    "cruel",
+    "dead",
+    "ethical",
+    "ethics",
+    "factory",
+    "humane",
+    "killing",
+    "live",
+    "moral",
+    "morally",
+}
+
 
 def _contains_term(text: str, term: str) -> bool:
     if " " in term:
         return term in text
     return bool(re.search(rf"\b{re.escape(term)}\b", text))
+
+
+def _contains_any_term(text: str, terms: set[str]) -> bool:
+    return any(_contains_term(text, term) for term in terms)
 
 
 def _classify_landing_intent(question: str) -> str:
@@ -1823,6 +1898,103 @@ def _landing_relevance_issue(question: str, response: str) -> str | None:
         )
 
     return None
+
+
+def _landing_food_subject(question: str) -> str:
+    lower_question = question.lower()
+    if _contains_term(lower_question, "nugget") or _contains_term(lower_question, "nuggets"):
+        return "pre-cooked chicken nuggets"
+    if _contains_term(lower_question, "chicken"):
+        return "chicken"
+    return "the food"
+
+
+def _build_heuristic_food_preflight(question: str) -> dict[str, Any] | None:
+    lower_question = question.lower()
+    has_food_context = _contains_any_term(lower_question, _LANDING_HEURISTIC_FOOD_TERMS)
+    has_ethics_context = _contains_any_term(lower_question, _LANDING_HEURISTIC_ETHICS_TERMS)
+    has_splitter = any(
+        phrase in lower_question
+        for phrase in {"alive or dead", "live or dead", "but what if", "what if"}
+    )
+
+    if not has_food_context or not has_ethics_context:
+        return None
+    if not (
+        has_splitter
+        or _contains_term(lower_question, "alive")
+        or _contains_term(lower_question, "dead")
+    ):
+        return None
+
+    subject = _landing_food_subject(question)
+    action = (
+        "reheat"
+        if any(
+            phrase in lower_question
+            for phrase in {
+                "reheat",
+                "reheating",
+                "warmed up",
+                "warm up",
+                "pre-cooked",
+                "precooked",
+                "frozen",
+            }
+        )
+        else "cook"
+    )
+    audience = (
+        " for my child"
+        if _contains_any_term(lower_question, _LANDING_HEURISTIC_CHILD_TERMS)
+        else ""
+    )
+    practical_question = f"Should I {action} {subject}{audience} in a microwave, and what food-safety precautions matter most?"
+    ethical_question = (
+        "Is the real question an ethical one about live animals or the moral distance created by factory-processed chicken, "
+        "rather than the practical reheating question?"
+    )
+
+    return {
+        "title": "This question could mean a few things",
+        "prompt": "Pick the interpretation you want Aragora to debate.",
+        "options": [
+            {
+                "id": "heuristic-practical-food",
+                "label": "Practical food-safety first",
+                "description": f"Focus on whether {action}ing {subject} in a microwave is safe and practical.",
+                "originalQuestion": question,
+                "interpretedQuestion": practical_question,
+                "debatePrompt": practical_question,
+                "agents": 3,
+                "rounds": 2,
+                "recommended": True,
+            },
+            {
+                "id": "heuristic-ethical-food",
+                "label": "Ethical / philosophical reading",
+                "description": (
+                    "Treat this as a moral question about live animals or factory-farmed chicken, "
+                    "not the practical reheating question."
+                ),
+                "originalQuestion": question,
+                "interpretedQuestion": ethical_question,
+                "debatePrompt": ethical_question,
+                "agents": 3,
+                "rounds": 2,
+            },
+            {
+                "id": "original",
+                "label": "Use original wording",
+                "description": "Debate the question exactly as written.",
+                "originalQuestion": question,
+                "interpretedQuestion": question,
+                "debatePrompt": question,
+                "agents": 3,
+                "rounds": 2,
+            },
+        ],
+    }
 
 
 def _build_tentacle_prompt(
@@ -2307,12 +2479,15 @@ class PlaygroundHandler(BaseHandler):
     """
 
     ROUTES = [
+        "/api/v1/playground/assess",
         "/api/v1/playground/debate",
+        "/api/v1/playground/assess",
         "/api/v1/playground/debate/live",
         "/api/v1/playground/debate/live/cost-estimate",
         "/api/v1/playground/landing/events",
         "/api/v1/playground/landing/events/summary",
         "/api/v1/playground/landing/feedback",
+        "/api/v1/playground/landing/feedback/review",
         "/api/v1/playground/status",
         "/api/v1/playground/tts",
     ]
@@ -2328,12 +2503,15 @@ class PlaygroundHandler(BaseHandler):
 
     def can_handle(self, path: str) -> bool:
         if path in (
+            "/api/v1/playground/assess",
             *self._CREATE_PATHS,
+            "/api/v1/playground/assess",
             "/api/v1/playground/debate/live",
             "/api/v1/playground/debate/live/cost-estimate",
             "/api/v1/playground/landing/events",
             "/api/v1/playground/landing/events/summary",
             "/api/v1/playground/landing/feedback",
+            "/api/v1/playground/landing/feedback/review",
             "/api/v1/playground/status",
             "/api/v1/playground/tts",
         ):
@@ -2441,6 +2619,53 @@ class PlaygroundHandler(BaseHandler):
                 window_seconds=window_seconds,
                 limit=limit,
             )
+        )
+
+    def _handle_landing_feedback_review(self, handler: Any) -> HandlerResult:
+        """Update admin review state for a wrong-answer report."""
+        user, err = self.require_admin_or_error(handler)
+        if err:
+            return err
+
+        body = self.read_json_body(handler) if handler else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return error_response("Invalid landing feedback review payload", 400)
+
+        report_id = str(body.get("id", "") or "").strip()
+        if not report_id:
+            return error_response("Missing landing feedback report id", 400)
+
+        review_status = _normalize_landing_review_status(body.get("review_status"))
+        reviewed_at = None
+        reviewed_by = None
+        if review_status != "pending":
+            reviewed_at = datetime.now(timezone.utc).isoformat()
+            reviewed_by = _reviewer_label(user)
+
+        try:
+            updated = get_landing_review_store().update_feedback_review(
+                report_id=report_id,
+                review_status=review_status,
+                reviewed_at=reviewed_at,
+                reviewed_by=reviewed_by,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep admin queue endpoint resilient
+            logger.warning("Failed to update landing feedback review state: %s", exc)
+            return error_response("Failed to update landing feedback review state", 500)
+
+        if not updated:
+            return error_response("Landing feedback report not found", 404)
+
+        return json_response(
+            {
+                "ok": True,
+                "id": report_id,
+                "review_status": review_status,
+                "reviewed_at": reviewed_at,
+                "reviewed_by": reviewed_by,
+            }
         )
 
     # ------------------------------------------------------------------
@@ -2552,6 +2777,8 @@ class PlaygroundHandler(BaseHandler):
             return self._handle_landing_event(handler)
         if path == "/api/v1/playground/landing/feedback":
             return self._handle_landing_feedback(handler)
+        if path == "/api/v1/playground/landing/feedback/review":
+            return self._handle_landing_feedback_review(handler)
         if path == "/api/v1/playground/assess":
             return self._handle_assess(handler)
         if path == "/api/v1/playground/debate/live/cost-estimate":
@@ -2756,7 +2983,11 @@ class PlaygroundHandler(BaseHandler):
 
     def _handle_assess(self, handler: Any) -> HandlerResult:
         """Assess question ambiguity using a frontier model."""
-        body = json.loads(handler.body or b"{}")
+        body = self.read_json_body(handler) if handler else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return error_response("Invalid assess payload", 400)
         question = str(body.get("question", "")).strip()
         if not question:
             return json_response({"type": "ready", "option": self._build_ready_option("")})
@@ -2777,6 +3008,10 @@ class PlaygroundHandler(BaseHandler):
                 },
                 status=429,
             )
+
+        heuristic_preflight = _build_heuristic_food_preflight(question)
+        if heuristic_preflight is not None:
+            return json_response({"type": "confirm", "preflight": heuristic_preflight})
 
         prompt = (
             "You are a question-assessment system. Analyze this user question and determine if it is "

@@ -3128,6 +3128,7 @@ class SwarmSupervisor:
                     "adopted_pr",
                     "merge_gate",
                     "verification_missing_reason",
+                    "scope_violation",
                 ):
                     item.pop(key, None)
                 item["commit_shas"] = []
@@ -3151,6 +3152,7 @@ class SwarmSupervisor:
                     "adopted_pr",
                     "merge_gate",
                     "verification_missing_reason",
+                    "scope_violation",
                 ):
                     item.pop(key, None)
                 if not _pre_outcome:
@@ -3347,9 +3349,24 @@ class SwarmSupervisor:
         deliverable_present = bool(self._work_order_deliverable_type(item))
         if deliverable_present and is_salvage:
             # Salvaged deliverables proceed to completion — the recovery was
-            # intentional and the deliverable (commits/PR) is real.
+            # intentional and the deliverable (commits/PR) is real. Clear any
+            # stale blocker metadata from the failed attempt so the lane does
+            # not remain "completed" while still looking blocked.
             item["status"] = "completed"
             item["review_status"] = "pending_heterogeneous_review"
+            for key in (
+                "dispatch_error",
+                "resource_error",
+                "failure_reason",
+                "blocking_question",
+                "blocker",
+                "conflicts",
+                "merge_gate",
+                "verification_missing_reason",
+                "scope_violation",
+            ):
+                item.pop(key, None)
+            item.pop("blockers", None)
             item["exit_code"] = result.exit_code
             item.pop("failure_reason", None)
             item.pop("blocking_question", None)
@@ -3383,6 +3400,7 @@ class SwarmSupervisor:
             "adopted_pr",
             "merge_gate",
             "verification_missing_reason",
+            "scope_violation",
         ):
             item.pop(key, None)
         failure_reason = (

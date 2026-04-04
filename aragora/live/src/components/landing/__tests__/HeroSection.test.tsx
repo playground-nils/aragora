@@ -36,6 +36,47 @@ jest.mock('../../DebateInput', () => ({
   DebateInput: () => <div data-testid="debate-input">MockDebateInput</div>,
 }));
 
+function createResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    json: async () => body,
+  };
+}
+
+function createNuggetsAssessResponse(question: string) {
+  return createResponse({
+    type: 'confirm',
+    preflight: {
+      title: 'This question could mean a few things',
+      prompt: 'Pick the interpretation you want Aragora to debate.',
+      options: [
+        {
+          id: 'interp-0',
+          label: 'Practical food-safety first',
+          description: 'Focus on whether reheating pre-cooked chicken nuggets is safe and practical for a 4 year old.',
+          originalQuestion: question,
+          interpretedQuestion: 'Should I microwave pre-cooked chicken nuggets for my 4 year old?',
+          debatePrompt: 'Should I microwave pre-cooked chicken nuggets for my 4 year old?',
+          agents: 3,
+          rounds: 2,
+          recommended: true,
+        },
+        {
+          id: 'original',
+          label: 'Use original wording',
+          description: 'Debate the question exactly as written.',
+          originalQuestion: question,
+          interpretedQuestion: question,
+          debatePrompt: question,
+          agents: 3,
+          rounds: 2,
+        },
+      ],
+    },
+  });
+}
+
 describe('HeroSection', () => {
   const defaultProps = {
     error: null,
@@ -228,44 +269,20 @@ describe('HeroSection', () => {
 
     it('shows a preflight chooser for ambiguous landing prompts before debating', async () => {
       const user = userEvent.setup();
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          type: 'confirm',
-          preflight: {
-            title: 'Choose which version of the question to debate',
-            prompt: 'Pick the interpretation that Aragora should debate first.',
-            warning: 'Ambiguous questions need a scoped reading before the live debate.',
-            options: [
-              {
-                id: 'food-safety-first',
-                label: 'Practical food-safety first',
-                description: 'Focus on whether cooked or frozen chicken is safe to microwave.',
-                originalQuestion:
-                  'Should I cook my chickens in a microwave? What if they are alive, and what if they are dead?',
-                interpretedQuestion: 'Is it safe to microwave chicken that is already dead?',
-                debatePrompt: 'Is it safe to microwave chicken that is already dead?',
-                agents: 3,
-                rounds: 2,
-                recommended: true,
-              },
-            ],
-          },
-        }),
-      });
+      const question = 'Should I cook my chickens in a microwave? What if they are alive, and what if they are dead?';
+      const fetchMock = jest.fn().mockResolvedValue(createNuggetsAssessResponse(question));
       global.fetch = fetchMock as typeof fetch;
 
       render(<HeroSection />);
 
       await user.type(
         screen.getByRole('textbox'),
-        'Should I cook my chickens in a microwave? What if they are alive, and what if they are dead?'
+        question,
       );
       await user.click(screen.getByRole('button', { name: /start debate/i }));
 
-      expect(
-        screen.getByRole('heading', { name: /choose which version of the question to debate/i })
-      ).toBeInTheDocument();
+      expect(await screen.findByText('This question could mean a few things')).toBeInTheDocument();
+      expect(screen.getByText('Pick the interpretation you want Aragora to debate.')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /practical food-safety first/i })).toBeInTheDocument();
       expect(fetchMock).not.toHaveBeenCalledWith(
         expect.stringContaining('/api/v1/playground/debate'),
@@ -335,7 +352,8 @@ describe('HeroSection', () => {
       await user.click(screen.getByRole('button', { name: /start debate/i }));
 
       await waitFor(() => {
-        expect(screen.getByTestId('debate-result-preview')).toBeInTheDocument();
+        expect(screen.getByText(/Aragora's Answer/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /view full debate/i })).toBeInTheDocument();
       });
 
       expect(mockCompactDebateResult).toHaveBeenCalledWith(
@@ -348,6 +366,8 @@ describe('HeroSection', () => {
           }),
         }),
       );
+      expect(screen.getByRole('button', { name: /try another/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /try another/i })).toBeInTheDocument();
     });
   });
 });
