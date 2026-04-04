@@ -1149,7 +1149,14 @@ class WorkerLauncher:
             _has_changes = bool(worker.diff) or (
                 _can_query_dirty_tree and await cls._has_working_tree_changes(worktree_path)
             )
-            if auto_commit and cls._should_attempt_auto_commit(worker, has_changes=_has_changes):
+            # Without a terminal session marker, treat dirty-tree state as
+            # evidence only. Auto-committing here can manufacture a synthetic
+            # deliverable from a partial run.
+            if (
+                auto_commit
+                and not missing_terminal_marker
+                and cls._should_attempt_auto_commit(worker, has_changes=_has_changes)
+            ):
                 await cls._auto_commit(worker)
 
             worker.head_sha = await cls._git_output(worktree_path, "rev-parse", "HEAD")
@@ -2099,8 +2106,13 @@ class WorkerLauncher:
             has_changes = bool(worker.diff) or (
                 can_query_dirty_tree and self._has_working_tree_changes_sync(worker.worktree_path)
             )
-            if self.config.auto_commit and self._should_attempt_auto_commit(
-                worker, has_changes=has_changes
+            # A bare wrapper returncode is not enough to bless dirty-tree
+            # state. If the harness never wrote a terminal marker, do not
+            # auto-commit partial changes into a salvageable deliverable.
+            if (
+                self.config.auto_commit
+                and not missing_terminal_marker
+                and self._should_attempt_auto_commit(worker, has_changes=has_changes)
             ):
                 self._auto_commit_sync(worker)
 
