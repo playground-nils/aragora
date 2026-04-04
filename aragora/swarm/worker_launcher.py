@@ -276,7 +276,14 @@ class WorkerLauncher:
                 worker.stderr = "\n".join(stderr_parts)
             logger.warning("Worker %s timed out", work_order_id)
 
+        session_meta = self._read_session_meta(worker.worktree_path)
+        session_exit_code, session_completed_at = self._terminal_session_result(session_meta)
+        missing_terminal_marker = session_exit_code is None
+        if session_exit_code is not None:
+            worker.exit_code = session_exit_code
         worker.completed_at = datetime.now(UTC).isoformat()
+        if session_completed_at:
+            worker.completed_at = session_completed_at
         try:
             worker.diff = await self._collect_diff(worker.worktree_path)
 
@@ -288,8 +295,10 @@ class WorkerLauncher:
             _has_changes = bool(worker.diff) or (
                 _can_query_dirty_tree and await self._has_working_tree_changes(worker.worktree_path)
             )
-            if self.config.auto_commit and self._should_attempt_auto_commit(
-                worker, has_changes=_has_changes
+            if (
+                self.config.auto_commit
+                and not missing_terminal_marker
+                and self._should_attempt_auto_commit(worker, has_changes=_has_changes)
             ):
                 await self._auto_commit(worker)
 
@@ -306,10 +315,10 @@ class WorkerLauncher:
             )
 
             # Ensure the branch is pushed if the worker produced commits.
-            if worker.commit_shas:
+            if worker.commit_shas and not missing_terminal_marker:
                 await self._auto_push(worker)
 
-            if self._should_run_verification(worker):
+            if not missing_terminal_marker and self._should_run_verification(worker):
                 worker.verification_results = await self._run_verification_commands(
                     worker.worktree_path,
                     worker.expected_tests,
@@ -331,6 +340,8 @@ class WorkerLauncher:
         )
 
         self._processes.pop(work_order_id, None)
+        if missing_terminal_marker and worker.exit_code == 0:
+            worker.exit_code = 1
         return worker
 
     async def collect_finished(
