@@ -4897,6 +4897,124 @@ def test_apply_worker_result_clean_exit_no_deliverable_clears_stale_deliverable_
     mock_release.assert_called_once_with(work_order)
 
 
+def test_apply_worker_result_accepts_validation_marker_commit_despite_nonzero_exit(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo, store=store, launcher=MagicMock(spec=WorkerLauncher)
+    )
+
+    base_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+    _run(
+        repo,
+        "git",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "test: validation passed — tests/webhooks/test_retry_queue.py (50 passed, 1 xfailed)",
+    )
+    marker_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+
+    work_order = {
+        "work_order_id": "micro-2",
+        "pipeline_task_id": "micro-task-2",
+        "title": "Run validation and fix failures",
+        "status": "dispatched",
+        "branch": "main",
+        "target_agent": "claude",
+        "reviewer_agent": "codex",
+        "dependency_ids": ["micro-task-1"],
+        "expected_tests": ["python -m pytest tests/webhooks/test_retry_queue.py -q"],
+        "file_scope": ["tests/webhooks/test_retry_queue.py"],
+        "metadata": {"source": "explicit_spec_work_order"},
+    }
+    result = WorkerProcess(
+        work_order_id="micro-2",
+        agent="claude",
+        worktree_path=str(repo),
+        branch="main",
+        exit_code=1,
+        completed_at="2026-04-04T23:33:37.068860+00:00",
+        stdout=(
+            "Lane complete. All tests in `tests/webhooks/test_retry_queue.py` passed "
+            "(50 passed, 1 xfailed). Empty commit marker created.\n"
+        ),
+        stderr="",
+        diff="",
+        initial_head=base_head,
+        head_sha=marker_head,
+        changed_paths=[],
+        commit_shas=[marker_head],
+    )
+
+    supervisor._apply_worker_result(work_order, result)
+
+    assert work_order["status"] == "completed"
+    assert work_order["review_status"] == "pending_heterogeneous_review"
+    assert work_order["worker_outcome"] == "completed"
+    assert work_order["changed_paths"] == []
+    assert work_order["commit_shas"] == [marker_head]
+    assert work_order["tests_run"] == ["python -m pytest tests/webhooks/test_retry_queue.py -q"]
+    assert work_order["merge_gate"]["checks_passed"] is True
+    assert work_order["verification_results"][0]["passed"] is True
+    assert work_order["verification_results"][0]["inferred_from"] == "validation_marker_commit"
+    assert "failure_reason" not in work_order
+    assert "blocking_question" not in work_order
+    assert "blocker" not in work_order
+    assert "dispatch_error" not in work_order
+    assert work_order["metadata"]["validation_marker_original_exit_code"] == 1
+
+
+def test_apply_worker_result_preserves_non_validation_empty_commit_crash(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo, store=store, launcher=MagicMock(spec=WorkerLauncher)
+    )
+
+    base_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+    _run(repo, "git", "commit", "--allow-empty", "-m", "test: partial progress marker")
+    marker_head = _run(repo, "git", "rev-parse", "HEAD").stdout.strip()
+
+    work_order = {
+        "work_order_id": "micro-2",
+        "pipeline_task_id": "micro-task-2",
+        "title": "Run validation and fix failures",
+        "status": "dispatched",
+        "branch": "main",
+        "target_agent": "claude",
+        "reviewer_agent": "codex",
+        "dependency_ids": ["micro-task-1"],
+        "expected_tests": ["python -m pytest tests/webhooks/test_retry_queue.py -q"],
+        "file_scope": ["tests/webhooks/test_retry_queue.py"],
+        "metadata": {"source": "explicit_spec_work_order"},
+    }
+    result = WorkerProcess(
+        work_order_id="micro-2",
+        agent="claude",
+        worktree_path=str(repo),
+        branch="main",
+        exit_code=1,
+        completed_at="2026-04-04T23:33:37.068860+00:00",
+        stdout="worker exited after partial progress\n",
+        stderr="",
+        diff="",
+        initial_head=base_head,
+        head_sha=marker_head,
+        changed_paths=[],
+        commit_shas=[marker_head],
+    )
+
+    with patch.object(supervisor, "_release_terminal_lease") as mock_release:
+        supervisor._apply_worker_result(work_order, result)
+
+    assert work_order["status"] == "needs_human"
+    assert work_order["failure_reason"] == "worker_crash_with_deliverable"
+    assert work_order["worker_outcome"] == "crash"
+    assert work_order["review_status"] == "changes_requested"
+    mock_release.assert_called_once_with(work_order)
+
+
 @pytest.mark.asyncio
 async def test_dispatch_workers_resets_closed_worker_type_circuit_breaker_after_successful_launch(
     repo: Path, store: DevCoordinationStore
