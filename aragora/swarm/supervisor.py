@@ -1832,6 +1832,7 @@ class SwarmSupervisor:
                         changed = True
                         continue
 
+                    self._clear_stale_runtime_deliverable_state(item)
                     self._mark_needs_human(
                         item,
                         "worker process exited without receipt or exit marker",
@@ -1895,6 +1896,7 @@ class SwarmSupervisor:
                         self._mark_scope_violation(item, timeout_violations, extra_reason=reason)
                         item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
                     else:
+                        self._clear_stale_runtime_deliverable_state(item)
                         self._mark_needs_human(
                             item,
                             reason,
@@ -3978,6 +3980,30 @@ class SwarmSupervisor:
             "diff_lines",
             "stdout_tail",
             "stderr_tail",
+            "tests_run",
+            "verification_results",
+            "merge_gate",
+            "verification_missing_reason",
+            "pr_url",
+            "adopted_pr",
+            "scope_violation",
+        ):
+            item.pop(key, None)
+
+    @staticmethod
+    def _clear_stale_runtime_deliverable_state(item: dict[str, Any]) -> None:
+        """Drop stale deliverable metadata while preserving runtime log evidence."""
+        for key in (
+            "receipt_id",
+            "confidence",
+            "worker_outcome",
+            "completed_at",
+            "exit_code",
+            "head_sha",
+            "commit_shas",
+            "changed_paths",
+            "diff",
+            "diff_lines",
             "tests_run",
             "verification_results",
             "merge_gate",
