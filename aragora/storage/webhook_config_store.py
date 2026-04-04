@@ -1299,8 +1299,9 @@ class PostgresWebhookConfigStore(WebhookConfigStoreBackend):
             webhook.description = description
 
         if updates:
+            updated_at = time.time()
             updates.append(f"updated_at = to_timestamp(${param_idx})")
-            params.append(time.time())
+            params.append(updated_at)
             param_idx += 1
             params.append(webhook_id)
 
@@ -1309,7 +1310,7 @@ class PostgresWebhookConfigStore(WebhookConfigStoreBackend):
                     f"UPDATE webhook_configs SET {', '.join(updates)} WHERE id = ${param_idx}",  # noqa: S608 -- dynamic clause from internal state
                     *params,
                 )
-            webhook.updated_at = time.time()
+            webhook.updated_at = updated_at
 
         return webhook
 
