@@ -1161,10 +1161,18 @@ class SlackOAuthHandler(SecureHandler):
 
         # Extract workspace info
         access_token = data.get("access_token")
-        team = data.get("team", {})
+        team_payload = data.get("team")
+        team = team_payload if isinstance(team_payload, dict) else {}
         bot_user_id = data.get("bot_user_id", "")
-        authed_user = data.get("authed_user", {})
-        scope = data.get("scope", "")
+        authed_user_payload = data.get("authed_user")
+        authed_user = authed_user_payload if isinstance(authed_user_payload, dict) else {}
+        raw_scope = data.get("scope", "")
+        if isinstance(raw_scope, str):
+            scope = raw_scope
+        elif isinstance(raw_scope, (list, tuple, set)):
+            scope = ",".join(str(item).strip() for item in raw_scope if str(item).strip())
+        else:
+            scope = str(raw_scope or "").strip()
 
         # Extract token refresh data (if available)
         refresh_token = data.get("refresh_token")
@@ -1173,9 +1181,20 @@ class SlackOAuthHandler(SecureHandler):
         if expires_in:
             token_expires_at = time.time() + expires_in
 
-        workspace_id = team.get("id", "")
-        workspace_name = team.get("name", "Unknown")
-        installed_by = authed_user.get("id")
+        workspace_id = str(
+            team.get("id")
+            or team.get("team_id")
+            or data.get("team_id")
+            or data.get("workspace_id")
+            or ""
+        ).strip()
+        workspace_name = (
+            str(
+                team.get("name") or data.get("team_name") or data.get("workspace_name") or "Unknown"
+            ).strip()
+            or "Unknown"
+        )
+        installed_by = str(authed_user.get("id") or "").strip() or None
 
         if not workspace_id or not access_token:
             return error_response("Invalid response from Slack", 500)
