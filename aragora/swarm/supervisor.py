@@ -698,13 +698,21 @@ class SwarmSupervisor:
         if record is None:
             raise KeyError(f"Unknown supervisor run: {run_id}")
 
-        max_concurrency = min(max(1, int(record.get("metadata", {}).get("max_concurrency", 8))), 8)
-        managed_dir_pattern = str(
-            record.get("metadata", {}).get("managed_dir_pattern", ".worktrees/{agent}-auto")
-        )
+        metadata = dict(record.get("metadata") or {})
+        worker_type_circuit_breaker_policy = self._worker_type_circuit_breaker_policy(metadata)
+        worker_type_circuit_breakers = self._worker_type_circuit_breakers(metadata)
+        self._expire_worker_type_circuit_breakers(worker_type_circuit_breakers)
+
+        max_concurrency = min(max(1, int(metadata.get("max_concurrency", 8))), 8)
+        managed_dir_pattern = str(metadata.get("managed_dir_pattern", ".worktrees/{agent}-auto"))
         work_orders = [dict(item) for item in record.get("work_orders", [])]
         for item in work_orders:
             self._backfill_missing_completion_receipt(item)
+        self._recover_reaped_needs_human_deliverables(
+            work_orders,
+            worker_type_circuit_breakers=worker_type_circuit_breakers,
+            worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+        )
         self._reconcile_stale_work_order_state(work_orders)
         active_count = sum(
             1 for item in work_orders if str(item.get("status", "")) in {"leased", "dispatched"}
@@ -715,6 +723,8 @@ class SwarmSupervisor:
                 if active_count >= max_concurrency:
                     break
                 if str(item.get("status", "queued")) not in {"queued", "waiting_conflict"}:
+                    continue
+                if not self._dependencies_ready_for_dispatch(item, work_orders):
                     continue
                 try:
                     leased = self._lease_work_order(
@@ -767,7 +777,10 @@ class SwarmSupervisor:
             status=self._derive_status(work_orders),
             work_orders=work_orders,
             metadata=self._campaign_metadata(
-                dict(record.get("metadata") or {}),
+                self._worker_type_circuit_breaker_metadata(
+                    metadata,
+                    worker_type_circuit_breakers,
+                ),
                 work_orders,
             ),
         )
@@ -1033,6 +1046,81 @@ class SwarmSupervisor:
             if self._should_requeue_conflict_only_needs_human(item):
                 self._reset_work_order_for_requeue(item)
 
+    def _recover_reaped_needs_human_deliverables(
+        self,
+        work_orders: list[dict[str, Any]],
+        *,
+        worker_type_circuit_breakers: dict[str, dict[str, Any]] | None = None,
+        worker_type_circuit_breaker_policy: dict[str, Any] | None = None,
+    ) -> None:
+        stale_failure_reasons = {"stale_lease_reaped", "expired_lease_reaped"}
+        for item in work_orders:
+            if str(item.get("status", "")).strip() != "needs_human":
+                continue
+            failure_reason = str(item.get("failure_reason", "")).strip().lower()
+            if failure_reason not in stale_failure_reasons:
+                continue
+            if str(item.get("receipt_id") or "").strip():
+                continue
+            if item.get("commit_shas") or item.get("changed_paths"):
+                continue
+            worktree_path = str(item.get("worktree_path", "")).strip()
+            initial_head = str(item.get("initial_head", "")).strip()
+            if not worktree_path or not initial_head or not Path(worktree_path).is_dir():
+                continue
+            try:
+                result = self._build_dead_worker_salvage_result(
+                    item,
+                    worktree_path=worktree_path,
+                    initial_head=initial_head,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                logger.debug(
+                    "stale-reaped salvage check failed for %s",
+                    item.get("work_order_id"),
+                    exc_info=True,
+                )
+                continue
+            if result is None or not result.commit_shas:
+                continue
+            item["worker_outcome"] = WorkerOutcome.CRASH_WITH_SALVAGE.value
+            self._apply_worker_result(
+                item,
+                result,
+                worker_type_circuit_breakers=worker_type_circuit_breakers,
+                worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+            )
+            self._backfill_missing_completion_receipt(item)
+
+    @staticmethod
+    def _dependencies_ready_for_dispatch(
+        item: dict[str, Any],
+        work_orders: list[dict[str, Any]],
+    ) -> bool:
+        dependency_ids = {
+            str(dep).strip() for dep in item.get("dependency_ids", []) if str(dep).strip()
+        }
+        if not dependency_ids:
+            return True
+
+        completed_statuses = {"completed", "merged", "salvage"}
+        dependency_lookup: dict[str, dict[str, Any]] = {}
+        for candidate in work_orders:
+            if not isinstance(candidate, dict):
+                continue
+            for key in ("pipeline_task_id", "work_order_id", "task_key"):
+                candidate_id = str(candidate.get(key, "")).strip()
+                if candidate_id:
+                    dependency_lookup[candidate_id] = candidate
+
+        for dependency_id in dependency_ids:
+            dependency = dependency_lookup.get(dependency_id)
+            if not isinstance(dependency, dict):
+                return False
+            if str(dependency.get("status", "")).strip().lower() not in completed_statuses:
+                return False
+        return True
+
     @staticmethod
     def _replacement_active_lease(
         item: dict[str, Any],
@@ -1290,7 +1378,7 @@ class SwarmSupervisor:
         lease_id = str(item.get("lease_id", "")).strip()
         if lease_id and lease_id in active_leases:
             return False
-        if str(item.get("receipt_id", "")).strip():
+        if str(item.get("receipt_id") or "").strip():
             return False
         if item.get("commit_shas") or item.get("changed_paths") or item.get("pr_url"):
             return False
@@ -3241,6 +3329,10 @@ class SwarmSupervisor:
             item["status"] = "completed"
             item["review_status"] = "pending_heterogeneous_review"
             item["exit_code"] = result.exit_code
+            item.pop("failure_reason", None)
+            item.pop("blocking_question", None)
+            item.pop("blocker", None)
+            item.pop("dispatch_error", None)
             self._release_terminal_lease(item)
             self._register_pr_if_present(item, result)
             return
