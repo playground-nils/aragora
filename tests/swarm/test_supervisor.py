@@ -1343,6 +1343,161 @@ def test_start_run_preserves_rerun_when_existing_failed_validation_lane_has_no_d
         assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
 
 
+def test_start_run_preserves_rerun_when_existing_clean_exit_no_deliverable_lane_has_no_deliverable(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    goal = "[Issue #2066] Add run-ledger read API for operator visibility"
+    store.create_supervisor_run(
+        goal=goal,
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        status="needs_human",
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Update runs.py",
+                "status": "needs_human",
+                "worker_outcome": "clean_exit_no_effect",
+                "failure_reason": "clean_exit_no_deliverable",
+                "dispatch_error": "worker exited 0 with no commits and no changed paths",
+                "blocking_question": (
+                    "What concrete branch, commit, or PR should this lane produce before rerunning?"
+                ),
+                "blocker": {
+                    "reason": "clean_exit_no_deliverable",
+                    "question": (
+                        "What concrete branch, commit, or PR should this lane produce before rerunning?"
+                    ),
+                },
+                "file_scope": ["aragora/server/handlers/runs.py"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "acceptance_criteria": [
+                        "`pytest tests/server/handlers/test_runs_handler.py -x -q` passes"
+                    ],
+                    "deferred_verification_to_dependency_ids": ["micro-task-4"],
+                },
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Update runs.py",
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "file_scope": ["aragora/server/fastapi/routes/runs.py"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "acceptance_criteria": [
+                        "`pytest tests/server/handlers/test_runs_handler.py -x -q` passes"
+                    ],
+                    "deferred_verification_to_dependency_ids": ["micro-task-4"],
+                },
+            },
+        ],
+    )
+
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+
+    run = supervisor.start_run(
+        spec=SwarmSpec(
+            raw_goal=goal,
+            refined_goal=goal,
+            work_orders=[
+                {
+                    "work_order_id": "micro-1",
+                    "pipeline_task_id": "micro-task-1",
+                    "title": "Update runs.py",
+                    "description": "Add the read-only RunLedger handler.",
+                    "file_scope": ["aragora/server/handlers/runs.py"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {
+                        "source": "explicit_spec_work_order",
+                        "acceptance_criteria": [
+                            "`pytest tests/server/handlers/test_runs_handler.py -x -q` passes"
+                        ],
+                        "deferred_verification_to_dependency_ids": ["micro-task-4"],
+                    },
+                },
+                {
+                    "work_order_id": "micro-2",
+                    "pipeline_task_id": "micro-task-2",
+                    "title": "Update runs.py",
+                    "description": "Expose the new read-only route entries.",
+                    "file_scope": ["aragora/server/fastapi/routes/runs.py"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {
+                        "source": "explicit_spec_work_order",
+                        "acceptance_criteria": [
+                            "`pytest tests/server/handlers/test_runs_handler.py -x -q` passes"
+                        ],
+                        "deferred_verification_to_dependency_ids": ["micro-task-4"],
+                    },
+                },
+                {
+                    "work_order_id": "micro-3",
+                    "pipeline_task_id": "micro-task-3",
+                    "title": "Write tests for runs.py",
+                    "description": "Add focused coverage for the new read endpoints.",
+                    "file_scope": ["tests/server/handlers/test_runs_handler.py"],
+                    "dependency_ids": ["micro-task-1", "micro-task-2"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {
+                        "source": "explicit_spec_work_order",
+                        "acceptance_criteria": [
+                            "`pytest tests/server/handlers/test_runs_handler.py -x -q` passes"
+                        ],
+                        "deferred_verification_to_dependency_ids": ["micro-task-4"],
+                    },
+                },
+                {
+                    "work_order_id": "micro-4",
+                    "pipeline_task_id": "micro-task-4",
+                    "title": "Run validation and fix failures",
+                    "description": "Run the acceptance test and fix anything that breaks.",
+                    "file_scope": [
+                        "aragora/server/handlers/runs.py",
+                        "aragora/server/fastapi/routes/runs.py",
+                        "tests/server/handlers/test_runs_handler.py",
+                    ],
+                    "dependency_ids": ["micro-task-1", "micro-task-2", "micro-task-3"],
+                    "target_agent": "codex",
+                    "reviewer_agent": "claude",
+                    "approval_required": True,
+                    "metadata": {
+                        "source": "explicit_spec_work_order",
+                        "acceptance_criteria": [
+                            "`pytest tests/server/handlers/test_runs_handler.py -x -q` passes"
+                        ],
+                    },
+                },
+            ],
+        ),
+        refresh_scaling=False,
+    )
+
+    assert [item["status"] for item in run.work_orders] == ["queued", "queued", "queued", "queued"]
+    for work_order in run.work_orders:
+        assert work_order.get("metadata", {}).get("archived_due_to") != "duplicate_open_work_order"
+
+
 def test_start_run_discards_duplicate_scope_less_explicit_lane_by_tranche_lane_id(
     repo: Path, store: DevCoordinationStore
 ) -> None:
@@ -6936,6 +7091,288 @@ def test_refresh_run_work_order_leasing_failure_clears_stale_deliverable_state(
         "scope_violation",
     ):
         assert cleared_key not in work_order
+
+
+def test_refresh_run_continues_after_work_order_leasing_failure_for_independent_lane(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+    run_record = store.create_supervisor_run(
+        goal="continue after lane-specific leasing failure",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "continue after lane-specific leasing failure"},
+        metadata={"max_concurrency": 2},
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "First lane fails to lease",
+                "description": "First lane fails to lease",
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["aragora/server/handlers/runs.py"],
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Second independent lane still leases",
+                "description": "Second independent lane still leases",
+                "status": "queued",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["aragora/server/fastapi/routes/runs.py"],
+            },
+        ],
+        status="active",
+    )
+
+    def fake_lease_work_order(
+        *,
+        run_id: str,
+        target_branch: str,
+        work_order: dict[str, Any],
+        work_orders: list[dict[str, Any]],
+        managed_dir_pattern: str,
+        approval_policy: SwarmApprovalPolicy,
+    ) -> bool:
+        del run_id, target_branch, work_orders, managed_dir_pattern, approval_policy
+        if work_order["work_order_id"] == "micro-1":
+            raise RuntimeError("autopilot ensure failed (1): branch already exists")
+        work_order["status"] = "leased"
+        work_order["lease_id"] = "lease-micro-2"
+        work_order["owner_session_id"] = "swarm-session-micro-2"
+        return True
+
+    supervisor._lease_work_order = fake_lease_work_order  # type: ignore[method-assign]
+
+    refreshed = supervisor.refresh_run(run_record["run_id"])
+
+    work_orders = {item["work_order_id"]: item for item in refreshed.work_orders}
+    assert refreshed.status == "needs_human"
+    assert work_orders["micro-1"]["status"] == "needs_human"
+    assert work_orders["micro-1"]["failure_reason"] == "work_order_leasing_failed"
+    assert work_orders["micro-2"]["status"] == "leased"
+    assert work_orders["micro-2"]["lease_id"] == "lease-micro-2"
+
+
+def test_refresh_run_requeues_recoverable_work_order_leasing_failed_lane_and_dependency_children(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+    run_record = store.create_supervisor_run(
+        goal="requeue recoverable leasing failure lane",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "requeue recoverable leasing failure lane"},
+        metadata={"max_concurrency": 1},
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Primary lane",
+                "description": "Primary lane",
+                "status": "discarded",
+                "failure_reason": "work_order_leasing_failed",
+                "dispatch_error": (
+                    "autopilot ensure failed (1): fatal: a branch named "
+                    "'codex/swarm-requeue-micro-1-a123' already exists"
+                ),
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["aragora/server/handlers/runs.py"],
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "archived_due_to": "work_order_leasing_failed",
+                    "archived_at": "2026-04-04T00:00:00+00:00",
+                    "archive_reason": "work_order_leasing_failed",
+                    "previous_status": "needs_human",
+                },
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Dependent test lane",
+                "description": "Dependent test lane",
+                "status": "discarded",
+                "failure_reason": "terminal_dependency_failure",
+                "dependency_ids": ["micro-task-1"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["tests/server/handlers/test_runs_handler.py"],
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "archived_due_to": "terminal_dependency_failure",
+                    "archived_at": "2026-04-04T00:00:01+00:00",
+                    "archive_reason": "terminal_dependency_failure:micro-task-1",
+                    "previous_status": "queued",
+                    "blocking_dependency_id": "micro-task-1",
+                    "blocking_dependency_status": "discarded",
+                    "blocking_dependency_reason": "work_order_leasing_failed",
+                },
+                "blocker": {
+                    "reason": "terminal_dependency_failure",
+                    "dependency_id": "micro-task-1",
+                    "dependency_status": "discarded",
+                    "dependency_reason": "work_order_leasing_failed",
+                },
+                "blocking_question": (
+                    "Dependency micro-task-1 ended in discarded; should that dependency be rerun "
+                    "or replaced before retrying this lane?"
+                ),
+            },
+        ],
+        status="active",
+    )
+
+    def fake_lease_work_order(
+        *,
+        run_id: str,
+        target_branch: str,
+        work_order: dict[str, Any],
+        work_orders: list[dict[str, Any]],
+        managed_dir_pattern: str,
+        approval_policy: SwarmApprovalPolicy,
+    ) -> bool:
+        del run_id, target_branch, work_orders, managed_dir_pattern, approval_policy
+        work_order["status"] = "leased"
+        work_order["lease_id"] = "lease-requeued-micro-1"
+        work_order["owner_session_id"] = "swarm-session-micro-1"
+        return True
+
+    supervisor._lease_work_order = fake_lease_work_order  # type: ignore[method-assign]
+
+    refreshed = supervisor.refresh_run(run_record["run_id"])
+
+    work_orders = {item["work_order_id"]: item for item in refreshed.work_orders}
+    assert refreshed.status == "active"
+    assert work_orders["micro-1"]["status"] == "leased"
+    assert work_orders["micro-1"]["lease_id"] == "lease-requeued-micro-1"
+    assert work_orders["micro-1"].get("failure_reason") in {"", None}
+    assert "archived_due_to" not in work_orders["micro-1"].get("metadata", {})
+    assert work_orders["micro-2"]["status"] == "queued"
+    assert work_orders["micro-2"].get("failure_reason") in {"", None}
+    assert work_orders["micro-2"].get("blocking_question") in {"", None}
+    assert "archived_due_to" not in work_orders["micro-2"].get("metadata", {})
+
+
+def test_refresh_run_requeues_ignorable_scope_violation_and_dependency_children(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    supervisor = SwarmSupervisor(
+        repo_root=repo,
+        store=store,
+        lifecycle=MagicMock(),
+        decomposer=MagicMock(),
+    )
+    run_record = store.create_supervisor_run(
+        goal="requeue ignorable runtime scope violation lane",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "requeue ignorable runtime scope violation lane"},
+        metadata={"max_concurrency": 1},
+        work_orders=[
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Route lane",
+                "description": "Route lane",
+                "status": "scope_violation",
+                "failure_reason": "scope_violation",
+                "dispatch_error": (
+                    "worker edited files outside permitted scope: aragora/live/node_modules"
+                ),
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["aragora/server/fastapi/routes/runs.py"],
+                "changed_paths": ["aragora/live/node_modules"],
+                "scope_violation": {
+                    "violations": [
+                        {
+                            "path": "aragora/live/node_modules",
+                            "type": "out_of_scope",
+                            "reason": "outside permitted scope",
+                        }
+                    ]
+                },
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                },
+            },
+            {
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
+                "title": "Dependent lane",
+                "description": "Dependent lane",
+                "status": "discarded",
+                "failure_reason": "terminal_dependency_failure",
+                "dependency_ids": ["micro-task-2"],
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+                "file_scope": ["tests/server/fastapi/test_runs_routes.py"],
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "archived_due_to": "terminal_dependency_failure",
+                    "archived_at": "2026-04-04T00:00:01+00:00",
+                    "archive_reason": "terminal_dependency_failure:micro-task-2",
+                    "previous_status": "queued",
+                    "blocking_dependency_id": "micro-task-2",
+                    "blocking_dependency_status": "scope_violation",
+                    "blocking_dependency_reason": "scope_violation",
+                },
+                "blocker": {
+                    "reason": "terminal_dependency_failure",
+                    "dependency_id": "micro-task-2",
+                    "dependency_status": "scope_violation",
+                    "dependency_reason": "scope_violation",
+                },
+            },
+        ],
+        status="active",
+    )
+
+    def fake_lease_work_order(
+        *,
+        run_id: str,
+        target_branch: str,
+        work_order: dict[str, Any],
+        work_orders: list[dict[str, Any]],
+        managed_dir_pattern: str,
+        approval_policy: SwarmApprovalPolicy,
+    ) -> bool:
+        del run_id, target_branch, work_orders, managed_dir_pattern, approval_policy
+        work_order["status"] = "leased"
+        work_order["lease_id"] = "lease-requeued-micro-2"
+        work_order["owner_session_id"] = "swarm-session-micro-2"
+        return True
+
+    supervisor._lease_work_order = fake_lease_work_order  # type: ignore[method-assign]
+
+    refreshed = supervisor.refresh_run(run_record["run_id"])
+
+    work_orders = {item["work_order_id"]: item for item in refreshed.work_orders}
+    assert refreshed.status == "active"
+    assert work_orders["micro-2"]["status"] == "leased"
+    assert work_orders["micro-2"]["lease_id"] == "lease-requeued-micro-2"
+    assert "scope_violation" not in work_orders["micro-2"]
+    assert "changed_paths" not in work_orders["micro-2"]
+    assert work_orders["micro-3"]["status"] == "queued"
+    assert work_orders["micro-3"].get("failure_reason") in {"", None}
+    assert "archived_due_to" not in work_orders["micro-3"].get("metadata", {})
 
 
 def test_refresh_run_leases_dependent_work_order_from_completed_dependency_branch(

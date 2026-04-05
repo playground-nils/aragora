@@ -43,10 +43,10 @@ from aragora.swarm.terminal_truth import (
     qualify_work_order_terminal_state,
 )
 from aragora.swarm.worker_launcher import (
-    SESSION_ARTIFACTS,
     LaunchConfig,
     WorkerLauncher,
     WorkerProcess,
+    is_ignored_changed_path,
 )
 from aragora.worktree.lifecycle import WorktreeLifecycleService
 
@@ -768,6 +768,7 @@ class SwarmSupervisor:
                         self._clear_waiting_state(item)
                         item["status"] = "waiting_resource"
                         item["resource_error"] = str(exc)
+                        break
                     else:
                         self._clear_stale_prelaunch_deliverable_state(item)
                         self._mark_needs_human(
@@ -775,7 +776,7 @@ class SwarmSupervisor:
                             str(exc),
                             failure_reason="work_order_leasing_failed",
                         )
-                    break
+                        continue
 
         refreshed = self.store.update_supervisor_run(
             run_id,
@@ -1051,7 +1052,16 @@ class SwarmSupervisor:
                 if self._should_requeue_stale_work_order(item, active_leases):
                     self._reset_work_order_for_requeue(item)
                     continue
+            if self._should_requeue_recoverable_work_order_leasing_failed(item, active_leases):
+                self._reset_work_order_for_requeue(item)
+                continue
             if self._should_requeue_reaped_needs_human(item, active_leases):
+                self._reset_work_order_for_requeue(item)
+                continue
+            if self._should_requeue_ignorable_scope_violation(item):
+                self._reset_work_order_for_requeue(item)
+                continue
+            if self._should_requeue_terminal_dependency_failure(item, work_orders):
                 self._reset_work_order_for_requeue(item)
                 continue
             if self._should_requeue_conflict_only_needs_human(item):
@@ -1495,6 +1505,118 @@ class SwarmSupervisor:
         return True
 
     @staticmethod
+    def _should_requeue_recoverable_work_order_leasing_failed(
+        item: dict[str, Any],
+        active_leases: dict[str, Any],
+    ) -> bool:
+        status = str(item.get("status", "")).strip().lower()
+        if status not in {"needs_human", "discarded"}:
+            return False
+        failure_reason = str(item.get("failure_reason", "")).strip().lower()
+        metadata = item.get("metadata")
+        archived_due_to = (
+            str(metadata.get("archived_due_to", "")).strip().lower()
+            if isinstance(metadata, dict)
+            else ""
+        )
+        if (
+            failure_reason != "work_order_leasing_failed"
+            and archived_due_to != "work_order_leasing_failed"
+        ):
+            return False
+        lease_id = str(item.get("lease_id", "")).strip()
+        if lease_id and lease_id in active_leases:
+            return False
+        if str(item.get("receipt_id") or "").strip():
+            return False
+        if item.get("commit_shas") or item.get("changed_paths") or item.get("pr_url"):
+            return False
+        dispatch_error = str(item.get("dispatch_error", "")).strip().lower()
+        if not dispatch_error:
+            return False
+        return (
+            "autopilot ensure failed" in dispatch_error
+            and "a branch named" in dispatch_error
+            and "already exists" in dispatch_error
+        )
+
+    @staticmethod
+    def _should_requeue_terminal_dependency_failure(
+        item: dict[str, Any],
+        work_orders: list[dict[str, Any]],
+    ) -> bool:
+        status = str(item.get("status", "")).strip().lower()
+        if status not in {"needs_human", "discarded"}:
+            return False
+        failure_reason = str(item.get("failure_reason", "")).strip().lower()
+        metadata = item.get("metadata")
+        archived_due_to = (
+            str(metadata.get("archived_due_to", "")).strip().lower()
+            if isinstance(metadata, dict)
+            else ""
+        )
+        if (
+            failure_reason != "terminal_dependency_failure"
+            and archived_due_to != "terminal_dependency_failure"
+        ):
+            return False
+        dependency_id = ""
+        if isinstance(metadata, dict):
+            dependency_id = str(metadata.get("blocking_dependency_id", "")).strip()
+        blocker = item.get("blocker")
+        if not dependency_id and isinstance(blocker, dict):
+            dependency_id = str(blocker.get("dependency_id", "")).strip()
+        if not dependency_id:
+            return False
+        dependency_lookup: dict[str, dict[str, Any]] = {}
+        for candidate in work_orders:
+            if not isinstance(candidate, dict):
+                continue
+            for key in ("pipeline_task_id", "work_order_id", "task_key"):
+                candidate_id = str(candidate.get(key, "")).strip()
+                if candidate_id:
+                    dependency_lookup[candidate_id] = candidate
+        dependency = dependency_lookup.get(dependency_id)
+        if not isinstance(dependency, dict):
+            return False
+        dependency_status = str(dependency.get("status", "")).strip().lower()
+        return dependency_status not in {"discarded", "failed", "timed_out", "scope_violation"}
+
+    @staticmethod
+    def _should_requeue_ignorable_scope_violation(item: dict[str, Any]) -> bool:
+        status = str(item.get("status", "")).strip().lower()
+        if status not in {"scope_violation", "needs_human", "discarded"}:
+            return False
+        failure_reason = str(item.get("failure_reason", "")).strip().lower()
+        metadata = item.get("metadata")
+        archived_due_to = (
+            str(metadata.get("archived_due_to", "")).strip().lower()
+            if isinstance(metadata, dict)
+            else ""
+        )
+        if failure_reason != "scope_violation" and archived_due_to != "scope_violation":
+            return False
+        if str(item.get("receipt_id") or "").strip():
+            return False
+        if item.get("commit_shas") or item.get("pr_url") or item.get("adopted_pr"):
+            return False
+
+        candidate_paths: set[str] = {
+            str(path).strip() for path in item.get("changed_paths", []) if str(path).strip()
+        }
+        scope_violation = item.get("scope_violation")
+        if isinstance(scope_violation, dict):
+            for violation in scope_violation.get("violations", []) or []:
+                if not isinstance(violation, dict):
+                    continue
+                path = str(violation.get("path", "")).strip()
+                if path:
+                    candidate_paths.add(path)
+        if not candidate_paths:
+            return False
+        return all(is_ignored_changed_path(path) for path in candidate_paths)
+
+    @staticmethod
     def _reset_work_order_for_requeue(item: dict[str, Any]) -> None:
         item["status"] = "queued"
         item["review_status"] = "pending"
@@ -1542,6 +1664,24 @@ class SwarmSupervisor:
         ):
             item.pop(key, None)
         item.pop("blockers", None)
+        metadata = dict(item.get("metadata") or {})
+        for key in (
+            "archived_due_to",
+            "archived_at",
+            "archive_reason",
+            "previous_status",
+            "canonical_task_key",
+            "canonical_work_order_id",
+            "canonical_run_id",
+            "blocking_dependency_id",
+            "blocking_dependency_status",
+            "blocking_dependency_reason",
+        ):
+            metadata.pop(key, None)
+        if metadata:
+            item["metadata"] = metadata
+        else:
+            item.pop("metadata", None)
 
     def _backfill_missing_completion_receipt(self, item: dict[str, Any]) -> None:
         """Heal older completed lanes that predate receipt propagation fixes."""
@@ -2587,6 +2727,7 @@ class SwarmSupervisor:
         try:
             self.store.rehabilitate_dependency_deferred_missing_verification_plan_work_orders()
             self.store.archive_failed_no_deliverable_work_orders(grace_period_hours=0.0)
+            self.store.archive_clean_exit_no_deliverable_work_orders(grace_period_hours=0.0)
             self.store.archive_terminal_dependency_failure_work_orders()
         except Exception:
             logger.debug(
@@ -3081,13 +3222,14 @@ class SwarmSupervisor:
 
     @staticmethod
     def _strip_session_artifacts(paths: list[str]) -> list[str]:
-        """Remove harness session metadata from a list of changed paths.
+        """Remove harness and runtime noise from a list of changed paths.
 
         Session artifacts like ``.codex_session_meta.json`` are infrastructure
-        metadata created by the harness, not user deliverables.  Stripping them
-        prevents workers from claiming credit for non-work output.
+        metadata created by the harness, while runtime directories like
+        ``node_modules`` are environment noise. Stripping them prevents workers
+        from claiming credit for non-work output or tripping false scope checks.
         """
-        return [p for p in paths if Path(p).name not in SESSION_ARTIFACTS]
+        return [p for p in paths if not is_ignored_changed_path(p)]
 
     def _campaign_metadata(
         self,
