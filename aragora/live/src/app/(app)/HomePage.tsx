@@ -31,7 +31,7 @@ import { useRightSidebar } from '@/context/RightSidebarContext';
 import { useLayout } from '@/context/LayoutContext';
 import { useTheme } from '@/context/ThemeContext';
 import { HeroSection } from '@/components/landing/HeroSection';
-import { LandingPage } from '@/components/LandingPage';
+import { LandingPage } from '@/components/landing/LandingPage';
 import { DebateResultPreview, type DebateResponse } from '@/components/DebateResultPreview';
 import { RecentReceipts } from '@/components/RecentReceipts';
 import { DebateThisButton } from '@/components/DebateThisButton';
