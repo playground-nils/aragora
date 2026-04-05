@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from aragora.nomic.dev_coordination import DevCoordinationStore
+from aragora.nomic.dev_coordination import DevCoordinationStore, FileScopeViolationError
 from aragora.nomic.task_decomposer import SubTask, TaskDecomposition
 from aragora.swarm.spec import SwarmSpec
 from aragora.swarm.supervisor import (
@@ -1828,7 +1828,7 @@ def test_refresh_run_requeues_leased_work_order_when_active_lease_is_missing(
                 "worktree_path": str(repo / "missing-worktree"),
                 "file_scope": ["aragora/swarm/supervisor.py"],
                 "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
-                "receipt_id": "receipt-stale",
+                "receipt_id": None,
                 "confidence": 0.91,
                 "worker_outcome": "crash_with_salvage",
                 "completed_at": "2026-03-31T12:34:56+00:00",
@@ -2048,7 +2048,7 @@ def test_refresh_run_rebinds_stale_dispatched_lane_back_to_leased_without_worker
                     "stderr_mtime_ns": 0,
                     "has_output": True,
                 },
-                "receipt_id": "receipt-stale",
+                "receipt_id": None,
                 "worker_outcome": "completed",
                 "completed_at": "2026-03-31T12:02:00+00:00",
                 "exit_code": 143,
@@ -4287,6 +4287,110 @@ async def test_collect_results_marks_scope_violation_needs_human(
     summary = store.status_summary()
     assert summary["counts"]["scope_violations"] == 0
     assert summary["counts"]["active_leases"] == 0
+
+
+@pytest.mark.asyncio
+async def test_collect_results_record_completion_scope_violation_clears_stale_wait_state(
+    repo: Path, store: DevCoordinationStore
+) -> None:
+    lease = store.claim_lease(
+        task_id="record-completion-scope-lane",
+        title="Record completion scope lane",
+        owner_agent="claude",
+        owner_session_id="record-completion-scope-session",
+        branch="main",
+        worktree_path=str(repo),
+        claimed_paths=["aragora/swarm/supervisor.py"],
+        expected_tests=["python -m pytest tests/swarm/test_supervisor.py -q"],
+    )
+    run_record = store.create_supervisor_run(
+        goal="record completion scope violation",
+        target_branch="main",
+        supervisor_agents={},
+        approval_policy={},
+        spec={"raw_goal": "record completion scope violation"},
+        work_orders=[
+            {
+                "work_order_id": "wo-record-completion-scope",
+                "status": "dispatched",
+                "worktree_path": str(repo),
+                "branch": "main",
+                "target_agent": "claude",
+                "owner_session_id": "record-completion-scope-session",
+                "lease_id": lease.lease_id,
+                "file_scope": ["aragora/swarm/supervisor.py"],
+                "review_status": "pending",
+                "expected_tests": ["python -m pytest tests/swarm/test_supervisor.py -q"],
+                "receipt_id": None,
+                "confidence": 0.91,
+                "resource_error": "old resource wait",
+                "conflicts": [{"source": "lease", "lease_id": "lease-stale"}],
+                "blockers": ["old blocker"],
+                "scope_violation": {"violations": [{"path": "old.py"}]},
+                "merge_gate": {"checks_passed": True},
+                "verification_missing_reason": "missing_verification_plan",
+            }
+        ],
+        status="active",
+    )
+    run_id = run_record["run_id"]
+
+    mock_launcher = MagicMock(spec=WorkerLauncher)
+    completed_worker = WorkerProcess(
+        work_order_id="wo-record-completion-scope",
+        agent="claude",
+        worktree_path=str(repo),
+        branch="main",
+        session_id="record-completion-scope-session",
+        pid=100,
+        exit_code=0,
+        completed_at="2026-03-06T20:00:00+00:00",
+        diff="diff --git a/aragora/swarm/supervisor.py",
+        changed_paths=["aragora/swarm/supervisor.py"],
+        commit_shas=["abc12345"],
+        tests_run=["python -m pytest tests/swarm/test_supervisor.py -q"],
+        verification_results=[
+            {
+                "command": "python -m pytest tests/swarm/test_supervisor.py -q",
+                "exit_code": 0,
+                "passed": True,
+                "stdout": "1 passed",
+                "stderr": "",
+                "duration_seconds": 0.4,
+            }
+        ],
+    )
+    mock_launcher.get_worker = MagicMock(return_value=completed_worker)
+    mock_launcher.wait = AsyncMock(return_value=completed_worker)
+
+    scope_violations = [{"path": "aragora/server/handlers/playground.py", "type": "out_of_scope"}]
+    store.record_completion = MagicMock(side_effect=FileScopeViolationError(scope_violations))
+
+    supervisor = SwarmSupervisor(repo_root=repo, store=store, launcher=mock_launcher)
+
+    results = await supervisor.collect_results(run_id)
+    assert len(results) == 1
+    store.record_completion.assert_called_once()
+
+    updated = store.get_supervisor_run(run_id)
+    assert updated is not None
+    wo = updated["work_orders"][0]
+    assert wo["status"] == "needs_human"
+    assert wo["review_status"] == "changes_requested"
+    assert wo["failure_reason"] == "scope_violation"
+    assert wo["worker_outcome"] == "scope_violation"
+    assert wo["scope_violation"]["violations"] == scope_violations
+    assert wo["scope_violation"]["changed_paths"] == ["aragora/swarm/supervisor.py"]
+    assert wo["blockers"] == [wo["dispatch_error"]]
+    assert wo["receipt_id"] is None
+    for cleared_key in (
+        "confidence",
+        "resource_error",
+        "conflicts",
+        "merge_gate",
+        "verification_missing_reason",
+    ):
+        assert cleared_key not in wo
 
 
 @pytest.mark.asyncio

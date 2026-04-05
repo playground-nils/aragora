@@ -3508,6 +3508,9 @@ class SwarmSupervisor:
                     },
                 )
             except FileScopeViolationError as exc:
+                for key in ("resource_error", "conflicts"):
+                    item.pop(key, None)
+                item.pop("blockers", None)
                 self._mark_needs_human(
                     item,
                     "worker completion violated file-scope ownership; narrow or split the lane",
