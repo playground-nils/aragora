@@ -1096,6 +1096,23 @@ class BossLoop:
             )
             return
 
+        # Check if a PR was already merged for this issue — if so, close it
+        try:
+            pr_check = subprocess.run(
+                ["gh", "pr", "list", "--repo", repo, "--state", "merged",
+                 "--search", f"#{issue.number}", "--limit", "1",
+                 "--json", "number", "--jq", ".[0].number"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if pr_check.returncode == 0 and pr_check.stdout.strip():
+                self._label_boss_stuck(
+                    issue_number, repo,
+                    f"PR #{pr_check.stdout.strip()} already merged for this issue.",
+                )
+                return
+        except Exception:
+            pass
+
         # Collect existing issue titles to avoid creating duplicates
         existing_titles: set[str] = set()
         try:
