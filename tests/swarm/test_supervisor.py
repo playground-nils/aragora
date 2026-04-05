@@ -3122,8 +3122,11 @@ def test_refresh_run_invalid_scope_clears_stale_deliverable_state(
                 "pr_url": "https://github.com/synaptent/aragora/pull/9999",
                 "merge_gate": {"checks_passed": True},
                 "verification_missing_reason": "missing_verification_plan",
-                "resource_error": "old resource wait",
-                "conflicts": [{"source": "lease", "lease_id": "old-lease"}],
+                "resource_error": "stale disk full",
+                "conflicts": [{"path": "README.md", "source": "lease"}],
+                "failure_reason": "waiting_resource",
+                "blocking_question": "Old blocker?",
+                "blocker": {"reason": "waiting_resource", "question": "Old blocker?"},
                 "blockers": ["old blocker"],
             }
         ],
@@ -3141,7 +3144,6 @@ def test_refresh_run_invalid_scope_clears_stale_deliverable_state(
         work_order["dispatch_error"]
         == "Declared file scope resolved to no valid in-repo paths; declare scope before dispatch."
     )
-    assert work_order["blockers"] == [work_order["dispatch_error"]]
     for key in (
         "receipt_id",
         "confidence",
@@ -3156,6 +3158,11 @@ def test_refresh_run_invalid_scope_clears_stale_deliverable_state(
         "conflicts",
     ):
         assert key not in work_order
+    assert work_order["blocking_question"] != "Old blocker?"
+    assert work_order["blocker"] != {"reason": "waiting_resource", "question": "Old blocker?"}
+    assert work_order["blockers"] == [
+        "Declared file scope resolved to no valid in-repo paths; declare scope before dispatch."
+    ]
 
 
 def test_start_run_fails_closed_when_validated_scope_resolves_to_empty(
@@ -4986,6 +4993,12 @@ async def test_dispatch_workers_marks_needs_human_when_all_worker_types_blocked(
                 "pr_url": "https://github.com/synaptent/aragora/pull/9999",
                 "adopted_pr": "https://github.com/synaptent/aragora/pull/9999",
                 "scope_violation": {"violations": []},
+                "resource_error": "stale quota",
+                "conflicts": [{"path": "README.md", "source": "lease"}],
+                "failure_reason": "waiting_conflict",
+                "blocking_question": "Old blocker?",
+                "blocker": {"reason": "waiting_conflict", "question": "Old blocker?"},
+                "blockers": ["old blocker"],
             }
         ],
         status="active",
@@ -5045,8 +5058,11 @@ async def test_dispatch_workers_marks_needs_human_when_all_worker_types_blocked(
         "pr_url",
         "adopted_pr",
         "scope_violation",
+        "resource_error",
+        "conflicts",
     ):
         assert key not in work_order
+    assert work_order["blockers"] == [work_order["dispatch_error"]]
     assert updated["status"] == "needs_human"
     assert updated["metadata"][CAMPAIGN_OUTCOME_METADATA_KEY] == "needs_human"
     assert store.status_summary()["counts"]["active_leases"] == 0
