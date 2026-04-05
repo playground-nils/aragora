@@ -190,6 +190,13 @@ def _parse_expires_in(raw_value: Any) -> int | None:
     return expires_in
 
 
+def _parse_slack_ok(raw_value: Any) -> bool:
+    """Parse Slack ok while rejecting malformed truthy values."""
+    if isinstance(raw_value, bool):
+        return raw_value
+    raise ValueError("ok must be a boolean")
+
+
 def _get_oauth_audit_logger() -> Any:
     """Get or create Slack audit logger for OAuth (lazy initialization)."""
     global _slack_oauth_audit
@@ -1173,7 +1180,13 @@ class SlackOAuthHandler(SecureHandler):
             logger.error("[%s] Slack token exchange returned non-dict payload", request_id)
             return error_response("Invalid response from Slack", 500)
 
-        if not data.get("ok"):
+        try:
+            slack_ok = _parse_slack_ok(data.get("ok"))
+        except ValueError:
+            logger.error("[%s] Slack token exchange returned invalid ok flag", request_id)
+            return error_response("Invalid response from Slack", 500)
+
+        if not slack_ok:
             error_msg = data.get("error", "Unknown error")
             logger.error("Slack OAuth failed: %s", error_msg)
             return error_response(f"Slack OAuth failed: {error_msg}", 400)
@@ -1729,7 +1742,21 @@ class SlackOAuthHandler(SecureHandler):
                     )
                 return error_response("Invalid token refresh response", 502)
 
-            if not data.get("ok"):
+            try:
+                slack_ok = _parse_slack_ok(data.get("ok"))
+            except ValueError:
+                logger.error("Token refresh returned invalid ok flag for %s", workspace_id)
+                audit = _get_oauth_audit_logger()
+                if audit:
+                    audit.log_oauth(
+                        workspace_id=workspace_id,
+                        action="token_refresh",
+                        success=False,
+                        error="Invalid refresh response: malformed ok flag",
+                    )
+                return error_response("Invalid token refresh response", 502)
+
+            if not slack_ok:
                 error_msg = data.get("error", "Unknown error")
                 logger.error("Token refresh failed for %s: %s", workspace_id, error_msg)
                 audit = _get_oauth_audit_logger()
