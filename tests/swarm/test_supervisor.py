@@ -7066,6 +7066,11 @@ def test_refresh_run_marks_invalid_dependency_ref_needs_human(
                 "pr_url": "https://github.com/synaptent/aragora/pull/9999",
                 "merge_gate": {"checks_passed": True},
                 "verification_missing_reason": "missing_verification_plan",
+                "resource_error": "old disk pressure",
+                "conflicts": [{"source": "lease", "lease_id": "lease-stale"}],
+                "blockers": ["old blocker"],
+                "blocker": {"reason": "waiting_conflict", "question": "old question"},
+                "blocking_question": "old question",
             },
         ],
         status="active",
@@ -7081,6 +7086,24 @@ def test_refresh_run_marks_invalid_dependency_ref_needs_human(
     assert dependent["dependency_base_ref"] == "-bad-ref"
     assert dependent["dependency_base_source"] == "micro-task-1"
     assert "unsafe dependency base reference" in dependent["dispatch_error"]
+    for cleared_key in (
+        "resource_error",
+        "conflicts",
+        "receipt_id",
+        "confidence",
+        "worker_outcome",
+        "commit_shas",
+        "changed_paths",
+        "head_sha",
+        "pr_url",
+        "merge_gate",
+        "verification_missing_reason",
+        "scope_violation",
+    ):
+        assert cleared_key not in dependent
+    assert dependent["blockers"] == [
+        "Dependent lane received an invalid prerequisite branch reference; reconcile the dependency chain before rerunning."
+    ]
 
 
 def test_refresh_run_rehabilitates_validation_marker_crash_lane(

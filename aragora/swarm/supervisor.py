@@ -2403,6 +2403,12 @@ class SwarmSupervisor:
     ) -> bool:
         def _clear_stale_deliverable_state() -> None:
             for key in (
+                "dispatch_error",
+                "failure_reason",
+                "blocking_question",
+                "blocker",
+                "resource_error",
+                "conflicts",
                 "receipt_id",
                 "confidence",
                 "worker_outcome",
@@ -2424,6 +2430,7 @@ class SwarmSupervisor:
                 "scope_violation",
             ):
                 work_order.pop(key, None)
+            work_order.pop("blockers", None)
 
         if not self._is_safe_dependency_ref(str(session.path), dependency_ref):
             _clear_stale_deliverable_state()
