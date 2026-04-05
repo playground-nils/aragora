@@ -3122,6 +3122,9 @@ def test_refresh_run_invalid_scope_clears_stale_deliverable_state(
                 "pr_url": "https://github.com/synaptent/aragora/pull/9999",
                 "merge_gate": {"checks_passed": True},
                 "verification_missing_reason": "missing_verification_plan",
+                "resource_error": "old resource wait",
+                "conflicts": [{"source": "lease", "lease_id": "old-lease"}],
+                "blockers": ["old blocker"],
             }
         ],
         status="active",
@@ -3138,6 +3141,7 @@ def test_refresh_run_invalid_scope_clears_stale_deliverable_state(
         work_order["dispatch_error"]
         == "Declared file scope resolved to no valid in-repo paths; declare scope before dispatch."
     )
+    assert work_order["blockers"] == [work_order["dispatch_error"]]
     for key in (
         "receipt_id",
         "confidence",
@@ -3148,6 +3152,8 @@ def test_refresh_run_invalid_scope_clears_stale_deliverable_state(
         "pr_url",
         "merge_gate",
         "verification_missing_reason",
+        "resource_error",
+        "conflicts",
     ):
         assert key not in work_order
 
@@ -7188,6 +7194,9 @@ def test_refresh_run_work_order_leasing_failure_clears_stale_deliverable_state(
                 "scope_violation": {
                     "violations": [{"path": "aragora/swarm/supervisor.py"}],
                 },
+                "resource_error": "old resource wait",
+                "conflicts": [{"source": "lease", "lease_id": "old-lease"}],
+                "blockers": ["old blocker"],
             }
         ],
         status="active",
@@ -7201,6 +7210,7 @@ def test_refresh_run_work_order_leasing_failure_clears_stale_deliverable_state(
     assert work_order["review_status"] == "changes_requested"
     assert work_order["dispatch_error"] == "managed worktree metadata unreadable"
     assert work_order["failure_reason"] == "work_order_leasing_failed"
+    assert work_order["blockers"] == [work_order["dispatch_error"]]
     for cleared_key in (
         "receipt_id",
         "confidence",
@@ -7213,6 +7223,8 @@ def test_refresh_run_work_order_leasing_failure_clears_stale_deliverable_state(
         "pr_url",
         "verification_missing_reason",
         "scope_violation",
+        "resource_error",
+        "conflicts",
     ):
         assert cleared_key not in work_order
 
