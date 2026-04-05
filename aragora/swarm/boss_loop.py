@@ -2423,6 +2423,66 @@ class BossLoop:
             return 1
         return max(1, min(configured_limit, available_capacity))
 
+    @staticmethod
+    def _semantic_dedup_issues(issues: list[GitHubIssue]) -> list[GitHubIssue]:
+        """Use LLM to cluster semantically duplicate issues, keep one per cluster."""
+        if len(issues) < 6:
+            return issues
+        import json as _json
+        import os
+        import re
+
+        try:
+            from aragora.agents.base import create_agent
+
+            agent = None
+            if os.environ.get("OPENROUTER_API_KEY"):
+                agent = create_agent(
+                    "openrouter", name="dedup", role="proposer", model="deepseek/deepseek-chat"
+                )
+            elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+                agent = create_agent(
+                    "gemini", name="dedup", role="proposer", model="gemini-2.0-flash"
+                )
+            if agent is None:
+                return issues
+
+            issue_map = {
+                str(i.number): re.sub(r"\[from #\d+\]\s*", "", i.title).strip() for i in issues
+            }
+            prompt = (
+                "You are deduplicating GitHub issues. Group semantically equivalent tasks. "
+                "Return ONLY a JSON array of arrays: [[num1,num2],[num3],...]\n\n"
+                + "\n".join(f"#{num}: {title}" for num, title in issue_map.items())
+            )
+
+            import asyncio
+
+            try:
+                asyncio.get_running_loop()
+                return issues  # Can't call asyncio.run inside running loop
+            except RuntimeError:
+                pass
+
+            raw = asyncio.run(agent.generate(prompt))
+            match = re.search(r"\[.*\]", raw, re.DOTALL)
+            if not match:
+                return issues
+
+            clusters = _json.loads(match.group())
+            if not isinstance(clusters, list):
+                return issues
+
+            kept = {int(c[0]) for c in clusters if isinstance(c, list) and c}
+            all_clustered = {int(n) for c in clusters if isinstance(c, list) for n in c}
+            deduped = [i for i in issues if i.number in kept or i.number not in all_clustered]
+
+            logger.info("Semantic dedup: %d → %d issues", len(issues), len(deduped))
+            return deduped
+        except Exception as exc:
+            logger.debug("Semantic dedup skipped: %s", exc)
+            return issues
+
     def _select_issues_for_iteration(
         self,
         issues: list[GitHubIssue],
@@ -2467,6 +2527,9 @@ class BossLoop:
                 else None
             )
             return [selected] if selected is not None else []
+
+        # Semantic dedup: LLM clusters near-duplicate issues before dispatch
+        issues = self._semantic_dedup_issues(issues)
 
         selected_issues: list[GitHubIssue] = []
         # Track file scopes to avoid dispatching overlapping work in parallel
