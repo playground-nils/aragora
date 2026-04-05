@@ -5042,6 +5042,9 @@ def test_apply_worker_result_clean_exit_no_deliverable_clears_stale_deliverable_
         "merge_gate": {"checks_passed": True},
         "verification_missing_reason": "stale",
         "scope_violation": {"violations": [{"path": "README.md"}]},
+        "resource_error": "old disk pressure",
+        "conflicts": [{"source": "lease", "lease_id": "lease-stale"}],
+        "blockers": ["old blocker"],
         "lease_id": "lease-123",
     }
     result = WorkerProcess(
@@ -5073,8 +5076,13 @@ def test_apply_worker_result_clean_exit_no_deliverable_clears_stale_deliverable_
         "merge_gate",
         "verification_missing_reason",
         "scope_violation",
+        "resource_error",
+        "conflicts",
     ):
         assert cleared_key not in work_order
+    assert work_order["blockers"] == [
+        "worker produced only session artifacts, no real deliverables"
+    ]
     mock_release.assert_called_once_with(work_order)
 
 
