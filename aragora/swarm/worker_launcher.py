@@ -1286,6 +1286,12 @@ class WorkerLauncher:
             if not entry:
                 continue
             if "=" not in entry:
+                pid = cls._normalized_pid(entry)
+                # Older lockfiles sometimes used a bare "1" sentinel to mean
+                # "lock exists" without recording a usable PID. Only trust
+                # bare numeric lines when they look like real session PIDs.
+                if pid is not None and pid > 1 and pid not in session_pids:
+                    session_pids.append(pid)
                 continue
             key, value = entry.split("=", 1)
             normalized_key = key.strip()
