@@ -196,6 +196,10 @@ class ActionIntent:
     debate_id: str | None = None
     label_id: str | None = None
     user_id: str | None = None
+    # Email display metadata — populated by triage runner for auditability.
+    email_subject: str = ""
+    email_from: str = ""
+    email_snippet: str = ""
 
     @classmethod
     def create(
@@ -599,11 +603,11 @@ class InboxTrustWedgeStore:
             verdict = "FAIL"
         else:
             verdict = "CONDITIONAL"
-        # Include email metadata for auditability — these are set by
-        # _attach_display_metadata in triage_runner.py as private attrs.
-        email_subject = getattr(intent, "_subject", None) or ""
-        email_from = getattr(intent, "_sender", None) or ""
-        email_snippet = getattr(intent, "_snippet", None) or ""
+        # Include email metadata for auditability — set by
+        # _attach_display_metadata in triage_runner.py on the dataclass fields.
+        email_subject = intent.email_subject or ""
+        email_from = intent.email_from or ""
+        email_snippet = intent.email_snippet or ""
 
         return {
             "receipt_id": receipt_id,
@@ -622,14 +626,31 @@ class InboxTrustWedgeStore:
             "expires_at": _isoformat(expires_at),
         }
 
-    def get_receipt_by_message_id(self, message_id: str) -> StoredInboxTrustEnvelope | None:
-        """Return the most recent receipt for a given Gmail message ID, if any."""
+    def get_receipt_by_message_id(
+        self,
+        message_id: str,
+        *,
+        provider: str | None = None,
+        user_id: str | None = None,
+    ) -> StoredInboxTrustEnvelope | None:
+        """Return the most recent receipt for a message, optionally scoped by provider/user."""
+        conditions = ["message_id = ?"]
+        params: list[Any] = [message_id]
+
+        if provider is not None and str(provider).strip():
+            conditions.append("provider = ?")
+            params.append(str(provider).strip().lower())
+
+        if user_id is not None and str(user_id).strip():
+            conditions.append("user_id = ?")
+            params.append(str(user_id).strip())
+
         with self._cursor() as cursor:
             cursor.execute(
-                "SELECT receipt_id FROM inbox_trust_receipts "
-                "WHERE message_id = ? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (message_id,),
+                f"SELECT receipt_id FROM inbox_trust_receipts "
+                f"WHERE {' AND '.join(conditions)} "
+                f"ORDER BY created_at DESC LIMIT 1",
+                tuple(params),
             )
             row = cursor.fetchone()
             if row is None:
@@ -644,12 +665,21 @@ class InboxTrustWedgeStore:
         expires_at: datetime | None = None,
         signer: ReceiptSigner | None = None,
     ) -> StoredInboxTrustEnvelope:
-        # Deduplicate: return existing receipt if one already exists for this
-        # real Gmail message (skip synthetic/test message IDs).
+        # Deduplicate only exact repeats for real provider-backed messages.
+        # A later decision for the same message_id must produce a newer receipt so
+        # shared inbox and operator surfaces can show the latest wedge state.
         msg_id = intent.message_id
         if msg_id and not msg_id.startswith(("msg-", "test-", "fake-")):
-            existing = self.get_receipt_by_message_id(msg_id)
-            if existing is not None:
+            existing = self.get_receipt_by_message_id(
+                msg_id,
+                provider=intent.provider,
+                user_id=intent.user_id,
+            )
+            if (
+                existing is not None
+                and existing.receipt.intent_hash == intent.intent_hash()
+                and existing.decision.final_action == decision.final_action
+            ):
                 return existing
 
         receipt_id = str(uuid.uuid4())

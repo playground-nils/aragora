@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -43,6 +44,7 @@ from aragora.swarm.boss_validation import (  # noqa: F401
     sanitize_issue_body_for_dispatch,
     extract_issue_validation_contract,
     extract_pre_dispatch_validation_commands,
+    find_missing_pre_dispatch_validation_targets,
     run_pre_dispatch_validation_commands,
     discover_focused_tests,
 )
@@ -182,13 +184,15 @@ class BossLoopConfig:
     issue_number: int | None = None
     issue_numbers: list[int] | None = None
     issue_limit: int = 25
-    skip_labels: set[str] = field(default_factory=lambda: {"wontfix", "duplicate", "invalid"})
+    skip_labels: set[str] = field(
+        default_factory=lambda: {"wontfix", "duplicate", "invalid", "boss-stuck"}
+    )
     require_labels: set[str] | None = None
     require_validation_contract: bool = True
 
     # Retry / self-correction
     max_consecutive_failures: int = 3
-    max_retries_per_issue: int = 5  # Generous: allows initial attempt + 2 repairs + 2 retries
+    max_retries_per_issue: int = 3  # initial attempt + 1 ping-pong + 1 repair
 
     # Dispatch
     target_branch: str = "main"
@@ -1058,6 +1062,168 @@ class BossLoop:
             "comment": comment,
         }
 
+    def _auto_decompose_stuck_issue(
+        self,
+        issue_number: int | str,
+        issues: list[GitHubIssue],
+    ) -> None:
+        """When an issue exhausts retries, try to decompose it into sub-issues.
+
+        Uses the TaskDecomposer to break the issue into smaller pieces, then
+        creates sub-issues on GitHub with the boss-ready label. If decomposition
+        fails or produces nothing useful, falls back to labeling boss-stuck.
+        """
+        import subprocess
+
+        repo = self.config.repo or ""
+        issue = next((i for i in issues if i.number == int(issue_number)), None)
+        if not issue:
+            return
+
+        # Guard: don't decompose sub-issues — prevents recursive explosion
+        if issue.title.startswith("[from #"):
+            self._label_boss_stuck(
+                issue_number, repo,
+                "Sub-issue exhausted retries. Needs manual attention.",
+            )
+            return
+
+        # Collect existing issue titles to avoid creating duplicates
+        existing_titles: set[str] = set()
+        try:
+            proc = subprocess.run(
+                ["gh", "issue", "list", "--repo", repo, "--label", "boss-ready",
+                 "--state", "open", "--limit", "100", "--json", "title",
+                 "--jq", ".[].title"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if proc.returncode == 0:
+                existing_titles = {
+                    line.strip().lower() for line in proc.stdout.splitlines() if line.strip()
+                }
+        except Exception:
+            pass
+
+        # Try LLM-based decomposition
+        sub_issues_created = 0
+        try:
+            from aragora.nomic.task_decomposer import TaskDecomposer
+
+            decomposer = TaskDecomposer()
+            result = decomposer.analyze(
+                issue.body or issue.title,
+                file_scope_hints=list(self._extract_file_scope_hints(issue.body or "")),
+            )
+
+            if result.should_decompose and result.subtasks:
+                for subtask in result.subtasks[:3]:  # Cap at 3 sub-issues (was 5)
+                    title = f"[from #{issue.number}] {subtask.title}"
+                    # Skip if a similar title already exists
+                    if title.lower() in existing_titles:
+                        continue
+                    scope_lines = (
+                        "\n".join(f"- `{f}`" for f in subtask.file_scope)
+                        if subtask.file_scope
+                        else "- (infer from context)"
+                    )
+                    body = (
+                        f"Auto-decomposed from #{issue.number} after {self.config.max_retries_per_issue} "
+                        f"failed autonomous attempts.\n\n"
+                        f"## Task\n{subtask.description}\n\n"
+                        f"## Files\n{scope_lines}\n\n"
+                        f"## Acceptance\n"
+                        f"`pytest` on the changed files passes\n\n"
+                        f"## Constraints\n"
+                        f"- Single-file change preferred\n"
+                        f"- Under 100 lines of new/changed code\n"
+                        f"- Estimated complexity: {subtask.estimated_complexity}\n"
+                    )
+                    try:
+                        proc = subprocess.run(
+                            [
+                                "gh",
+                                "issue",
+                                "create",
+                                "--repo",
+                                repo,
+                                "--title",
+                                title,
+                                "--body",
+                                body,
+                                "--label",
+                                "boss-ready",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                        )
+                        if proc.returncode == 0:
+                            sub_issues_created += 1
+                    except Exception:
+                        pass
+
+        except Exception as exc:
+            logger.debug("Auto-decomposition failed for #%s: %s", issue_number, exc)
+
+        # Comment on the parent issue
+        if sub_issues_created > 0:
+            comment = (
+                f"Boss loop exhausted {self.config.max_retries_per_issue} attempts. "
+                f"Auto-decomposed into {sub_issues_created} smaller sub-issues with `boss-ready` label."
+            )
+        else:
+            comment = (
+                f"Boss loop exhausted {self.config.max_retries_per_issue} attempts without "
+                f"producing a deliverable. The issue may be too complex for autonomous workers."
+            )
+
+        try:
+            subprocess.run(
+                ["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment],
+                capture_output=True,
+                timeout=15,
+            )
+            subprocess.run(
+                [
+                    "gh",
+                    "issue",
+                    "edit",
+                    str(issue_number),
+                    "--repo",
+                    repo,
+                    "--add-label",
+                    "boss-stuck",
+                ],
+                capture_output=True,
+                timeout=15,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _extract_file_scope_hints(body: str) -> list[str]:
+        """Extract file paths from an issue body."""
+        import re
+
+        return re.findall(r"`((?:aragora|tests)/[a-zA-Z0-9_/.-]+\.py)`", body)
+
+    @staticmethod
+    def _label_boss_stuck(issue_number: int | str, repo: str, comment: str) -> None:
+        """Label an issue as boss-stuck with an explanatory comment."""
+        import subprocess
+
+        try:
+            subprocess.run(
+                ["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment],
+                capture_output=True, timeout=15,
+            )
+            subprocess.run(
+                ["gh", "issue", "edit", str(issue_number), "--repo", repo, "--add-label", "boss-stuck"],
+                capture_output=True, timeout=15,
+            )
+        except Exception:
+            pass
+
     def _maybe_publish_deliverable(
         self,
         issue: GitHubIssue,
@@ -1102,16 +1268,27 @@ class BossLoop:
             from aragora.swarm.tranche_integrate import publish_lane_deliverable
 
             repo_root = Path.cwd().resolve()
+            harvest_result = self._harvest_worker_commits_for_publish(
+                issue=issue,
+                repo_root=repo_root,
+                source_branch=branch,
+                commit_shas=commit_shas,
+            )
+            if harvest_result is not None:
+                worker_result["harvest_result"] = harvest_result
+                branch = str(harvest_result.get("branch") or branch).strip() or branch
             artifact = _BossDeliverableArtifact(
                 branch=branch,
                 metadata={
                     "branch": branch,
+                    "source_branch": str(deliverable.get("branch", "")).strip() or None,
                     "deliverable": {
                         **dict(deliverable),
                         "branch": branch,
                         "commit_shas": commit_shas,
                     },
                     "receipt_id": worker_result.get("receipt_id"),
+                    "harvest_result": dict(worker_result.get("harvest_result") or {}),
                 },
             )
             publish_result = publish_lane_deliverable(
@@ -1148,6 +1325,119 @@ class BossLoop:
             worker_result["pr_url"] = pr_url
             worker_result["pr_number"] = self._pr_number_from_url(pr_url)
         return dict(publish_result)
+
+    def _harvest_worker_commits_for_publish(
+        self,
+        *,
+        issue: GitHubIssue,
+        repo_root: Path,
+        source_branch: str,
+        commit_shas: list[str],
+    ) -> dict[str, Any] | None:
+        unique_commit_shas = list(
+            dict.fromkeys(str(sha).strip() for sha in commit_shas if str(sha).strip())
+        )
+        if not source_branch or not unique_commit_shas:
+            return None
+
+        base_ref = self.config.target_branch
+        remote_base_ref = f"origin/{self.config.target_branch}"
+        verify_proc = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--verify", remote_base_ref],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if verify_proc.returncode == 0:
+            base_ref = remote_base_ref
+
+        safe_run_id = re.sub(r"[^A-Za-z0-9._/-]+", "-", self.run_id).strip("-") or "boss"
+        harvest_branch = f"aragora/boss-harvest/issue-{issue.number}-{safe_run_id}"
+        with tempfile.TemporaryDirectory(prefix="aragora-boss-harvest-") as temp_dir:
+            add_proc = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "worktree",
+                    "add",
+                    "--force",
+                    "-B",
+                    harvest_branch,
+                    temp_dir,
+                    base_ref,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if add_proc.returncode != 0:
+                detail = (add_proc.stderr or add_proc.stdout or "").strip()
+                raise RuntimeError(detail or f"git worktree add failed for {harvest_branch}")
+
+            try:
+                for sha in unique_commit_shas:
+                    cherry_pick_proc = subprocess.run(
+                        ["git", "-C", temp_dir, "cherry-pick", "-x", sha],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    if cherry_pick_proc.returncode != 0:
+                        subprocess.run(
+                            ["git", "-C", temp_dir, "cherry-pick", "--abort"],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            check=False,
+                        )
+                        detail = (cherry_pick_proc.stderr or cherry_pick_proc.stdout or "").strip()
+                        raise RuntimeError(detail or f"git cherry-pick failed for {sha}")
+
+                push_proc = subprocess.run(
+                    ["git", "-C", temp_dir, "push", "-u", "origin", f"HEAD:{harvest_branch}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                push_detail = (push_proc.stderr or push_proc.stdout or "").strip()
+                if push_proc.returncode != 0:
+                    logger.warning(
+                        "Boss auto-harvest push failed for issue #%s branch %s: %s",
+                        issue.number,
+                        harvest_branch,
+                        push_detail or "git push failed",
+                    )
+                return {
+                    "action": "harvested",
+                    "source_branch": source_branch,
+                    "branch": harvest_branch,
+                    "base_ref": base_ref,
+                    "commit_shas": unique_commit_shas,
+                    "pushed": push_proc.returncode == 0,
+                    "push_error": None
+                    if push_proc.returncode == 0
+                    else push_detail or "git push failed",
+                }
+            finally:
+                remove_proc = subprocess.run(
+                    ["git", "-C", str(repo_root), "worktree", "remove", "--force", temp_dir],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                if remove_proc.returncode != 0:
+                    detail = (remove_proc.stderr or remove_proc.stdout or "").strip()
+                    logger.warning(
+                        "Boss auto-harvest cleanup failed for branch %s: %s",
+                        harvest_branch,
+                        detail or "git worktree remove failed",
+                    )
 
     @staticmethod
     def _published_pr_url(worker_result: dict[str, Any]) -> str | None:
@@ -1266,6 +1556,11 @@ class BossLoop:
             normalized_publish = dict(publish_result)
             receipt_metadata["publish_result"] = normalized_publish
             postprocess["publish_result"] = normalized_publish
+        harvest_result = worker_result.get("harvest_result")
+        if isinstance(harvest_result, dict):
+            normalized_harvest = dict(harvest_result)
+            receipt_metadata["harvest_result"] = normalized_harvest
+            postprocess["harvest_result"] = normalized_harvest
         issue_comment_result = worker_result.get("issue_comment_result")
         if isinstance(issue_comment_result, dict):
             normalized_comment = dict(issue_comment_result)
@@ -1679,12 +1974,14 @@ class BossLoop:
             )
 
         # Step 2: Select eligible issue
-        # Skip issues that have exceeded retry limits
-        already_maxed = {
-            num
-            for num, count in self._issue_attempt_counts.items()
-            if count >= self.config.max_retries_per_issue
-        }
+        # Skip issues that have exceeded retry limits and auto-label them
+        already_maxed = set()
+        for num, count in self._issue_attempt_counts.items():
+            if count >= self.config.max_retries_per_issue:
+                already_maxed.add(num)
+                # Auto-decompose exhausted issues into sub-issues (best-effort, once)
+                if count == self.config.max_retries_per_issue and self.config.repo:
+                    self._auto_decompose_stuck_issue(num, issues)
         pending_handoffs = self._pending_handoff_candidates(issues)
         pending_issue_numbers = {issue.number for issue in pending_handoffs}
         candidate_issues = [
@@ -2604,6 +2901,24 @@ class BossLoop:
                 "next_actions": [
                     "Add an Acceptance Criteria, Validation, Definition of Done, or Test Plan section to the issue body.",
                     "Include at least one concrete verification step such as a pytest command or observable success criterion.",
+                ],
+            }
+
+        missing_validation_targets = find_missing_pre_dispatch_validation_targets(
+            extract_pre_dispatch_validation_commands(issue.body or ""),
+            repo_root=Path.cwd(),
+        )
+        if missing_validation_targets:
+            targets_text = ", ".join(missing_validation_targets)
+            return {
+                "status": "needs_human",
+                "outcome": "verification_target_missing",
+                "reasons": [
+                    f"Issue #{issue.number} references missing validation targets: {targets_text}"
+                ],
+                "next_actions": [
+                    "Refresh the issue's Acceptance Criteria or Test Plan so pytest points at current repo paths.",
+                    "Update the Files/Reference section or add explicit work orders before rerunning Boss dispatch.",
                 ],
             }
 

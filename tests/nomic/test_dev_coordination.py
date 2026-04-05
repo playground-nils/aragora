@@ -1476,6 +1476,121 @@ def test_archive_failed_no_deliverable_work_orders_discards_old_timeout_needs_hu
     assert work_order["metadata"]["previous_status"] == "needs_human"
 
 
+def test_archive_failed_no_deliverable_work_orders_discards_empty_launch_crash_backlog(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive empty launch crash backlog",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Archive empty launch crash backlog",
+            "refined_goal": "Archive empty launch crash backlog",
+        },
+        work_orders=[
+            {
+                "work_order_id": "wo-empty-launch-crash",
+                "title": "Dead launch lane",
+                "file_scope": ["aragora/swarm/worker_launcher.py"],
+                "status": "needs_human",
+                "failure_reason": "worker_exited_without_receipt",
+                "worker_outcome": "crash",
+                "changed_paths": [],
+                "diff_lines": 0,
+                "stdout_tail": "",
+                "stderr_tail": "",
+                "target_agent": "codex",
+                "reviewer_agent": "claude",
+            }
+        ],
+    )
+    conn = store._connect()
+    try:
+        conn.execute(
+            "UPDATE supervisor_runs SET created_at = ?, updated_at = ? WHERE run_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                run["run_id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    archived = store.archive_failed_no_deliverable_work_orders(grace_period_hours=24.0)
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert archived == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["status"] == "discarded"
+    assert work_order["failure_reason"] == "worker_exited_without_receipt"
+    assert work_order["metadata"]["archived_due_to"] == "failed_no_deliverable"
+    assert work_order["metadata"]["archive_reason"] == "worker_exited_without_receipt"
+    assert work_order["metadata"]["previous_status"] == "needs_human"
+
+
+def test_archive_terminal_dependency_failure_work_orders_discards_blocked_successors(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Archive queued successors blocked by a terminal dependency failure",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={"raw_goal": "dependency cleanup"},
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "status": "completed",
+                "branch": "codex/swarm-micro-1",
+                "commit_shas": ["abc123"],
+                "receipt_id": "receipt-micro-1",
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "status": "discarded",
+                "failure_reason": "code_exec requires explicit approval: missing approval record",
+                "dispatch_error": "code_exec requires explicit approval: missing approval record",
+                "metadata": {
+                    "archived_due_to": "failed_no_deliverable",
+                    "archive_reason": "code_exec requires explicit approval: missing approval record",
+                },
+            },
+            {
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
+                "status": "queued",
+                "dependency_ids": ["micro-task-1", "micro-task-2"],
+            },
+        ],
+        status="active",
+    )
+
+    archived = store.archive_terminal_dependency_failure_work_orders()
+    assert archived == 1
+
+    refreshed = store.get_supervisor_run(run["run_id"])
+    assert refreshed is not None
+    work_orders = {item["work_order_id"]: item for item in refreshed["work_orders"]}
+    blocked = work_orders["micro-3"]
+    assert blocked["status"] == "discarded"
+    assert blocked["failure_reason"] == "terminal_dependency_failure"
+    assert blocked["metadata"]["archived_due_to"] == "terminal_dependency_failure"
+    assert blocked["metadata"]["blocking_dependency_id"] == "micro-task-2"
+    assert blocked["metadata"]["blocking_dependency_status"] == "discarded"
+    assert blocked["blocker"]["reason"] == "terminal_dependency_failure"
+    assert "micro-task-2" in blocked["blockers"][0]
+    assert refreshed["status"] == "completed"
+
+
 def test_archive_clean_exit_no_deliverable_work_orders_discards_old_backlog(
     store: DevCoordinationStore,
 ) -> None:
@@ -4030,6 +4145,135 @@ def test_rehabilitate_docs_only_missing_verification_plan_work_orders(
     assert work_order["blockers"] == []
     assert "failure_reason" not in work_order
     assert "dispatch_error" not in work_order
+
+
+def test_rehabilitate_dependency_deferred_missing_verification_plan_work_orders(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Rehabilitate dependency-deferred verification lane",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={
+            "require_merge_approval": True,
+            "require_external_action_approval": True,
+        },
+        spec={
+            "raw_goal": "Rehabilitate dependency-deferred verification lane",
+            "refined_goal": "Rehabilitate dependency-deferred verification lane",
+        },
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Update retry_queue.py",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "worker_outcome": "merge_gate_failed",
+                "failure_reason": "missing_verification_plan",
+                "dispatch_error": "merge gate blocked: missing verification plan or verification command",
+                "file_scope": ["aragora/webhooks/retry_queue.py"],
+                "changed_paths": ["aragora/webhooks/retry_queue.py"],
+                "branch": "codex/swarm-micro-1",
+                "commit_shas": ["deadbeef"],
+                "receipt_id": "receipt-micro-1",
+                "metadata": {
+                    "source": "explicit_spec_work_order",
+                    "acceptance_criteria": [
+                        "`pytest tests/webhooks/test_retry_queue.py -x -q` passes"
+                    ],
+                },
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Write tests for retry_queue.py",
+                "status": "needs_human",
+                "failure_reason": "stale_lease_reaped",
+                "dependency_ids": ["micro-task-1"],
+                "file_scope": ["tests/webhooks/test_retry_queue.py"],
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+            {
+                "work_order_id": "micro-3",
+                "pipeline_task_id": "micro-task-3",
+                "title": "Run validation and fix failures",
+                "status": "queued",
+                "dependency_ids": ["micro-task-1", "micro-task-2"],
+                "file_scope": [
+                    "tests/webhooks/test_retry_queue.py",
+                    "aragora/webhooks/retry_queue.py",
+                ],
+                "expected_tests": ["python -m pytest tests/webhooks/test_retry_queue.py -q"],
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+        ],
+    )
+
+    updated = store.rehabilitate_dependency_deferred_missing_verification_plan_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 1
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["status"] == "completed"
+    assert work_order["review_status"] == "pending_heterogeneous_review"
+    assert work_order["worker_outcome"] == "completed"
+    assert work_order["metadata"]["deferred_verification_to_dependency_ids"] == ["micro-task-3"]
+    assert work_order["merge_gate"]["checks_passed"] is True
+    assert work_order["merge_gate"]["verification_deferred_to_dependency_ids"] == ["micro-task-3"]
+    assert work_order["blockers"] == []
+    assert "failure_reason" not in work_order
+    assert "dispatch_error" not in work_order
+
+
+def test_rehabilitate_dependency_deferred_missing_verification_plan_skips_without_validation_lane(
+    store: DevCoordinationStore,
+) -> None:
+    run = store.create_supervisor_run(
+        goal="Do not rehabilitate without validation successor",
+        target_branch="main",
+        supervisor_agents={"planner": "codex", "judge": "claude"},
+        approval_policy={},
+        spec={},
+        work_orders=[
+            {
+                "work_order_id": "micro-1",
+                "pipeline_task_id": "micro-task-1",
+                "title": "Update retry_queue.py",
+                "status": "needs_human",
+                "review_status": "changes_requested",
+                "worker_outcome": "merge_gate_failed",
+                "failure_reason": "missing_verification_plan",
+                "dispatch_error": "merge gate blocked: missing verification plan or verification command",
+                "file_scope": ["aragora/webhooks/retry_queue.py"],
+                "changed_paths": ["aragora/webhooks/retry_queue.py"],
+                "branch": "codex/swarm-micro-1",
+                "commit_shas": ["deadbeef"],
+                "receipt_id": "receipt-micro-1",
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+            {
+                "work_order_id": "micro-2",
+                "pipeline_task_id": "micro-task-2",
+                "title": "Write tests for retry_queue.py",
+                "status": "queued",
+                "dependency_ids": ["micro-task-1"],
+                "file_scope": ["tests/webhooks/test_retry_queue.py"],
+                "metadata": {"source": "explicit_spec_work_order"},
+            },
+        ],
+    )
+
+    updated = store.rehabilitate_dependency_deferred_missing_verification_plan_work_orders()
+    refreshed = store.get_supervisor_run(run["run_id"])
+
+    assert updated == 0
+    assert refreshed is not None
+    work_order = refreshed["work_orders"][0]
+    assert work_order["status"] == "needs_human"
+    assert work_order["failure_reason"] == "missing_verification_plan"
+    assert "deferred_verification_to_dependency_ids" not in work_order.get("metadata", {})
 
 
 def test_rehabilitate_deliverable_backed_clean_exit_no_deliverable_work_orders(

@@ -40,6 +40,7 @@ from aragora.swarm.boss_loop import (
     dispatch_bounded_spec,
     extract_pre_dispatch_validation_commands,
     extract_issue_validation_contract,
+    find_missing_pre_dispatch_validation_targets,
     run_pre_dispatch_validation_commands,
     sanitize_issue_body_for_dispatch,
     select_eligible_issue,
@@ -249,6 +250,21 @@ Acceptance Criteria:
             'python3 -m aragora.cli.main quickstart --topic "test" --rounds 1 --json | '
             "python3 -c \"import json,sys; d=json.load(sys.stdin); assert 'receipt_id' in d\"",
             "pytest tests/cli/test_quickstart.py -x -q",
+        ]
+
+    def test_find_missing_pre_dispatch_validation_targets_reports_missing_pytest_file(
+        self, tmp_path: Path
+    ):
+        commands = [
+            "pytest tests/webhooks/test_delivery_retry.py -x -q",
+            "python -m pytest tests/swarm/test_boss_loop.py -q",
+        ]
+        existing = tmp_path / "tests" / "swarm"
+        existing.mkdir(parents=True)
+        (existing / "test_boss_loop.py").write_text("# test")
+
+        assert find_missing_pre_dispatch_validation_targets(commands, repo_root=tmp_path) == [
+            "tests/webhooks/test_delivery_retry.py"
         ]
 
     def test_run_pre_dispatch_validation_commands_stops_on_failure(self, monkeypatch):
@@ -896,6 +912,87 @@ class TestRunnerFreshness:
         assert result.fresh is False
         assert result.blocked_reason == "no_execution_verified_runner"
         assert result.details["probe"]["failed"] == 1
+
+    def test_runner_freshness_auto_probes_codex_runner_until_execution_verified(
+        self, tmp_path, monkeypatch
+    ):
+        registry_path = tmp_path / "runners.json"
+        now = datetime.now(UTC).isoformat()
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "registrations": [
+                        {
+                            "runner_id": "codex-runner-1",
+                            "runner_type": "codex",
+                            "registered": True,
+                            "availability": "available",
+                            "available": True,
+                            "auth_mode": "chatgpt_login",
+                            "owner_binding": {"user_id": "user-1", "workspace_id": "ws-1"},
+                            "capabilities": {"max_parallel_lanes": 1},
+                            "updated_at": now,
+                            "heartbeat_at": now,
+                            "freshness_status": "fresh",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        inspection = SimpleNamespace(runner_id="codex-runner-1", profile=None)
+        probe = SimpleNamespace(
+            status="passed",
+            to_runner_fields=lambda: {
+                "probe_status": "passed",
+                "probe_checked_at": now,
+                "probe_detail": "Live prompt probe succeeded.",
+                "probe_latency_seconds": 1.0,
+                "probe_ttl_seconds": 3600,
+            },
+            to_dict=lambda: {
+                "runner_id": "codex-runner-1",
+                "runner_type": "codex",
+                "probe_status": "passed",
+            },
+        )
+
+        class _Inspector:
+            def inspect(self) -> MagicMock:
+                inspected = MagicMock()
+                inspected.available = True
+                inspected.auth_mode = "chatgpt_login"
+                inspected.runner_id = "codex-runner-1"
+                inspected.to_dict.return_value = {
+                    "runner_id": "codex-runner-1",
+                    "available": True,
+                    "auth_mode": "chatgpt_login",
+                }
+                return inspected
+
+        with (
+            patch(
+                "aragora.swarm.runner_registry.refresh_discovered_runners",
+                return_value=[inspection],
+            ),
+            patch(
+                "aragora.swarm.runner_registry.prioritized_probe_candidates",
+                return_value=[inspection],
+            ),
+            patch("aragora.swarm.runner_registry.probe_runner_execution", return_value=probe),
+            patch("aragora.swarm.runner_registry.make_runner_inspector", return_value=_Inspector()),
+        ):
+            result = check_runner_freshness(
+                freshness_ttl_seconds=3600.0,
+                registry_path=str(registry_path),
+                env={"ARAGORA_USER_ID": "user-1", "ARAGORA_WORKSPACE_ID": "ws-1"},
+                requested_runner_type="codex",
+            )
+
+        assert result.fresh is True
+        assert result.details["probe"]["auto_probe_triggered"] is True
+        assert result.details["probe"]["passed"] == 1
+        assert result.details["probe"]["verified_target"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -2123,6 +2220,51 @@ async def test_dispatch_issue_builds_clean_spec_from_issue_body() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_issue_blocks_on_missing_validation_target_before_dispatch() -> None:
+    issue = _make_issue(
+        2031,
+        "Add missing handler tests for webhook delivery retry logic",
+        body=(
+            "The webhook delivery system has retry and dead-letter queue logic but limited test coverage.\n\n"
+            "## Files\n"
+            "- `tests/webhooks/test_delivery_retry.py` (new or extend)\n"
+            "- Reference: `aragora/webhooks/delivery.py`, `aragora/webhooks/dead_letter.py`\n\n"
+            "## Acceptance\n"
+            "`pytest tests/webhooks/test_delivery_retry.py -x -q` passes\n"
+        ),
+    )
+    loop = BossLoop(config=_boss_config(max_iterations=1))
+    loop._claim_runner_for_dispatch = lambda freshness, *, requested_target_agent=None: (None, None)
+    loop._selected_runner_for_dispatch = lambda freshness, *, requested_target_agent=None: {
+        "runner_id": "codex-runner-1",
+        "runner_type": "codex",
+    }
+
+    with (
+        patch(
+            "aragora.swarm.prompt_refiner.refine_worker_prompt",
+            new=AsyncMock(
+                return_value={
+                    "refined_prompt": "",
+                    "files_to_change": [],
+                    "test_patterns": [],
+                    "constraints": [],
+                    "context_gathered": False,
+                }
+            ),
+        ),
+        patch("aragora.swarm.commander.SwarmCommander") as mock_commander_cls,
+    ):
+        result = await loop._dispatch_issue(issue, _fresh_result(fresh=True))
+
+    assert result["status"] == "needs_human"
+    assert result["outcome"] == "verification_target_missing"
+    assert "missing validation targets" in result["reasons"][0]
+    assert "tests/webhooks/test_delivery_retry.py" in result["reasons"][0]
+    mock_commander_cls.return_value.run_supervised_from_spec.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_dispatch_issue_consumes_pending_handoff_prompt_and_target_agent() -> None:
     issue = _make_issue(1701, "Retry same issue with handoff")
     loop = BossLoop(config=_boss_config(max_iterations=1, default_target_agent="claude"))
@@ -3035,7 +3177,7 @@ async def test_dispatch_preserves_needs_human_backbone_status():
 
 
 @pytest.mark.asyncio
-async def test_dispatch_records_postprocessed_publish_metadata_in_backbone():
+async def test_dispatch_auto_publish_records_postprocessed_publish_metadata_in_backbone():
     """Backbone ledger should capture autonomous publish follow-up metadata."""
     issue = _make_issue(45, "Backbone publish wiring")
     loop = BossLoop(
@@ -3084,6 +3226,14 @@ async def test_dispatch_records_postprocessed_publish_metadata_in_backbone():
         patch(
             "aragora.swarm.boss_loop.dispatch_bounded_spec",
             new=AsyncMock(return_value=fake_result),
+        ),
+        patch(
+            "aragora.swarm.boss_loop.BossLoop._harvest_worker_commits_for_publish",
+            return_value={
+                "action": "harvested",
+                "branch": "aragora/boss-harvest/issue-45",
+                "commit_shas": ["abc123"],
+            },
         ),
         patch(
             "aragora.swarm.tranche_integrate.publish_lane_deliverable",

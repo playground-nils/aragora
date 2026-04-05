@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -46,6 +47,12 @@ from aragora.server.handlers.playground import (
     _PLAYGROUND_RATE_WINDOW,
     _LIVE_RATE_LIMIT,
     _LIVE_RATE_WINDOW,
+)
+from aragora.storage import debate_store as debate_store_module
+from aragora.storage.debate_store import DebateResultStore
+from aragora.storage.landing_review_store import (
+    get_landing_review_store,
+    reset_landing_review_store,
 )
 
 
@@ -103,11 +110,23 @@ def handler():
 
 
 @pytest.fixture(autouse=True)
-def _clear_rate_limits():
-    """Reset rate limit state before each test."""
+def _clear_rate_limits(tmp_path, monkeypatch):
+    """Reset public demo state before each test."""
+    monkeypatch.setenv(
+        "ARAGORA_LANDING_REVIEW_DB_PATH",
+        str(tmp_path / "landing_review.sqlite3"),
+    )
+    monkeypatch.setattr(
+        debate_store_module,
+        "_store",
+        DebateResultStore(str(tmp_path / "debate_results.sqlite3")),
+    )
+    reset_landing_review_store()
     _reset_rate_limits()
     yield
     _reset_rate_limits()
+    reset_landing_review_store()
+    debate_store_module._store = None
 
 
 # ============================================================================
@@ -117,6 +136,9 @@ def _clear_rate_limits():
 
 class TestCanHandle:
     """Verify that can_handle correctly accepts or rejects paths."""
+
+    def test_assess_path(self, handler):
+        assert handler.can_handle("/api/v1/playground/assess")
 
     def test_debate_path(self, handler):
         assert handler.can_handle("/api/v1/playground/debate")
@@ -129,6 +151,15 @@ class TestCanHandle:
 
     def test_status_path(self, handler):
         assert handler.can_handle("/api/v1/playground/status")
+
+    def test_landing_summary_path(self, handler):
+        assert handler.can_handle("/api/v1/playground/landing/events/summary")
+
+    def test_landing_feedback_path(self, handler):
+        assert handler.can_handle("/api/v1/playground/landing/feedback")
+
+    def test_landing_feedback_review_path(self, handler):
+        assert handler.can_handle("/api/v1/playground/landing/feedback/review")
 
     def test_tts_path(self, handler):
         assert handler.can_handle("/api/v1/playground/tts")
@@ -507,8 +538,6 @@ class TestLandingTelemetry:
     """Tests for the landing telemetry endpoint."""
 
     def test_records_bounded_public_event(self, handler):
-        from aragora.server.handlers import playground as playground_module
-
         mock_h = _MockHTTPHandler(
             "POST",
             body={
@@ -522,10 +551,11 @@ class TestLandingTelemetry:
         )
         result = handler.handle_post("/api/v1/playground/landing/events", {}, mock_h)
         assert _status(result) == 202
-        assert len(playground_module._landing_events) == 1
-        assert playground_module._landing_events[0]["event_type"] == "preflight_shown"
-        assert playground_module._landing_events[0]["data"]["question_length"] == 91
-        assert len(playground_module._landing_events[0]["data"]["raw_prompt"]) == 160
+        events = get_landing_review_store().list_recent_events(window_seconds=3600)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "preflight_shown"
+        assert events[0]["data"]["question_length"] == 91
+        assert len(events[0]["data"]["raw_prompt"]) == 160
 
     def test_rejects_unknown_event_type(self, handler):
         mock_h = _MockHTTPHandler(
@@ -534,6 +564,282 @@ class TestLandingTelemetry:
         )
         result = handler.handle_post("/api/v1/playground/landing/events", {}, mock_h)
         assert _status(result) == 400
+
+    def test_returns_recent_landing_summary(self, handler):
+        now = datetime.now(timezone.utc)
+        store = get_landing_review_store()
+        store.record_event(
+            event_type="preflight_shown",
+            client_tag="ip:test-client",
+            data={"question_length": 120},
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="preflight_selected",
+            client_tag="ip:test-client",
+            data={
+                "option_id": "practical-food",
+                "recommended": True,
+                "rewritten": True,
+                "question_length": 120,
+            },
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="preview_rendered",
+            client_tag="ip:test-client",
+            data={"participant_count": 3, "has_warning": True},
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="wrong_answer_clicked",
+            client_tag="ip:test-client",
+            data={"result_mode": "preview", "rewritten": True},
+            timestamp=now.isoformat(),
+        )
+        store.record_event(
+            event_type="preflight_shown",
+            client_tag="ip:old-client",
+            data={"question_length": 40},
+            timestamp=(now - timedelta(days=2)).isoformat(),
+        )
+
+        result = handler.handle(
+            "/api/v1/playground/landing/events/summary",
+            {"window": "3600", "limit": "3"},
+            _MockHTTPHandler("GET"),
+        )
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["window_seconds"] == 3600.0
+        assert body["total_events"] == 4
+        assert body["unique_client_count"] == 1
+        assert body["event_counts"]["preflight_shown"] == 1
+        assert body["event_counts"]["preflight_selected"] == 1
+        assert body["event_counts"]["preview_rendered"] == 1
+        assert body["event_counts"]["wrong_answer_clicked"] == 1
+        assert body["rates"]["preflight_selection_rate"] == 1.0
+        assert body["rates"]["preview_render_rate"] == 1.0
+        assert body["rates"]["wrong_answer_rate"] == 1.0
+        assert body["question_length"]["samples"] == 2
+        assert body["question_length"]["avg"] == 120.0
+        assert body["preview"]["avg_participant_count"] == 3.0
+        assert body["top_options"] == [
+            {
+                "option_id": "practical-food",
+                "selected_count": 1,
+                "recommended_count": 1,
+                "rewritten_count": 1,
+            }
+        ]
+
+    def test_summary_returns_empty_funnel_when_no_events_exist(self, handler):
+        result = handler.handle(
+            "/api/v1/playground/landing/events/summary",
+            {},
+            _MockHTTPHandler("GET"),
+        )
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["total_events"] == 0
+        assert body["top_options"] == []
+        assert body["rates"]["preflight_selection_rate"] is None
+        assert body["question_length"]["samples"] == 0
+
+    def test_records_bounded_wrong_answer_report(self, handler):
+        mock_h = _MockHTTPHandler(
+            "POST",
+            body={
+                "question": "x" * 700,
+                "interpreted_question": "Microwave pre-cooked nuggets for a 4 year old?",
+                "final_answer": "y" * 1600,
+                "result_warning": "z" * 400,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "participant_count": 3,
+                "rewritten": True,
+                "verdict": "needs_review",
+            },
+            client_address=("203.0.113.12", 9000),
+        )
+        result = handler.handle_post("/api/v1/playground/landing/feedback", {}, mock_h)
+
+        assert _status(result) == 202
+        reports = get_landing_review_store().list_recent_feedback(window_seconds=3600, limit=10)
+        assert len(reports) == 1
+        report = reports[0]
+        assert report["question"] == "x" * 500
+        assert len(report["final_answer_preview"]) == 1200
+        assert len(report["result_warning"]) == 280
+        assert report["client_tag"].startswith("ip:")
+        assert report["participant_count"] == 3
+        assert report["rewritten"] is True
+
+    def test_feedback_list_requires_admin(self, handler):
+        from aragora.server.handlers.base import error_response
+
+        with patch.object(
+            handler,
+            "require_admin_or_error",
+            return_value=(None, error_response("Admin access required", 403)),
+        ):
+            result = handler.handle(
+                "/api/v1/playground/landing/feedback",
+                {},
+                _MockHTTPHandler("GET"),
+            )
+
+        assert _status(result) == 403
+
+    def test_feedback_list_returns_recent_reports_for_admin(self, handler):
+        now = datetime.now(timezone.utc)
+        store = get_landing_review_store()
+        store.record_feedback(
+            {
+                "id": "lfb_1",
+                "timestamp": now.isoformat(),
+                "client_tag": "ip:abc123",
+                "question": "Should I microwave chicken nuggets for my child?",
+                "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
+                "final_answer_preview": "Yes, reheat until hot all the way through.",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "verdict": "needs_review",
+                "participant_count": 3,
+                "rewritten": True,
+            }
+        )
+        store.record_feedback(
+            {
+                "id": "lfb_2",
+                "timestamp": (now - timedelta(days=10)).isoformat(),
+                "client_tag": "ip:def456",
+                "question": "Old report",
+                "interpreted_question": "Old interpreted question",
+                "final_answer_preview": "Old answer",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-456",
+                "verdict": "needs_review",
+                "participant_count": 2,
+                "rewritten": False,
+            }
+        )
+
+        with patch.object(handler, "require_admin_or_error", return_value=(MagicMock(), None)):
+            result = handler.handle(
+                "/api/v1/playground/landing/feedback",
+                {"window": "3600", "limit": "10"},
+                _MockHTTPHandler("GET"),
+            )
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["window_seconds"] == 3600.0
+        assert body["total_reports"] == 1
+        assert body["returned_reports"] == 1
+        assert body["unique_client_count"] == 1
+        assert body["stats"]["rewritten_count"] == 1
+        assert body["stats"]["preview_mode_count"] == 1
+        assert body["stats"]["review_status_counts"] == {
+            "dismissed": 0,
+            "pending": 1,
+            "resolved": 0,
+            "reviewed": 0,
+        }
+        assert body["reports"] == [
+            {
+                "id": "lfb_1",
+                "timestamp": now.isoformat(),
+                "client_tag": "ip:abc123",
+                "question": "Should I microwave chicken nuggets for my child?",
+                "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
+                "final_answer_preview": "Yes, reheat until hot all the way through.",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "verdict": "needs_review",
+                "participant_count": 3,
+                "rewritten": True,
+                "review_status": "pending",
+                "reviewed_at": None,
+                "reviewed_by": None,
+            }
+        ]
+
+    def test_feedback_review_update_requires_admin(self, handler):
+        from aragora.server.handlers.base import error_response
+
+        with patch.object(
+            handler,
+            "require_admin_or_error",
+            return_value=(None, error_response("Admin access required", 403)),
+        ):
+            result = handler.handle_post(
+                "/api/v1/playground/landing/feedback/review",
+                {},
+                _MockHTTPHandler("POST", body={"id": "lfb_1", "review_status": "resolved"}),
+            )
+
+        assert _status(result) == 403
+
+    def test_feedback_review_update_persists_status(self, handler):
+        now = datetime.now(timezone.utc)
+        store = get_landing_review_store()
+        store.record_feedback(
+            {
+                "id": "lfb_1",
+                "timestamp": now.isoformat(),
+                "client_tag": "ip:abc123",
+                "question": "Should I microwave chicken nuggets for my child?",
+                "interpreted_question": "Is it safe to reheat pre-cooked chicken nuggets?",
+                "final_answer_preview": "Yes, reheat until hot all the way through.",
+                "result_warning": None,
+                "result_mode": "preview",
+                "debate_id": "debate-123",
+                "verdict": "needs_review",
+                "participant_count": 3,
+                "rewritten": True,
+            }
+        )
+
+        admin_user = MagicMock()
+        admin_user.email = "owner@aragora.ai"
+
+        with patch.object(handler, "require_admin_or_error", return_value=(admin_user, None)):
+            result = handler.handle_post(
+                "/api/v1/playground/landing/feedback/review",
+                {},
+                _MockHTTPHandler("POST", body={"id": "lfb_1", "review_status": "resolved"}),
+            )
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["ok"] is True
+        assert body["review_status"] == "resolved"
+        assert body["reviewed_by"] == "owner@aragora.ai"
+        assert body["reviewed_at"] is not None
+
+        reports = get_landing_review_store().list_recent_feedback(window_seconds=3600, limit=10)
+        assert reports[0]["review_status"] == "resolved"
+        assert reports[0]["reviewed_by"] == "owner@aragora.ai"
+        assert reports[0]["reviewed_at"] is not None
+
+    def test_feedback_review_update_returns_404_when_missing(self, handler):
+        admin_user = MagicMock()
+        admin_user.email = "owner@aragora.ai"
+
+        with patch.object(handler, "require_admin_or_error", return_value=(admin_user, None)):
+            result = handler.handle_post(
+                "/api/v1/playground/landing/feedback/review",
+                {},
+                _MockHTTPHandler("POST", body={"id": "missing", "review_status": "resolved"}),
+            )
+
+        assert _status(result) == 404
 
 
 # ============================================================================
@@ -606,6 +912,49 @@ class TestLiveRateLimiting:
             assert _status(result) == 429
             body = _body(result)
             assert "live_rate_limit_exceeded" in body.get("code", "")
+
+
+# ============================================================================
+# POST /api/v1/playground/assess
+# ============================================================================
+
+
+class TestAssess:
+    """Tests for the landing ambiguity assessment endpoint."""
+
+    def test_heuristic_food_ethics_prompt_returns_confirm_without_frontier_call(self, handler):
+        question = (
+            "I warmed up chicken nuggets in the microwave for my 4 year old, "
+            "but what if the chickens are alive or dead?"
+        )
+        mock_h = _MockHTTPHandler("POST", body={"question": question})
+
+        with patch.object(handler, "_call_frontier_model") as mock_frontier:
+            result = handler.handle_post("/api/v1/playground/assess", {}, mock_h)
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["type"] == "confirm"
+        assert body["preflight"]["title"] == "This question could mean a few things"
+        assert body["preflight"]["options"][0]["label"] == "Practical food-safety first"
+        assert body["preflight"]["options"][0]["recommended"] is True
+        assert (
+            "pre-cooked chicken nuggets" in body["preflight"]["options"][0]["interpretedQuestion"]
+        )
+        assert body["preflight"]["options"][-1]["id"] == "original"
+        mock_frontier.assert_not_called()
+
+    def test_frontier_failure_returns_ready_for_non_heuristic_prompt(self, handler):
+        question = "Should we delay the migration by one quarter?"
+        mock_h = _MockHTTPHandler("POST", body={"question": question})
+
+        with patch.object(handler, "_call_frontier_model", side_effect=TimeoutError):
+            result = handler.handle_post("/api/v1/playground/assess", {}, mock_h)
+
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["type"] == "ready"
+        assert body["option"]["interpretedQuestion"] == question
 
 
 # ============================================================================
@@ -1450,6 +1799,32 @@ class TestPostDispatch:
             handler.handle_post("/api/v1/playground/landing/events", {}, mock_h)
             mock_events.assert_called_once()
 
+    def test_landing_feedback_review_path_dispatches(self, handler):
+        with patch.object(handler, "_handle_landing_feedback_review") as mock_review:
+            from aragora.server.handlers.utils.responses import HandlerResult
+
+            mock_review.return_value = HandlerResult(
+                status_code=200,
+                content_type="application/json",
+                body=json.dumps({"ok": True}).encode(),
+            )
+            mock_h = _MockHTTPHandler("POST", body={})
+            handler.handle_post("/api/v1/playground/landing/feedback/review", {}, mock_h)
+            mock_review.assert_called_once()
+
+    def test_assess_path_dispatches(self, handler):
+        with patch.object(handler, "_handle_assess") as mock_assess:
+            from aragora.server.handlers.utils.responses import HandlerResult
+
+            mock_assess.return_value = HandlerResult(
+                status_code=200,
+                content_type="application/json",
+                body=json.dumps({"type": "ready"}).encode(),
+            )
+            mock_h = _MockHTTPHandler("POST", body={})
+            handler.handle_post("/api/v1/playground/assess", {}, mock_h)
+            mock_assess.assert_called_once()
+
     def test_unknown_path_returns_none(self, handler):
         mock_h = _MockHTTPHandler("POST", body={})
         result = handler.handle_post("/api/v1/playground/nonexistent", {}, mock_h)
@@ -1475,6 +1850,7 @@ class TestHandlerInit:
 
     def test_routes_attribute(self):
         assert "/api/v1/playground/debate" in PlaygroundHandler.ROUTES
+        assert "/api/v1/playground/assess" in PlaygroundHandler.ROUTES
         assert "/api/v1/playground/status" in PlaygroundHandler.ROUTES
         assert "/api/v1/playground/debate/live" in PlaygroundHandler.ROUTES
         assert "/api/v1/playground/debate/live/cost-estimate" in PlaygroundHandler.ROUTES

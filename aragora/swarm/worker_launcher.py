@@ -276,7 +276,14 @@ class WorkerLauncher:
                 worker.stderr = "\n".join(stderr_parts)
             logger.warning("Worker %s timed out", work_order_id)
 
+        session_meta = self._read_session_meta(worker.worktree_path)
+        session_exit_code, session_completed_at = self._terminal_session_result(session_meta)
+        missing_terminal_marker = session_exit_code is None
+        if session_exit_code is not None:
+            worker.exit_code = session_exit_code
         worker.completed_at = datetime.now(UTC).isoformat()
+        if session_completed_at:
+            worker.completed_at = session_completed_at
         try:
             worker.diff = await self._collect_diff(worker.worktree_path)
 
@@ -288,8 +295,10 @@ class WorkerLauncher:
             _has_changes = bool(worker.diff) or (
                 _can_query_dirty_tree and await self._has_working_tree_changes(worker.worktree_path)
             )
-            if self.config.auto_commit and self._should_attempt_auto_commit(
-                worker, has_changes=_has_changes
+            if (
+                self.config.auto_commit
+                and not missing_terminal_marker
+                and self._should_attempt_auto_commit(worker, has_changes=_has_changes)
             ):
                 await self._auto_commit(worker)
 
@@ -306,10 +315,10 @@ class WorkerLauncher:
             )
 
             # Ensure the branch is pushed if the worker produced commits.
-            if worker.commit_shas:
+            if worker.commit_shas and not missing_terminal_marker:
                 await self._auto_push(worker)
 
-            if self._should_run_verification(worker):
+            if not missing_terminal_marker and self._should_run_verification(worker):
                 worker.verification_results = await self._run_verification_commands(
                     worker.worktree_path,
                     worker.expected_tests,
@@ -331,6 +340,8 @@ class WorkerLauncher:
         )
 
         self._processes.pop(work_order_id, None)
+        if missing_terminal_marker and worker.exit_code == 0:
+            worker.exit_code = 1
         return worker
 
     async def collect_finished(
@@ -401,7 +412,7 @@ class WorkerLauncher:
         pid = self._normalized_pid(work_order.get("pid"))
 
         snapshot: dict[str, Any] = {
-            "pid_alive": self._is_pid_running(pid) if pid is not None else False,
+            "pid_alive": False,
             "head_sha": "",
             "changed_paths": [],
             "diff_lines": 0,
@@ -411,13 +422,13 @@ class WorkerLauncher:
             "stderr_size": 0,
             "stdout_mtime_ns": 0,
             "stderr_mtime_ns": 0,
+            "has_progress_heartbeat": False,
         }
         if not worktree_path:
             return snapshot
         session_meta = self._read_session_meta(worktree_path)
-        if pid is None:
-            pid = self._normalized_pid(session_meta.get("pid"))
-            snapshot["pid_alive"] = self._is_pid_running(pid) if pid is not None else False
+        pid = self._authoritative_session_pid(pid, session_meta)
+        snapshot["pid_alive"] = self._is_pid_running(pid) if pid is not None else False
         lock_pid = self._pid_for_active_lock(worktree_path, pid, session_meta)
         if self._active_session_lock_blocks_collection(worktree_path, lock_pid):
             snapshot["pid_alive"] = True
@@ -447,6 +458,13 @@ class WorkerLauncher:
             initial_head=initial_head,
             head_sha=head_sha,
         )
+        # Detect progress heartbeat: stdout activity (size > 0 and recently
+        # modified) signals the worker is still making progress even when no
+        # git commits have landed yet.  This prevents the no-progress timeout
+        # from killing workers that are reading a large codebase.
+        has_progress_heartbeat = bool(stdout_size > 0 and stdout_mtime_ns > 0) or bool(
+            stderr_size > 0 and stderr_mtime_ns > 0
+        )
         snapshot.update(
             {
                 "head_sha": head_sha,
@@ -458,6 +476,7 @@ class WorkerLauncher:
                 "stderr_size": stderr_size,
                 "stdout_mtime_ns": stdout_mtime_ns,
                 "stderr_mtime_ns": stderr_mtime_ns,
+                "has_progress_heartbeat": has_progress_heartbeat,
             }
         )
         return snapshot
@@ -1090,6 +1109,7 @@ class WorkerLauncher:
         initial_head: str = "",
         auto_commit: bool = True,
         expected_tests: list[str] | None = None,
+        allow_session_meta_pid_fallback: bool = True,
     ) -> WorkerProcess | None:
         """Collect results from a detached worker by checking PID and worktree state.
 
@@ -1099,13 +1119,20 @@ class WorkerLauncher:
         session_meta = cls._read_session_meta(worktree_path)
         session_exit_code, session_completed_at = cls._terminal_session_result(session_meta)
         observed_pid = cls._normalized_pid(pid)
-        lock_pid = cls._pid_for_active_lock(worktree_path, observed_pid, session_meta)
-        if observed_pid is None:
-            observed_pid = cls._normalized_pid(session_meta.get("pid"))
+        if allow_session_meta_pid_fallback:
+            observed_pid = cls._authoritative_session_pid(observed_pid, session_meta)
+        lock_pid = (
+            cls._pid_for_active_lock(worktree_path, observed_pid, session_meta)
+            if allow_session_meta_pid_fallback
+            else observed_pid
+        )
         missing_terminal_marker = session_exit_code is None
         cleanup_artifacts = True
         preserve_terminal_evidence = False
-        if cls._active_session_lock_blocks_collection(worktree_path, lock_pid):
+        should_honor_active_lock = allow_session_meta_pid_fallback or observed_pid is not None
+        if should_honor_active_lock and cls._active_session_lock_blocks_collection(
+            worktree_path, lock_pid
+        ):
             return None
         elif (
             missing_terminal_marker
@@ -1141,7 +1168,14 @@ class WorkerLauncher:
             _has_changes = bool(worker.diff) or (
                 _can_query_dirty_tree and await cls._has_working_tree_changes(worktree_path)
             )
-            if auto_commit and cls._should_attempt_auto_commit(worker, has_changes=_has_changes):
+            # Without a terminal session marker, treat dirty-tree state as
+            # evidence only. Auto-committing here can manufacture a synthetic
+            # deliverable from a partial run.
+            if (
+                auto_commit
+                and not missing_terminal_marker
+                and cls._should_attempt_auto_commit(worker, has_changes=_has_changes)
+            ):
                 await cls._auto_commit(worker)
 
             worker.head_sha = await cls._git_output(worktree_path, "rev-parse", "HEAD")
@@ -1159,10 +1193,10 @@ class WorkerLauncher:
             # Ensure the branch is pushed if the worker produced commits.
             # _auto_push only runs inside _auto_commit which is skipped when the
             # worker already committed on its own.
-            if worker.commit_shas:
+            if worker.commit_shas and not missing_terminal_marker:
                 await cls._auto_push(worker)
 
-            if cls._should_run_verification(worker):
+            if not missing_terminal_marker and cls._should_run_verification(worker):
                 worker.verification_results = await cls._run_verification_commands(
                     worktree_path,
                     worker.expected_tests,
@@ -1221,6 +1255,16 @@ class WorkerLauncher:
         return pid if pid > 0 else None
 
     @classmethod
+    def _authoritative_session_pid(
+        cls, pid: int | None, session_meta: dict[str, Any]
+    ) -> int | None:
+        """Prefer the harness-owned session PID over stale caller metadata."""
+        meta_pid = cls._normalized_pid(session_meta.get("pid"))
+        if meta_pid is not None:
+            return meta_pid
+        return pid
+
+    @classmethod
     def _active_session_lock_blocks_collection(cls, worktree_path: str, pid: int | None) -> bool:
         active_lock = Path(worktree_path) / ".codex_session_active"
         if not active_lock.exists():
@@ -1239,20 +1283,11 @@ class WorkerLauncher:
         pid: int | None,
         session_meta: dict[str, Any],
     ) -> int | None:
-        """Prefer a live session-meta PID when the active-session lock still exists."""
+        """Return the harness-owned PID that should qualify an active-session lock."""
         active_lock = Path(worktree_path) / ".codex_session_active"
         if not active_lock.exists():
             return pid
-        meta_pid = cls._normalized_pid(session_meta.get("pid"))
-        if pid is None:
-            return meta_pid
-        if meta_pid is None or meta_pid == pid:
-            return pid
-        if cls._is_pid_running(pid):
-            return pid
-        if cls._is_pid_running(meta_pid):
-            return meta_pid
-        return pid
+        return cls._authoritative_session_pid(pid, session_meta)
 
     @staticmethod
     def _cleanup_session_artifacts(worktree_path: str) -> None:
@@ -2063,7 +2098,10 @@ class WorkerLauncher:
 
         session_meta = self._read_session_meta(worker.worktree_path)
         session_exit_code, session_completed_at = self._terminal_session_result(session_meta)
-        exit_code = proc.returncode if proc.returncode is not None else session_exit_code
+        missing_terminal_marker = session_exit_code is None
+        # The managed-session marker is authoritative when present: it records
+        # the inner worker outcome after the shell wrapper's EXIT trap runs.
+        exit_code = session_exit_code if session_exit_code is not None else proc.returncode
         if exit_code is None:
             raise KeyError(f"No finished worker for {work_order_id}")
 
@@ -2088,8 +2126,13 @@ class WorkerLauncher:
             has_changes = bool(worker.diff) or (
                 can_query_dirty_tree and self._has_working_tree_changes_sync(worker.worktree_path)
             )
-            if self.config.auto_commit and self._should_attempt_auto_commit(
-                worker, has_changes=has_changes
+            # A bare wrapper returncode is not enough to bless dirty-tree
+            # state. If the harness never wrote a terminal marker, do not
+            # auto-commit partial changes into a salvageable deliverable.
+            if (
+                self.config.auto_commit
+                and not missing_terminal_marker
+                and self._should_attempt_auto_commit(worker, has_changes=has_changes)
             ):
                 self._auto_commit_sync(worker)
 
@@ -2105,10 +2148,10 @@ class WorkerLauncher:
                 head_sha=worker.head_sha,
             )
 
-            if worker.commit_shas:
+            if worker.commit_shas and not missing_terminal_marker:
                 self._auto_push_sync(worker)
 
-            if self._should_run_verification(worker):
+            if not missing_terminal_marker and self._should_run_verification(worker):
                 worker.verification_results = self._run_verification_commands_sync(
                     worker.worktree_path,
                     worker.expected_tests,
@@ -2119,9 +2162,7 @@ class WorkerLauncher:
                     if str(item.get("command", "")).strip()
                 ]
         finally:
-            cleanup_pid = worker.pid
-            if cleanup_pid is None:
-                cleanup_pid = self._normalized_pid(session_meta.get("pid"))
+            cleanup_pid = self._authoritative_session_pid(worker.pid, session_meta)
             if cleanup_pid is not None:
                 self._wait_for_pid_exit_sync(cleanup_pid)
             self._cleanup_session_artifacts(worker.worktree_path)
@@ -2135,4 +2176,8 @@ class WorkerLauncher:
         )
 
         self._processes.pop(work_order_id, None)
+        if missing_terminal_marker:
+            # Trust the harness session marker, not a bare subprocess return
+            # code, before classifying the run as a clean success.
+            worker.exit_code = 1
         return worker

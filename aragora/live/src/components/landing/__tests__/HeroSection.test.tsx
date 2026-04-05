@@ -4,7 +4,6 @@ import { HeroSection } from '../HeroSection';
 
 const mockPush = jest.fn();
 const mockBackendConfig = { api: 'http://localhost:8080' };
-const mockDebateResultPreview = jest.fn();
 const mockCompactDebateResult = jest.fn();
 
 jest.mock('next/navigation', () => ({
@@ -16,10 +15,6 @@ jest.mock('@/context/ThemeContext', () => ({
 }));
 
 jest.mock('../../DebateResultPreview', () => ({
-  DebateResultPreview: (props: Record<string, unknown>) => {
-    mockDebateResultPreview(props);
-    return <div data-testid="debate-result-preview">Debate result</div>;
-  },
   RETURN_URL_KEY: 'return_url',
   PENDING_DEBATE_KEY: 'pending_debate',
 }));
@@ -40,6 +35,47 @@ jest.mock('../../BackendSelector', () => ({
 jest.mock('../../DebateInput', () => ({
   DebateInput: () => <div data-testid="debate-input">MockDebateInput</div>,
 }));
+
+function createResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    json: async () => body,
+  };
+}
+
+function createNuggetsAssessResponse(question: string) {
+  return createResponse({
+    type: 'confirm',
+    preflight: {
+      title: 'This question could mean a few things',
+      prompt: 'Pick the interpretation you want Aragora to debate.',
+      options: [
+        {
+          id: 'interp-0',
+          label: 'Practical food-safety first',
+          description: 'Focus on whether reheating pre-cooked chicken nuggets is safe and practical for a 4 year old.',
+          originalQuestion: question,
+          interpretedQuestion: 'Should I microwave pre-cooked chicken nuggets for my 4 year old?',
+          debatePrompt: 'Should I microwave pre-cooked chicken nuggets for my 4 year old?',
+          agents: 3,
+          rounds: 2,
+          recommended: true,
+        },
+        {
+          id: 'original',
+          label: 'Use original wording',
+          description: 'Debate the question exactly as written.',
+          originalQuestion: question,
+          interpretedQuestion: question,
+          debatePrompt: question,
+          agents: 3,
+          rounds: 2,
+        },
+      ],
+    },
+  });
+}
 
 describe('HeroSection', () => {
   const defaultProps = {
@@ -82,8 +118,8 @@ describe('HeroSection', () => {
     it('renders ASCII banner on larger screens', () => {
       render(<HeroSection {...defaultProps} />);
 
-      // ASCII banner is in a pre element with specific class
-      const banner = document.querySelector('pre.text-acid-green');
+      // ASCII banner is rendered in the desktop-only preformatted block.
+      const banner = document.querySelector('pre.hidden.sm\\:block');
       expect(banner).toBeInTheDocument();
       // Banner is stylized ASCII art, just verify it has content
       expect(banner?.textContent?.length).toBeGreaterThan(100);
@@ -254,47 +290,13 @@ describe('HeroSection', () => {
 
     it('shows a preflight chooser for ambiguous landing prompts before debating', async () => {
       const user = userEvent.setup();
+      const question = 'Should I cook my chickens in a microwave? What if they are alive, and what if they are dead?';
       const fetchMock = jest.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/assess')) {
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({
-              type: 'confirm',
-              preflight: {
-                title: 'This question could mean a few things',
-                prompt: 'Pick the interpretation you want AI to debate:',
-                options: [
-                  {
-                    id: 'food-safety',
-                    label: 'Practical food-safety first',
-                    description: 'Is it safe to microwave chicken from a food safety standpoint?',
-                    originalQuestion: 'Should I cook my chickens in a microwave?',
-                    interpretedQuestion: 'Is it safe to microwave chicken from a food safety standpoint?',
-                    debatePrompt: 'Is it safe to microwave chicken from a food safety standpoint?',
-                    agents: 3,
-                    rounds: 2,
-                    recommended: true,
-                  },
-                  {
-                    id: 'live-chicken',
-                    label: 'Ethical concern: live animals',
-                    description: 'Should live animals ever be cooked in a microwave?',
-                    originalQuestion: 'Should I cook my chickens in a microwave?',
-                    interpretedQuestion: 'Should live animals ever be cooked in a microwave?',
-                    debatePrompt: 'Should live animals ever be cooked in a microwave?',
-                    agents: 3,
-                    rounds: 2,
-                  },
-                ],
-              },
-            }),
-          });
+        if (url.includes('/api/v1/playground/landing/events')) {
+          return Promise.resolve(createResponse({}));
         }
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({}),
-        });
+        return Promise.resolve(createNuggetsAssessResponse(question));
       });
       global.fetch = fetchMock as typeof fetch;
 
@@ -302,20 +304,16 @@ describe('HeroSection', () => {
 
       await user.type(
         screen.getByRole('textbox'),
-        'Should I cook my chickens in a microwave? What if they are alive, and what if they are dead?'
+        question,
       );
       await user.click(screen.getByRole('button', { name: /start debate/i }));
 
-      await waitFor(() => {
-        expect(
-          screen.getByRole('heading', { name: /this question could mean a few things/i })
-        ).toBeInTheDocument();
-      });
+      expect(await screen.findByText('This question could mean a few things')).toBeInTheDocument();
+      expect(screen.getByText('Pick the interpretation you want Aragora to debate.')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /practical food-safety first/i })).toBeInTheDocument();
-      expect(fetchMock).not.toHaveBeenCalledWith(
-        expect.stringContaining('/api/v1/playground/debate'),
-        expect.anything(),
-      );
+      expect(
+        fetchMock.mock.calls.some(([input]) => String(input).includes('/api/v1/playground/debate'))
+      ).toBe(false);
     });
 
     it('renders the landing preview in condensed mode after a successful debate', async () => {
@@ -341,28 +339,43 @@ describe('HeroSection', () => {
       };
       const fetchMock = jest.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/assess')) {
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({
-              type: 'ready',
-              option: {
-                id: 'original',
-                label: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
-                description: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
-                originalQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
-                interpretedQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
-                debatePrompt: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
-                agents: 3,
-                rounds: 2,
-              },
-            }),
-          });
+        if (url.includes('/api/v1/playground/landing/events')) {
+          return Promise.resolve(createResponse({}));
         }
-        return Promise.resolve({
-          ok: true,
-          json: async () => debateResponse,
-        });
+        if (url.includes('/api/v1/playground/assess')) {
+          return Promise.resolve(createResponse({
+            type: 'ready',
+            option: {
+              id: 'original',
+              label: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+              description: 'Debate the question exactly as written.',
+              originalQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+              interpretedQuestion: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+              debatePrompt: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+              agents: 3,
+              rounds: 2,
+            },
+          }));
+        }
+        return Promise.resolve(createResponse({
+          id: 'debate-123',
+          topic: 'Can I microwave frozen chicken nuggets for my 4-year-old?',
+          status: 'completed',
+          rounds_used: 1,
+          consensus_reached: false,
+          confidence: 0.7,
+          verdict: 'needs_review',
+          duration_seconds: 8,
+          participants: ['gpt', 'claude', 'grok'],
+          proposals: { gpt: 'Yes, if heated safely.' },
+          critiques: [],
+          votes: [],
+          dissenting_views: [],
+          final_answer: 'Yes, if heated safely.',
+          receipt: null,
+          receipt_hash: null,
+          result_mode: 'preview',
+        }));
       });
       global.fetch = fetchMock as typeof fetch;
 
@@ -388,6 +401,7 @@ describe('HeroSection', () => {
           }),
         }),
       );
+      expect(screen.getByRole('button', { name: /try another/i })).toBeInTheDocument();
     });
   });
 });

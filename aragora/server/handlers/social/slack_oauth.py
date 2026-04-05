@@ -709,6 +709,15 @@ class SlackOAuthHandler(SecureHandler):
             )
 
         tenant_id = self._resolved_tenant_id(query_params, auth_context) or ""
+        install_params: dict[str, str] = {}
+        if tenant_id:
+            install_params["tenant_id"] = tenant_id
+        if not _get_slack_redirect_uri() and _get_aragora_env().lower() != "production":
+            host = str(query_params.get("host", "") or "").strip()
+            if host:
+                if not _is_loopback_redirect_host(host):
+                    return error_response("Only localhost allowed in development mode", 400)
+                install_params["host"] = host
 
         # Build scope information for display
         current_scopes = _get_slack_scopes().split(",")
@@ -742,8 +751,8 @@ class SlackOAuthHandler(SecureHandler):
 
         # Build install URL with tenant_id
         install_url = "/api/integrations/slack/install"
-        if tenant_id:
-            install_url = f"{install_url}?{urlencode({'tenant_id': tenant_id})}"
+        if install_params:
+            install_url = f"{install_url}?{urlencode(install_params)}"
 
         # Generate HTML consent preview page
         html = self._render_consent_preview(
@@ -967,13 +976,19 @@ class SlackOAuthHandler(SecureHandler):
             except Exception:
                 logger.debug("Failed to peek Slack OAuth state", exc_info=True)
 
+        peeked_tenant_id, peeked_redirect_uri, peeked_provider = self._extract_state_metadata(
+            peeked_state_data
+        )
+        fallback_tenant_id, fallback_redirect_uri, fallback_provider = self._extract_state_metadata(
+            fallback_state_data
+        )
+        store_state_is_slack = peeked_provider == "slack"
+        fallback_state_is_slack = fallback_provider == "slack"
+
         # Check for error from Slack
         if "error" in query_params:
             if state:
-                _, _, state_provider = self._extract_state_metadata(
-                    peeked_state_data or fallback_state_data
-                )
-                if state_provider == "slack":
+                if store_state_is_slack:
                     try:
                         state_store.validate_and_consume(state)
                     except Exception:
@@ -981,6 +996,7 @@ class SlackOAuthHandler(SecureHandler):
                             "Failed to consume Slack OAuth state after callback error",
                             exc_info=True,
                         )
+                if fallback_state_is_slack:
                     _oauth_states_fallback.pop(state, None)
             error_code = query_params.get("error")
             logger.warning("Slack OAuth error: %s", error_code)
@@ -1005,16 +1021,21 @@ class SlackOAuthHandler(SecureHandler):
         if not (peeked_state_data or fallback_state_data):
             return error_response("Invalid or expired state token", 400)
 
-        tenant_id, state_redirect_uri, state_provider = self._extract_state_metadata(
-            peeked_state_data or fallback_state_data
-        )
-        if state_provider != "slack":
+        if store_state_is_slack:
+            tenant_id = peeked_tenant_id
+            state_redirect_uri = peeked_redirect_uri
+        elif peeked_state_data is None and fallback_state_is_slack:
+            tenant_id = fallback_tenant_id
+            state_redirect_uri = fallback_redirect_uri
+        else:
             return error_response("Invalid or expired state token", 400)
 
         # Consume only after verifying this state was actually minted for Slack.
-        state_data = state_store.validate_and_consume(state)
-        fallback_state_data = _oauth_states_fallback.pop(state, None)
-        if not state_data:
+        state_data = state_store.validate_and_consume(state) if store_state_is_slack else None
+        fallback_state_data = (
+            _oauth_states_fallback.pop(state, None) if fallback_state_is_slack else None
+        )
+        if not state_data and peeked_state_data is None:
             state_data = fallback_state_data
         if not state_data:
             return error_response("Invalid or expired state token", 400)
@@ -1122,7 +1143,14 @@ class SlackOAuthHandler(SecureHandler):
 
         except ImportError:
             return error_response("httpx not available", 503)
-        except (ConnectionError, TimeoutError, OSError, ValueError, TypeError) as e:
+        except (
+            ConnectionError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            TypeError,
+            httpx.HTTPError,
+        ) as e:
             logger.error("[%s] Slack token exchange failed: %s", request_id, e)
             return error_response("Token exchange failed", 500)
 
@@ -1133,10 +1161,18 @@ class SlackOAuthHandler(SecureHandler):
 
         # Extract workspace info
         access_token = data.get("access_token")
-        team = data.get("team", {})
+        team_payload = data.get("team")
+        team = team_payload if isinstance(team_payload, dict) else {}
         bot_user_id = data.get("bot_user_id", "")
-        authed_user = data.get("authed_user", {})
-        scope = data.get("scope", "")
+        authed_user_payload = data.get("authed_user")
+        authed_user = authed_user_payload if isinstance(authed_user_payload, dict) else {}
+        raw_scope = data.get("scope", "")
+        if isinstance(raw_scope, str):
+            scope = raw_scope
+        elif isinstance(raw_scope, (list, tuple, set)):
+            scope = ",".join(str(item).strip() for item in raw_scope if str(item).strip())
+        else:
+            scope = str(raw_scope or "").strip()
 
         # Extract token refresh data (if available)
         refresh_token = data.get("refresh_token")
@@ -1145,9 +1181,20 @@ class SlackOAuthHandler(SecureHandler):
         if expires_in:
             token_expires_at = time.time() + expires_in
 
-        workspace_id = team.get("id", "")
-        workspace_name = team.get("name", "Unknown")
-        installed_by = authed_user.get("id")
+        workspace_id = str(
+            team.get("id")
+            or team.get("team_id")
+            or data.get("team_id")
+            or data.get("workspace_id")
+            or ""
+        ).strip()
+        workspace_name = (
+            str(
+                team.get("name") or data.get("team_name") or data.get("workspace_name") or "Unknown"
+            ).strip()
+            or "Unknown"
+        )
+        installed_by = str(authed_user.get("id") or "").strip() or None
 
         if not workspace_id or not access_token:
             return error_response("Invalid response from Slack", 500)
@@ -1670,6 +1717,20 @@ class SlackOAuthHandler(SecureHandler):
             expected_workspace_id = str(
                 getattr(workspace, "workspace_id", "") or workspace_id
             ).strip()
+            if not response_workspace_id:
+                logger.error(
+                    "Token refresh returned no workspace identity for %s",
+                    workspace_id,
+                )
+                audit = _get_oauth_audit_logger()
+                if audit:
+                    audit.log_oauth(
+                        workspace_id=workspace_id,
+                        action="token_refresh",
+                        success=False,
+                        error="Invalid refresh response: missing workspace identity",
+                    )
+                return error_response("Invalid token refresh response", 502)
             if response_workspace_id and response_workspace_id != expected_workspace_id:
                 logger.error(
                     "Token refresh workspace mismatch for %s: got %s",

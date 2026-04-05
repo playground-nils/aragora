@@ -1299,17 +1299,20 @@ class PostgresWebhookConfigStore(WebhookConfigStoreBackend):
             webhook.description = description
 
         if updates:
+            updated_at = time.time()
             updates.append(f"updated_at = to_timestamp(${param_idx})")
-            params.append(time.time())
+            params.append(updated_at)
             param_idx += 1
             params.append(webhook_id)
 
             async with self._pool.acquire() as conn:
-                await conn.execute(
+                result = await conn.execute(
                     f"UPDATE webhook_configs SET {', '.join(updates)} WHERE id = ${param_idx}",  # noqa: S608 -- dynamic clause from internal state
                     *params,
                 )
-            webhook.updated_at = time.time()
+            if result == "UPDATE 0":
+                return None
+            webhook.updated_at = updated_at
 
         return webhook
 
@@ -1334,7 +1337,8 @@ class PostgresWebhookConfigStore(WebhookConfigStoreBackend):
                 await conn.execute(
                     """UPDATE webhook_configs SET
                        last_delivery_at = NOW(), last_delivery_status = $1,
-                       delivery_count = delivery_count + 1
+                       delivery_count = delivery_count + 1,
+                       updated_at = NOW()
                        WHERE id = $2""",
                     status_code,
                     webhook_id,
@@ -1343,7 +1347,8 @@ class PostgresWebhookConfigStore(WebhookConfigStoreBackend):
                 await conn.execute(
                     """UPDATE webhook_configs SET
                        last_delivery_at = NOW(), last_delivery_status = $1,
-                       delivery_count = delivery_count + 1, failure_count = failure_count + 1
+                       delivery_count = delivery_count + 1, failure_count = failure_count + 1,
+                       updated_at = NOW()
                        WHERE id = $2""",
                     status_code,
                     webhook_id,

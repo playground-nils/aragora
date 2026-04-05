@@ -11,8 +11,14 @@ platform.
 
 Routes:
     POST /api/v1/playground/debate              - Run a mock debate
+    POST /api/v1/playground/assess              - Assess question ambiguity for landing preflight
     POST /api/v1/playground/debate/live          - Run a live debate with real agents
     POST /api/v1/playground/debate/live/cost-estimate - Pre-flight cost estimate
+    POST /api/v1/playground/landing/events      - Capture bounded landing telemetry
+    POST /api/v1/playground/landing/feedback    - Capture bounded landing wrong-answer reports
+    GET  /api/v1/playground/landing/feedback    - List recent landing wrong-answer reports
+    POST /api/v1/playground/landing/feedback/review - Update admin review state for a report
+    GET  /api/v1/playground/landing/events/summary - Aggregate recent landing telemetry
     GET  /api/v1/playground/debate/{id}          - Retrieve a saved debate (shareable link)
     GET  /api/v1/playground/status               - Health check for the playground
 """
@@ -20,13 +26,13 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import hashlib
 import json
 import logging
 import os
 import random
 import re
-import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -39,6 +45,8 @@ from aragora.server.handlers.base import (
     json_response,
     handle_errors,
 )
+from aragora.server.validation.query_params import safe_query_float, safe_query_int
+from aragora.storage.landing_review_store import get_landing_review_store
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +81,7 @@ OPENROUTER_PLAYGROUND_MODELS: list[tuple[str, str]] = [
 # IP -> list of timestamps
 _request_timestamps: dict[str, list[float]] = {}
 _live_request_timestamps: dict[str, list[float]] = {}
-_landing_event_lock = threading.Lock()
-_landing_events: list[dict[str, Any]] = []
-_LANDING_EVENT_LIMIT = 5000
-_LANDING_EVENT_TYPES = {
+_LANDING_EVENT_TYPE_ORDER = (
     "preflight_shown",
     "preflight_selected",
     "preview_rendered",
@@ -86,7 +91,9 @@ _LANDING_EVENT_TYPES = {
     "wrong_answer_clicked",
     "open_full_debate_clicked",
     "share_clicked",
-}
+)
+_LANDING_EVENT_TYPES = set(_LANDING_EVENT_TYPE_ORDER)
+_LANDING_REVIEW_STATUSES = frozenset({"pending", "reviewed", "resolved", "dismissed"})
 
 
 def _check_rate_limit(
@@ -173,8 +180,7 @@ def _reset_rate_limits() -> None:
     global _daily_debate_count, _daily_debate_reset_time  # noqa: PLW0603
     _request_timestamps.clear()
     _live_request_timestamps.clear()
-    with _landing_event_lock:
-        _landing_events.clear()
+    get_landing_review_store().clear()
     _daily_debate_count = 0
     _daily_debate_reset_time = 0.0
 
@@ -208,27 +214,313 @@ def _sanitize_landing_event_data(data: Any) -> dict[str, Any]:
     return clean
 
 
+def _truncate_feedback_text(value: Any, *, limit: int) -> str | None:
+    """Normalize user-visible feedback text to a bounded string."""
+    if not isinstance(value, str):
+        return None
+    text = re.sub(r"\s+", " ", value).strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _client_tag(client_ip: str) -> str:
+    """Return a stable, privacy-safer tag for client grouping."""
+    normalized = client_ip.strip()
+    if not normalized or normalized == "unknown":
+        return "unknown"
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return f"ip:{digest[:12]}"
+
+
 def _record_landing_event(
     event_type: str,
     *,
     client_ip: str,
     data: dict[str, Any] | None = None,
 ) -> None:
-    """Record a bounded in-memory landing telemetry event."""
+    """Record a bounded landing telemetry event."""
     if event_type not in _LANDING_EVENT_TYPES:
         return
 
-    with _landing_event_lock:
-        _landing_events.append(
-            {
-                "event_type": event_type,
-                "client_ip": client_ip,
-                "data": _sanitize_landing_event_data(data or {}),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
+    try:
+        get_landing_review_store().record_event(
+            event_type=event_type,
+            client_tag=_client_tag(client_ip),
+            data=_sanitize_landing_event_data(data or {}),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
-        if len(_landing_events) > _LANDING_EVENT_LIMIT:
-            del _landing_events[:-_LANDING_EVENT_LIMIT]
+    except Exception as exc:  # noqa: BLE001 - telemetry should not block user-facing requests
+        logger.warning("Failed to persist landing telemetry event: %s", exc)
+
+
+def _record_landing_feedback(
+    *,
+    client_ip: str,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record a bounded wrong-answer report for internal review."""
+    payload = data if isinstance(data, dict) else {}
+    report = {
+        "id": f"lfb_{uuid.uuid4().hex[:12]}",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "client_tag": _client_tag(client_ip),
+        "question": _truncate_feedback_text(payload.get("question"), limit=500),
+        "interpreted_question": _truncate_feedback_text(
+            payload.get("interpreted_question"), limit=500
+        ),
+        "final_answer_preview": _truncate_feedback_text(payload.get("final_answer"), limit=1200),
+        "result_warning": _truncate_feedback_text(payload.get("result_warning"), limit=280),
+        "result_mode": _truncate_feedback_text(payload.get("result_mode"), limit=32) or "preview",
+        "debate_id": _truncate_feedback_text(payload.get("debate_id"), limit=64),
+        "verdict": _truncate_feedback_text(payload.get("verdict"), limit=64),
+        "participant_count": None,
+        "rewritten": payload.get("rewritten") is True,
+        "review_status": "pending",
+        "reviewed_at": None,
+        "reviewed_by": None,
+    }
+    participant_count = payload.get("participant_count")
+    if isinstance(participant_count, int):
+        report["participant_count"] = max(0, min(20, participant_count))
+
+    try:
+        get_landing_review_store().record_feedback(report)
+    except Exception as exc:  # noqa: BLE001 - feedback capture should be best-effort
+        logger.warning("Failed to persist landing feedback report: %s", exc)
+
+    return report
+
+
+def _normalize_landing_review_status(value: Any) -> str:
+    """Normalize landing review state to a supported value."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _LANDING_REVIEW_STATUSES:
+            return normalized
+    return "pending"
+
+
+def _reviewer_label(user: Any) -> str:
+    """Build a compact admin identifier for queue triage metadata."""
+    if user is None:
+        return "admin"
+    email = getattr(user, "email", None)
+    if isinstance(email, str) and email.strip():
+        return email.strip()[:160]
+    user_id = getattr(user, "user_id", None) or getattr(user, "id", None)
+    if isinstance(user_id, str) and user_id.strip():
+        return user_id.strip()[:160]
+    return "admin"
+
+
+def _parse_landing_event_timestamp(value: Any) -> datetime | None:
+    """Parse an event timestamp into UTC."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _ratio(numerator: int, denominator: int) -> float | None:
+    """Return a rounded ratio when the denominator is present."""
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 4)
+
+
+def _build_landing_event_summary(
+    *,
+    window_seconds: float = 86_400.0,
+    option_limit: int = 5,
+) -> dict[str, Any]:
+    """Aggregate recent landing telemetry into a compact funnel summary."""
+    now = datetime.now(timezone.utc)
+    try:
+        snapshot = get_landing_review_store().list_recent_events(window_seconds=window_seconds)
+    except Exception as exc:  # noqa: BLE001 - degrade to an empty summary if storage is unavailable
+        logger.warning("Failed to load landing telemetry summary: %s", exc)
+        snapshot = []
+
+    recent_events: list[tuple[datetime, dict[str, Any]]] = []
+    for event in snapshot:
+        event_dt = _parse_landing_event_timestamp(event.get("timestamp"))
+        if event_dt is None:
+            continue
+        recent_events.append((event_dt, event))
+
+    event_counts = {event_type: 0 for event_type in _LANDING_EVENT_TYPE_ORDER}
+    option_counts: Counter[str] = Counter()
+    option_recommended: Counter[str] = Counter()
+    option_rewritten: Counter[str] = Counter()
+    unique_clients: set[str] = set()
+    question_lengths: list[int] = []
+    preview_participants: list[int] = []
+    timeout_seconds: list[float] = []
+    last_event_at: datetime | None = None
+
+    for event_dt, event in recent_events:
+        event_type = str(event.get("event_type", "") or "")
+        if event_type in event_counts:
+            event_counts[event_type] += 1
+
+        client_tag = str(event.get("client_tag", "") or "").strip()
+        if client_tag and client_tag != "unknown":
+            unique_clients.add(client_tag)
+
+        if last_event_at is None or event_dt > last_event_at:
+            last_event_at = event_dt
+
+        data = event.get("data")
+        if not isinstance(data, dict):
+            continue
+
+        question_length = data.get("question_length")
+        if isinstance(question_length, int):
+            question_lengths.append(question_length)
+
+        if event_type == "preflight_selected":
+            option_id = str(data.get("option_id", "") or "").strip()[:64]
+            if option_id:
+                option_counts[option_id] += 1
+                if data.get("recommended") is True:
+                    option_recommended[option_id] += 1
+                if data.get("rewritten") is True:
+                    option_rewritten[option_id] += 1
+
+        if event_type == "preview_rendered":
+            participant_count = data.get("participant_count")
+            if isinstance(participant_count, int):
+                preview_participants.append(participant_count)
+
+        if event_type == "preview_timeout":
+            timeout_seconds_value = data.get("timeout_seconds")
+            if isinstance(timeout_seconds_value, (int, float)):
+                timeout_seconds.append(float(timeout_seconds_value))
+
+    top_options = [
+        {
+            "option_id": option_id,
+            "selected_count": count,
+            "recommended_count": option_recommended[option_id],
+            "rewritten_count": option_rewritten[option_id],
+        }
+        for option_id, count in option_counts.most_common(option_limit)
+    ]
+
+    retries_needed = (
+        event_counts["preview_timeout"] + event_counts["preview_clarification_requested"]
+    )
+
+    return {
+        "generated_at": now.isoformat(),
+        "window_seconds": window_seconds,
+        "total_events": len(recent_events),
+        "unique_client_count": len(unique_clients),
+        "last_event_at": last_event_at.isoformat() if last_event_at else None,
+        "event_counts": event_counts,
+        "rates": {
+            "preflight_selection_rate": _ratio(
+                event_counts["preflight_selected"], event_counts["preflight_shown"]
+            ),
+            "preview_render_rate": _ratio(
+                event_counts["preview_rendered"], event_counts["preflight_selected"]
+            ),
+            "preview_timeout_rate": _ratio(
+                event_counts["preview_timeout"], event_counts["preflight_selected"]
+            ),
+            "preview_clarification_rate": _ratio(
+                event_counts["preview_clarification_requested"],
+                event_counts["preflight_selected"],
+            ),
+            "wrong_answer_rate": _ratio(
+                event_counts["wrong_answer_clicked"], event_counts["preview_rendered"]
+            ),
+            "open_full_debate_rate": _ratio(
+                event_counts["open_full_debate_clicked"], event_counts["preview_rendered"]
+            ),
+            "share_rate": _ratio(event_counts["share_clicked"], event_counts["preview_rendered"]),
+            "retry_rate": _ratio(event_counts["retry_clicked"], retries_needed),
+        },
+        "question_length": {
+            "samples": len(question_lengths),
+            "avg": round(sum(question_lengths) / len(question_lengths), 2)
+            if question_lengths
+            else None,
+            "max": max(question_lengths) if question_lengths else None,
+        },
+        "preview": {
+            "rendered_count": event_counts["preview_rendered"],
+            "avg_participant_count": round(sum(preview_participants) / len(preview_participants), 2)
+            if preview_participants
+            else None,
+        },
+        "timeouts": {
+            "count": event_counts["preview_timeout"],
+            "avg_timeout_seconds": round(sum(timeout_seconds) / len(timeout_seconds), 2)
+            if timeout_seconds
+            else None,
+        },
+        "top_options": top_options,
+    }
+
+
+def _build_landing_feedback_summary(
+    *,
+    window_seconds: float = 604_800.0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Return recent landing wrong-answer reports for internal review."""
+    now = datetime.now(timezone.utc)
+    try:
+        snapshot = get_landing_review_store().list_recent_feedback(
+            window_seconds=window_seconds,
+            limit=limit,
+        )
+    except Exception as exc:  # noqa: BLE001 - degrade to an empty queue if storage is unavailable
+        logger.warning("Failed to load landing feedback summary: %s", exc)
+        snapshot = []
+
+    recent_reports: list[tuple[datetime, dict[str, Any]]] = []
+    for report in snapshot:
+        report_dt = _parse_landing_event_timestamp(report.get("timestamp"))
+        if report_dt is None:
+            continue
+        recent_reports.append((report_dt, report))
+
+    recent_reports.sort(key=lambda item: item[0], reverse=True)
+    trimmed = [report for _, report in recent_reports]
+    rewritten_count = sum(1 for report in trimmed if report.get("rewritten") is True)
+    preview_mode_count = sum(1 for report in trimmed if report.get("result_mode") == "preview")
+    review_status_counts = {status: 0 for status in sorted(_LANDING_REVIEW_STATUSES)}
+    for report in trimmed:
+        review_status = _normalize_landing_review_status(report.get("review_status"))
+        review_status_counts[review_status] += 1
+    unique_clients = {
+        str(report.get("client_tag", "") or "").strip()
+        for _, report in recent_reports
+        if str(report.get("client_tag", "") or "").strip()
+    }
+    last_report_at = recent_reports[0][0].isoformat() if recent_reports else None
+
+    return {
+        "generated_at": now.isoformat(),
+        "window_seconds": window_seconds,
+        "total_reports": len(recent_reports),
+        "returned_reports": len(trimmed),
+        "unique_client_count": len(unique_clients),
+        "last_report_at": last_report_at,
+        "stats": {
+            "rewritten_count": rewritten_count,
+            "rewritten_rate": _ratio(rewritten_count, len(trimmed)),
+            "preview_mode_count": preview_mode_count,
+            "preview_mode_rate": _ratio(preview_mode_count, len(trimmed)),
+            "review_status_counts": review_status_counts,
+        },
+        "reports": trimmed,
+    }
 
 
 def _extract_client_ip(handler: Any) -> str:
@@ -1442,11 +1734,52 @@ _LANDING_INTENT_DRIFT_PHRASES = {
     "strategy": {"lyrics", "chorus", "verse", "recipe", "microwave", "nuggets", "4 year old"},
 }
 
+_LANDING_HEURISTIC_FOOD_TERMS = {
+    "chicken",
+    "cook",
+    "cooking",
+    "food",
+    "meal",
+    "microwave",
+    "microwaving",
+    "nugget",
+    "nuggets",
+    "reheat",
+    "reheating",
+}
+
+_LANDING_HEURISTIC_CHILD_TERMS = {
+    "4 year old",
+    "child",
+    "kid",
+    "parent",
+    "toddler",
+}
+
+_LANDING_HEURISTIC_ETHICS_TERMS = {
+    "alive",
+    "better person",
+    "cruel",
+    "dead",
+    "ethical",
+    "ethics",
+    "factory",
+    "humane",
+    "killing",
+    "live",
+    "moral",
+    "morally",
+}
+
 
 def _contains_term(text: str, term: str) -> bool:
     if " " in term:
         return term in text
     return bool(re.search(rf"\b{re.escape(term)}\b", text))
+
+
+def _contains_any_term(text: str, terms: set[str]) -> bool:
+    return any(_contains_term(text, term) for term in terms)
 
 
 def _classify_landing_intent(question: str) -> str:
@@ -1565,6 +1898,103 @@ def _landing_relevance_issue(question: str, response: str) -> str | None:
         )
 
     return None
+
+
+def _landing_food_subject(question: str) -> str:
+    lower_question = question.lower()
+    if _contains_term(lower_question, "nugget") or _contains_term(lower_question, "nuggets"):
+        return "pre-cooked chicken nuggets"
+    if _contains_term(lower_question, "chicken"):
+        return "chicken"
+    return "the food"
+
+
+def _build_heuristic_food_preflight(question: str) -> dict[str, Any] | None:
+    lower_question = question.lower()
+    has_food_context = _contains_any_term(lower_question, _LANDING_HEURISTIC_FOOD_TERMS)
+    has_ethics_context = _contains_any_term(lower_question, _LANDING_HEURISTIC_ETHICS_TERMS)
+    has_splitter = any(
+        phrase in lower_question
+        for phrase in {"alive or dead", "live or dead", "but what if", "what if"}
+    )
+
+    if not has_food_context or not has_ethics_context:
+        return None
+    if not (
+        has_splitter
+        or _contains_term(lower_question, "alive")
+        or _contains_term(lower_question, "dead")
+    ):
+        return None
+
+    subject = _landing_food_subject(question)
+    action = (
+        "reheat"
+        if any(
+            phrase in lower_question
+            for phrase in {
+                "reheat",
+                "reheating",
+                "warmed up",
+                "warm up",
+                "pre-cooked",
+                "precooked",
+                "frozen",
+            }
+        )
+        else "cook"
+    )
+    audience = (
+        " for my child"
+        if _contains_any_term(lower_question, _LANDING_HEURISTIC_CHILD_TERMS)
+        else ""
+    )
+    practical_question = f"Should I {action} {subject}{audience} in a microwave, and what food-safety precautions matter most?"
+    ethical_question = (
+        "Is the real question an ethical one about live animals or the moral distance created by factory-processed chicken, "
+        "rather than the practical reheating question?"
+    )
+
+    return {
+        "title": "This question could mean a few things",
+        "prompt": "Pick the interpretation you want Aragora to debate.",
+        "options": [
+            {
+                "id": "heuristic-practical-food",
+                "label": "Practical food-safety first",
+                "description": f"Focus on whether {action}ing {subject} in a microwave is safe and practical.",
+                "originalQuestion": question,
+                "interpretedQuestion": practical_question,
+                "debatePrompt": practical_question,
+                "agents": 3,
+                "rounds": 2,
+                "recommended": True,
+            },
+            {
+                "id": "heuristic-ethical-food",
+                "label": "Ethical / philosophical reading",
+                "description": (
+                    "Treat this as a moral question about live animals or factory-farmed chicken, "
+                    "not the practical reheating question."
+                ),
+                "originalQuestion": question,
+                "interpretedQuestion": ethical_question,
+                "debatePrompt": ethical_question,
+                "agents": 3,
+                "rounds": 2,
+            },
+            {
+                "id": "original",
+                "label": "Use original wording",
+                "description": "Debate the question exactly as written.",
+                "originalQuestion": question,
+                "interpretedQuestion": question,
+                "debatePrompt": question,
+                "agents": 3,
+                "rounds": 2,
+            },
+        ],
+    }
 
 
 def _build_tentacle_prompt(
@@ -2049,10 +2479,15 @@ class PlaygroundHandler(BaseHandler):
     """
 
     ROUTES = [
+        "/api/v1/playground/assess",
         "/api/v1/playground/debate",
+        "/api/v1/playground/assess",
         "/api/v1/playground/debate/live",
         "/api/v1/playground/debate/live/cost-estimate",
         "/api/v1/playground/landing/events",
+        "/api/v1/playground/landing/events/summary",
+        "/api/v1/playground/landing/feedback",
+        "/api/v1/playground/landing/feedback/review",
         "/api/v1/playground/status",
         "/api/v1/playground/tts",
     ]
@@ -2068,10 +2503,15 @@ class PlaygroundHandler(BaseHandler):
 
     def can_handle(self, path: str) -> bool:
         if path in (
+            "/api/v1/playground/assess",
             *self._CREATE_PATHS,
+            "/api/v1/playground/assess",
             "/api/v1/playground/debate/live",
             "/api/v1/playground/debate/live/cost-estimate",
             "/api/v1/playground/landing/events",
+            "/api/v1/playground/landing/events/summary",
+            "/api/v1/playground/landing/feedback",
+            "/api/v1/playground/landing/feedback/review",
             "/api/v1/playground/status",
             "/api/v1/playground/tts",
         ):
@@ -2090,6 +2530,10 @@ class PlaygroundHandler(BaseHandler):
     ) -> HandlerResult | None:
         if path == "/api/v1/playground/status":
             return self._handle_status()
+        if path == "/api/v1/playground/landing/events/summary":
+            return self._handle_landing_event_summary(query_params)
+        if path == "/api/v1/playground/landing/feedback":
+            return self._handle_landing_feedback_list(query_params, handler)
 
         # GET /api/v1/playground/debate/{debate_id} — retrieve saved debate
         m = self._DEBATE_ID_PATTERN.match(path)
@@ -2113,6 +2557,15 @@ class PlaygroundHandler(BaseHandler):
             return error_response("Debate not found", 404)
 
     def _handle_status(self) -> HandlerResult:
+        try:
+            review_store = get_landing_review_store()
+            landing_event_count = review_store.count_events()
+            landing_feedback_count = review_store.count_feedback()
+        except Exception as exc:  # noqa: BLE001 - health endpoint should remain available
+            logger.warning("Failed to read landing review counts: %s", exc)
+            landing_event_count = 0
+            landing_feedback_count = 0
+
         return json_response(
             {
                 "status": "ok",
@@ -2121,7 +2574,97 @@ class PlaygroundHandler(BaseHandler):
                 "max_rounds": _MAX_ROUNDS,
                 "max_agents": _MAX_AGENTS,
                 "rate_limit": f"{_PLAYGROUND_RATE_LIMIT} requests per {int(_PLAYGROUND_RATE_WINDOW)}s",
-                "landing_event_count": len(_landing_events),
+                "landing_event_count": landing_event_count,
+                "landing_feedback_count": landing_feedback_count,
+            }
+        )
+
+    def _handle_landing_event_summary(self, query_params: dict[str, Any]) -> HandlerResult:
+        """Summarize recent landing telemetry without exposing raw events."""
+        window_seconds = safe_query_float(
+            query_params,
+            "window",
+            default=86_400.0,
+            min_val=60.0,
+            max_val=604_800.0,
+        )
+        option_limit = safe_query_int(query_params, "limit", default=5, min_val=1, max_val=20)
+        return json_response(
+            _build_landing_event_summary(
+                window_seconds=window_seconds,
+                option_limit=option_limit,
+            )
+        )
+
+    def _handle_landing_feedback_list(
+        self,
+        query_params: dict[str, Any],
+        handler: Any,
+    ) -> HandlerResult:
+        """List recent wrong-answer reports for admins."""
+        _user, err = self.require_admin_or_error(handler)
+        if err:
+            return err
+
+        window_seconds = safe_query_float(
+            query_params,
+            "window",
+            default=604_800.0,
+            min_val=300.0,
+            max_val=2_592_000.0,
+        )
+        limit = safe_query_int(query_params, "limit", default=50, min_val=1, max_val=200)
+        return json_response(
+            _build_landing_feedback_summary(
+                window_seconds=window_seconds,
+                limit=limit,
+            )
+        )
+
+    def _handle_landing_feedback_review(self, handler: Any) -> HandlerResult:
+        """Update admin review state for a wrong-answer report."""
+        user, err = self.require_admin_or_error(handler)
+        if err:
+            return err
+
+        body = self.read_json_body(handler) if handler else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return error_response("Invalid landing feedback review payload", 400)
+
+        report_id = str(body.get("id", "") or "").strip()
+        if not report_id:
+            return error_response("Missing landing feedback report id", 400)
+
+        review_status = _normalize_landing_review_status(body.get("review_status"))
+        reviewed_at = None
+        reviewed_by = None
+        if review_status != "pending":
+            reviewed_at = datetime.now(timezone.utc).isoformat()
+            reviewed_by = _reviewer_label(user)
+
+        try:
+            updated = get_landing_review_store().update_feedback_review(
+                report_id=report_id,
+                review_status=review_status,
+                reviewed_at=reviewed_at,
+                reviewed_by=reviewed_by,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep admin queue endpoint resilient
+            logger.warning("Failed to update landing feedback review state: %s", exc)
+            return error_response("Failed to update landing feedback review state", 500)
+
+        if not updated:
+            return error_response("Landing feedback report not found", 404)
+
+        return json_response(
+            {
+                "ok": True,
+                "id": report_id,
+                "review_status": review_status,
+                "reviewed_at": reviewed_at,
+                "reviewed_by": reviewed_by,
             }
         )
 
@@ -2232,6 +2775,10 @@ class PlaygroundHandler(BaseHandler):
             return self._handle_tts(handler)
         if path == "/api/v1/playground/landing/events":
             return self._handle_landing_event(handler)
+        if path == "/api/v1/playground/landing/feedback":
+            return self._handle_landing_feedback(handler)
+        if path == "/api/v1/playground/landing/feedback/review":
+            return self._handle_landing_feedback_review(handler)
         if path == "/api/v1/playground/assess":
             return self._handle_assess(handler)
         if path == "/api/v1/playground/debate/live/cost-estimate":
@@ -2426,7 +2973,11 @@ class PlaygroundHandler(BaseHandler):
 
     def _handle_assess(self, handler: Any) -> HandlerResult:
         """Assess question ambiguity using a frontier model."""
-        body = json.loads(handler.body or b"{}")
+        body = self.read_json_body(handler) if handler else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return error_response("Invalid assess payload", 400)
         question = str(body.get("question", "")).strip()
         if not question:
             return json_response({"type": "ready", "option": self._build_ready_option("")})
@@ -2452,6 +3003,10 @@ class PlaygroundHandler(BaseHandler):
                 },
                 status=429,
             )
+
+        heuristic_preflight = _build_heuristic_food_preflight(question)
+        if heuristic_preflight is not None:
+            return json_response({"type": "confirm", "preflight": heuristic_preflight})
 
         prompt = (
             "You are a question-assessment system. Analyze this user question and determine if it is "
@@ -3052,7 +3607,17 @@ class PlaygroundHandler(BaseHandler):
 
         # Keep the readiness gate aligned with the actual live debate resolver.
         # Otherwise provider-specific keys can incorrectly fall back to mock mode.
-        if len(_get_available_live_agents(agent_count)) < 2:
+        try:
+            live_agents = _get_available_live_agents(agent_count)
+        except ValueError as exc:
+            logger.info(
+                "Live playground agents unavailable during readiness check, "
+                "falling back to mock debate: %s",
+                exc,
+            )
+            live_agents = []
+
+        if len(live_agents) < 2:
             # Fall back to mock debate with a note
             result = self._run_debate(
                 topic,

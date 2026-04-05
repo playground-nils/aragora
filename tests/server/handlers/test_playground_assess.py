@@ -11,6 +11,7 @@ Covers:
 
 from __future__ import annotations
 
+import io
 import json
 from unittest.mock import MagicMock, patch
 
@@ -39,7 +40,12 @@ def handler() -> PlaygroundHandler:
 def _make_http_handler(body: dict) -> MagicMock:
     """Build a fake HTTP handler with a JSON body."""
     h = MagicMock()
-    h.body = json.dumps(body).encode()
+    raw = json.dumps(body).encode()
+    h.headers = {
+        "Content-Length": str(len(raw)),
+        "Content-Type": "application/json",
+    }
+    h.rfile = io.BytesIO(raw)
     h.client_address = ("127.0.0.1", 12345)
     return h
 

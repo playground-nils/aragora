@@ -26,6 +26,7 @@ from aragora.docs_only import (
     is_docs_safe_path,
     is_docs_safe_top_level_file,
 )
+from aragora.pipeline.execution_mode import ExecutionMode
 from aragora.nomic.dev_coordination import (
     DevCoordinationStore,
     FileScopeViolationError,
@@ -41,7 +42,12 @@ from aragora.swarm.terminal_truth import (
     qualify_run_terminal_state,
     qualify_work_order_terminal_state,
 )
-from aragora.swarm.worker_launcher import SESSION_ARTIFACTS, WorkerLauncher, WorkerProcess
+from aragora.swarm.worker_launcher import (
+    SESSION_ARTIFACTS,
+    LaunchConfig,
+    WorkerLauncher,
+    WorkerProcess,
+)
 from aragora.worktree.lifecycle import WorktreeLifecycleService
 
 if TYPE_CHECKING:
@@ -56,6 +62,7 @@ WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY = "worker_type_circuit_breaker_policy"
 CAMPAIGN_OUTCOME_METADATA_KEY = "campaign_outcome"
 CAMPAIGN_REQUEUE_ELIGIBLE_METADATA_KEY = "campaign_requeue_eligible"
 CAMPAIGN_BLOCKERS_METADATA_KEY = "campaign_blockers"
+LAUNCHER_CONFIG_METADATA_KEY = "worker_launcher_config"
 MAX_WORKER_LOG_TAIL_CHARS = 4000
 DEFAULT_BREAKER_FAILURE_THRESHOLD = 2
 DEFAULT_BREAKER_RESET_TIMEOUT_SECONDS = 900.0
@@ -480,6 +487,100 @@ class SwarmSupervisor:
             self._pr_registry = PullRequestRegistry(state_dir=state_dir)
         return self._pr_registry
 
+    @staticmethod
+    def _launcher_config_snapshot(config: LaunchConfig) -> dict[str, Any]:
+        return {
+            "claude_path": str(config.claude_path),
+            "codex_path": str(config.codex_path),
+            "timeout_seconds": float(config.timeout_seconds),
+            "no_progress_timeout_seconds": float(config.no_progress_timeout_seconds),
+            "claude_model": config.claude_model,
+            "codex_model": config.codex_model,
+            "claude_profile": config.claude_profile,
+            "claude_profile_script": config.claude_profile_script,
+            "auto_commit": bool(config.auto_commit),
+            "use_managed_session_script": bool(config.use_managed_session_script),
+            "base_branch": str(config.base_branch),
+            "detach": bool(config.detach),
+            "require_explicit_approval": bool(config.require_explicit_approval),
+            "allow_claude_dangerously_skip_permissions": bool(
+                config.allow_claude_dangerously_skip_permissions
+            ),
+            "allow_codex_full_auto": bool(config.allow_codex_full_auto),
+            "execution_mode": (
+                config.execution_mode.value
+                if isinstance(config.execution_mode, ExecutionMode)
+                else str(config.execution_mode)
+            ),
+        }
+
+    @staticmethod
+    def _optional_snapshot_text(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text or text.lower() in {"none", "null"}:
+            return None
+        return text
+
+    def _apply_launcher_config_snapshot(self, snapshot: dict[str, Any] | None) -> None:
+        if not isinstance(snapshot, dict) or not snapshot:
+            return
+        config = self.launcher.config
+        if "claude_path" in snapshot:
+            config.claude_path = str(snapshot["claude_path"])
+        if "codex_path" in snapshot:
+            config.codex_path = str(snapshot["codex_path"])
+        if "timeout_seconds" in snapshot:
+            config.timeout_seconds = float(snapshot["timeout_seconds"])
+        if "no_progress_timeout_seconds" in snapshot:
+            config.no_progress_timeout_seconds = float(snapshot["no_progress_timeout_seconds"])
+        if "claude_model" in snapshot:
+            config.claude_model = self._optional_snapshot_text(snapshot["claude_model"])
+        if "codex_model" in snapshot:
+            config.codex_model = self._optional_snapshot_text(snapshot["codex_model"])
+        if "claude_profile" in snapshot:
+            config.claude_profile = self._optional_snapshot_text(snapshot["claude_profile"])
+        if "claude_profile_script" in snapshot:
+            config.claude_profile_script = self._optional_snapshot_text(
+                snapshot["claude_profile_script"]
+            )
+        if "auto_commit" in snapshot:
+            config.auto_commit = bool(snapshot["auto_commit"])
+        if "use_managed_session_script" in snapshot:
+            config.use_managed_session_script = bool(snapshot["use_managed_session_script"])
+        if "base_branch" in snapshot:
+            config.base_branch = str(snapshot["base_branch"]).strip() or config.base_branch
+        if "detach" in snapshot:
+            config.detach = bool(snapshot["detach"])
+        if "require_explicit_approval" in snapshot:
+            config.require_explicit_approval = bool(snapshot["require_explicit_approval"])
+        if "allow_claude_dangerously_skip_permissions" in snapshot:
+            config.allow_claude_dangerously_skip_permissions = bool(
+                snapshot["allow_claude_dangerously_skip_permissions"]
+            )
+        if "allow_codex_full_auto" in snapshot:
+            config.allow_codex_full_auto = bool(snapshot["allow_codex_full_auto"])
+        if "execution_mode" in snapshot:
+            try:
+                config.execution_mode = ExecutionMode(str(snapshot["execution_mode"]).strip())
+            except ValueError:
+                logger.debug(
+                    "Ignoring unknown execution mode in launcher snapshot: %r",
+                    snapshot.get("execution_mode"),
+                )
+
+    def _launcher_config(self) -> LaunchConfig:
+        config = getattr(self.launcher, "config", None)
+        if isinstance(config, LaunchConfig):
+            return config
+        fallback = LaunchConfig()
+        try:
+            self.launcher.config = fallback
+        except Exception:
+            logger.debug("Unable to attach fallback LaunchConfig to launcher", exc_info=True)
+        return fallback
+
     def start_run(
         self,
         *,
@@ -545,6 +646,9 @@ class SwarmSupervisor:
             metadata={
                 "max_concurrency": min(max(1, int(max_concurrency)), 8),
                 "managed_dir_pattern": managed_dir_pattern,
+                LAUNCHER_CONFIG_METADATA_KEY: self._launcher_config_snapshot(
+                    self._launcher_config()
+                ),
                 WORKER_TYPE_CIRCUIT_BREAKERS_KEY: {},
                 WORKER_TYPE_CIRCUIT_BREAKER_POLICY_KEY: {
                     "failure_threshold": DEFAULT_BREAKER_FAILURE_THRESHOLD,
@@ -594,14 +698,26 @@ class SwarmSupervisor:
         if record is None:
             raise KeyError(f"Unknown supervisor run: {run_id}")
 
-        max_concurrency = min(max(1, int(record.get("metadata", {}).get("max_concurrency", 8))), 8)
-        managed_dir_pattern = str(
-            record.get("metadata", {}).get("managed_dir_pattern", ".worktrees/{agent}-auto")
-        )
+        metadata = dict(record.get("metadata") or {})
+        worker_type_circuit_breaker_policy = self._worker_type_circuit_breaker_policy(metadata)
+        worker_type_circuit_breakers = self._worker_type_circuit_breakers(metadata)
+        self._expire_worker_type_circuit_breakers(worker_type_circuit_breakers)
+
+        max_concurrency = min(max(1, int(metadata.get("max_concurrency", 8))), 8)
+        managed_dir_pattern = str(metadata.get("managed_dir_pattern", ".worktrees/{agent}-auto"))
         work_orders = [dict(item) for item in record.get("work_orders", [])]
         for item in work_orders:
             self._backfill_missing_completion_receipt(item)
-        self._reconcile_stale_work_order_state(work_orders)
+        self._recover_reaped_needs_human_deliverables(
+            work_orders,
+            worker_type_circuit_breakers=worker_type_circuit_breakers,
+            worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+        )
+        self._reconcile_stale_work_order_state(
+            work_orders,
+            worker_type_circuit_breakers=worker_type_circuit_breakers,
+            worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+        )
         active_count = sum(
             1 for item in work_orders if str(item.get("status", "")) in {"leased", "dispatched"}
         )
@@ -611,6 +727,8 @@ class SwarmSupervisor:
                 if active_count >= max_concurrency:
                     break
                 if str(item.get("status", "queued")) not in {"queued", "waiting_conflict"}:
+                    continue
+                if not self._dependencies_ready_for_dispatch(item, work_orders):
                     continue
                 try:
                     leased = self._lease_work_order(
@@ -664,7 +782,10 @@ class SwarmSupervisor:
             status=self._derive_status(work_orders),
             work_orders=work_orders,
             metadata=self._campaign_metadata(
-                dict(record.get("metadata") or {}),
+                self._worker_type_circuit_breaker_metadata(
+                    metadata,
+                    worker_type_circuit_breakers,
+                ),
                 work_orders,
             ),
         )
@@ -908,7 +1029,13 @@ class SwarmSupervisor:
         except (TypeError, ValueError):
             return False
 
-    def _reconcile_stale_work_order_state(self, work_orders: list[dict[str, Any]]) -> None:
+    def _reconcile_stale_work_order_state(
+        self,
+        work_orders: list[dict[str, Any]],
+        *,
+        worker_type_circuit_breakers: dict[str, dict[str, Any]] | None = None,
+        worker_type_circuit_breaker_policy: dict[str, Any] | None = None,
+    ) -> None:
         active_leases = {lease.lease_id: lease for lease in self.store.list_active_leases()}
         live_claims = [
             claim for claim in self.store.fleet_store.list_claims() if isinstance(claim, dict)
@@ -924,8 +1051,169 @@ class SwarmSupervisor:
                 if self._should_requeue_stale_work_order(item, active_leases):
                     self._reset_work_order_for_requeue(item)
                     continue
+            if self._should_requeue_reaped_needs_human(item, active_leases):
+                self._reset_work_order_for_requeue(item)
+                continue
             if self._should_requeue_conflict_only_needs_human(item):
                 self._reset_work_order_for_requeue(item)
+                continue
+            self._rehabilitate_validation_marker_crash_work_order(
+                item,
+                worker_type_circuit_breakers=worker_type_circuit_breakers,
+                worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+            )
+
+    @staticmethod
+    def _worker_result_from_persisted_work_order(item: dict[str, Any]) -> WorkerProcess | None:
+        commit_shas = [str(sha).strip() for sha in item.get("commit_shas", []) if str(sha).strip()]
+        if not commit_shas:
+            return None
+        worktree_path = str(item.get("worktree_path", "")).strip()
+        branch = str(item.get("branch", "")).strip()
+        if not worktree_path or not branch:
+            return None
+        return WorkerProcess(
+            work_order_id=str(item.get("work_order_id", "")).strip(),
+            agent=str(item.get("target_agent", "codex")).strip() or "codex",
+            worktree_path=worktree_path,
+            branch=branch,
+            pid=WorkerLauncher._normalized_pid(item.get("pid")),
+            session_id=str(item.get("owner_session_id", "")).strip(),
+            lease_id=str(item.get("lease_id", "")).strip(),
+            completed_at=str(item.get("completed_at", "")).strip(),
+            exit_code=int(item.get("exit_code") or 1),
+            stdout=str(item.get("stdout_tail") or ""),
+            stderr=str(item.get("stderr_tail") or ""),
+            diff="",
+            initial_head=str(item.get("initial_head", "")).strip(),
+            head_sha=str(item.get("head_sha", "")).strip(),
+            commit_shas=commit_shas,
+            changed_paths=[
+                str(path).strip() for path in item.get("changed_paths", []) if str(path).strip()
+            ],
+            tests_run=[
+                str(test).strip() for test in item.get("tests_run", []) if str(test).strip()
+            ],
+            expected_tests=[
+                str(test).strip() for test in item.get("expected_tests", []) if str(test).strip()
+            ],
+        )
+
+    def _rehabilitate_validation_marker_crash_work_order(
+        self,
+        item: dict[str, Any],
+        *,
+        worker_type_circuit_breakers: dict[str, dict[str, Any]] | None = None,
+        worker_type_circuit_breaker_policy: dict[str, Any] | None = None,
+    ) -> None:
+        if str(item.get("status", "")).strip() != "needs_human":
+            return
+        if str(item.get("failure_reason", "")).strip() != "worker_crash_with_deliverable":
+            return
+        if str(item.get("review_status", "")).strip() != "changes_requested":
+            return
+        if not str(item.get("receipt_id") or "").strip():
+            return
+        result = self._worker_result_from_persisted_work_order(item)
+        if result is None:
+            return
+        clean_paths = self._strip_session_artifacts(list(result.changed_paths))
+        if not self._should_accept_validation_marker_commit(item, result, clean_paths):
+            return
+        tests_run, verification_results = self._synthesized_validation_marker_verification(
+            item,
+            result,
+        )
+        item["changed_paths"] = clean_paths
+        item["tests_run"] = tests_run
+        item["verification_results"] = verification_results
+        item["worker_outcome"] = WorkerOutcome.COMPLETED.value
+        metadata = dict(item.get("metadata") or {})
+        metadata["validation_marker_rehabilitated_at"] = datetime.now(UTC).isoformat()
+        metadata["validation_marker_original_exit_code"] = result.exit_code
+        item["metadata"] = metadata
+        self._finalize_completed_work_order_result(
+            item,
+            result,
+            clean_paths=clean_paths,
+            worker_type_circuit_breakers=worker_type_circuit_breakers,
+            worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+        )
+
+    def _recover_reaped_needs_human_deliverables(
+        self,
+        work_orders: list[dict[str, Any]],
+        *,
+        worker_type_circuit_breakers: dict[str, dict[str, Any]] | None = None,
+        worker_type_circuit_breaker_policy: dict[str, Any] | None = None,
+    ) -> None:
+        stale_failure_reasons = {"stale_lease_reaped", "expired_lease_reaped"}
+        for item in work_orders:
+            if str(item.get("status", "")).strip() != "needs_human":
+                continue
+            failure_reason = str(item.get("failure_reason", "")).strip().lower()
+            if failure_reason not in stale_failure_reasons:
+                continue
+            if str(item.get("receipt_id") or "").strip():
+                continue
+            if item.get("commit_shas"):
+                continue
+            worktree_path = str(item.get("worktree_path", "")).strip()
+            initial_head = str(item.get("initial_head", "")).strip()
+            if not worktree_path or not initial_head or not Path(worktree_path).is_dir():
+                continue
+            try:
+                result = self._build_dead_worker_salvage_result(
+                    item,
+                    worktree_path=worktree_path,
+                    initial_head=initial_head,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                logger.debug(
+                    "stale-reaped salvage check failed for %s",
+                    item.get("work_order_id"),
+                    exc_info=True,
+                )
+                continue
+            if result is None or not result.commit_shas:
+                continue
+            item["worker_outcome"] = WorkerOutcome.CRASH_WITH_SALVAGE.value
+            self._apply_worker_result(
+                item,
+                result,
+                worker_type_circuit_breakers=worker_type_circuit_breakers,
+                worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+            )
+            self._backfill_missing_completion_receipt(item)
+
+    @staticmethod
+    def _dependencies_ready_for_dispatch(
+        item: dict[str, Any],
+        work_orders: list[dict[str, Any]],
+    ) -> bool:
+        dependency_ids = {
+            str(dep).strip() for dep in item.get("dependency_ids", []) if str(dep).strip()
+        }
+        if not dependency_ids:
+            return True
+
+        completed_statuses = {"completed", "merged", "salvage"}
+        dependency_lookup: dict[str, dict[str, Any]] = {}
+        for candidate in work_orders:
+            if not isinstance(candidate, dict):
+                continue
+            for key in ("pipeline_task_id", "work_order_id", "task_key"):
+                candidate_id = str(candidate.get(key, "")).strip()
+                if candidate_id:
+                    dependency_lookup[candidate_id] = candidate
+
+        for dependency_id in dependency_ids:
+            dependency = dependency_lookup.get(dependency_id)
+            if not isinstance(dependency, dict):
+                return False
+            if str(dependency.get("status", "")).strip().lower() not in completed_statuses:
+                return False
+        return True
 
     @staticmethod
     def _replacement_active_lease(
@@ -1172,6 +1460,28 @@ class SwarmSupervisor:
         return True
 
     @staticmethod
+    def _should_requeue_reaped_needs_human(
+        item: dict[str, Any],
+        active_leases: dict[str, Any],
+    ) -> bool:
+        if str(item.get("status", "")).strip() != "needs_human":
+            return False
+        failure_reason = str(item.get("failure_reason", "")).strip().lower()
+        if failure_reason not in {"stale_lease_reaped", "expired_lease_reaped"}:
+            return False
+        lease_id = str(item.get("lease_id", "")).strip()
+        if lease_id and lease_id in active_leases:
+            return False
+        if str(item.get("receipt_id") or "").strip():
+            return False
+        if item.get("commit_shas") or item.get("changed_paths") or item.get("pr_url"):
+            return False
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict) and str(metadata.get("archived_due_to", "")).strip():
+            return False
+        return True
+
+    @staticmethod
     def _reset_work_order_for_requeue(item: dict[str, Any]) -> None:
         item["status"] = "queued"
         item["review_status"] = "pending"
@@ -1374,101 +1684,109 @@ class SwarmSupervisor:
         worker_type_circuit_breakers = self._worker_type_circuit_breakers(metadata)
         self._expire_worker_type_circuit_breakers(worker_type_circuit_breakers)
         launched: list[WorkerProcess] = []
+        previous_launcher_config = self._launcher_config_snapshot(self._launcher_config())
+        self._apply_launcher_config_snapshot(metadata.get(LAUNCHER_CONFIG_METADATA_KEY))
 
-        for item in work_orders:
-            if str(item.get("status", "")) != "leased":
-                continue
-            target_agent = str(item.get("target_agent", "claude")).strip().lower() or "claude"
-            if self._worker_type_circuit_breaker_is_open(
-                worker_type_circuit_breakers,
-                target_agent,
-            ):
-                breaker = dict(worker_type_circuit_breakers.get(target_agent) or {})
-                detail = self._worker_type_circuit_breaker_detail(target_agent, breaker)
-                fallback_requeued = self._requeue_with_fallback(
-                    item,
-                    reason="worker_type_blocked",
-                    detail=detail,
-                    worker_type_circuit_breakers=worker_type_circuit_breakers,
-                )
-                if not fallback_requeued:
-                    self._mark_worker_type_blocked(
+        try:
+            for item in work_orders:
+                if str(item.get("status", "")) != "leased":
+                    continue
+                target_agent = str(item.get("target_agent", "claude")).strip().lower() or "claude"
+                if self._worker_type_circuit_breaker_is_open(
+                    worker_type_circuit_breakers,
+                    target_agent,
+                ):
+                    breaker = dict(worker_type_circuit_breakers.get(target_agent) or {})
+                    detail = self._worker_type_circuit_breaker_detail(target_agent, breaker)
+                    fallback_requeued = self._requeue_with_fallback(
                         item,
-                        worker_type=target_agent,
+                        reason="worker_type_blocked",
                         detail=detail,
+                        worker_type_circuit_breakers=worker_type_circuit_breakers,
                     )
-                continue
-            worktree_path = str(item.get("worktree_path", "")).strip()
-            branch = str(item.get("branch", "main")).strip()
-            if not worktree_path:
-                continue
-
-            try:
-                worker = await self.launcher.launch(
-                    item,
-                    worktree_path=worktree_path,
-                    branch=branch,
-                )
-                self._record_worker_type_success(
-                    worker_type_circuit_breakers,
-                    target_agent,
-                )
-                dispatch_time = datetime.now(UTC).isoformat()
-                item["status"] = "dispatched"
-                item["pid"] = worker.pid
-                item["initial_head"] = worker.initial_head
-                item["dispatched_at"] = dispatch_time
-                item["last_observed_at"] = dispatch_time
-                item["last_progress_at"] = dispatch_time
-                item["first_output_at"] = None
-                item["last_output_at"] = None
-                item["progress_fingerprint"] = {
-                    "head_sha": worker.initial_head,
-                    "changed_paths": [],
-                    "diff_lines": 0,
-                }
-                item["output_fingerprint"] = {
-                    "stdout_size": 0,
-                    "stderr_size": 0,
-                    "stdout_mtime_ns": 0,
-                    "stderr_mtime_ns": 0,
-                    "has_output": False,
-                }
-                # Persist worker PID in lease metadata so reap_stale_leases
-                # can detect dead processes even if this supervisor dies.
-                lease_id = str(item.get("lease_id", "")).strip()
-                if lease_id and worker.pid is not None:
-                    try:
-                        self.store.update_lease_metadata(lease_id, {"worker_pid": worker.pid})
-                    except Exception:
-                        logger.debug(
-                            "Failed to persist worker PID to lease %s",
-                            lease_id,
-                            exc_info=True,
+                    if not fallback_requeued:
+                        self._mark_worker_type_blocked(
+                            item,
+                            worker_type=target_agent,
+                            detail=detail,
                         )
-                launched.append(worker)
-            except (FileNotFoundError, RuntimeError, OSError) as exc:
-                self._record_worker_type_failure(
-                    worker_type_circuit_breakers,
-                    target_agent,
-                    reason=self._dispatch_failure_reason(exc),
-                    detail=str(exc),
-                    policy=worker_type_circuit_breaker_policy,
-                )
-                fallback_requeued = self._requeue_after_dispatch_error(
-                    item,
-                    exc,
-                    worker_type_circuit_breakers=worker_type_circuit_breakers,
-                )
-                if not fallback_requeued:
-                    self._mark_dispatch_failed(item, str(exc))
-                import logging
+                    continue
+                worktree_path = str(item.get("worktree_path", "")).strip()
+                branch = str(item.get("branch", "main")).strip()
+                if not worktree_path:
+                    continue
 
-                logging.getLogger(__name__).warning(
-                    "Failed to dispatch %s: %s",
-                    item.get("work_order_id"),
-                    exc,
-                )
+                try:
+                    worker = await self.launcher.launch(
+                        item,
+                        worktree_path=worktree_path,
+                        branch=branch,
+                    )
+                    self._record_worker_type_success(
+                        worker_type_circuit_breakers,
+                        target_agent,
+                    )
+                    dispatch_time = datetime.now(UTC).isoformat()
+                    item["status"] = "dispatched"
+                    item["pid"] = worker.pid
+                    item["initial_head"] = worker.initial_head
+                    item["dispatched_at"] = dispatch_time
+                    item["last_observed_at"] = dispatch_time
+                    item["last_progress_at"] = dispatch_time
+                    item["first_output_at"] = None
+                    item["last_output_at"] = None
+                    item["progress_fingerprint"] = {
+                        "head_sha": worker.initial_head,
+                        "changed_paths": [],
+                        "diff_lines": 0,
+                    }
+                    item["output_fingerprint"] = {
+                        "stdout_size": 0,
+                        "stderr_size": 0,
+                        "stdout_mtime_ns": 0,
+                        "stderr_mtime_ns": 0,
+                        "has_output": False,
+                    }
+                    # Persist worker PID in lease metadata so reap_stale_leases
+                    # can detect dead processes even if this supervisor dies.
+                    lease_id = str(item.get("lease_id", "")).strip()
+                    if lease_id and worker.pid is not None:
+                        try:
+                            self.store.update_lease_metadata(lease_id, {"worker_pid": worker.pid})
+                        except Exception:
+                            logger.debug(
+                                "Failed to persist worker PID to lease %s",
+                                lease_id,
+                                exc_info=True,
+                            )
+                    launched.append(worker)
+                except (FileNotFoundError, RuntimeError, OSError) as exc:
+                    self._record_worker_type_failure(
+                        worker_type_circuit_breakers,
+                        target_agent,
+                        reason=self._dispatch_failure_reason(exc),
+                        detail=str(exc),
+                        policy=worker_type_circuit_breaker_policy,
+                    )
+                    fallback_requeued = self._requeue_after_dispatch_error(
+                        item,
+                        exc,
+                        worker_type_circuit_breakers=worker_type_circuit_breakers,
+                    )
+                    if not fallback_requeued:
+                        lease_id = str(item.get("lease_id", "")).strip()
+                        if lease_id:
+                            self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
+                        self._mark_dispatch_failed(item, str(exc))
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        "Failed to dispatch %s: %s",
+                        item.get("work_order_id"),
+                        exc,
+                    )
+        finally:
+            self._apply_launcher_config_snapshot(previous_launcher_config)
 
         self.store.update_supervisor_run(
             run_id,
@@ -1695,6 +2013,7 @@ class SwarmSupervisor:
                         changed = True
                         continue
 
+                    self._clear_stale_runtime_deliverable_state(item)
                     self._mark_needs_human(
                         item,
                         "worker process exited without receipt or exit marker",
@@ -1710,6 +2029,12 @@ class SwarmSupervisor:
                     "worker exceeded no-progress timeout "
                     f"({int(self._no_progress_timeout_seconds())}s)"
                 )
+                if (
+                    worktree_path
+                    and WorkerLauncher._normalized_pid(item.get("pid")) is None
+                    and WorkerLauncher._active_session_lock_blocks_collection(worktree_path, None)
+                ):
+                    continue
                 # Kill the worker before collecting results so the process
                 # releases file handles and the worktree is stable for git.
                 await self._kill_worker(item)
@@ -1734,6 +2059,7 @@ class SwarmSupervisor:
                                 for test in item.get("expected_tests", [])
                                 if str(test).strip()
                             ],
+                            allow_session_meta_pid_fallback=False,
                         )
                     except Exception:
                         logger.debug("Timeout result collection failed for %s", woid, exc_info=True)
@@ -1757,6 +2083,7 @@ class SwarmSupervisor:
                         self._mark_scope_violation(item, timeout_violations, extra_reason=reason)
                         item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
                     else:
+                        self._clear_stale_runtime_deliverable_state(item)
                         self._mark_needs_human(
                             item,
                             reason,
@@ -2237,6 +2564,15 @@ class SwarmSupervisor:
         goal: str,
         work_orders: list[dict[str, Any]],
     ) -> None:
+        try:
+            self.store.rehabilitate_dependency_deferred_missing_verification_plan_work_orders()
+            self.store.archive_failed_no_deliverable_work_orders(grace_period_hours=0.0)
+            self.store.archive_terminal_dependency_failure_work_orders()
+        except Exception:
+            logger.debug(
+                "duplicate suppression pre-maintenance skipped",
+                exc_info=True,
+            )
         active_duplicate_statuses = {
             "queued",
             "leased",
@@ -2837,6 +3173,209 @@ class SwarmSupervisor:
             return "pr_adopted"
         return "deliverable_created"
 
+    @classmethod
+    def _latest_commit_subject(cls, worktree_path: str, commit_shas: list[str]) -> str:
+        if not worktree_path or not commit_shas or not Path(worktree_path).is_dir():
+            return ""
+        commit_sha = str(commit_shas[-1]).strip()
+        if not commit_sha:
+            return ""
+        result = cls._run_git_capture_sync(
+            worktree_path,
+            "show",
+            "--no-patch",
+            "--format=%s",
+            commit_sha,
+        )
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+
+    @classmethod
+    def _should_accept_validation_marker_commit(
+        cls,
+        item: dict[str, Any],
+        result: WorkerProcess,
+        clean_paths: list[str],
+    ) -> bool:
+        if clean_paths:
+            return False
+        if not result.commit_shas:
+            return False
+        if not [str(dep).strip() for dep in item.get("dependency_ids", []) if str(dep).strip()]:
+            return False
+        if "run validation and fix failures" not in str(item.get("title", "")).strip().lower():
+            return False
+        expected_tests = [
+            str(test).strip() for test in item.get("expected_tests", []) if str(test).strip()
+        ]
+        if not expected_tests:
+            return False
+        commit_subject = cls._latest_commit_subject(
+            str(result.worktree_path or item.get("worktree_path", "")).strip(),
+            list(result.commit_shas),
+        ).lower()
+        if not commit_subject.startswith("test: validation passed"):
+            return False
+        success_output = "\n".join(
+            part.strip()
+            for part in (str(result.stdout or ""), str(result.stderr or ""))
+            if part and part.strip()
+        ).lower()
+        return "passed" in success_output or "lane complete" in success_output
+
+    @staticmethod
+    def _synthesized_validation_marker_verification(
+        item: dict[str, Any],
+        result: WorkerProcess,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        expected_tests = [
+            str(test).strip() for test in item.get("expected_tests", []) if str(test).strip()
+        ]
+        verification_results = [
+            {
+                "command": command,
+                "passed": True,
+                "exit_code": 0,
+                "stdout": str(result.stdout or ""),
+                "stderr": str(result.stderr or ""),
+                "inferred_from": "validation_marker_commit",
+            }
+            for command in expected_tests
+        ]
+        return expected_tests, verification_results
+
+    def _finalize_completed_work_order_result(
+        self,
+        item: dict[str, Any],
+        result: WorkerProcess,
+        *,
+        clean_paths: list[str],
+        worker_type_circuit_breakers: dict[str, dict[str, Any]] | None = None,
+        worker_type_circuit_breaker_policy: dict[str, Any] | None = None,
+    ) -> bool:
+        merge_gate = self._merge_gate_state(item)
+        item["merge_gate"] = merge_gate
+        if merge_gate.get("verification_missing_reason"):
+            item["verification_missing_reason"] = merge_gate["verification_missing_reason"]
+        if not bool(merge_gate.get("checks_passed")):
+            can_override_merge_gate = not bool(merge_gate.get("verification_missing_reason"))
+            if can_override_merge_gate and self._llm_override_merge_gate(item, merge_gate):
+                merge_gate["checks_passed"] = True
+                merge_gate["llm_override"] = True
+                item["merge_gate"] = merge_gate
+            else:
+                for key in ("resource_error", "conflicts", "scope_violation"):
+                    item.pop(key, None)
+                item.pop("blockers", None)
+                self._mark_needs_human(
+                    item,
+                    self._merge_gate_failure_reason(merge_gate),
+                    failure_reason=str(
+                        merge_gate.get("verification_missing_reason", "") or "merge_gate_failed"
+                    ).strip()
+                    or "merge_gate_failed",
+                    blocking_question=self._merge_gate_blocking_question(merge_gate),
+                )
+                item["review_status"] = "changes_requested"
+                item["receipt_id"] = None
+                item["worker_outcome"] = WorkerOutcome.MERGE_GATE_FAILED.value
+                self._release_terminal_lease(item)
+                return False
+
+        lease_id = str(item.get("lease_id") or "").strip()
+        receipt_id = str(item.get("receipt_id") or "").strip()
+        tests_run = [str(test).strip() for test in item.get("tests_run", []) if str(test).strip()]
+        if lease_id and not receipt_id:
+            try:
+                receipt = self.store.record_completion(
+                    lease_id=lease_id,
+                    owner_agent=str(item.get("target_agent", result.agent)),
+                    owner_session_id=str(item.get("owner_session_id", result.session_id)),
+                    branch=str(item.get("branch", result.branch)),
+                    worktree_path=str(item.get("worktree_path", result.worktree_path)),
+                    base_sha=str(item.get("initial_head", result.initial_head)),
+                    head_sha=str(result.head_sha or item.get("head_sha", "")),
+                    commit_shas=list(result.commit_shas),
+                    changed_paths=clean_paths,
+                    tests_run=tests_run,
+                    validations_run=tests_run,
+                    assumptions=[],
+                    blockers=[
+                        str(blocker).strip()
+                        for blocker in item.get("blockers", [])
+                        if str(blocker).strip()
+                    ],
+                    outcome=self._work_order_deliverable_type(item) or "completed",
+                    risks=[
+                        str(blocker).strip()
+                        for blocker in item.get("blockers", [])
+                        if str(blocker).strip()
+                    ],
+                    pr_url=str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip(),
+                    pr_number=self._extract_pr_number(
+                        str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip()
+                    ),
+                    confidence=self._completion_confidence(item, result),
+                    metadata={
+                        "task_key": str(item.get("task_key", "")).strip() or None,
+                        "verification_results": list(item.get("verification_results", []) or []),
+                        "worker_outcome": str(item.get("worker_outcome", "")).strip() or None,
+                        "approval_required": bool(item.get("approval_required", False)),
+                        "risk_level": str(item.get("risk_level", "")).strip() or None,
+                        "success_criteria": dict(item.get("success_criteria") or {}),
+                    },
+                )
+            except FileScopeViolationError as exc:
+                self._mark_needs_human(
+                    item,
+                    "worker completion violated file-scope ownership; narrow or split the lane",
+                    failure_reason="scope_violation",
+                    blocking_question=(
+                        "Which files should stay in scope, or should this lane be split "
+                        "before it is rerun?"
+                    ),
+                )
+                item["review_status"] = "changes_requested"
+                item["receipt_id"] = None
+                item.pop("confidence", None)
+                item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
+                for key in (
+                    "pr_url",
+                    "adopted_pr",
+                    "merge_gate",
+                    "verification_missing_reason",
+                ):
+                    item.pop(key, None)
+                item["scope_violation"] = {
+                    "violations": list(exc.violations),
+                    "changed_paths": clean_paths,
+                }
+                self._release_terminal_lease(item)
+                return False
+            item["receipt_id"] = receipt.receipt_id
+            item["confidence"] = receipt.confidence
+        if worker_type_circuit_breakers is not None:
+            self._record_worker_type_success(
+                worker_type_circuit_breakers,
+                str(item.get("target_agent", result.agent)),
+            )
+        self._register_pr_if_present(item, result)
+        item["status"] = "completed"
+        item["review_status"] = "pending_heterogeneous_review"
+        for key in (
+            "dispatch_error",
+            "resource_error",
+            "failure_reason",
+            "blocking_question",
+            "blocker",
+            "conflicts",
+            "scope_violation",
+        ):
+            item.pop(key, None)
+        item.pop("blockers", None)
+        return True
+
     def _apply_worker_result(
         self,
         item: dict[str, Any],
@@ -2868,8 +3407,7 @@ class SwarmSupervisor:
             scope_violations = self._llm_adjudicate_scope(item, scope_violations)
         if scope_violations:
             self._mark_scope_violation(item, scope_violations)
-            if not _pre_outcome:
-                item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
+            item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
             lease_id = str(item.get("lease_id", "")).strip()
             if lease_id:
                 self.store.release_lease(lease_id, status=LeaseStatus.RELEASED)
@@ -2884,6 +3422,17 @@ class SwarmSupervisor:
             # strip) and detached workers (changed_paths already stripped by
             # _collect_changed_paths, but commit_shas populated from auto-commit).
             if not clean_paths and (result.changed_paths or result.commit_shas):
+                for key in (
+                    "receipt_id",
+                    "confidence",
+                    "pr_url",
+                    "adopted_pr",
+                    "merge_gate",
+                    "verification_missing_reason",
+                    "scope_violation",
+                ):
+                    item.pop(key, None)
+                item["commit_shas"] = []
                 self._mark_needs_human(
                     item,
                     "worker produced only session artifacts, no real deliverables",
@@ -2897,6 +3446,16 @@ class SwarmSupervisor:
 
             # Clean exit with zero changes of any kind — fail closed
             if not clean_paths and not result.commit_shas:
+                for key in (
+                    "receipt_id",
+                    "confidence",
+                    "pr_url",
+                    "adopted_pr",
+                    "merge_gate",
+                    "verification_missing_reason",
+                    "scope_violation",
+                ):
+                    item.pop(key, None)
                 if not _pre_outcome:
                     item["worker_outcome"] = WorkerOutcome.CLEAN_EXIT_NO_EFFECT.value
                 logger.warning(
@@ -2917,129 +3476,13 @@ class SwarmSupervisor:
                 return
             elif not _pre_outcome:
                 item["worker_outcome"] = WorkerOutcome.COMPLETED.value
-
-            # Salvaged deliverables skip the merge gate — they are best-effort
-            # recoveries where strict verification is inappropriate.
-            _salvage_outcomes = {
-                WorkerOutcome.TIMEOUT_WITH_SALVAGE.value,
-                WorkerOutcome.CRASH_WITH_SALVAGE.value,
-            }
-            _is_salvage = str(item.get("worker_outcome", "")).strip() in _salvage_outcomes
-            merge_gate = self._merge_gate_state(item)
-            item["merge_gate"] = merge_gate
-            if merge_gate.get("verification_missing_reason"):
-                item["verification_missing_reason"] = merge_gate["verification_missing_reason"]
-            if not _is_salvage and not bool(merge_gate.get("checks_passed")):
-                # LLM second opinion: is the merge gate failure genuine?
-                can_override_merge_gate = not bool(merge_gate.get("verification_missing_reason"))
-                if can_override_merge_gate and self._llm_override_merge_gate(item, merge_gate):
-                    # LLM says deliverable is ready despite gate failure
-                    merge_gate["checks_passed"] = True
-                    merge_gate["llm_override"] = True
-                    item["merge_gate"] = merge_gate
-                else:
-                    self._mark_needs_human(
-                        item,
-                        self._merge_gate_failure_reason(merge_gate),
-                        failure_reason=str(
-                            merge_gate.get("verification_missing_reason", "") or "merge_gate_failed"
-                        ).strip()
-                        or "merge_gate_failed",
-                        blocking_question=self._merge_gate_blocking_question(merge_gate),
-                    )
-                    item["review_status"] = "changes_requested"
-                    item["receipt_id"] = None
-                    if not _pre_outcome:
-                        item["worker_outcome"] = WorkerOutcome.MERGE_GATE_FAILED.value
-                    self._release_terminal_lease(item)
-                    item["exit_code"] = result.exit_code
-                    return
-
-            receipt_id = str(item.get("receipt_id") or "").strip()
-            if lease_id and not receipt_id:
-                try:
-                    receipt = self.store.record_completion(
-                        lease_id=lease_id,
-                        owner_agent=str(item.get("target_agent", result.agent)),
-                        owner_session_id=str(item.get("owner_session_id", result.session_id)),
-                        branch=str(item.get("branch", result.branch)),
-                        worktree_path=str(item.get("worktree_path", result.worktree_path)),
-                        base_sha=str(item.get("initial_head", result.initial_head)),
-                        head_sha=str(result.head_sha or item.get("head_sha", "")),
-                        commit_shas=list(result.commit_shas),
-                        changed_paths=clean_paths,
-                        tests_run=list(result.tests_run),
-                        validations_run=list(result.tests_run),
-                        assumptions=[],
-                        blockers=[
-                            str(blocker).strip()
-                            for blocker in item.get("blockers", [])
-                            if str(blocker).strip()
-                        ],
-                        outcome=self._work_order_deliverable_type(item) or "completed",
-                        risks=[
-                            str(blocker).strip()
-                            for blocker in item.get("blockers", [])
-                            if str(blocker).strip()
-                        ],
-                        pr_url=str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip(),
-                        pr_number=self._extract_pr_number(
-                            str(item.get("pr_url", "") or item.get("adopted_pr", "")).strip()
-                        ),
-                        confidence=self._completion_confidence(item, result),
-                        metadata={
-                            "task_key": str(item.get("task_key", "")).strip() or None,
-                            "verification_results": list(
-                                item.get("verification_results", []) or []
-                            ),
-                            "worker_outcome": str(item.get("worker_outcome", "")).strip() or None,
-                            "approval_required": bool(item.get("approval_required", False)),
-                            "risk_level": str(item.get("risk_level", "")).strip() or None,
-                            "success_criteria": dict(item.get("success_criteria") or {}),
-                        },
-                    )
-                except FileScopeViolationError as exc:
-                    self._mark_needs_human(
-                        item,
-                        "worker completion violated file-scope ownership; narrow or split the lane",
-                        failure_reason="scope_violation",
-                        blocking_question=(
-                            "Which files should stay in scope, or should this lane be split "
-                            "before it is rerun?"
-                        ),
-                    )
-                    item["review_status"] = "changes_requested"
-                    item["receipt_id"] = None
-                    item.pop("confidence", None)
-                    item["worker_outcome"] = WorkerOutcome.SCOPE_VIOLATION.value
-                    for key in (
-                        "pr_url",
-                        "adopted_pr",
-                        "merge_gate",
-                        "verification_missing_reason",
-                    ):
-                        item.pop(key, None)
-                    item["scope_violation"] = {
-                        "violations": list(exc.violations),
-                        "changed_paths": clean_paths,
-                    }
-                    self._release_terminal_lease(item)
-                    item["exit_code"] = result.exit_code
-                    return
-                item["receipt_id"] = receipt.receipt_id
-                item["confidence"] = receipt.confidence
-            if worker_type_circuit_breakers is not None:
-                self._record_worker_type_success(
-                    worker_type_circuit_breakers,
-                    str(item.get("target_agent", result.agent)),
-                )
-            # Register PR in canonical registry if the work order produced one
-            self._register_pr_if_present(item, result)
-            item["status"] = "completed"
-            item["review_status"] = "pending_heterogeneous_review"
-            item.pop("failure_reason", None)
-            item.pop("blocking_question", None)
-            item.pop("blocker", None)
+            self._finalize_completed_work_order_result(
+                item,
+                result,
+                clean_paths=clean_paths,
+                worker_type_circuit_breakers=worker_type_circuit_breakers,
+                worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+            )
             return
 
         # Non-zero exit: classify as crash (with or without salvage)
@@ -3071,6 +3514,27 @@ class SwarmSupervisor:
         ):
             return
 
+        if self._should_accept_validation_marker_commit(item, result, clean_paths):
+            tests_run, verification_results = self._synthesized_validation_marker_verification(
+                item,
+                result,
+            )
+            item["tests_run"] = tests_run
+            item["verification_results"] = verification_results
+            item["worker_outcome"] = WorkerOutcome.COMPLETED.value
+            metadata = dict(item.get("metadata") or {})
+            metadata["validation_marker_completed_at"] = result.completed_at
+            metadata["validation_marker_original_exit_code"] = result.exit_code
+            item["metadata"] = metadata
+            self._finalize_completed_work_order_result(
+                item,
+                result,
+                clean_paths=clean_paths,
+                worker_type_circuit_breakers=worker_type_circuit_breakers,
+                worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+            )
+            return
+
         salvage_outcome = str(item.get("worker_outcome", "")).strip()
         is_salvage = salvage_outcome in {
             WorkerOutcome.CRASH_WITH_SALVAGE.value,
@@ -3091,10 +3555,29 @@ class SwarmSupervisor:
         deliverable_present = bool(self._work_order_deliverable_type(item))
         if deliverable_present and is_salvage:
             # Salvaged deliverables proceed to completion — the recovery was
-            # intentional and the deliverable (commits/PR) is real.
+            # intentional and the deliverable (commits/PR) is real. Clear any
+            # stale blocker metadata from the failed attempt so the lane does
+            # not remain "completed" while still looking blocked.
             item["status"] = "completed"
             item["review_status"] = "pending_heterogeneous_review"
+            for key in (
+                "dispatch_error",
+                "resource_error",
+                "failure_reason",
+                "blocking_question",
+                "blocker",
+                "conflicts",
+                "merge_gate",
+                "verification_missing_reason",
+                "scope_violation",
+            ):
+                item.pop(key, None)
+            item.pop("blockers", None)
             item["exit_code"] = result.exit_code
+            item.pop("failure_reason", None)
+            item.pop("blocking_question", None)
+            item.pop("blocker", None)
+            item.pop("dispatch_error", None)
             self._release_terminal_lease(item)
             self._register_pr_if_present(item, result)
             return
@@ -3123,8 +3606,12 @@ class SwarmSupervisor:
             "adopted_pr",
             "merge_gate",
             "verification_missing_reason",
+            "scope_violation",
+            "resource_error",
+            "conflicts",
         ):
             item.pop(key, None)
+        item.pop("blockers", None)
         failure_reason = (
             "worker_timeout_no_deliverable" if result.exit_code == -1 else "worker_crash"
         )
@@ -3142,7 +3629,7 @@ class SwarmSupervisor:
             "reason": failure_reason,
             "question": blocking_question,
         }
-        blockers = [str(value).strip() for value in item.get("blockers", []) if str(value).strip()]
+        blockers: list[str] = []
         if item["dispatch_error"] not in blockers:
             blockers.append(item["dispatch_error"])
         item["blockers"] = blockers
@@ -3739,6 +4226,7 @@ class SwarmSupervisor:
         worker_type: str,
         detail: str,
     ) -> None:
+        self._clear_stale_prelaunch_deliverable_state(item)
         metadata = dict(item.get("metadata") or {})
         metadata.update(
             {
@@ -3811,6 +4299,30 @@ class SwarmSupervisor:
             "diff_lines",
             "stdout_tail",
             "stderr_tail",
+            "tests_run",
+            "verification_results",
+            "merge_gate",
+            "verification_missing_reason",
+            "pr_url",
+            "adopted_pr",
+            "scope_violation",
+        ):
+            item.pop(key, None)
+
+    @staticmethod
+    def _clear_stale_runtime_deliverable_state(item: dict[str, Any]) -> None:
+        """Drop stale deliverable metadata while preserving runtime log evidence."""
+        for key in (
+            "receipt_id",
+            "confidence",
+            "worker_outcome",
+            "completed_at",
+            "exit_code",
+            "head_sha",
+            "commit_shas",
+            "changed_paths",
+            "diff",
+            "diff_lines",
             "tests_run",
             "verification_results",
             "merge_gate",
@@ -4116,6 +4628,27 @@ class SwarmSupervisor:
             )
             and not bool(entry.get("passed", False))
         ]
+        deferred_dependency_ids = [
+            str(dep).strip()
+            for dep in (
+                dict(item.get("metadata") or {}).get("deferred_verification_to_dependency_ids")
+                or []
+            )
+            if str(dep).strip()
+        ]
+
+        if deferred_dependency_ids:
+            return {
+                "enabled": True,
+                "expected_checks": expected_checks,
+                "verification_results": verification_results,
+                "verification_missing_reason": None,
+                "checks_passed": True,
+                "human_approval_required": True,
+                "merge_eligible": True,
+                "blocked_reasons": [],
+                "verification_deferred_to_dependency_ids": deferred_dependency_ids,
+            }
 
         blocked_reasons: list[str] = []
         verification_missing_reason: str | None = None
@@ -4257,10 +4790,19 @@ class SwarmSupervisor:
         except (TypeError, ValueError):
             return 120.0
 
-    def _exceeded_no_progress_timeout(self, item: dict[str, Any]) -> bool:
+    def _no_progress_anchor(self, item: dict[str, Any]) -> datetime | None:
         since = self._parse_timestamp(item.get("last_progress_at")) or self._parse_timestamp(
             item.get("dispatched_at")
         )
+        output_state = self._output_fingerprint(item.get("output_fingerprint"))
+        if output_state.get("has_output"):
+            last_output_at = self._parse_timestamp(item.get("last_output_at"))
+            if last_output_at is not None and (since is None or last_output_at > since):
+                since = last_output_at
+        return since
+
+    def _exceeded_no_progress_timeout(self, item: dict[str, Any]) -> bool:
+        since = self._no_progress_anchor(item)
         if since is None:
             return False
         elapsed = (datetime.now(UTC) - since).total_seconds()
@@ -4499,6 +5041,29 @@ class SwarmSupervisor:
         reason = "worker edited files outside permitted scope: " + ", ".join(out_of_scope_paths[:5])
         if extra_reason:
             reason = f"{extra_reason}; {reason}"
+        changed_paths = [
+            str(path).strip() for path in item.get("changed_paths", []) if str(path).strip()
+        ]
+        for key in (
+            "receipt_id",
+            "confidence",
+            "worker_outcome",
+            "completed_at",
+            "exit_code",
+            "head_sha",
+            "commit_shas",
+            "diff",
+            "diff_lines",
+            "tests_run",
+            "verification_results",
+            "resource_error",
+            "conflicts",
+            "pr_url",
+            "adopted_pr",
+            "merge_gate",
+            "verification_missing_reason",
+        ):
+            item.pop(key, None)
         item["status"] = "scope_violation"
         item["dispatch_error"] = reason
         item["failure_reason"] = "scope_violation"
@@ -4512,23 +5077,11 @@ class SwarmSupervisor:
         item["review_status"] = "changes_requested"
         scope_violation_detail = {
             "violations": violations,
-            "changed_paths": list(item.get("changed_paths", [])),
+            "changed_paths": changed_paths,
             "detected_at": datetime.now(UTC).isoformat(),
         }
         item["scope_violation"] = scope_violation_detail
-        blockers = [str(v).strip() for v in item.get("blockers", []) if str(v).strip()]
-        if reason not in blockers:
-            blockers.append(reason)
-        item["blockers"] = blockers
-        item.pop("receipt_id", None)
-        item.pop("confidence", None)
-        for key in (
-            "pr_url",
-            "adopted_pr",
-            "merge_gate",
-            "verification_missing_reason",
-        ):
-            item.pop(key, None)
+        item["blockers"] = [reason]
         item.pop("pid", None)
 
         # Write violation metadata into the lease so status_summary() surfaces
