@@ -1736,6 +1736,50 @@ class TestCallback:
         mock_client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_callback_rejects_and_burns_fallback_when_state_consume_raises(
+        self, handler, handler_module, mock_state_store
+    ):
+        """Consume failures must fail closed and clear the fallback copy."""
+        handler_module._oauth_states_fallback["test-state-token-abc123"] = {
+            "tenant_id": "tenant-1",
+            "provider": "slack",
+            "created_at": time.time(),
+        }
+        mock_state_store.peek.return_value = {
+            "tenant_id": "tenant-1",
+            "provider": "slack",
+            "created_at": time.time(),
+        }
+        mock_state_store.validate_and_consume.side_effect = RuntimeError("state store unavailable")
+
+        mock_client, _ = _make_httpx_mock(
+            {
+                "ok": True,
+                "access_token": "xoxb-token",
+                "team": {"id": "W111", "name": "Consume Error"},
+                "bot_user_id": "B1",
+                "authed_user": {"id": "U1"},
+                "scope": "channels:history",
+            }
+        )
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await handler.handle(
+                "GET",
+                "/api/integrations/slack/callback",
+                {},
+                {"code": "code", "state": "test-state-token-abc123"},
+                {},
+                None,
+            )
+
+        assert _status(result) == 400
+        body = _body(result)
+        assert "invalid or expired state token" in body.get("error", "").lower()
+        assert "test-state-token-abc123" not in handler_module._oauth_states_fallback
+        mock_client.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_callback_state_from_oauth_state_object(
         self, handler, mock_state_store, mock_workspace_store
     ):
