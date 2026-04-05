@@ -713,7 +713,11 @@ class SwarmSupervisor:
             worker_type_circuit_breakers=worker_type_circuit_breakers,
             worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
         )
-        self._reconcile_stale_work_order_state(work_orders)
+        self._reconcile_stale_work_order_state(
+            work_orders,
+            worker_type_circuit_breakers=worker_type_circuit_breakers,
+            worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+        )
         active_count = sum(
             1 for item in work_orders if str(item.get("status", "")) in {"leased", "dispatched"}
         )
@@ -1025,7 +1029,13 @@ class SwarmSupervisor:
         except (TypeError, ValueError):
             return False
 
-    def _reconcile_stale_work_order_state(self, work_orders: list[dict[str, Any]]) -> None:
+    def _reconcile_stale_work_order_state(
+        self,
+        work_orders: list[dict[str, Any]],
+        *,
+        worker_type_circuit_breakers: dict[str, dict[str, Any]] | None = None,
+        worker_type_circuit_breaker_policy: dict[str, Any] | None = None,
+    ) -> None:
         active_leases = {lease.lease_id: lease for lease in self.store.list_active_leases()}
         live_claims = [
             claim for claim in self.store.fleet_store.list_claims() if isinstance(claim, dict)
@@ -1046,6 +1056,89 @@ class SwarmSupervisor:
                 continue
             if self._should_requeue_conflict_only_needs_human(item):
                 self._reset_work_order_for_requeue(item)
+                continue
+            self._rehabilitate_validation_marker_crash_work_order(
+                item,
+                worker_type_circuit_breakers=worker_type_circuit_breakers,
+                worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+            )
+
+    @staticmethod
+    def _worker_result_from_persisted_work_order(item: dict[str, Any]) -> WorkerProcess | None:
+        commit_shas = [str(sha).strip() for sha in item.get("commit_shas", []) if str(sha).strip()]
+        if not commit_shas:
+            return None
+        worktree_path = str(item.get("worktree_path", "")).strip()
+        branch = str(item.get("branch", "")).strip()
+        if not worktree_path or not branch:
+            return None
+        return WorkerProcess(
+            work_order_id=str(item.get("work_order_id", "")).strip(),
+            agent=str(item.get("target_agent", "codex")).strip() or "codex",
+            worktree_path=worktree_path,
+            branch=branch,
+            pid=WorkerLauncher._normalized_pid(item.get("pid")),
+            session_id=str(item.get("owner_session_id", "")).strip(),
+            lease_id=str(item.get("lease_id", "")).strip(),
+            completed_at=str(item.get("completed_at", "")).strip(),
+            exit_code=int(item.get("exit_code") or 1),
+            stdout=str(item.get("stdout_tail") or ""),
+            stderr=str(item.get("stderr_tail") or ""),
+            diff="",
+            initial_head=str(item.get("initial_head", "")).strip(),
+            head_sha=str(item.get("head_sha", "")).strip(),
+            commit_shas=commit_shas,
+            changed_paths=[
+                str(path).strip() for path in item.get("changed_paths", []) if str(path).strip()
+            ],
+            tests_run=[
+                str(test).strip() for test in item.get("tests_run", []) if str(test).strip()
+            ],
+            expected_tests=[
+                str(test).strip() for test in item.get("expected_tests", []) if str(test).strip()
+            ],
+        )
+
+    def _rehabilitate_validation_marker_crash_work_order(
+        self,
+        item: dict[str, Any],
+        *,
+        worker_type_circuit_breakers: dict[str, dict[str, Any]] | None = None,
+        worker_type_circuit_breaker_policy: dict[str, Any] | None = None,
+    ) -> None:
+        if str(item.get("status", "")).strip() != "needs_human":
+            return
+        if str(item.get("failure_reason", "")).strip() != "worker_crash_with_deliverable":
+            return
+        if str(item.get("review_status", "")).strip() != "changes_requested":
+            return
+        if not str(item.get("receipt_id") or "").strip():
+            return
+        result = self._worker_result_from_persisted_work_order(item)
+        if result is None:
+            return
+        clean_paths = self._strip_session_artifacts(list(result.changed_paths))
+        if not self._should_accept_validation_marker_commit(item, result, clean_paths):
+            return
+        tests_run, verification_results = self._synthesized_validation_marker_verification(
+            item,
+            result,
+        )
+        item["changed_paths"] = clean_paths
+        item["tests_run"] = tests_run
+        item["verification_results"] = verification_results
+        item["worker_outcome"] = WorkerOutcome.COMPLETED.value
+        metadata = dict(item.get("metadata") or {})
+        metadata["validation_marker_rehabilitated_at"] = datetime.now(UTC).isoformat()
+        metadata["validation_marker_original_exit_code"] = result.exit_code
+        item["metadata"] = metadata
+        self._finalize_completed_work_order_result(
+            item,
+            result,
+            clean_paths=clean_paths,
+            worker_type_circuit_breakers=worker_type_circuit_breakers,
+            worker_type_circuit_breaker_policy=worker_type_circuit_breaker_policy,
+        )
 
     def _recover_reaped_needs_human_deliverables(
         self,
