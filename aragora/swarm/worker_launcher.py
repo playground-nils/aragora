@@ -427,7 +427,7 @@ class WorkerLauncher:
         if not worktree_path:
             return snapshot
         session_meta = self._read_session_meta(worktree_path)
-        pid = self._authoritative_session_pid(pid, session_meta)
+        pid = self._session_owned_pid(worktree_path, pid, session_meta)
         snapshot["pid_alive"] = self._is_pid_running(pid) if pid is not None else False
         lock_pid = self._pid_for_active_lock(worktree_path, pid, session_meta)
         if self._active_session_lock_blocks_collection(worktree_path, lock_pid):
@@ -823,6 +823,13 @@ class WorkerLauncher:
                 'git commit -m "..."` BEFORE running any validation or tests.\n'
                 "  - Do not spend tokens on exploration after code is written — commit first, "
                 "then validate if budget remains.\n"
+                "  - If you start a long-running `exec_command` that you plan to poll or follow "
+                "with `write_stdin`, launch it with `tty=true`; otherwise stdin will be closed "
+                "and the session can wedge.\n"
+                "  - Use non-tty `exec_command` only for one-shot commands where you do not need "
+                "to send more input later.\n"
+                "  - For ad hoc interpreter probes and timeout-wrapped scripts, prefer `python3` "
+                "over `python`; on this repo `python` may resolve to a non-runtime shim.\n"
                 "  - Do not exit 0 with staged or unstaged changes remaining.\n"
                 "  - If validation is slow or fails, the commit still preserves your deliverable "
                 "with an honest commit message."
@@ -1120,7 +1127,7 @@ class WorkerLauncher:
         session_exit_code, session_completed_at = cls._terminal_session_result(session_meta)
         observed_pid = cls._normalized_pid(pid)
         if allow_session_meta_pid_fallback:
-            observed_pid = cls._authoritative_session_pid(observed_pid, session_meta)
+            observed_pid = cls._session_owned_pid(worktree_path, observed_pid, session_meta)
         lock_pid = (
             cls._pid_for_active_lock(worktree_path, observed_pid, session_meta)
             if allow_session_meta_pid_fallback
@@ -1265,10 +1272,66 @@ class WorkerLauncher:
         return pid
 
     @classmethod
+    def _session_lock_pid_groups(cls, worktree_path: str) -> tuple[list[int], list[int]]:
+        active_lock = Path(worktree_path) / ".codex_session_active"
+        try:
+            raw = active_lock.read_text(encoding="utf-8")
+        except OSError:
+            return [], []
+        session_pids: list[int] = []
+        parent_pids: list[int] = []
+        for line in raw.splitlines():
+            entry = line.strip()
+            if not entry:
+                continue
+            if "=" not in entry:
+                continue
+            key, value = entry.split("=", 1)
+            normalized_key = key.strip()
+            if normalized_key not in {"pid", "ppid"}:
+                continue
+            pid = cls._normalized_pid(value.strip())
+            if pid is None:
+                continue
+            target = session_pids if normalized_key == "pid" else parent_pids
+            if pid not in target:
+                target.append(pid)
+        return session_pids, parent_pids
+
+    @classmethod
+    def _session_lock_pids(cls, worktree_path: str) -> list[int]:
+        session_pids, parent_pids = cls._session_lock_pid_groups(worktree_path)
+        # Prefer the harness session PID over any optional parent PID entries.
+        # The parent may outlive the managed session briefly and must not
+        # become the authoritative liveness/cleanup target just because it was
+        # listed first in the lock file.
+        return session_pids + [pid for pid in parent_pids if pid not in session_pids]
+
+    @classmethod
+    def _session_owned_pid(
+        cls,
+        worktree_path: str,
+        pid: int | None,
+        session_meta: dict[str, Any],
+    ) -> int | None:
+        meta_pid = cls._normalized_pid(session_meta.get("pid"))
+        if meta_pid is not None:
+            return meta_pid
+        lock_pids = cls._session_lock_pids(worktree_path)
+        if lock_pids:
+            return lock_pids[0]
+        return pid
+
+    @classmethod
     def _active_session_lock_blocks_collection(cls, worktree_path: str, pid: int | None) -> bool:
         active_lock = Path(worktree_path) / ".codex_session_active"
         if not active_lock.exists():
             return False
+        session_pids, parent_pids = cls._session_lock_pid_groups(worktree_path)
+        if session_pids:
+            return any(cls._is_pid_running(lock_pid) for lock_pid in session_pids)
+        if parent_pids:
+            return any(cls._is_pid_running(lock_pid) for lock_pid in parent_pids)
         # codex_session.sh writes ended_at/exit_code before it removes the
         # active lock in its EXIT trap. Treat the lock as authoritative while
         # it still exists unless the session PID is clearly gone.
@@ -1287,7 +1350,7 @@ class WorkerLauncher:
         active_lock = Path(worktree_path) / ".codex_session_active"
         if not active_lock.exists():
             return pid
-        return cls._authoritative_session_pid(pid, session_meta)
+        return cls._session_owned_pid(worktree_path, pid, session_meta)
 
     @staticmethod
     def _cleanup_session_artifacts(worktree_path: str) -> None:
@@ -1315,10 +1378,12 @@ class WorkerLauncher:
         if not ended_at:
             return None, None
         raw_exit_code = session_meta.get("exit_code")
+        if isinstance(raw_exit_code, bool):
+            return None, ended_at
         try:
             exit_code = int(raw_exit_code)
         except (TypeError, ValueError):
-            return None, None
+            return None, ended_at
         return exit_code, ended_at
 
     @classmethod
@@ -2162,7 +2227,7 @@ class WorkerLauncher:
                     if str(item.get("command", "")).strip()
                 ]
         finally:
-            cleanup_pid = self._authoritative_session_pid(worker.pid, session_meta)
+            cleanup_pid = self._session_owned_pid(worker.worktree_path, worker.pid, session_meta)
             if cleanup_pid is not None:
                 self._wait_for_pid_exit_sync(cleanup_pid)
             self._cleanup_session_artifacts(worker.worktree_path)
