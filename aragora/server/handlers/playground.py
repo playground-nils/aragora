@@ -2967,6 +2967,20 @@ class PlaygroundHandler(BaseHandler):
         )
         return json_response({"ok": True}, status=202)
 
+    def _handle_landing_feedback(self, handler: Any) -> HandlerResult:
+        """Accept a bounded wrong-answer report from the landing page."""
+        body = self.read_json_body(handler) if handler else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return error_response("Invalid landing feedback payload", 400)
+
+        report = _record_landing_feedback(
+            client_ip=_extract_client_ip(handler),
+            data=body,
+        )
+        return json_response({"ok": True, "report_id": report["id"]}, status=202)
+
     # ------------------------------------------------------------------
     # Question assessment (ambiguity detection via frontier model)
     # ------------------------------------------------------------------
