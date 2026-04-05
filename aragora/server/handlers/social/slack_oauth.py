@@ -1053,7 +1053,13 @@ class SlackOAuthHandler(SecureHandler):
             return error_response("Invalid or expired state token", 400)
 
         # Consume only after verifying this state was actually minted for Slack.
-        state_data = state_store.validate_and_consume(state) if store_state_is_slack else None
+        try:
+            state_data = state_store.validate_and_consume(state) if store_state_is_slack else None
+        except Exception:
+            if fallback_state_is_slack:
+                _oauth_states_fallback.pop(state, None)
+            logger.debug("Failed to consume Slack OAuth state", exc_info=True)
+            return error_response("Invalid or expired state token", 400)
         fallback_state_data = (
             _oauth_states_fallback.pop(state, None) if fallback_state_is_slack else None
         )
