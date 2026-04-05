@@ -1108,7 +1108,11 @@ class SwarmSupervisor:
     ) -> None:
         if str(item.get("status", "")).strip() != "needs_human":
             return
-        if str(item.get("failure_reason", "")).strip() != "worker_crash_with_deliverable":
+        failure_reason = str(item.get("failure_reason", "")).strip()
+        if failure_reason not in {
+            "worker_crash_with_deliverable",
+            "missing_verification_plan",
+        }:
             return
         if str(item.get("review_status", "")).strip() != "changes_requested":
             return
@@ -1125,6 +1129,8 @@ class SwarmSupervisor:
             result,
         )
         item["changed_paths"] = clean_paths
+        if tests_run:
+            item["expected_tests"] = tests_run
         item["tests_run"] = tests_run
         item["verification_results"] = verification_results
         item["worker_outcome"] = WorkerOutcome.COMPLETED.value
@@ -2397,6 +2403,12 @@ class SwarmSupervisor:
     ) -> bool:
         def _clear_stale_deliverable_state() -> None:
             for key in (
+                "dispatch_error",
+                "failure_reason",
+                "blocking_question",
+                "blocker",
+                "resource_error",
+                "conflicts",
                 "receipt_id",
                 "confidence",
                 "worker_outcome",
@@ -2418,6 +2430,7 @@ class SwarmSupervisor:
                 "scope_violation",
             ):
                 work_order.pop(key, None)
+            work_order.pop("blockers", None)
 
         if not self._is_safe_dependency_ref(str(session.path), dependency_ref):
             _clear_stale_deliverable_state()
@@ -3206,11 +3219,6 @@ class SwarmSupervisor:
             return False
         if "run validation and fix failures" not in str(item.get("title", "")).strip().lower():
             return False
-        expected_tests = [
-            str(test).strip() for test in item.get("expected_tests", []) if str(test).strip()
-        ]
-        if not expected_tests:
-            return False
         commit_subject = cls._latest_commit_subject(
             str(result.worktree_path or item.get("worktree_path", "")).strip(),
             list(result.commit_shas),
@@ -3222,7 +3230,14 @@ class SwarmSupervisor:
             for part in (str(result.stdout or ""), str(result.stderr or ""))
             if part and part.strip()
         ).lower()
-        return "passed" in success_output or "lane complete" in success_output
+        marker_phrases = (
+            "empty commit marker created",
+            "no-op marker committed",
+            "empty commit recorded as marker",
+        )
+        return any(phrase in success_output for phrase in marker_phrases) or (
+            "passed" in success_output and "marker" in success_output
+        )
 
     @staticmethod
     def _synthesized_validation_marker_verification(
@@ -3232,6 +3247,23 @@ class SwarmSupervisor:
         expected_tests = [
             str(test).strip() for test in item.get("expected_tests", []) if str(test).strip()
         ]
+        if not expected_tests:
+            file_scope = [
+                str(path).strip()
+                for path in item.get("file_scope", [])
+                if str(path).strip().startswith("tests/") and str(path).strip().endswith(".py")
+            ]
+            if len(file_scope) == 1:
+                expected_tests = [f"python -m pytest {file_scope[0]} -q"]
+        if not expected_tests:
+            output = "\n".join(
+                part.strip()
+                for part in (str(result.stdout or ""), str(result.stderr or ""))
+                if part and part.strip()
+            )
+            pytest_targets = re.findall(r"(tests/[A-Za-z0-9_./-]+\.py)", output)
+            if pytest_targets:
+                expected_tests = [f"python -m pytest {pytest_targets[-1]} -q"]
         verification_results = [
             {
                 "command": command,
@@ -3519,6 +3551,8 @@ class SwarmSupervisor:
                 item,
                 result,
             )
+            if tests_run:
+                item["expected_tests"] = tests_run
             item["tests_run"] = tests_run
             item["verification_results"] = verification_results
             item["worker_outcome"] = WorkerOutcome.COMPLETED.value
@@ -3583,6 +3617,15 @@ class SwarmSupervisor:
             return
         if deliverable_present:
             failure_reason = "worker_crash_with_deliverable"
+            for key in (
+                "resource_error",
+                "conflicts",
+                "scope_violation",
+                "merge_gate",
+                "verification_missing_reason",
+            ):
+                item.pop(key, None)
+            item.pop("blockers", None)
             self._mark_needs_human(
                 item,
                 "worker exited non-zero after producing a recoverable deliverable",
