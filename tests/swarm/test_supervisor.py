@@ -6087,6 +6087,9 @@ async def test_collect_finished_results_marks_dead_dispatched_worker_needs_human
                 "pr_url": "https://example.com/pr/123",
                 "merge_gate": {"checks_passed": True},
                 "verification_missing_reason": "stale-check",
+                "resource_error": "stale disk full",
+                "conflicts": [{"path": "stale.py", "source": "lease"}],
+                "blockers": ["stale blocker"],
                 "progress_fingerprint": {
                     "head_sha": "abc123",
                     "changed_paths": [],
@@ -6125,6 +6128,7 @@ async def test_collect_finished_results_marks_dead_dispatched_worker_needs_human
     assert "existing worktree" in work_order["blocking_question"]
     assert "pid" not in work_order
     assert work_order["worker_outcome"] == "crash"
+    assert work_order["blockers"] == [work_order["dispatch_error"]]
     for key in (
         "receipt_id",
         "confidence",
@@ -6133,6 +6137,8 @@ async def test_collect_finished_results_marks_dead_dispatched_worker_needs_human
         "merge_gate",
         "verification_missing_reason",
         "exit_code",
+        "resource_error",
+        "conflicts",
     ):
         assert key not in work_order
 
@@ -6409,6 +6415,9 @@ async def test_collect_finished_results_marks_no_progress_timeout_needs_human(
                 "pr_url": "https://example.com/pr/456",
                 "merge_gate": {"checks_passed": True},
                 "verification_missing_reason": "stale-plan",
+                "resource_error": "stale quota",
+                "conflicts": [{"path": "old.py", "source": "lease"}],
+                "blockers": ["stale timeout blocker"],
                 "stdout_tail": "stalled output\n",
                 "stderr_tail": "stalled warning\n",
                 "progress_fingerprint": {
@@ -6448,6 +6457,7 @@ async def test_collect_finished_results_marks_no_progress_timeout_needs_human(
     assert work_order["failure_reason"] == "worker_no_progress_timeout"
     assert "stalled lane" in work_order["blocking_question"]
     assert work_order["worker_outcome"] == "timeout_no_progress"
+    assert work_order["blockers"] == [work_order["dispatch_error"]]
     for key in (
         "receipt_id",
         "confidence",
@@ -6456,6 +6466,8 @@ async def test_collect_finished_results_marks_no_progress_timeout_needs_human(
         "merge_gate",
         "verification_missing_reason",
         "exit_code",
+        "resource_error",
+        "conflicts",
     ):
         assert key not in work_order
 

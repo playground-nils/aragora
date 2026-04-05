@@ -4532,6 +4532,9 @@ class SwarmSupervisor:
             "verification_missing_reason",
             "pr_url",
             "adopted_pr",
+            "resource_error",
+            "conflicts",
+            "blockers",
             "scope_violation",
         ):
             item.pop(key, None)
