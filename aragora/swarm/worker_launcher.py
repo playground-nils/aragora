@@ -1371,10 +1371,12 @@ class WorkerLauncher:
         if not ended_at:
             return None, None
         raw_exit_code = session_meta.get("exit_code")
+        if isinstance(raw_exit_code, bool):
+            return None, ended_at
         try:
             exit_code = int(raw_exit_code)
         except (TypeError, ValueError):
-            return None, None
+            return None, ended_at
         return exit_code, ended_at
 
     @classmethod
