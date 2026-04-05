@@ -3718,6 +3718,7 @@ class PlaygroundHandler(BaseHandler):
                 agent_count=agent_count,
                 max_rounds=rounds,
                 timeout=_LIVE_TIMEOUT,
+                debate_id=debate_id,
             )
         except TimeoutError:
             return json_response(
@@ -3889,6 +3890,7 @@ def start_playground_debate(
     agent_count: int = 3,
     max_rounds: int = 2,
     timeout: int = 60,
+    debate_id: str | None = None,
 ) -> dict[str, Any]:
     """Run a simplified live debate for the playground.
 
@@ -3900,6 +3902,9 @@ def start_playground_debate(
         agent_count: Number of agents (2-5)
         max_rounds: Maximum rounds (1-2)
         timeout: Timeout in seconds
+        debate_id: Optional debate ID to bind spectate context so WebSocket
+            subscribers can filter events by ID before the HTTP response
+            returns.
 
     Returns:
         Dict with debate result fields
@@ -3932,8 +3937,14 @@ def start_playground_debate(
 
             arena = factory.create_arena(config)
 
+            try:
+                from aragora.spectate.ws_bridge import bind_spectate_context
+            except ImportError:
+                from contextlib import nullcontext as bind_spectate_context  # type: ignore[assignment]
+
             async def _run_arena():
-                return await asyncio.wait_for(arena.run(), timeout=timeout)
+                with bind_spectate_context(debate_id=debate_id):
+                    return await asyncio.wait_for(arena.run(), timeout=timeout)
 
             result = asyncio.run(_run_arena())
 
