@@ -1271,7 +1271,8 @@ class WorkerLauncher:
             raw = active_lock.read_text(encoding="utf-8")
         except OSError:
             return []
-        pids: list[int] = []
+        session_pids: list[int] = []
+        parent_pids: list[int] = []
         for line in raw.splitlines():
             entry = line.strip()
             if not entry:
@@ -1279,12 +1280,20 @@ class WorkerLauncher:
             if "=" not in entry:
                 continue
             key, value = entry.split("=", 1)
-            if key.strip() not in {"pid", "ppid"}:
+            normalized_key = key.strip()
+            if normalized_key not in {"pid", "ppid"}:
                 continue
             pid = cls._normalized_pid(value.strip())
-            if pid is not None and pid not in pids:
-                pids.append(pid)
-        return pids
+            if pid is None:
+                continue
+            target = session_pids if normalized_key == "pid" else parent_pids
+            if pid not in target:
+                target.append(pid)
+        # Prefer the harness session PID over any optional parent PID entries.
+        # The parent may outlive the managed session briefly and must not
+        # become the authoritative liveness/cleanup target just because it was
+        # listed first in the lock file.
+        return session_pids + [pid for pid in parent_pids if pid not in session_pids]
 
     @classmethod
     def _session_owned_pid(
