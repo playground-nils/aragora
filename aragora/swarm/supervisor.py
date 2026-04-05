@@ -3611,8 +3611,11 @@ class SwarmSupervisor:
                     "merge_gate",
                     "verification_missing_reason",
                     "scope_violation",
+                    "resource_error",
+                    "conflicts",
                 ):
                     item.pop(key, None)
+                item.pop("blockers", None)
                 item["commit_shas"] = []
                 self._mark_needs_human(
                     item,
@@ -3635,8 +3638,11 @@ class SwarmSupervisor:
                     "merge_gate",
                     "verification_missing_reason",
                     "scope_violation",
+                    "resource_error",
+                    "conflicts",
                 ):
                     item.pop(key, None)
+                item.pop("blockers", None)
                 if not _pre_outcome:
                     item["worker_outcome"] = WorkerOutcome.CLEAN_EXIT_NO_EFFECT.value
                 logger.warning(
