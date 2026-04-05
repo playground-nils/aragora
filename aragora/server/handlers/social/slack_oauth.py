@@ -1154,6 +1154,10 @@ class SlackOAuthHandler(SecureHandler):
             logger.error("[%s] Slack token exchange failed: %s", request_id, e)
             return error_response("Token exchange failed", 500)
 
+        if not isinstance(data, dict):
+            logger.error("[%s] Slack token exchange returned non-dict payload", request_id)
+            return error_response("Invalid response from Slack", 500)
+
         if not data.get("ok"):
             error_msg = data.get("error", "Unknown error")
             logger.error("Slack OAuth failed: %s", error_msg)
@@ -1692,6 +1696,21 @@ class SlackOAuthHandler(SecureHandler):
                     )
                 logger.warning("Handler error: %s", e)
                 return error_response("Token refresh failed", 502)
+
+            if not isinstance(data, dict):
+                logger.error(
+                    "Token refresh returned non-dict payload for %s",
+                    workspace_id,
+                )
+                audit = _get_oauth_audit_logger()
+                if audit:
+                    audit.log_oauth(
+                        workspace_id=workspace_id,
+                        action="token_refresh",
+                        success=False,
+                        error="Invalid refresh response: malformed payload",
+                    )
+                return error_response("Invalid token refresh response", 502)
 
             if not data.get("ok"):
                 error_msg = data.get("error", "Unknown error")
