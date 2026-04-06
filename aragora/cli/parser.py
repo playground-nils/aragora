@@ -2297,7 +2297,7 @@ def _add_swarm_parser(subparsers) -> None:
     swarm_parser.add_argument(
         "swarm_action_or_goal",
         nargs="?",
-        help="Action (run/status/reconcile/campaign/integrator/tranche) or your goal in plain language",
+        help="Action (run/status/reconcile/campaign/integrator/tranche/coord/assign/claim-pr/findings) or your goal in plain language",
     )
     swarm_parser.add_argument(
         "swarm_goal",
@@ -2749,6 +2749,23 @@ def _add_swarm_parser(subparsers) -> None:
         type=int,
         default=1,
         help="Maximum dependency-independent campaign projects to run per execute (default: 1)",
+    )
+    # Session coordination arguments (for coord/assign/claim-pr/findings actions)
+    swarm_parser.add_argument(
+        "--scope",
+        default=None,
+        help="Comma-separated file/dir scope for 'assign' (e.g. aragora/server/,tests/)",
+    )
+    swarm_parser.add_argument(
+        "--constraints",
+        default=None,
+        dest="constraints_list",
+        help="Comma-separated constraints for 'assign' (e.g. 'no refactoring,no CI work')",
+    )
+    swarm_parser.add_argument(
+        "--report",
+        default=None,
+        help="Report a finding via 'findings --report \"description\"'",
     )
     swarm_parser.set_defaults(
         func=lambda args: __import__(

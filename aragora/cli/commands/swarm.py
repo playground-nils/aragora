@@ -43,6 +43,10 @@ def _resolve_swarm_action_goal(args: argparse.Namespace) -> tuple[str, str | Non
         "campaign",
         "integrator",
         "tranche",
+        "coord",
+        "assign",
+        "claim-pr",
+        "findings",
     }:
         return str(first), second
     return "run", first
@@ -983,6 +987,130 @@ def cmd_swarm(args: argparse.Namespace) -> None:
         "metrics": AutonomyLevel.METRICS_DRIVEN,
     }
     autonomy_level = autonomy_map.get(autonomy_str, AutonomyLevel.PROPOSE_APPROVE)
+
+    # ------------------------------------------------------------------
+    # Session coordination commands
+    # ------------------------------------------------------------------
+    if action in {"coord", "assign", "claim-pr", "findings"}:
+        from aragora.swarm.session_coordinator import (
+            claim_pr as _coord_claim_pr,
+            read_directives as _coord_read,
+            report_finding as _coord_report,
+            set_assignment as _coord_assign,
+        )
+
+        repo_root = Path.cwd()
+        session_id = os.environ.get(
+            "ARAGORA_SESSION_ID",
+            f"session-{os.getpid()}",
+        )
+
+        if action == "coord":
+            directives = _coord_read(repo_root)
+            if as_json:
+                print(json.dumps(directives, indent=2))
+            else:
+                print(
+                    f"issued_at={directives.get('issued_at', '?')}  issued_by={directives.get('issued_by', '?')}"
+                )
+                sessions = directives.get("sessions", {})
+                if sessions:
+                    print(f"\nSessions ({len(sessions)}):")
+                    for sid, info in sessions.items():
+                        status = info.get("status", "?")
+                        task = info.get("task", "")
+                        scope = ", ".join(info.get("scope", [])) or "-"
+                        constraints = ", ".join(info.get("constraints", [])) or "-"
+                        print(f"  {sid} [{status}]  task={task}")
+                        print(f"    scope={scope}  constraints={constraints}")
+                else:
+                    print("\nNo sessions registered.")
+                claimed_prs = directives.get("claimed_prs", {})
+                if claimed_prs:
+                    print(f"\nClaimed PRs ({len(claimed_prs)}):")
+                    for pr, owner in claimed_prs.items():
+                        print(f"  PR#{pr} -> {owner}")
+                claimed_files = directives.get("claimed_files", {})
+                if claimed_files:
+                    print(f"\nClaimed files ({len(claimed_files)}):")
+                    for fp, owner in claimed_files.items():
+                        print(f"  {fp} -> {owner}")
+                findings = directives.get("shared_findings", [])
+                if findings:
+                    print(f"\nFindings ({len(findings)}):")
+                    for f in findings[-5:]:
+                        print(f"  [{f.get('reported_by', '?')}] {f.get('finding', '')}")
+            return
+
+        if action == "assign":
+            target_session = goal
+            if not target_session:
+                print("Error: provide session id and task")
+                print('Usage: aragora swarm assign <session-id> "task description"')
+                return
+            task_text = getattr(args, "swarm_campaign_target", None) or ""
+            if not task_text:
+                print("Error: provide a task description as third argument")
+                print('Usage: aragora swarm assign <session-id> "task description"')
+                return
+            scope_arg = getattr(args, "scope", None)
+            scope_list = [s.strip() for s in scope_arg.split(",") if s.strip()] if scope_arg else []
+            constraints_arg = getattr(args, "constraints_list", None)
+            constraints_list = (
+                [c.strip() for c in constraints_arg.split(",") if c.strip()]
+                if constraints_arg
+                else []
+            )
+            _coord_assign(
+                target_session,
+                task_text,
+                scope=scope_list or None,
+                constraints=constraints_list or None,
+                issued_by=session_id,
+                repo_root=repo_root,
+            )
+            print(f"Assigned {target_session}: {task_text}")
+            return
+
+        if action == "claim-pr":
+            if not goal:
+                print("Error: provide a PR number")
+                print("Usage: aragora swarm claim-pr <pr-number>")
+                return
+            try:
+                pr_num = int(goal)
+            except ValueError:
+                print(f"Error: invalid PR number: {goal}")
+                return
+            ok = _coord_claim_pr(pr_num, session_id, repo_root)
+            if ok:
+                print(f"Claimed PR#{pr_num} for {session_id}")
+            else:
+                directives = _coord_read(repo_root)
+                owner = directives.get("claimed_prs", {}).get(str(pr_num), "unknown")
+                print(f"PR#{pr_num} already claimed by {owner}")
+            return
+
+        if action == "findings":
+            report_text = getattr(args, "report", None)
+            if report_text:
+                _coord_report(report_text, session_id, repo_root)
+                print(f"Finding reported by {session_id}")
+                return
+            directives = _coord_read(repo_root)
+            findings = directives.get("shared_findings", [])
+            if not findings:
+                print("No findings reported yet.")
+                return
+            if as_json:
+                print(json.dumps(findings, indent=2))
+            else:
+                for f in findings:
+                    ts = f.get("reported_at", "?")
+                    by = f.get("reported_by", "?")
+                    text = f.get("finding", "")
+                    print(f"  [{ts}] ({by}) {text}")
+            return
 
     if action == "runner":
         from aragora.swarm.reporter import render_runner_registration_text
