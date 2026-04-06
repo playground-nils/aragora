@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlencode
@@ -1531,28 +1531,72 @@ class TestSlashCommandErrorHandling:
 class TestAnswerQuestionAsync:
     """Tests for the async question answering flow."""
 
+    def _patch_answer_runtime(
+        self,
+        *,
+        result: Any | None = None,
+        run_side_effect: BaseException | None = None,
+        detected: list[tuple[str, str]] | None = None,
+    ):
+        if result is None:
+            result = SimpleNamespace(
+                final_answer="Paris is the capital of France",
+                confidence=0.9,
+            )
+
+        mock_agents_mod = ModuleType("aragora.agents.base")
+        mock_agents_mod.create_agent = MagicMock(
+            side_effect=lambda agent_type, **kwargs: SimpleNamespace(
+                agent_type=agent_type,
+                name=kwargs.get("name", "agent"),
+                role=kwargs.get("role", "proposer"),
+                model=kwargs.get("model"),
+            )
+        )
+
+        mock_core_mod = ModuleType("aragora.core")
+        mock_core_mod.Environment = MagicMock(
+            side_effect=lambda **kwargs: SimpleNamespace(**kwargs)
+        )
+
+        mock_orchestrator_mod = ModuleType("aragora.debate.orchestrator")
+        mock_orchestrator_mod.DebateProtocol = MagicMock(
+            side_effect=lambda **kwargs: SimpleNamespace(**kwargs)
+        )
+        mock_arena = MagicMock()
+        if run_side_effect is not None:
+            mock_arena.run = AsyncMock(side_effect=run_side_effect)
+        else:
+            mock_arena.run = AsyncMock(return_value=result)
+        mock_orchestrator_mod.Arena = MagicMock(return_value=mock_arena)
+
+        mock_quickstart_mod = ModuleType("aragora.cli.commands.quickstart")
+        mock_quickstart_mod._detect_agents = MagicMock(
+            return_value=detected
+            or [
+                ("anthropic", "claude-3-7-sonnet"),
+                ("openai", "gpt-4o"),
+                ("mistral", "mistral-large"),
+            ]
+        )
+
+        runtime_patch = patch.dict(
+            "sys.modules",
+            {
+                "aragora.agents.base": mock_agents_mod,
+                "aragora.core": mock_core_mod,
+                "aragora.debate.orchestrator": mock_orchestrator_mod,
+                "aragora.cli.commands.quickstart": mock_quickstart_mod,
+            },
+        )
+        return runtime_patch, mock_agents_mod, mock_orchestrator_mod, mock_quickstart_mod
+
     @pytest.mark.asyncio
     async def test_happy_path(self, slack_handler):
-        class FakeArena:
-            def __init__(self, env, agents, protocol):
-                self.env = env
-                self.agents = agents
-                self.protocol = protocol
-
-            async def run(self):
-                return SimpleNamespace(
-                    final_answer="Paris is the capital of France",
-                    confidence=0.92,
-                )
-
-        with (
-            patch(
-                "aragora.cli.commands.quickstart._detect_agents",
-                return_value=[("demo", "demo")],
-            ),
-            patch("aragora.agents.base.create_agent", side_effect=[MagicMock()]),
-            patch("aragora.debate.orchestrator.Arena", FakeArena),
-        ):
+        runtime_patch, mock_agents_mod, mock_orchestrator_mod, mock_quickstart_mod = (
+            self._patch_answer_runtime()
+        )
+        with runtime_patch:
             slack_handler._post_to_response_url = AsyncMock()
             await slack_handler._answer_question_async(
                 "What is the capital of France?",
@@ -1563,80 +1607,57 @@ class TestAnswerQuestionAsync:
             slack_handler._post_to_response_url.assert_called_once()
             payload = slack_handler._post_to_response_url.call_args[0][1]
             assert "Paris" in json.dumps(payload.get("blocks", []))
+            assert mock_agents_mod.create_agent.call_count == 3
+            mock_quickstart_mod._detect_agents.assert_called_once()
+            mock_orchestrator_mod.Arena.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_summary_used_when_final_answer_missing(self, slack_handler):
-        class FakeArena:
-            def __init__(self, env, agents, protocol):
-                self.env = env
-                self.agents = agents
-                self.protocol = protocol
-
-            async def run(self):
-                return SimpleNamespace(summary="Debate answer here", confidence=0.65)
-
-        with (
-            patch(
-                "aragora.cli.commands.quickstart._detect_agents",
-                return_value=[("demo", "demo")],
-            ),
-            patch("aragora.agents.base.create_agent", side_effect=[MagicMock()]),
-            patch("aragora.debate.orchestrator.Arena", FakeArena),
-        ):
+        runtime_patch, *_ = self._patch_answer_runtime(
+            result=SimpleNamespace(summary="Debate answer here", confidence=0.65)
+        )
+        with runtime_patch:
             slack_handler._post_to_response_url = AsyncMock()
             await slack_handler._answer_question_async(
                 "Explain deep learning", "https://hooks.slack.com/resp", "U1", "C1"
             )
             slack_handler._post_to_response_url.assert_called_once()
             payload = slack_handler._post_to_response_url.call_args[0][1]
-            assert "Debate answer" in json.dumps(payload.get("blocks", []))
+            assert "Debate answer here" in json.dumps(payload.get("blocks", []))
 
     @pytest.mark.asyncio
-    async def test_low_confidence_posts_guardrail_message(self, slack_handler):
-        class FakeArena:
-            def __init__(self, env, agents, protocol):
-                self.env = env
-                self.agents = agents
-                self.protocol = protocol
+    async def test_low_confidence_posts_fail_closed_message(self, slack_handler):
+        runtime_patch, *_ = self._patch_answer_runtime(
+            result=SimpleNamespace(final_answer="Maybe", confidence=0.2)
+        )
+        with runtime_patch:
+            slack_handler._post_to_response_url = AsyncMock()
+            await slack_handler._answer_question_async(
+                "Explain deep learning", "https://hooks.slack.com/resp", "U1", "C1"
+            )
+            slack_handler._post_to_response_url.assert_called_once()
+            payload = slack_handler._post_to_response_url.call_args[0][1]
+            assert "wasn't able to reach a confident answer" in json.dumps(
+                payload.get("blocks", [])
+            )
 
-            async def run(self):
-                return SimpleNamespace(final_answer="Tentative answer", confidence=0.2)
-
-        with (
-            patch(
-                "aragora.cli.commands.quickstart._detect_agents",
-                return_value=[("demo", "demo")],
-            ),
-            patch("aragora.agents.base.create_agent", side_effect=[MagicMock()]),
-            patch("aragora.debate.orchestrator.Arena", FakeArena),
-        ):
+    @pytest.mark.asyncio
+    async def test_timeout_posts_failure(self, slack_handler):
+        runtime_patch, *_ = self._patch_answer_runtime(run_side_effect=asyncio.TimeoutError())
+        with runtime_patch:
             slack_handler._post_to_response_url = AsyncMock()
             await slack_handler._answer_question_async(
                 "Some important question here", "https://hooks.slack.com/resp", "U1", "C1"
             )
             payload = slack_handler._post_to_response_url.call_args[0][1]
-            blocks_text = json.dumps(payload.get("blocks", []))
-            assert "wasn't able to reach a confident answer" in blocks_text
+            assert "Failed to answer question" in payload["text"]
 
     @pytest.mark.asyncio
-    async def test_debate_timeout_posts_failure(self, slack_handler):
-        class FakeArena:
-            def __init__(self, env, agents, protocol):
-                self.env = env
-                self.agents = agents
-                self.protocol = protocol
-
-            async def run(self):
-                raise asyncio.TimeoutError("timed out")
-
-        with (
-            patch(
-                "aragora.cli.commands.quickstart._detect_agents",
-                return_value=[("demo", "demo")],
-            ),
-            patch("aragora.agents.base.create_agent", side_effect=[MagicMock()]),
-            patch("aragora.debate.orchestrator.Arena", FakeArena),
-        ):
+    async def test_invalid_result_posts_failure(self, slack_handler):
+        runtime_patch, *_ = self._patch_answer_runtime(
+            run_side_effect=ValueError("invalid debate result")
+        )
+        with runtime_patch:
             slack_handler._post_to_response_url = AsyncMock()
             await slack_handler._answer_question_async(
                 "Some question here", "https://hooks.slack.com/resp", "U1", "C1"
@@ -1646,13 +1667,9 @@ class TestAnswerQuestionAsync:
 
     @pytest.mark.asyncio
     async def test_create_agent_value_error_posts_failure(self, slack_handler):
-        with (
-            patch(
-                "aragora.cli.commands.quickstart._detect_agents",
-                return_value=[("demo", "demo")],
-            ),
-            patch("aragora.agents.base.create_agent", side_effect=ValueError("bad config")),
-        ):
+        runtime_patch, mock_agents_mod, *_ = self._patch_answer_runtime()
+        mock_agents_mod.create_agent.side_effect = ValueError("bad config")
+        with runtime_patch:
             slack_handler._post_to_response_url = AsyncMock()
             await slack_handler._answer_question_async(
                 "Some question here", "https://hooks.slack.com/resp", "U1", "C1"
