@@ -35,6 +35,8 @@ from aragora.cli.commands.quickstart import (
 )
 from aragora.cli.parser import build_parser
 from aragora.cli.receipt_formatter import receipt_to_html, receipt_to_markdown
+from aragora.core import DebateResult
+from scripts.check_epistemic_hygiene import validate_receipt
 
 
 # =============================================================================
@@ -472,6 +474,37 @@ class TestLiveQuickstartHelpers:
         assert receipt["receipt"]["confidence"] == 1.0
         assert receipt["consensus_proof"]["confidence"] == 1.0
 
+    def test_build_live_receipt_caps_settlement_confidence_for_sparse_debate_result(self):
+        result = DebateResult(
+            confidence=0.91,
+            consensus_reached=True,
+            dissenting_views=[],
+            final_answer="Proceed with a phased rollout.",
+            participants=["proposer", "critic", "synthesizer"],
+            rounds_used=1,
+        )
+
+        receipt = _build_live_receipt(
+            result,
+            "Should we proceed?",
+            1,
+            [
+                {"name": "proposer", "provider": "openai-api"},
+                {"name": "critic", "provider": "openai-api"},
+                {"name": "synthesizer", "provider": "openai-api"},
+            ],
+        )
+
+        strict_hygiene = validate_receipt(receipt, strict=True)
+        assert strict_hygiene.passed_strict() is True
+        assert receipt["confidence"] == pytest.approx(0.91)
+        assert receipt["settlement_metadata"]["confidence"] == pytest.approx(0.79)
+        assert receipt["settlement_metadata"]["falsifiers"] == []
+        assert any(
+            "did not include explicit falsifiers" in note
+            for note in receipt["settlement_metadata"]["review_notes"]
+        )
+
     @pytest.mark.asyncio
     async def test_can_reach_provider_tls_normalizes_wrapped_cert_errors(self):
         with patch(
@@ -902,6 +935,16 @@ class TestCmdQuickstart:
 
         artifact_path = tmp_path / ".aragora" / "receipts" / "quickstart-demo-receipt.json"
         assert artifact_path.exists()
+        saved = json.loads(artifact_path.read_text())
+        strict_hygiene = validate_receipt(saved, strict=True)
+        assert strict_hygiene.passed_strict() is True
+        assert all(
+            entry.startswith("Verifiable:") for entry in saved["settlement_metadata"]["falsifiers"]
+        )
+        assert not any(
+            "Revisit if evidence disproves the chosen path for:" in entry
+            for entry in saved["settlement_metadata"]["falsifiers"]
+        )
 
         capsys.readouterr()
         with pytest.raises(SystemExit) as excinfo:
@@ -934,6 +977,9 @@ class TestCmdQuickstart:
             "agents": ["openai-api"],
             "summary": "Ship the truthful quickstart flow.",
             "dissent": [],
+            "verification_criteria": [
+                "Saved quickstart receipts continue to pass the strict epistemic hygiene gate."
+            ],
             "mode": "live",
         }
 
@@ -953,6 +999,15 @@ class TestCmdQuickstart:
         assert artifact_path.exists()
         saved = json.loads(artifact_path.read_text())
         assert saved["mode"] == "live"
+        strict_hygiene = validate_receipt(saved, strict=True)
+        assert strict_hygiene.passed_strict() is True
+        assert all(
+            entry.startswith("Verifiable:") for entry in saved["settlement_metadata"]["falsifiers"]
+        )
+        assert not any(
+            "Revisit if evidence disproves the chosen path for:" in entry
+            for entry in saved["settlement_metadata"]["falsifiers"]
+        )
 
         output = capsys.readouterr().out
         assert "Run mode: live" in output

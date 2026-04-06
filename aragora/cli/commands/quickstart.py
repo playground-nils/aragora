@@ -27,6 +27,7 @@ import uuid
 import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, TextIO, cast
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,13 @@ _TLS_VERIFICATION_ERROR_MARKERS: tuple[str, ...] = (
     "CERTIFICATE_VERIFY_FAILED",
     "certificate verify failed",
     "unable to get local issuer certificate",
+)
+_QUICKSTART_SETTLEMENT_REVIEW_DAYS = 30
+_QUICKSTART_STRICT_FALSIFIER_THRESHOLD = 0.8
+_QUICKSTART_SETTLEMENT_CONFIDENCE_CAP = 0.79
+_QUICKSTART_SETTLEMENT_REVIEW_NOTE = (
+    "Quickstart settlement metadata did not include explicit falsifiers; "
+    "settlement confidence was capped below the strict-review threshold."
 )
 
 
@@ -482,6 +490,71 @@ def _normalize_dissent_records(
     return _summarize_dissenting_views(reasons, participants), reasons
 
 
+def _settlement_value_is_blank(value: Any) -> bool:
+    """Identify settlement fields that still need a canonical default."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
+def _normalize_quickstart_settlement_confidence(settlement_metadata: dict[str, Any]) -> None:
+    """Fail closed for sparse quickstart receipts instead of inventing falsifiers."""
+    falsifiers = settlement_metadata.get("falsifiers")
+    if isinstance(falsifiers, list) and falsifiers:
+        return
+
+    try:
+        confidence = float(settlement_metadata.get("confidence", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    if confidence >= _QUICKSTART_STRICT_FALSIFIER_THRESHOLD:
+        settlement_metadata["confidence"] = min(
+            confidence,
+            _QUICKSTART_SETTLEMENT_CONFIDENCE_CAP,
+        )
+
+    review_notes = settlement_metadata.get("review_notes")
+    if not isinstance(review_notes, list):
+        review_notes = []
+        settlement_metadata["review_notes"] = review_notes
+    if _QUICKSTART_SETTLEMENT_REVIEW_NOTE not in review_notes:
+        review_notes.append(_QUICKSTART_SETTLEMENT_REVIEW_NOTE)
+
+
+def _build_quickstart_settlement_metadata(
+    *,
+    settlement_metadata: Any,
+    debate_result: Any,
+    receipt_context: Any | None,
+    timestamp: str,
+) -> dict[str, Any]:
+    """Capture settlement metadata via the canonical settlement tracker."""
+    from aragora.debate.settlement import EpistemicSettlementTracker
+
+    tracker = EpistemicSettlementTracker()
+    captured = tracker.capture_settlement(
+        debate_result,
+        receipt_context,
+        review_horizon_days=_QUICKSTART_SETTLEMENT_REVIEW_DAYS,
+        settled_at=timestamp,
+    ).to_dict()
+
+    existing = dict(settlement_metadata) if isinstance(settlement_metadata, dict) else {}
+    normalized = dict(existing)
+    for key, value in captured.items():
+        if _settlement_value_is_blank(normalized.get(key)):
+            normalized[key] = value
+    if _settlement_value_is_blank(normalized.get("falsifiers")):
+        normalized["falsifiers"] = []
+        _normalize_quickstart_settlement_confidence(normalized)
+    return normalized
+
+
 def _build_quickstart_receipt_payload(result: dict[str, Any]) -> dict[str, Any]:
     """Normalize quickstart debate results into a receipt-compatible artifact payload."""
     from aragora.gauntlet.receipt_models import ConsensusProof, DecisionReceipt, ProvenanceRecord
@@ -569,6 +642,30 @@ def _build_quickstart_receipt_payload(result: dict[str, Any]) -> dict[str, Any]:
         ),
     )
 
+    settlement_result = SimpleNamespace(
+        debate_id=str(payload.get("debate_id") or receipt_id),
+        confidence=confidence,
+        consensus_reached=bool(consensus),
+        winner=str(payload.get("winner") or "") or None,
+        participants=participants,
+        dissenting_views=dissenting_views,
+        final_answer=str(payload.get("verdict_reasoning") or summary),
+        unresolved_tensions=list(payload.get("unresolved_tensions", []) or []),
+        convergence_similarity=float(payload.get("convergence_similarity", 1.0) or 1.0),
+        claims_kernel=payload.get("claims_kernel"),
+        epistemic_hygiene=payload.get("epistemic_hygiene"),
+        verification_criteria=_coerce_string_list(payload.get("verification_criteria")),
+    )
+    settlement_receipt_context = SimpleNamespace(
+        consensus_proof=SimpleNamespace(dissenting_agents=dissenting_agents)
+    )
+    settlement_metadata = _build_quickstart_settlement_metadata(
+        settlement_metadata=payload.get("settlement_metadata"),
+        debate_result=settlement_result,
+        receipt_context=settlement_receipt_context,
+        timestamp=timestamp,
+    )
+
     if has_receipt_contract:
         canonical = dict(payload)
     else:
@@ -633,6 +730,7 @@ def _build_quickstart_receipt_payload(result: dict[str, Any]) -> dict[str, Any]:
             ],
             cost_summary=payload.get("cost_summary"),
             thinking_traces=payload.get("thinking_traces"),
+            settlement_metadata=settlement_metadata,
             config_used=(
                 payload.get("config_used", {})
                 if isinstance(payload.get("config_used"), dict)
@@ -653,6 +751,7 @@ def _build_quickstart_receipt_payload(result: dict[str, Any]) -> dict[str, Any]:
     canonical["agent_votes"] = votes
     canonical["consensus"] = bool(consensus)
     canonical["consensus_reached"] = bool(consensus)
+    canonical["settlement_metadata"] = settlement_metadata
     canonical["receipt"] = {
         "id": str(canonical.get("receipt_id") or receipt_id),
         "artifact_hash": str(canonical.get("artifact_hash") or ""),
@@ -745,6 +844,10 @@ async def _run_demo_debate(question: str, rounds: int) -> dict[str, Any]:
         "votes": [],
         "consensus": True,
         "consensus_reached": True,
+        "verification_criteria": [
+            "Guardrail metrics remain within agreed thresholds during the initial rollout phase.",
+            "Rollback indicators stay clear after the first production release.",
+        ],
         "receipt": {
             "id": receipt_id,
             "confidence": 0.85,
@@ -1036,6 +1139,15 @@ def _build_live_receipt(
         dissenting_agents = []
 
     rounds_used = int(getattr(result, "rounds_used", 0) or rounds)
+    settlement_receipt_context = SimpleNamespace(
+        consensus_proof=SimpleNamespace(dissenting_agents=dissenting_agents)
+    )
+    settlement_metadata = _build_quickstart_settlement_metadata(
+        settlement_metadata=getattr(result, "settlement_metadata", None),
+        debate_result=result,
+        receipt_context=settlement_receipt_context,
+        timestamp=timestamp,
+    )
     receipt = DecisionReceipt(
         receipt_id=receipt_id,
         gauntlet_id=receipt_id,
@@ -1082,6 +1194,7 @@ def _build_live_receipt(
             "tokens_used": int(getattr(result, "total_tokens", 0) or 0),
         },
         thinking_traces=_extract_thinking_traces(result),
+        settlement_metadata=settlement_metadata,
         config_used={
             "mode": "quickstart-live",
             "rounds": rounds_used,
@@ -1098,6 +1211,7 @@ def _build_live_receipt(
             "summary": final_answer,
             "dissent": dissent,
             "mode": "live",
+            "settlement_metadata": settlement_metadata,
             "receipt": {
                 "id": receipt.receipt_id,
                 "artifact_hash": receipt.artifact_hash,
