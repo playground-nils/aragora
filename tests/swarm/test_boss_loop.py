@@ -3838,3 +3838,209 @@ async def test_dispatch_backbone_failure_does_not_block():
         result = await loop._dispatch_issue(issue, _fresh_result(fresh=True))
 
     assert result["status"] == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Draft PR promotion tests
+# ---------------------------------------------------------------------------
+
+
+class TestConvertPrToDraft:
+    """Tests for _convert_pr_to_draft."""
+
+    def test_converts_pr_to_draft_on_success(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        worker_result: dict[str, Any] = {
+            "pr_url": "https://github.com/synaptent/aragora/pull/42",
+        }
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            loop._convert_pr_to_draft(worker_result)
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["gh", "pr", "ready", "--undo", "42", "-R", "synaptent/aragora"]
+        assert worker_result.get("draft_converted") is True
+
+    def test_no_op_when_no_pr_url(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        worker_result: dict[str, Any] = {"status": "completed"}
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            loop._convert_pr_to_draft(worker_result)
+        mock_run.assert_not_called()
+        assert "draft_converted" not in worker_result
+
+    def test_handles_already_draft(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        worker_result: dict[str, Any] = {
+            "pr_url": "https://github.com/synaptent/aragora/pull/7",
+        }
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(
+                returncode=1, stdout="", stderr="already a draft"
+            )
+            loop._convert_pr_to_draft(worker_result)
+        assert worker_result.get("draft_converted") is True
+
+    def test_handles_gh_failure_gracefully(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        worker_result: dict[str, Any] = {
+            "pr_url": "https://github.com/synaptent/aragora/pull/7",
+        }
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=1, stdout="", stderr="network error")
+            loop._convert_pr_to_draft(worker_result)
+        assert "draft_converted" not in worker_result
+
+    def test_handles_subprocess_exception(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        worker_result: dict[str, Any] = {
+            "pr_url": "https://github.com/synaptent/aragora/pull/7",
+        }
+        with patch("aragora.swarm.boss_loop.subprocess.run", side_effect=OSError("fail")):
+            loop._convert_pr_to_draft(worker_result)
+        assert "draft_converted" not in worker_result
+
+
+class TestAllRequiredChecksPassed:
+    """Tests for _all_required_checks_passed."""
+
+    def test_all_checks_pass(self) -> None:
+        checks_json = json.dumps(
+            [
+                {"name": "lint", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "typecheck", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "sdk-parity", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "Generate & Validate", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {
+                    "name": "TypeScript SDK Type Check",
+                    "state": "COMPLETED",
+                    "conclusion": "SUCCESS",
+                },
+                {"name": "other-check", "state": "COMPLETED", "conclusion": "FAILURE"},
+            ]
+        )
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout=checks_json, stderr="")
+            assert BossLoop._all_required_checks_passed(42, "synaptent/aragora") is True
+
+    def test_missing_check_fails(self) -> None:
+        checks_json = json.dumps(
+            [
+                {"name": "lint", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "typecheck", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "sdk-parity", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "Generate & Validate", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                # TypeScript SDK Type Check is missing
+            ]
+        )
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout=checks_json, stderr="")
+            assert BossLoop._all_required_checks_passed(42, "synaptent/aragora") is False
+
+    def test_failed_check_fails(self) -> None:
+        checks_json = json.dumps(
+            [
+                {"name": "lint", "state": "COMPLETED", "conclusion": "FAILURE"},
+                {"name": "typecheck", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "sdk-parity", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "Generate & Validate", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {
+                    "name": "TypeScript SDK Type Check",
+                    "state": "COMPLETED",
+                    "conclusion": "SUCCESS",
+                },
+            ]
+        )
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout=checks_json, stderr="")
+            assert BossLoop._all_required_checks_passed(42, "synaptent/aragora") is False
+
+    def test_gh_command_failure(self) -> None:
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=1, stdout="", stderr="error")
+            assert BossLoop._all_required_checks_passed(42, "synaptent/aragora") is False
+
+    def test_subprocess_exception(self) -> None:
+        with patch("aragora.swarm.boss_loop.subprocess.run", side_effect=OSError("fail")):
+            assert BossLoop._all_required_checks_passed(42, "synaptent/aragora") is False
+
+
+class TestPromoteReadyDrafts:
+    """Tests for _promote_ready_drafts."""
+
+    def test_promotes_draft_with_all_checks_passing(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        draft_list_json = json.dumps([{"number": 10}, {"number": 20}])
+        checks_10 = json.dumps(
+            [
+                {"name": "lint", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "typecheck", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "sdk-parity", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "Generate & Validate", "state": "COMPLETED", "conclusion": "SUCCESS"},
+                {
+                    "name": "TypeScript SDK Type Check",
+                    "state": "COMPLETED",
+                    "conclusion": "SUCCESS",
+                },
+            ]
+        )
+        checks_20 = json.dumps(
+            [
+                {"name": "lint", "state": "COMPLETED", "conclusion": "FAILURE"},
+            ]
+        )
+
+        def fake_run(cmd, **kw):
+            if "list" in cmd:
+                return SimpleNamespace(returncode=0, stdout=draft_list_json, stderr="")
+            if "checks" in cmd:
+                if "10" in cmd:
+                    return SimpleNamespace(returncode=0, stdout=checks_10, stderr="")
+                return SimpleNamespace(returncode=0, stdout=checks_20, stderr="")
+            # gh pr ready (promote)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("aragora.swarm.boss_loop.subprocess.run", side_effect=fake_run):
+            promoted = loop._promote_ready_drafts()
+
+        assert promoted == [10]
+
+    def test_no_repo_returns_empty(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo=None))
+        result = loop._promote_ready_drafts()
+        assert result == []
+
+    def test_gh_list_failure_returns_empty(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=1, stdout="", stderr="error")
+            result = loop._promote_ready_drafts()
+        assert result == []
+
+    def test_empty_draft_list(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        with patch("aragora.swarm.boss_loop.subprocess.run") as mock_run:
+            mock_run.return_value = SimpleNamespace(returncode=0, stdout="[]", stderr="")
+            result = loop._promote_ready_drafts()
+        assert result == []
+
+
+class TestPostprocessConvertsToDraft:
+    """Verify _postprocess_issue_result calls _convert_pr_to_draft."""
+
+    def test_postprocess_calls_convert(self) -> None:
+        loop = BossLoop(config=BossLoopConfig(repo="synaptent/aragora"))
+        issue = _make_issue(number=99)
+        worker_result: dict[str, Any] = {
+            "status": "completed",
+            "pr_url": "https://github.com/synaptent/aragora/pull/99",
+        }
+        with (
+            patch.object(loop, "_maybe_publish_deliverable", return_value=None),
+            patch.object(loop, "_maybe_comment_published_deliverable", return_value=None),
+            patch.object(loop, "_maybe_auto_close_already_done_issue", return_value=None),
+            patch.object(loop, "_promote_published_deliverable"),
+            patch.object(loop, "_convert_pr_to_draft") as mock_convert,
+        ):
+            loop._postprocess_issue_result(issue, worker_result)
+        mock_convert.assert_called_once_with(worker_result)
