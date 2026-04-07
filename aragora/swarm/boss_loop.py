@@ -283,7 +283,7 @@ class BossLoopConfig:
     # Autonomous post-processing: publish verified branch deliverables and
     # optionally close already-resolved no-op issues.
     auto_publish_deliverables: bool = False
-    max_open_auto_publish_prs: int = 1
+    max_open_auto_publish_prs: int = 4
     auto_close_already_done_issues: bool = False
 
     # Reporting
