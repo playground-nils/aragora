@@ -3778,7 +3778,11 @@ class TestRunnerHeartbeatRefresh:
 
         reg = data["registrations"][0]
         assert reg["available"] is False
+        assert reg["updated_at"] != old_ts
+        assert reg["heartbeat_at"] != old_ts
         assert reg["freshness_status"] == "unavailable"
+        assert reg["updated_at"] != old_ts
+        assert reg["heartbeat_at"] != old_ts
 
     def test_heartbeat_refresh_called_during_run(self, tmp_path):
         """The main run() loop calls _refresh_runner_heartbeats each iteration."""
