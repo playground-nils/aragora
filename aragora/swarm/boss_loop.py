@@ -3277,9 +3277,10 @@ class BossLoop:
             pr_url = self._published_pr_url(worker_result)
             self._emit_lane_receipt(worker_result, issue_dict, elapsed_seconds)
 
-            # Published PR = terminal: the worker produced a concrete deliverable
-            # that is now open for human review.  Do NOT retry the issue.
-            if has_deliverable and pr_url:
+            # Deliverable = terminal: the worker produced a concrete artifact
+            # (commit, branch, or PR).  Do NOT retry the issue — it already
+            # has work product that either needs review or was published.
+            if has_deliverable:
                 self._completed_issues.append(issue_dict)
                 self._consecutive_failures = 0
                 # Mark the issue as exhausted so it is never re-dispatched in
@@ -3290,9 +3291,10 @@ class BossLoop:
                 )
                 self._log_value_outcome(issue_dict, "completed", elapsed_seconds)
                 logger.info(
-                    "boss_loop_terminal_pr issue=#%s pr=%s",
+                    "boss_loop_terminal_deliverable issue=#%s pr=%s deliverable_type=%s",
                     issue_dict.get("number", "?"),
-                    pr_url,
+                    pr_url or "(pending publish)",
+                    normalized_deliverable_type,
                 )
                 self._append_iteration_metrics(
                     iteration=iteration,
@@ -3310,8 +3312,9 @@ class BossLoop:
                     stop_reason=None,
                     needs_human_reasons=[],
                     next_actions=[
-                        f"Terminal: PR {pr_url} published for issue "
-                        f"#{issue_dict.get('number', '?')}. Proceeding to next issue."
+                        f"Terminal: deliverable ({normalized_deliverable_type}) for issue "
+                        f"#{issue_dict.get('number', '?')}"
+                        f"{f' PR {pr_url}' if pr_url else ''}. Proceeding to next issue."
                     ],
                     elapsed_seconds=elapsed_seconds,
                     worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
