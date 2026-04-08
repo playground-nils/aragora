@@ -2,15 +2,15 @@
 Batch document upload and processing endpoint handlers.
 
 Endpoints for enterprise document ingestion:
-- POST /api/documents/batch - Upload multiple documents
-- GET /api/documents/batch/{job_id} - Get batch job status
-- GET /api/documents/batch/{job_id}/results - Get batch job results
-- DELETE /api/documents/batch/{job_id} - Cancel a batch job
-- GET /api/documents/{doc_id}/chunks - Get document chunks
-- GET /api/documents/{doc_id}/context - Get LLM-ready context
-- GET /api/documents/processing/stats - Get processing statistics
-- GET /api/knowledge/jobs - Get knowledge processing jobs
-- GET /api/knowledge/jobs/{job_id} - Get knowledge job status
+- POST /api/v1/documents/batch - Upload multiple documents
+- GET /api/v1/documents/batch/{job_id} - Get batch job status
+- GET /api/v1/documents/batch/{job_id}/results - Get batch job results
+- DELETE /api/v1/documents/batch/{job_id} - Cancel a batch job
+- GET /api/v1/documents/{doc_id}/chunks - Get document chunks
+- GET /api/v1/documents/{doc_id}/context - Get LLM-ready context
+- GET /api/v1/documents/processing/stats - Get processing statistics
+- GET /api/v1/knowledge/jobs - Get knowledge processing jobs
+- GET /api/v1/knowledge/jobs/{job_id} - Get knowledge job status
 """
 
 from __future__ import annotations

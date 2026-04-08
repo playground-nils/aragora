@@ -8,8 +8,8 @@ Tests the batch document API endpoints including:
 - GET /api/v1/documents/{doc_id}/chunks - Get document chunks
 - GET /api/v1/documents/{doc_id}/context - Get LLM-ready context
 - GET /api/v1/documents/processing/stats - Get processing statistics
-- GET /api/knowledge/jobs - Get knowledge processing jobs
-- GET /api/knowledge/jobs/{job_id} - Get knowledge job status
+- GET /api/v1/knowledge/jobs - Get knowledge processing jobs
+- GET /api/v1/knowledge/jobs/{job_id} - Get knowledge job status
 
 Also tests:
 - can_handle() route matching
