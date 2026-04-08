@@ -168,6 +168,38 @@ class TestMergePr:
 
 
 # ---------------------------------------------------------------------------
+# _merge_pr
+# ---------------------------------------------------------------------------
+
+
+class TestMergePr:
+    def test_pins_merge_to_reviewed_head_commit(self):
+        with patch("aragora.swarm.merge_arbiter._run_gh") as mock_gh:
+            mock_gh.return_value = _make_gh_result()
+            success, reason = _merge_pr(
+                12,
+                "owner/repo",
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            )
+        assert success is True
+        assert reason == "merged"
+        mock_gh.assert_called_once_with(
+            [
+                "pr",
+                "merge",
+                "12",
+                "--repo",
+                "owner/repo",
+                "--admin",
+                "--squash",
+                "--delete-branch",
+                "--match-head-commit",
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            ]
+        )
+
+
+# ---------------------------------------------------------------------------
 # _evaluate_pr — all checks passing → merge
 # ---------------------------------------------------------------------------
 
