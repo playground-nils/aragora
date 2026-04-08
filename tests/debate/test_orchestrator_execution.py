@@ -929,7 +929,7 @@ class TestDebateExecutionState:
         assert state.ctx == ctx
         assert state.gupp_bead_id is None
         assert state.gupp_hook_entries == {}
-        assert state.debate_status == "completed"
+        assert state.debate_status == "pending"
         assert state.debate_start_time == 0.0
 
     def test_state_with_optional_fields(self):
