@@ -187,7 +187,35 @@ def _evaluate_pr(pr: dict, config: MergeArbiterConfig) -> MergeResult:
     is_draft: bool = pr.get("isDraft", False)
 
     if is_draft:
-        return MergeResult(pr_number, branch, False, "draft PR requires manual promotion")
+        # Auto-promote drafts: check if required checks pass, then mark ready
+        checks = _get_check_status(pr_number, config.repo)
+        if checks:
+            missing, failing = _classify_required_checks(checks)
+            if not missing and not failing:
+                result = subprocess.run(
+                    ["gh", "pr", "ready", str(pr_number), "-R", config.repo],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    logger.info("Promoted draft PR #%d to ready", pr_number)
+                    is_draft = False
+                    # Fall through to merge logic below
+                else:
+                    return MergeResult(
+                        pr_number, branch, False, f"draft promotion failed: {result.stderr.strip()}"
+                    )
+            else:
+                reason_parts = []
+                if missing:
+                    reason_parts.append(f"missing: {', '.join(missing)}")
+                if failing:
+                    reason_parts.append(f"failing: {', '.join(failing)}")
+                return MergeResult(
+                    pr_number, branch, False, f"draft waiting on checks ({'; '.join(reason_parts)})"
+                )
+        else:
+            return MergeResult(pr_number, branch, False, "draft with no checks yet")
 
     checks = _get_check_status(pr_number, config.repo)
     if not checks:

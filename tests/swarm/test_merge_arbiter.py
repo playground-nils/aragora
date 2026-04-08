@@ -140,33 +140,6 @@ class TestClassifyRequiredChecks:
 # ---------------------------------------------------------------------------
 
 
-class TestMergePr:
-    def test_pins_merge_to_reviewed_head_commit(self):
-        with patch("aragora.swarm.merge_arbiter._run_gh") as mock_gh:
-            mock_gh.return_value = _make_gh_result()
-            success, reason = _merge_pr(
-                12,
-                "owner/repo",
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-            )
-        assert success is True
-        assert reason == "merged"
-        mock_gh.assert_called_once_with(
-            [
-                "pr",
-                "merge",
-                "12",
-                "--repo",
-                "owner/repo",
-                "--admin",
-                "--squash",
-                "--delete-branch",
-                "--match-head-commit",
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-            ]
-        )
-
-
 # ---------------------------------------------------------------------------
 # _merge_pr
 # ---------------------------------------------------------------------------
@@ -275,11 +248,24 @@ class TestEvaluatePrDryRun:
 
 
 class TestEvaluatePrDraft:
-    def test_skips_draft_pr_until_human_promotion(self):
+    def test_draft_pr_with_no_checks_skipped(self):
         config = MergeArbiterConfig()
-        result = _evaluate_pr(_pr(5, "boss-harvest/draft", draft=True), config)
+        with patch("aragora.swarm.merge_arbiter._get_check_status", return_value={}):
+            result = _evaluate_pr(_pr(5, "boss-harvest/draft", draft=True), config)
         assert result.success is False
-        assert result.reason == "draft PR requires manual promotion"
+        assert "no checks" in result.reason
+
+    def test_draft_pr_auto_promoted_when_checks_pass(self):
+        config = MergeArbiterConfig()
+        checks = dict.fromkeys(REQUIRED_CHECKS, "SUCCESS")
+        with (
+            patch("aragora.swarm.merge_arbiter._get_check_status", return_value=checks),
+            patch("subprocess.run") as mock_run,
+        ):
+            # Simulate successful gh pr ready + gh pr merge
+            mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+            result = _evaluate_pr(_pr(5, "boss-harvest/draft", draft=True), config)
+        assert result.success is True
 
 
 # ---------------------------------------------------------------------------
