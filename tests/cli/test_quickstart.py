@@ -1288,9 +1288,13 @@ class TestCmdQuickstart:
                 return_value=[("gemini", None)],
             ),
             patch(
+                "aragora.cli.commands.quickstart._can_reach_provider_tls",
+                new=AsyncMock(return_value=(True, None)),
+            ),
+            patch(
                 "aragora.cli.commands.quickstart._run_live_debate",
                 side_effect=RuntimeError("Live debate failed: CERTIFICATE_VERIFY_FAILED"),
-            ),
+            ) as mock_live_debate,
             patch(
                 "aragora.cli.commands.quickstart._run_demo_debate",
                 return_value=mock_demo_result,
@@ -1298,6 +1302,7 @@ class TestCmdQuickstart:
         ):
             cmd_quickstart(args)
 
+        mock_live_debate.assert_called_once()
         output = capsys.readouterr().out
         assert "Falling back to demo" in output
         assert "RESULT" in output  # Demo result was displayed
@@ -1393,10 +1398,11 @@ class TestCmdQuickstart:
             patch(
                 "aragora.cli.commands.quickstart._run_live_debate",
                 side_effect=RuntimeError("Live debate timed out after 120s"),
-            ),
+            ) as mock_live_debate,
         ):
             cmd_quickstart(args)
 
+        mock_live_debate.assert_called_once()
         artifact_path = tmp_path / ".aragora" / "receipts" / "quickstart-demo-receipt.json"
         assert artifact_path.exists()
         saved = json.loads(artifact_path.read_text())
