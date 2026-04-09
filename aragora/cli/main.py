@@ -144,6 +144,10 @@ def main() -> None:
     # fallback routing messages stay hidden during normal operation.
     log_level = logging.DEBUG if getattr(args, "verbose", False) else logging.WARNING
     logging.basicConfig(level=log_level, format="%(levelname)s %(name)s: %(message)s")
+    # Suppress noisy/dangerous third-party debug logs — botocore dumps
+    # full Secrets Manager responses (including plaintext secrets) at DEBUG.
+    for noisy_logger in ("botocore", "boto3", "urllib3", "s3transfer"):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
     args.func(args)
 
