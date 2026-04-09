@@ -67,6 +67,7 @@ class OutcomeSignal:
     needed_human_rescue: bool = False
 
     # Provenance
+    debate_id: str = ""
     timestamp: str = ""
     correlation_id: str = ""
 
