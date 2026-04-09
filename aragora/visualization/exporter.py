@@ -166,9 +166,11 @@ class RedisCacheBackend(ExportCacheBackend):
                 import redis
 
                 self._client = redis.from_url(self._redis_url, decode_responses=True)
-            except ImportError:
-                logger.warning("redis package not installed, falling back to in-memory cache")
-                raise
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Redis package required for export cache backend. "
+                    "Install with: pip install redis"
+                ) from exc
         return self._client
 
     def _make_key(self, debate_id: str, format_name: str, graph_hash: str) -> str:
@@ -267,7 +269,14 @@ def _get_cache_backend() -> ExportCacheBackend:
                         # Test connection
                         _cache_backend.get_stats()
                         logger.info("Using Redis backend for export cache")
-                    except (ImportError, ConnectionError, TimeoutError, OSError, ValueError) as e:
+                    except (
+                        ImportError,
+                        RuntimeError,
+                        ConnectionError,
+                        TimeoutError,
+                        OSError,
+                        ValueError,
+                    ) as e:
                         logger.warning("Redis unavailable (%s), using in-memory cache", e)
                         _cache_backend = InMemoryCacheBackend()
                 else:

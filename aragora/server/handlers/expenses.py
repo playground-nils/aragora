@@ -1079,6 +1079,11 @@ class ExpenseHandler(BaseHandler):
     - RBAC permission checks
     """
 
+    @staticmethod
+    def _extract_request_body(query_params: Any) -> dict[str, Any]:
+        """Extract request body from query_params for backwards compatibility."""
+        return query_params if isinstance(query_params, dict) else {}
+
     def __init__(self, ctx: dict | None = None):
         """Initialize handler with optional context."""
         self.ctx = ctx or {}
@@ -1233,7 +1238,7 @@ class ExpenseHandler(BaseHandler):
     ) -> MaybeAsyncHandlerResult:
         """Handle POST requests."""
         # Extract data from query_params for backwards compatibility
-        data = query_params if isinstance(query_params, dict) else {}
+        data = self._extract_request_body(query_params)
 
         # Check write permission for all POST requests
         if handler:
@@ -1276,7 +1281,7 @@ class ExpenseHandler(BaseHandler):
     ) -> MaybeAsyncHandlerResult:
         """Handle PUT requests."""
         # Extract data from query_params for backwards compatibility
-        data = query_params if isinstance(query_params, dict) else {}
+        data = self._extract_request_body(query_params)
 
         # Check write permission for all PUT requests
         if handler:
