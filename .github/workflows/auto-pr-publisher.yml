@@ -6,8 +6,9 @@ on:
       - "codex/**"
       - "factory/**"
       - "aragora/boss-harvest/**"
-  schedule:
-    - cron: "*/15 * * * *"
+  # Schedule disabled — push trigger is sufficient; cron caused 714 PR flood (2026-04-09)
+  # schedule:
+  #   - cron: "*/15 * * * *"
 
 permissions:
   contents: read
@@ -15,7 +16,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: auto-pr-publisher-${{ github.ref }}
+  group: auto-pr-publisher
   cancel-in-progress: false
 
 jobs:
