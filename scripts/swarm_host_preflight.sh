@@ -121,6 +121,5 @@ if [[ "${ARAGORA_PREFLIGHT_SKIP_WORKER:-0}" != "1" ]]; then
     echo "--- worker preflight (read/write/commit/push/pr) ---"
     python3 -m aragora.swarm.preflight --repo-root "${REPO_ROOT}" --agent "${WORKER_MODEL}"
 fi
-
 echo ""
 echo "preflight=ok"
