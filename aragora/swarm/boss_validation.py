@@ -3,6 +3,58 @@
 Provides utilities for sanitizing GitHub issue bodies for worker dispatch,
 extracting explicit validation contracts (acceptance criteria, test commands),
 running pre-dispatch validation commands, and discovering focused test files.
+
+Typed return structures
+-----------------------
+    CommandResult(TypedDict)    — per-command outcome; keys: ``command`` (str),
+        ``status`` (str: "passed"|"failed"|"timeout"|"error"),
+        optional ``returncode`` (int), optional ``detail`` (str).
+    PreDispatchResult(TypedDict) — aggregate result; keys: ``satisfied`` (bool),
+        ``results`` (list[CommandResult]).
+
+Validation functions
+--------------------
+Public (sorted by typical call order during dispatch):
+
+    assess_issue_body_sanitation(issue_body: str) -> tuple[bool, str | None]
+    sanitize_issue_body_for_dispatch(issue_body: str) -> str
+    extract_issue_validation_contract(issue_body: str) -> list[str]
+    extract_pre_dispatch_validation_commands(issue_body: str) -> list[str]
+    find_missing_pre_dispatch_validation_targets(
+        commands: list[str], *, repo_root: Path) -> list[str]
+    extract_declared_new_file_paths(issue_body: str) -> list[str]
+    run_pre_dispatch_validation_commands(
+        commands: list[str], *, cwd: Path, timeout_seconds: float
+    ) -> PreDispatchResult
+    discover_focused_tests(
+        repo_path: Path, *, base_ref: str = "origin/main") -> list[str]
+
+Private helpers (pure — no external dependencies):
+
+    _ordered_unique_strings(items: list[str]) -> list[str]
+    _normalize_validation_line(text: str) -> str
+    _match_issue_section_prefix(normalized_lower: str) -> str | None
+    _normalize_dispatch_text(lines: list[str]) -> str
+    _extract_task_block(lines: list[str]) -> list[str]
+    _compose_issue_dispatch_goal(
+        issue_number: int, issue_title: str, *,
+        issue_body: str = "", refined_prompt: str = "") -> str
+    _normalize_pre_dispatch_command(text: str) -> str
+    _should_replace_with_focused_tests(command: str) -> bool
+
+External dependencies (mock these in tests)
+--------------------------------------------
+    - :func:`_run_subprocess` — wraps :func:`subprocess.run`; used by
+      :func:`run_pre_dispatch_validation_commands` and
+      :func:`discover_focused_tests`.  Patch
+      ``boss_validation._run_subprocess`` to avoid real process spawning.
+    - :class:`pathlib.Path.exists` — called by
+      :func:`find_missing_pre_dispatch_validation_targets` and
+      :func:`discover_focused_tests` to check file presence on disk.
+      Supply a ``tmp_path`` fixture instead of mocking.
+
+All other functions are pure (no I/O, no subprocess calls) and need no
+mocking.
 """
 
 from __future__ import annotations
@@ -11,7 +63,7 @@ import logging
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +127,36 @@ _TASK_HEADER_RE = re.compile(r"^#{1,6}\s*task\b", re.IGNORECASE)
 _AUTO_DECOMPOSED_RE = re.compile(r"auto-decomposed|auto decomposed", re.IGNORECASE)
 
 
+# ---------------------------------------------------------------------------
+# Typed return structures for run_pre_dispatch_validation_commands
+# ---------------------------------------------------------------------------
+
+
+class _CommandResultBase(TypedDict):
+    """Required fields present on every command result entry."""
+
+    command: str
+    status: str  # "passed" | "failed" | "timeout" | "error"
+
+
+class CommandResult(_CommandResultBase, total=False):
+    """Single command outcome from :func:`run_pre_dispatch_validation_commands`.
+
+    *returncode* is present when the process completed (status "passed"/"failed").
+    *detail* is present when the process could not start (status "error").
+    """
+
+    returncode: int
+    detail: str
+
+
+class PreDispatchResult(TypedDict):
+    """Return type for :func:`run_pre_dispatch_validation_commands`."""
+
+    satisfied: bool
+    results: list[CommandResult]
+
+
 def _run_subprocess(
     args: list[str],
     *,
@@ -100,6 +182,11 @@ def _run_subprocess(
 
 
 def _ordered_unique_strings(items: list[str]) -> list[str]:
+    """Deduplicate *items* while preserving first-seen order.
+
+    Strips whitespace and drops empty strings.  Pure function — no external
+    dependencies.
+    """
     seen: set[str] = set()
     ordered: list[str] = []
     for item in items:
@@ -112,6 +199,11 @@ def _ordered_unique_strings(items: list[str]) -> list[str]:
 
 
 def _normalize_validation_line(text: str) -> str:
+    """Strip whitespace and remove Markdown bold markers (``**…**``).
+
+    Returns an empty string for falsy input.  Pure function — no external
+    dependencies.
+    """
     normalized = str(text or "").strip()
     if not normalized:
         return ""
@@ -121,6 +213,11 @@ def _normalize_validation_line(text: str) -> str:
 
 
 def _match_issue_section_prefix(normalized_lower: str) -> str | None:
+    """Return the matching ``_ISSUE_SECTION_PREFIXES`` entry, or ``None``.
+
+    *normalized_lower* should already be lowercased and colon-stripped.
+    Pure function — no external dependencies.
+    """
     for prefix in _ISSUE_SECTION_PREFIXES:
         if normalized_lower == prefix or normalized_lower.startswith(f"{prefix} "):
             return prefix
@@ -128,6 +225,10 @@ def _match_issue_section_prefix(normalized_lower: str) -> str | None:
 
 
 def _normalize_dispatch_text(lines: list[str]) -> str:
+    """Collapse consecutive blank lines and strip leading/trailing whitespace.
+
+    Pure function — no external dependencies.
+    """
     normalized: list[str] = []
     previous_blank = True
     for raw in lines:
@@ -144,6 +245,11 @@ def _normalize_dispatch_text(lines: list[str]) -> str:
 
 
 def _extract_task_block(lines: list[str]) -> list[str]:
+    """Extract non-empty lines under the first ``## Task`` heading.
+
+    Stops at the next heading (``#``).  Returns an empty list when no task
+    heading is found.  Pure function — no external dependencies.
+    """
     if not lines:
         return []
     start_idx: int | None = None
@@ -164,6 +270,14 @@ def _extract_task_block(lines: list[str]) -> list[str]:
 
 
 def assess_issue_body_sanitation(issue_body: str) -> tuple[bool, str | None]:
+    """Check whether *issue_body* is well-formed enough for worker dispatch.
+
+    Returns ``(True, None)`` on success, or ``(False, reason)`` where *reason*
+    is one of ``"empty_body"``, ``"auto_decomposed_missing_task"``,
+    ``"task_too_short"``, or ``"task_truncated"``.
+
+    Pure function — no external dependencies.
+    """
     body = str(issue_body or "").strip()
     if not body:
         return False, "empty_body"
@@ -221,6 +335,12 @@ def _compose_issue_dispatch_goal(
     issue_body: str = "",
     refined_prompt: str = "",
 ) -> str:
+    """Build the goal string sent to a worker lane.
+
+    *refined_prompt* takes precedence over *issue_body* when both are given.
+    Delegates to :func:`sanitize_issue_body_for_dispatch` for body cleanup.
+    Pure function — no external dependencies.
+    """
     header = f"[Issue #{issue_number}] {issue_title}".strip()
     body = str(refined_prompt or "").strip() or sanitize_issue_body_for_dispatch(issue_body)
     if body.startswith(header):
@@ -287,6 +407,12 @@ def extract_issue_validation_contract(issue_body: str) -> list[str]:
 
 
 def _normalize_pre_dispatch_command(text: str) -> str:
+    """Normalise a raw validation command extracted from issue text.
+
+    Strips backticks, trailing ``" passes."`` suffixes, and rewrites bare
+    ``aragora …`` invocations to ``python3 -m aragora.cli.main …``.
+    Pure function — no external dependencies.
+    """
     normalized = str(text).strip()
     if not normalized:
         return ""
@@ -368,9 +494,9 @@ def run_pre_dispatch_validation_commands(
     *,
     cwd: Path,
     timeout_seconds: float,
-) -> dict[str, Any]:
+) -> PreDispatchResult:
     """Execute bounded validation commands locally before spawning a worker lane."""
-    results: list[dict[str, Any]] = []
+    results: list[CommandResult] = []
     timeout = max(1, int(timeout_seconds))
     for command in commands:
         try:
@@ -470,6 +596,12 @@ def discover_focused_tests(
 
 
 def _should_replace_with_focused_tests(command: str) -> bool:
+    """Decide whether a broad ``pytest tests/`` command can be narrowed.
+
+    Returns ``False`` when the command already targets a specific file, uses
+    ``-k`` filtering, or is not a pytest invocation.
+    Pure function — no external dependencies.
+    """
     text = str(command or "").strip()
     lowered = text.lower()
     if "-k" in lowered:
