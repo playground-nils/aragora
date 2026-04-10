@@ -165,7 +165,7 @@ class OutcomeFeedbackRecorder:
         if self._km is not None:
             try:
                 self._km.ingest(outcome.to_dict())
-            except Exception:
+            except Exception:  # noqa: BLE001 - injected bridge implementations must not break feedback recording
                 logger.warning("Failed to ingest outcome to KM: %s", outcome.pipeline_id)
 
         # Bridge to ELO
@@ -179,7 +179,7 @@ class OutcomeFeedbackRecorder:
         if self._calibrator is not None:
             try:
                 self._calibrator.record_pipeline_outcome(outcome)
-            except Exception:
+            except Exception:  # noqa: BLE001 - injected bridge implementations must not break feedback recording
                 logger.warning("Failed to update calibrator: %s", outcome.pipeline_id)
 
     def get_recent_outcomes(
