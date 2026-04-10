@@ -61,6 +61,9 @@ def format_boss_ready_body(candidate: BossIssueCandidate) -> str:
         f"- Estimated complexity: {candidate.estimated_complexity}"
     )
 
+    # Fingerprint for exact dedup across runs
+    parts.append(f"<!-- fingerprint:{candidate.fingerprint} -->")
+
     return "\n\n".join(parts)
 
 
@@ -254,21 +257,15 @@ def main() -> None:
         for cat, count in sorted(by_cat.items()):
             print(f"    {cat}: {count}")
 
-    # 2. Deduplicate against existing issues
-    if not args.dry_run:
-        print("Fetching existing boss-ready issues...")
-        existing = fetch_existing_boss_issues(args.repo)
-        print(f"  {len(existing)} existing issues")
-    else:
-        existing = []
+    # 2. Deduplicate against existing issues (always fetch, even in dry-run)
+    print("Fetching existing boss-ready issues...")
+    existing = fetch_existing_boss_issues(args.repo)
+    print(f"  {len(existing)} existing issues")
 
-    # 3. Check PR conflicts
-    if not args.dry_run:
-        print("Fetching open PR files...")
-        pr_files = fetch_open_pr_files(args.repo)
-        print(f"  {len(pr_files)} files in open PRs")
-    else:
-        pr_files = set()
+    # 3. Check PR conflicts (always fetch, even in dry-run)
+    print("Fetching open PR files...")
+    pr_files = fetch_open_pr_files(args.repo)
+    print(f"  {len(pr_files)} files in open PRs")
 
     # 4. Filter
     filtered: list[tuple[BossIssueCandidate, str]] = []
