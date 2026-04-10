@@ -1553,23 +1553,45 @@ class BossLoop:
             )
 
             if result.should_decompose and result.subtasks:
-                for subtask in result.subtasks[:3]:  # Cap at 3 sub-issues (was 5)
-                    title = f"[from #{issue.number}] {subtask.title}"
-                    # Skip if a similar title already exists
+                for subtask in result.subtasks[:3]:  # Cap at 3 sub-issues
+                    # Validate subtask quality before creating an issue
+                    sub_desc = (subtask.description or "").strip()
+                    if len(sub_desc) < 40:
+                        logger.debug(
+                            "Skipping malformed subtask (description too short): %r",
+                            sub_desc[:80],
+                        )
+                        continue
+                    sub_title = (subtask.title or sub_desc[:60]).strip()[:80]
+                    title = f"[from #{issue.number}] {sub_title}"
                     if title.lower() in existing_titles:
                         continue
-                    scope_lines = (
-                        "\n".join(f"- `{f}`" for f in subtask.file_scope)
-                        if subtask.file_scope
-                        else "- (infer from context)"
-                    )
+                    valid_scope = [f for f in (subtask.file_scope or []) if f and "/" in f]
+                    if not valid_scope:
+                        logger.debug(
+                            "Skipping subtask with no valid file scope: %r",
+                            sub_title,
+                        )
+                        continue
+                    scope_lines = "\n".join(f"- `{f}`" for f in valid_scope)
+                    # Build specific validation command
+                    test_files = [f for f in valid_scope if f.startswith("tests/")]
+                    src_files = [
+                        f for f in valid_scope if f.endswith(".py") and not f.startswith("tests/")
+                    ]
+                    if test_files:
+                        validation_cmd = f"`python3 -m pytest {test_files[0]} -q`"
+                    elif src_files:
+                        validation_cmd = f"`ruff check {' '.join(src_files)}`"
+                    else:
+                        validation_cmd = "`pytest` on the changed files passes"
                     body = (
                         f"Auto-decomposed from #{issue.number} after {self.config.max_retries_per_issue} "
                         f"failed autonomous attempts.\n\n"
-                        f"## Task\n{subtask.description}\n\n"
+                        f"## Task\n{sub_desc}\n\n"
                         f"## Files\n{scope_lines}\n\n"
                         f"## Acceptance\n"
-                        f"`pytest` on the changed files passes\n\n"
+                        f"{validation_cmd}\n\n"
                         f"## Constraints\n"
                         f"- Single-file change preferred\n"
                         f"- Under 100 lines of new/changed code\n"
