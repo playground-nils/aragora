@@ -126,7 +126,7 @@ class OutcomeSignalBus:
         for handler in handlers:
             try:
                 handler(signal)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - subscriber callbacks are external and must not break the bus
                 logger.debug("Signal handler failed: %s", exc)
 
     def subscribe(self, key: str, handler: SignalHandler) -> None:
@@ -162,7 +162,14 @@ class OutcomeSignalBus:
                         **{k: v for k, v in data.items() if k in OutcomeSignal.__dataclass_fields__}
                     )
                 )
-            except Exception:
+            except (
+                AttributeError,
+                json.JSONDecodeError,
+                OSError,
+                OverflowError,
+                TypeError,
+                ValueError,
+            ):
                 continue
         return list(reversed(signals))
 
