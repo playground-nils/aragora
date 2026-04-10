@@ -28,6 +28,7 @@ from aragora.security.capability_gate import (
     ensure_capability_approval_id,
 )
 from aragora.swarm.env_utils import git_safe_env
+from aragora.swarm.worker_contract import build_worker_contract
 from aragora.swarm.worker_process import (
     DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
     LaunchConfig,
@@ -164,6 +165,23 @@ class WorkerLauncher:
         # Allow task-scoped overrides, but keep GitHub auth out of worker envs.
         _strip_github_tokens(worker_env)
 
+        contract = build_worker_contract(
+            agent=agent,
+            config=self.config,
+            worktree_path=worktree_path,
+            env=worker_env,
+        )
+        contract.validate()
+        contract_dict = contract.to_dict()
+        contract_checksum = contract.checksum()
+        work_order["worker_contract"] = dict(contract_dict)
+        work_order["worker_contract_checksum"] = contract_checksum
+        logger.info(
+            "Worker contract: agent=%s checksum=%s",
+            agent,
+            contract_checksum,
+        )
+
         # Codex uses "-" as prompt arg and reads from stdin to avoid OS
         # ARG_MAX limits on long prompts with issue bodies + file lists.
         use_stdin_prompt = agent == "codex"
@@ -223,6 +241,8 @@ class WorkerLauncher:
             command=list(cmd),
             dispatch_action_id=dispatch_action_id,
             admin_approved=admin_approved,
+            worker_contract=contract_dict,
+            worker_contract_checksum=contract_checksum,
         )
         self._workers[work_order_id] = worker
         self._processes[work_order_id] = proc
@@ -1296,6 +1316,8 @@ class WorkerLauncher:
             expected_tests=[
                 str(item).strip() for item in expected_tests or [] if str(item).strip()
             ],
+            worker_contract={},
+            worker_contract_checksum="",
         )
 
         worker.stdout = cls._read_log_file(worktree_path, "stdout")
