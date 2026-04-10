@@ -294,9 +294,9 @@ class RabbitMQConnector(EnterpriseConnector):
             )
             logger.info("[RabbitMQ] Sent message to DLQ: %s", dlq_queue)
 
-        except (OSError, RuntimeError, ConnectionError, TimeoutError) as e:
-            logger.error("[RabbitMQ] Failed to send to DLQ: %s", e)
-            raise
+        except (OSError, RuntimeError, ConnectionError, TimeoutError) as exc:
+            logger.error("[RabbitMQ] Failed to send to DLQ: %s", exc)
+            raise RuntimeError(f"RabbitMQ DLQ publish to '{queue_name}' failed: {exc}") from exc
 
     async def connect(self) -> bool:
         """
