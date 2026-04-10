@@ -556,9 +556,9 @@ class RabbitMQConnector(EnterpriseConnector):
                             await message.reject(requeue=False)
                         self._nacked_count += 1
 
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
             logger.info("[RabbitMQ] Consumer cancelled")
-            raise
+            raise asyncio.CancelledError("RabbitMQ consumer cancelled during message consumption") from exc
 
     async def _process_with_resilience(
         self,
