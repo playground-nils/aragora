@@ -53,6 +53,7 @@ from aragora.swarm.boss_freshness import RunnerFreshnessResult, check_runner_fre
 from aragora.swarm.boss_validation import (  # noqa: F401
     _compose_issue_dispatch_goal,
     _should_replace_with_focused_tests,
+    check_pre_dispatch_gate,
     sanitize_issue_body_for_dispatch,
     extract_issue_validation_contract,
     extract_pre_dispatch_validation_commands,
@@ -281,6 +282,11 @@ class BossLoopConfig:
     # Micro-decomposition: break broad issues into single-file work orders.
     # Workers succeed on focused tasks but timeout on broad ones in large repos.
     use_micro_decomposition: bool = True
+
+    # Pre-dispatch gate: optionally use LLM parsing for issue bodies that do
+    # not fit the deterministic regex contract. Disabled by default to avoid
+    # hidden network calls, provider costs, and nondeterministic dispatch gates.
+    use_llm_pre_dispatch_gate: bool = False
 
     # Security: opt-in flags for dangerous worker CLI behavior (Crux 1).
     allow_claude_dangerously_skip_permissions: bool = False
@@ -4043,23 +4049,39 @@ class BossLoop:
 
         self._attach_issue_handoff_metadata(spec, issue)
 
-        missing_validation_targets = find_missing_pre_dispatch_validation_targets(
-            extract_pre_dispatch_validation_commands(issue.body or ""),
+        gate = await check_pre_dispatch_gate(
+            issue.body or "",
             repo_root=Path.cwd(),
+            use_llm=self.config.use_llm_pre_dispatch_gate,
         )
-        if missing_validation_targets:
-            declared_new_paths = set(extract_declared_new_file_paths(issue.body or ""))
-            unresolved_missing_targets = [
-                target for target in missing_validation_targets if target not in declared_new_paths
-            ]
-            if not unresolved_missing_targets:
+        logger.info(
+            "pre_dispatch_gate issue=#%s method=%s pass=%s sanitation=%s missing=%s",
+            issue.number,
+            gate["method"],
+            gate["pass"],
+            gate["sanitation_ok"],
+            gate.get("unresolved_missing", []),
+        )
+        if not gate["sanitation_ok"]:
+            return {
+                "status": "needs_human",
+                "outcome": "sanitation_failed",
+                "reasons": [
+                    f"Issue #{issue.number} failed sanitation: {gate.get('sanitation_reason', 'unknown')}"
+                ],
+                "next_actions": [
+                    "Rewrite the issue body with a clear task description.",
+                ],
+            }
+        if gate.get("unresolved_missing"):
+            if gate.get("missing_targets") and not gate["unresolved_missing"]:
                 logger.info(
                     "boss_loop_missing_validation_targets_allowed issue=#%s targets=%s",
                     issue.number,
-                    ", ".join(missing_validation_targets),
+                    ", ".join(gate["missing_targets"]),
                 )
             else:
-                targets_text = ", ".join(unresolved_missing_targets)
+                targets_text = ", ".join(gate["unresolved_missing"])
                 return {
                     "status": "needs_human",
                     "outcome": "verification_target_missing",
