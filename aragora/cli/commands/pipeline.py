@@ -453,7 +453,8 @@ def _run_self_improve_handoff(
     """Run extracted pipeline objectives through the self-improvement engine."""
     try:
         from aragora.nomic.self_improve import SelfImproveConfig, SelfImprovePipeline
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("SelfImprovePipeline import failed: %s", exc)
         print("\nSelfImprovePipeline unavailable.")
         print('Install nomic dependencies or use: aragora self-improve "<objective>"')
         return
@@ -602,7 +603,8 @@ def _run_pipeline_dry_run(ideas: list[str]) -> None:
 
         print(f"\nProvenance chain: {len(result.provenance)} links")
 
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("IdeaToExecutionPipeline import failed: %s", exc)
         print("\nIdeaToExecutionPipeline unavailable.")
         print("Install required dependencies or check aragora/pipeline/.")
         return
@@ -654,7 +656,8 @@ def _run_pipeline_execute(
 
         print()
 
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("IdeaToExecutionPipeline import failed: %s", exc)
         print("\nError: IdeaToExecutionPipeline unavailable.")
         print("Check that aragora/pipeline/ is properly installed.")
 
@@ -736,7 +739,8 @@ def _cmd_pipeline_self_improve(args: argparse.Namespace) -> None:
         subtasks = decomposition.subtasks
         print()
 
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("TaskDecomposer import failed: %s", exc)
         print("\nTaskDecomposer unavailable, skipping decomposition.")
         print()
 
@@ -760,7 +764,8 @@ def _cmd_pipeline_self_improve(args: argparse.Namespace) -> None:
                 print(f"     Rationale: {pg.rationale}")
         print()
 
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("MetaPlanner import failed: %s", exc)
         print("\nMetaPlanner unavailable, skipping priority debate.")
         print()
 
@@ -878,7 +883,8 @@ def _cmd_pipeline_self_improve(args: argparse.Namespace) -> None:
         print(f"\nProvenance chain: {len(result.provenance)} links")
         print(f"Duration: {result.duration:.1f}s")
 
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("IdeaToExecutionPipeline import failed: %s", exc)
         print("\nIdeaToExecutionPipeline unavailable.")
         print("Showing decomposition results only.")
 
@@ -1137,7 +1143,8 @@ def _cmd_pipeline_status(args: argparse.Namespace) -> None:
             print('  aragora pipeline run "Build rate limiter, Add caching"')
             print('  aragora pipeline self-improve "Improve test coverage"')
 
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("Pipeline module import failed: %s", exc)
         print("\nPipeline module unavailable.")
         print("Check that aragora/pipeline/ is properly installed.")
 
