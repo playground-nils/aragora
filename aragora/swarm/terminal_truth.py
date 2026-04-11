@@ -3,13 +3,148 @@
 Normalizes concrete deliverable detection, truthful terminal outcomes, and
 receipt expectations so boss, campaign, and reporter surfaces agree on what a
 terminal lane actually produced.
+
+RS-01 taxonomy: ``TerminalClass`` enum provides canonical failure/success
+classes for benchmarking, calibration, and operator dashboards.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# RS-01: Canonical terminal-truth taxonomy
+# ---------------------------------------------------------------------------
+
+
+class TerminalClass(str, Enum):
+    """Canonical terminal-truth classes for worker runs.
+
+    Three families:
+    - SUCCESS: worker produced a usable deliverable
+    - RESCUE: worker ran but needs human help to finish
+    - BLOCKED: worker could not start meaningfully
+    """
+
+    # Success
+    DELIVERABLE_PR_CREATED = "deliverable_pr_created"
+    DELIVERABLE_BRANCH_PUSHED = "deliverable_branch_pushed"
+    ISSUE_ALREADY_RESOLVED = "issue_already_resolved"
+
+    # Rescue (worker ran, partial or no output)
+    RESCUE_VERIFICATION_FAILED = "rescue_verification_failed"
+    RESCUE_WORKER_CRASH = "rescue_worker_crash"
+    RESCUE_TIMEOUT = "rescue_timeout"
+    RESCUE_NO_DELIVERABLE = "rescue_no_deliverable"
+    RESCUE_PUBLISH_DEFERRED = "rescue_publish_deferred"
+
+    # Blocked (never dispatched or instant rejection)
+    BLOCKED_SANITATION_FAILED = "blocked_sanitation_failed"
+    BLOCKED_VALIDATION_TARGET_MISSING = "blocked_validation_target_missing"
+    BLOCKED_NOT_DISPATCH_BOUNDED = "blocked_not_dispatch_bounded"
+    BLOCKED_NO_RUNNER = "blocked_no_runner"
+    BLOCKED_AUTH_FAILURE = "blocked_auth_failure"
+    BLOCKED_DECOMPOSITION_LIMIT = "blocked_decomposition_limit"
+
+    @property
+    def family(self) -> str:
+        if self.value.startswith("deliverable_") or self == self.ISSUE_ALREADY_RESOLVED:
+            return "success"
+        if self.value.startswith("rescue_"):
+            return "rescue"
+        return "blocked"
+
+    @property
+    def is_success(self) -> bool:
+        return self.family == "success"
+
+    @property
+    def is_actionable_failure(self) -> bool:
+        """True if repeated instances should become a product improvement."""
+        return self in {
+            self.RESCUE_VERIFICATION_FAILED,
+            self.RESCUE_WORKER_CRASH,
+            self.RESCUE_NO_DELIVERABLE,
+            self.BLOCKED_SANITATION_FAILED,
+            self.BLOCKED_VALIDATION_TARGET_MISSING,
+        }
+
+
+def classify_from_metrics(row: dict[str, Any]) -> TerminalClass:
+    """Classify a boss_metrics.jsonl row into the canonical taxonomy."""
+    status = str(row.get("worker_status", "")).strip().lower()
+    outcome = str(row.get("worker_outcome", "")).strip().lower()
+    publish = str(row.get("publish_action", "")).strip().lower()
+    files = int(row.get("files_changed", 0) or 0)
+    elapsed = float(row.get("elapsed_seconds", 0.0) or 0.0)
+    has_deliv = bool(row.get("has_deliverable", False))
+
+    if status == "completed":
+        if outcome == "pr_adopted" or "pr_created" in publish:
+            return TerminalClass.DELIVERABLE_PR_CREATED
+        if has_deliv or outcome == "deliverable_created":
+            return TerminalClass.DELIVERABLE_BRANCH_PUSHED
+        if outcome == "issue_already_resolved":
+            return TerminalClass.ISSUE_ALREADY_RESOLVED
+        return TerminalClass.RESCUE_NO_DELIVERABLE
+
+    if outcome == "sanitation_failed":
+        return TerminalClass.BLOCKED_SANITATION_FAILED
+    if outcome == "verification_target_missing":
+        return TerminalClass.BLOCKED_VALIDATION_TARGET_MISSING
+    if outcome == "blocked":
+        return TerminalClass.BLOCKED_NOT_DISPATCH_BOUNDED
+    if "no_fresh_runner" in outcome or "no_eligible" in outcome:
+        return TerminalClass.BLOCKED_NO_RUNNER
+    if "auth" in outcome:
+        return TerminalClass.BLOCKED_AUTH_FAILURE
+
+    if "crash" in outcome:
+        return TerminalClass.RESCUE_WORKER_CRASH
+    if outcome == "timeout":
+        return TerminalClass.RESCUE_TIMEOUT
+    if "deferred" in publish:
+        return TerminalClass.RESCUE_PUBLISH_DEFERRED
+    if files > 0 and not has_deliv:
+        return TerminalClass.RESCUE_VERIFICATION_FAILED
+    if elapsed < 30 and files == 0:
+        return TerminalClass.BLOCKED_SANITATION_FAILED
+
+    return TerminalClass.RESCUE_NO_DELIVERABLE
+
+
+def score_benchmark(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Score metrics rows against the B0 30-day target.
+
+    Target: no_rescue_rate >= 0.50, truthful_classification_rate == 1.0
+    """
+    if not rows:
+        return {"total": 0, "no_rescue_rate": 0.0}
+
+    records = [classify_from_metrics(r) for r in rows]
+    total = len(records)
+    successes = sum(1 for r in records if r.is_success)
+    families: dict[str, int] = {}
+    classes: dict[str, int] = {}
+    for r in records:
+        families[r.family] = families.get(r.family, 0) + 1
+        classes[r.value] = classes.get(r.value, 0) + 1
+
+    rate = successes / total if total else 0.0
+    return {
+        "total": total,
+        "successes": successes,
+        "no_rescue_rate": round(rate, 3),
+        "meets_30d_target": rate >= 0.50,
+        "families": families,
+        "classes": classes,
+        "actionable_failures": sum(1 for r in records if r.is_actionable_failure),
+    }
+
 
 _IN_FLIGHT_STATUSES: frozenset[str] = frozenset(
     {
