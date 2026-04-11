@@ -1750,7 +1750,7 @@ class BossLoop:
                         f"{validation_cmd}\n\n"
                         f"## Constraints\n"
                         f"- Single-file change preferred\n"
-                        f"- Under 100 lines of new/changed code\n"
+                        f"- Under 100 lines of new or changed code\n"
                         f"- Estimated complexity: {subtask.estimated_complexity}\n"
                     )
                     try:

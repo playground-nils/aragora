@@ -12,6 +12,32 @@ from typing import Any
 _FILE_SCOPE_HINT_RE = re.compile(r"(?:\./)?(?:[A-Za-z0-9_*?\[\]{}.-]+/)+[A-Za-z0-9_*?\[\]{}.-]+/?")
 _EXACT_FILE_SCOPE_RE = re.compile(r"(?:\./)?(?:[A-Za-z0-9_*?\[\]{}.-]+/)*[A-Za-z0-9_*?\[\]{}.-]+/?")
 _URL_RE = re.compile(r"https?://\S+")
+# English phrases with "/" that the path regex matches but are not file paths.
+_FALSE_POSITIVE_SCOPE_HINTS = frozenset(
+    {
+        "plugin/callback",
+        "new/changed",
+        "true/false",
+        "yes/no",
+        "pass/fail",
+        "read/write",
+        "input/output",
+        "before/after",
+        "start/stop",
+        "open/close",
+        "client/server",
+        "request/response",
+        "success/failure",
+        "enable/disable",
+        "add/remove",
+        "create/delete",
+        "push/pull",
+        "sync/async",
+        "public/private",
+        "internal/external",
+        "i/o",
+    }
+)
 _PATH_WRAPPER_CHARS = "`'\".,;:()[]{}<>"
 
 
@@ -81,6 +107,8 @@ class SwarmSpec:
         if not had_path_separator and "." not in clean:
             return None
         if _EXACT_FILE_SCOPE_RE.fullmatch(clean) is None:
+            return None
+        if clean.lower() in _FALSE_POSITIVE_SCOPE_HINTS:
             return None
         return clean
 

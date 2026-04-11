@@ -284,7 +284,7 @@ def scan_bare_except_handlers(
                     f"1. Read `{rel}` and identify each `except Exception:` handler\n"
                     f"2. Determine the specific exceptions that can be raised\n"
                     f"3. Replace with specific types (e.g., `ValueError`, `OSError`, `KeyError`)\n"
-                    f"4. If the broad catch is intentional (e.g., plugin/callback boundaries), "
+                    f"4. If the broad catch is intentional (e.g., plugin or callback boundaries), "
                     f"add `# noqa: BLE001` with a comment explaining why"
                 ),
                 file_scope=[rel],
