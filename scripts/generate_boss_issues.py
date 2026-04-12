@@ -26,10 +26,28 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from aragora.swarm.issue_scanner import BossIssueCandidate, scan_all  # noqa: E402
+from aragora.swarm.issue_upgrader import upgrade_issue_heuristic  # noqa: E402
 
 
 def format_boss_ready_body(candidate: BossIssueCandidate) -> str:
-    """Format a candidate into the proven boss-ready issue body."""
+    """Format a candidate into the proven boss-ready issue body.
+
+    For test_coverage candidates, uses the issue upgrader to generate
+    concrete, module-aware issue bodies instead of generic templates.
+    """
+    # Try to upgrade test_coverage issues with module-specific guidance
+    if candidate.category == "test_coverage":
+        upgraded = upgrade_issue_heuristic(
+            candidate.title,
+            f"## Task\n\n{candidate.description}\n\n### File Scope\n"
+            + "\n".join(f"- `{f}`" for f in candidate.file_scope),
+            repo_root=REPO_ROOT,
+        )
+        if upgraded:
+            body = upgraded.upgraded_body
+            body += f"\n\n<!-- fingerprint:{candidate.fingerprint} -->"
+            return body
+
     parts: list[str] = []
 
     # Task section
@@ -245,7 +263,9 @@ def main() -> None:
 
     # 1. Scan
     print(f"Scanning {repo_root}...")
-    candidates = scan_all(repo_root, categories=args.categories)
+    # Use min_success_rate=0.0 when upgrader is active — the upgrader transforms
+    # low-quality issues into high-quality ones, so historical rates don't apply
+    candidates = scan_all(repo_root, categories=args.categories, min_success_rate=0.0)
     print(
         f"  Found {len(candidates)} candidates across {len(set(c.category for c in candidates))} categories"
     )
