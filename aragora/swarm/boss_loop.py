@@ -74,18 +74,8 @@ UTC = timezone.utc
 _LANE_TELEMETRY = LaneTelemetryCollector()
 _GITHUB_ISSUE_URL_RE = re.compile(r"github\.com/(?P<repo>[^/]+/[^/]+)/issues/(?P<number>\d+)")
 _GITHUB_PR_URL_RE = re.compile(r"github\.com/[^/]+/[^/]+/pull/(?P<number>\d+)")
-
-# The 5 CI checks required for merge.  Draft PRs run only these;
-# ready PRs run the full 32-workflow suite.  The boss loop creates
-# PRs as drafts and auto-promotes them once these 5 pass.
 _REQUIRED_CHECK_NAMES: frozenset[str] = frozenset(
-    {
-        "lint",
-        "typecheck",
-        "sdk-parity",
-        "Generate & Validate",
-        "TypeScript SDK Type Check",
-    }
+    {"lint", "typecheck", "sdk-parity", "Generate & Validate", "TypeScript SDK Type Check"}
 )
 _ALREADY_DONE_MARKERS = (
     "already implemented",
@@ -208,42 +198,38 @@ class _BossDeliverableArtifact:
     urls: list[str] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# Boss Loop Config
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class BossLoopConfig:
     """Configuration for the long-running Boss loop."""
 
-    # Iteration bounds
     max_iterations: int = 50
     iteration_interval_seconds: float = 30.0
     auto_update_enabled: bool = False
     auto_update_interval_iterations: int = 10
 
-    # Runner freshness
     freshness_ttl_seconds: float = 3600.0  # 1 hour
     registry_path: str | None = None
 
-    # Issue feed
     repo: str | None = None
     label_filter: str | None = None
     issue_number: int | None = None
     issue_numbers: list[int] | None = None
     issue_limit: int = 25
     skip_labels: set[str] = field(
-        default_factory=lambda: {"wontfix", "duplicate", "invalid", "boss-stuck"}
+        default_factory=lambda: {
+            "wontfix",
+            "duplicate",
+            "invalid",
+            "boss-stuck",
+            "boss-quarantined",
+        }
     )
     require_labels: set[str] | None = None
     require_validation_contract: bool = True
 
-    # Retry / self-correction
     max_consecutive_failures: int = 3
     max_retries_per_issue: int = 3  # initial attempt + 1 ping-pong + 1 repair
 
-    # Dispatch
     target_branch: str = "main"
     budget_limit_usd: float = 5.0
     dispatch_enabled: bool = True
@@ -257,35 +243,18 @@ class BossLoopConfig:
     dispatch_max_ticks: int = 720
     max_parallel_dispatches: int = 1
 
-    # Autonomy: when True, treat needs_human with a deliverable as completed
-    # instead of stopping the loop. Only stop when there's genuinely no output.
     auto_continue_on_needs_human: bool = False
 
-    # Ping-pong: when a worker hits needs_human with no deliverable but a
-    # non-trivial transcript, retry with the OTHER agent type using a
-    # structured handoff prompt from the failed agent's output.
     enable_ping_pong_retry: bool = False
 
-    # Fix-forward: max repair attempts when verification fails.
-    # Each repair dispatches a targeted fix task using only the failing test output.
     max_repair_attempts: int = 2
 
-    # Verification: use focused tests (only files touched by the worker) instead
-    # of the full test suite.  Dramatically reduces false negatives from
-    # pre-existing failures in unrelated modules.
     use_focused_verification: bool = True
 
-    # Value-per-cost ranking: when True, rank eligible issues by estimated
-    # value/cost before selecting.  This pushes the loop toward high-leverage
-    # work instead of processing issues in arbitrary GitHub order.
     use_value_ranking: bool = True
 
-    # Scope conflict guardrail: skip issues whose inferred file scope already
-    # appears in an open PR or another issue selected in the same batch.
     avoid_open_pr_scope_conflicts: bool = True
 
-    # Micro-decomposition: break broad issues into single-file work orders.
-    # Workers succeed on focused tasks but timeout on broad ones in large repos.
     use_micro_decomposition: bool = True
 
     # Pre-dispatch gate: optionally use LLM parsing for issue bodies that do
@@ -308,7 +277,6 @@ class BossLoopConfig:
     max_open_auto_publish_prs: int = 20
     auto_close_already_done_issues: bool = False
 
-    # Decomposition guardrails
     max_decomposition_depth: int = 3
     max_total_sub_issues_per_run: int = 15
     max_decomposed_issue_ticks: int = 30
@@ -318,7 +286,6 @@ class BossLoopConfig:
     fast_fail_circuit_breaker_window: int = 5
     fast_fail_threshold_seconds: float = 30.0
 
-    # Reporting
     status_report_interval: int = 5  # every N iterations
     metrics_jsonl_path: str | None = ".aragora/overnight/boss_metrics.jsonl"
 
@@ -876,30 +843,29 @@ class BossLoop:
             metrics_path = Path(metrics_path_text)
             metrics_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Extract prompt/context instrumentation from work order data
             run_dict = worker_result.get("run")
             receipt_metadata = worker_result.get("receipt_metadata")
             prompt_chars = 0
             enriched_context_chars = 0
-            prompt_version = "v2"  # Context-first prompt (post a11848eac)
-            issue_title = (
-                str(receipt_metadata.get("issue_title", "")).strip()
+            prompt_version = "v2"
+            issue_title = str(
+                receipt_metadata.get("issue_title", "")
                 if isinstance(receipt_metadata, dict)
                 else ""
-            ) or str(worker_result.get("issue_title", "")).strip()
+            ).strip()
+            issue_title = issue_title or str(worker_result.get("issue_title", "")).strip()
             is_decomposed = bool(re.search(r"\[from #\d+\]", issue_title))
             cohort_tag = "B0-cohort" if issue_title.startswith("[B0-cohort]") else None
-            worker_outcome = str(worker_result.get("outcome", "")).strip()
-            has_deliverable = bool(worker_result.get("deliverable"))
             publish_action = (
                 str((worker_result.get("publish_result") or {}).get("action", "")).strip() or None
             )
             sanitizer_outcome = str(worker_result.get("sanitizer_outcome", "")).strip() or None
-            checks_failed = worker_result.get("checks_failed")
-            if not isinstance(checks_failed, list):
-                checks_failed = []
+            checks_failed = (
+                raw_checks
+                if isinstance(raw_checks := worker_result.get("checks_failed"), list)
+                else []
+            )
 
-            # Read prompt size from persisted WorkerProcess fields
             if isinstance(run_dict, dict):
                 for wo in run_dict.get("work_orders", []):
                     if isinstance(wo, dict):
@@ -910,7 +876,7 @@ class BossLoop:
                 "iteration": int(iteration),
                 "issue_number": issue_number,
                 "worker_status": str(worker_result.get("status", "")).strip() or "unknown",
-                "worker_outcome": worker_outcome or None,
+                "worker_outcome": str(worker_result.get("outcome", "")).strip() or None,
                 "elapsed_seconds": float(elapsed_seconds or 0.0),
                 "files_changed": files_changed,
                 "tests_run": tests_run,
@@ -921,15 +887,14 @@ class BossLoop:
                 "is_decomposed_issue": is_decomposed,
                 "deferred_queue_depth": len(self._deferred_publish_queue),
                 "sanitizer_outcome": sanitizer_outcome,
-                "sanitizer_checks_failed_count": len(
-                    [str(item).strip() for item in checks_failed if str(item).strip()]
+                "sanitizer_checks_failed_count": sum(
+                    1 for item in checks_failed if str(item).strip()
                 ),
                 "cohort_tag": cohort_tag,
-                "has_deliverable": has_deliverable,
+                "has_deliverable": bool(worker_result.get("deliverable")),
                 "publish_action": publish_action,
             }
 
-            # RS-01: classify terminal truth after all 14 fields are populated
             try:
                 terminal_class = classify_from_metrics(payload)
                 payload["terminal_class"] = terminal_class.value
@@ -1530,12 +1495,7 @@ class BossLoop:
         issue_number: int | str,
         issues: list[GitHubIssue],
     ) -> None:
-        """When an issue exhausts retries, try to decompose it into sub-issues.
-
-        Uses the TaskDecomposer to break the issue into smaller pieces, then
-        creates sub-issues on GitHub with the boss-ready label. If decomposition
-        fails or produces nothing useful, falls back to labeling boss-stuck.
-        """
+        """When an issue exhausts retries, try to decompose it into sub-issues."""
         import subprocess
 
         repo = self.config.repo or ""
@@ -1543,7 +1503,6 @@ class BossLoop:
         if not issue:
             return
 
-        # Guard: cap decomposition depth to prevent runaway recursion.
         lineage_root, decomposition_depth = self._decomposition_lineage(issue)
         if decomposition_depth >= self.config.max_decomposition_depth:
             self._label_boss_stuck(
@@ -1554,7 +1513,6 @@ class BossLoop:
             )
             return
 
-        # Guard: cap total sub-issues created per run to prevent runaway fan-out.
         if self._total_sub_issues_created >= self.config.max_total_sub_issues_per_run:
             logger.warning(
                 "Skipping decomposition for issue #%s: per-run budget of %d sub-issues exhausted",
@@ -1568,7 +1526,6 @@ class BossLoop:
             )
             return
 
-        # Check if a PR was already merged for this issue — if so, close it
         try:
             pr_check = subprocess.run(
                 [
@@ -1609,7 +1566,6 @@ class BossLoop:
             except Exception as exc:
                 logger.debug("Open PR scope lookup failed during auto-decomposition: %s", exc)
 
-        # Collect existing boss-ready issues to avoid duplicate fan-out.
         existing_titles: set[str] = set()
         existing_decomposition_signatures: list[dict[str, Any]] = []
         try:
@@ -2071,51 +2027,87 @@ class BossLoop:
 
     @staticmethod
     def _extract_file_scope_hints(body: str) -> list[str]:
-        """Extract file paths from an issue body.
-
-        Handles backtick-wrapped paths and strips escaped backticks from
-        GitHub markdown rendering.
-        """
+        """Extract backtick-wrapped repo paths from an issue body."""
         import re
 
-        # Strip escaped backticks that GitHub API sometimes returns
-        cleaned = body.replace("\\`", "`")
-        # Match paths starting with known top-level directories
         return re.findall(
             r"`((?:aragora|tests|scripts|docs|docs-site|sdk|contracts)/[a-zA-Z0-9_/.*-]+(?:\.\w+)?)`",
-            cleaned,
+            body.replace("\\`", "`"),
         )
 
     @staticmethod
-    def _label_boss_stuck(issue_number: int | str, repo: str, comment: str) -> None:
-        """Label an issue as boss-stuck, remove boss-ready, and comment."""
+    def _comment_and_update_issue(
+        issue_number: int | str,
+        repo: str,
+        comment: str,
+        *,
+        add_labels: tuple[str, ...] = (),
+        remove_labels: tuple[str, ...] = (),
+        close: bool = False,
+    ) -> None:
         import subprocess
 
+        label_args = [
+            arg
+            for flag, labels in (("--add-label", add_labels), ("--remove-label", remove_labels))
+            for label in labels
+            for arg in (flag, label)
+        ]
         try:
             subprocess.run(
                 ["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment],
                 capture_output=True,
                 timeout=15,
             )
-            # Add boss-stuck AND remove boss-ready — an issue should never be both
-            subprocess.run(
-                [
-                    "gh",
-                    "issue",
-                    "edit",
-                    str(issue_number),
-                    "--repo",
-                    repo,
-                    "--add-label",
-                    "boss-stuck",
-                    "--remove-label",
-                    "boss-ready",
-                ],
-                capture_output=True,
-                timeout=15,
-            )
+            if label_args:
+                subprocess.run(
+                    ["gh", "issue", "edit", str(issue_number), "--repo", repo, *label_args],
+                    capture_output=True,
+                    timeout=15,
+                )
+            if close:
+                subprocess.run(
+                    ["gh", "issue", "close", str(issue_number), "--repo", repo],
+                    capture_output=True,
+                    timeout=15,
+                )
         except Exception:
             pass
+
+    @classmethod
+    def _label_boss_stuck(cls, issue_number: int | str, repo: str, comment: str) -> None:
+        cls._comment_and_update_issue(
+            issue_number, repo, comment, add_labels=("boss-stuck",), remove_labels=("boss-ready",)
+        )
+
+    def _apply_sanitizer_issue_lifecycle(self, issue: GitHubIssue, *, sanitization: Any) -> None:
+        closed = sanitization.outcome is SanitizationOutcome.DROPPED
+        label = "boss-invalid" if closed else "boss-quarantined"
+        failed_checks = (
+            ", ".join(value for item in sanitization.checks_failed if (value := str(item).strip()))
+            or "none"
+        )
+        comment = (
+            f"Boss sanitizer {sanitization.outcome.value} issue #{issue.number}.\n\n"
+            f"- Reason: {sanitization.reason or 'unknown'}\n"
+            f"- Failed checks: {failed_checks}\n\n"
+            f"Boss removed `boss-ready`, added `{label}`, and "
+            f"{'closed the issue.' if closed else 'left the issue open for human review.'}"
+        )
+        issue.labels = [value for value in issue.labels if value not in {"boss-ready", label}] + [
+            label
+        ]
+        if closed:
+            issue.state = "CLOSED"
+        if repo := self._repo_slug_for_issue(issue):
+            self._comment_and_update_issue(
+                issue.number,
+                repo,
+                comment,
+                add_labels=(label,),
+                remove_labels=("boss-ready",),
+                close=closed,
+            )
 
     @staticmethod
     def _reuse_existing_published_branch_deliverable(
@@ -4457,19 +4449,23 @@ class BossLoop:
                 worker_result
             )
             has_deliverable = bool(normalized_deliverable_type)
+            sanitizer_outcome = str(worker_result.get("sanitizer_outcome", "")).strip().lower()
             raw_deliverable = worker_result.get("deliverable")
             has_untyped_deliverable = isinstance(raw_deliverable, dict) and bool(raw_deliverable)
             pr_url = self._published_pr_url(worker_result)
             self._emit_lane_receipt(worker_result, issue_dict, elapsed_seconds)
-
-            # Deliverable = terminal: the worker produced a concrete artifact
-            # (commit, branch, or PR).  Do NOT retry the issue — it already
-            # has work product that either needs review or was published.
+            if sanitizer_outcome in {
+                SanitizationOutcome.DROPPED.value,
+                SanitizationOutcome.QUARANTINED.value,
+            }:
+                self._issue_attempt_counts[issue_number] = max(
+                    int(self._issue_attempt_counts.get(issue_number, 0) or 0),
+                    self.config.max_retries_per_issue + 1,
+                )
+                self._pending_handoff_prompts.pop(issue_number, None)
             if has_deliverable:
                 self._completed_issues.append(issue_dict)
                 self._consecutive_failures = 0
-                # Mark the issue as exhausted so it is never re-dispatched in
-                # this loop run.
                 self._issue_attempt_counts[issue_number] = max(
                     self._issue_attempt_counts.get(issue_number, 0),
                     self.config.max_retries_per_issue,
@@ -4801,6 +4797,7 @@ class BossLoop:
             SanitizationOutcome.DROPPED,
             SanitizationOutcome.QUARANTINED,
         }:
+            self._apply_sanitizer_issue_lifecycle(issue, sanitization=sanitization)
             if "impossible_validation" in sanitization.checks_failed:
                 outcome = "verification_target_missing"
                 missing_targets_text = sanitization.reason.partition(":")[2].strip()
