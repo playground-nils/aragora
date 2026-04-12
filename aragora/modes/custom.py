@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from aragora.modes.base import Mode, ModeRegistry
 from aragora.modes.tool_groups import ToolGroup
@@ -148,7 +148,7 @@ class CustomModeLoader:
 
         if unknown_groups:
             unknown = ", ".join(sorted(unknown_groups))
-            raise ValueError(f"Unknown tool_groups in custom mode '{name}': {unknown}")
+            logger.warning("Ignoring unknown tool_groups in custom mode '%s': %s", name, unknown)
 
         return CustomMode(
             name=name,
