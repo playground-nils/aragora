@@ -305,7 +305,7 @@ class BossLoopConfig:
     debate_publish_gate_fail_closed: bool = False
     debate_publish_gate_agent: str | None = None
     debate_publish_gate_timeout_seconds: float = 90.0
-    max_open_auto_publish_prs: int = 4
+    max_open_auto_publish_prs: int = 20
     auto_close_already_done_issues: bool = False
 
     # Decomposition guardrails

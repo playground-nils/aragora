@@ -26,7 +26,6 @@ from typing import Any, Callable, Iterable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aragora.swarm.outcome_learner import OutcomeLearner, OutcomeLearnerSnapshot
-
 logger = logging.getLogger(__name__)
 
 UTC = timezone.utc
