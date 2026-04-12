@@ -889,11 +889,13 @@ class BaseHandler:
                 return err
             # params = {"agent_a": "claude", "agent_b": "gpt4"}
         """
-        result = {}
+        result: dict[str, str] = {}
         for segment_index, param_name, pattern in param_specs:
             value, err = self.extract_path_param(path, segment_index, param_name, pattern)
             if err:
                 return None, err
+            if value is None:
+                return None, error_response(f"Missing {param_name} in path", 400)
             result[param_name] = value
         return result, None
 
@@ -1111,6 +1113,7 @@ class BaseHandler:
 
         Returns:
             Parsed JSON dict, empty dict for no content, or None for parse errors
+            or non-object JSON payloads
         """
         max_size = max_size or self.MAX_BODY_SIZE
         try:
@@ -1125,7 +1128,8 @@ class BaseHandler:
                         return None
                     if not raw_body:
                         return {}
-                    return json.loads(bytes(raw_body))
+                    parsed = json.loads(bytes(raw_body))
+                    return parsed if isinstance(parsed, dict) else None
 
             content_length = int(handler.headers.get("Content-Length", 0))
             is_chunked = "chunked" in (handler.headers.get("Transfer-Encoding", "") or "").lower()
@@ -1146,7 +1150,8 @@ class BaseHandler:
                 return {}
             if len(body) > max_size:
                 return None  # Body too large after read
-            return json.loads(body)
+            parsed = json.loads(body)
+            return parsed if isinstance(parsed, dict) else None
         except (json.JSONDecodeError, ValueError, TypeError):
             return None
 
