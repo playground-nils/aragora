@@ -4,7 +4,11 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from aragora.swarm.session_state import SessionState, SessionStateStore
+from aragora.swarm.session_state import (
+    SessionState,
+    SessionStateStore,
+    classify_session_blocker,
+)
 
 
 def _dt(text: str) -> datetime:
@@ -25,6 +29,17 @@ def test_session_state_roundtrip_serialization() -> None:
         pr_url="https://github.com/synaptent/aragora/pull/9999",
         resume_hint="resume after review",
         retry_count=2,
+        phase="repair",
+        attempts=[
+            {
+                "at": "2026-04-13T09:45:00+00:00",
+                "exit_code": 1,
+                "changed_files": ["aragora/swarm/session_state.py"],
+                "test_output": "AssertionError: boom",
+                "worker_outcome": "needs_human",
+            }
+        ],
+        repair_journal=[{"at": "2026-04-13T09:50:00+00:00", "note": "tighten retry path"}],
         metadata={"receipt_id": "rcpt-123", "phase": "skeleton"},
         created_at=created_at,
         updated_at=updated_at,
@@ -33,6 +48,14 @@ def test_session_state_roundtrip_serialization() -> None:
     restored = SessionState.from_dict(state.to_dict())
 
     assert restored.to_dict() == state.to_dict()
+
+
+def test_session_state_defaults_to_explore_phase() -> None:
+    state = SessionState(session_id="default-phase")
+
+    assert state.phase == "explore"
+    assert state.attempts == []
+    assert state.repair_journal == []
 
 
 def test_session_state_store_save_and_load(tmp_path: Path) -> None:
@@ -120,3 +143,136 @@ def test_session_state_store_default_path_uses_home(tmp_path: Path, monkeypatch)
     store = SessionStateStore()
 
     assert store.state_dir == tmp_path / ".aragora" / "sessions"
+
+
+def test_record_attempt_updates_retry_count_and_last_attempt() -> None:
+    state = SessionState(session_id="resume", phase="verify")
+
+    recorded = state.record_attempt(
+        1,
+        ["aragora/swarm/session_state.py", "tests/swarm/test_session_state.py"],
+        "AssertionError: expected resume context",
+        "needs_human",
+    )
+
+    assert state.retry_count == 1
+    assert recorded["changed_files"] == [
+        "aragora/swarm/session_state.py",
+        "tests/swarm/test_session_state.py",
+    ]
+    assert state.last_attempt() == recorded
+
+
+def test_should_resume_when_previous_attempt_changed_files() -> None:
+    state = SessionState(session_id="resume-files", phase="repair")
+    state.record_attempt(1, ["aragora/swarm/session_state.py"], "", "needs_human")
+
+    assert state.should_resume() is True
+
+
+def test_should_resume_when_repair_journal_exists_without_attempts() -> None:
+    state = SessionState(
+        session_id="resume-journal",
+        phase="repair",
+        repair_journal=[{"at": "2026-04-13T11:00:00+00:00", "note": "retry with narrowed scope"}],
+    )
+
+    assert state.should_resume() is True
+
+
+def test_should_not_resume_for_clean_exploration_state() -> None:
+    state = SessionState(session_id="fresh-start", phase="explore")
+
+    assert state.should_resume() is False
+    assert state.resume_context() == ""
+
+
+def test_resume_context_summarizes_prior_attempts() -> None:
+    state = SessionState(
+        session_id="resume-context",
+        phase="repair",
+        resume_hint="continue from the failing pytest lane",
+    )
+    state.record_attempt(
+        1,
+        ["aragora/swarm/session_state.py"],
+        "AssertionError: blocker evidence missing",
+        "needs_human",
+    )
+
+    text = state.resume_context()
+
+    assert "Resume from phase: repair" in text
+    assert "continue from the failing pytest lane" in text
+    assert "Attempt 1" in text
+    assert "AssertionError: blocker evidence missing" in text
+
+
+def test_blocker_evidence_roundtrips_through_serialization() -> None:
+    state = SessionState(
+        session_id="blocker-roundtrip", blocker_evidence="pytest timed out on lane"
+    )
+
+    restored = SessionState.from_dict(state.to_dict())
+
+    assert restored.blocker_evidence == "pytest timed out on lane"
+
+
+def test_set_blocker_and_clear_blocker() -> None:
+    state = SessionState(session_id="set-blocker")
+
+    state.set_blocker("ModuleNotFoundError: missing helper")
+    assert state.blocker_evidence == "ModuleNotFoundError: missing helper"
+
+    state.clear_blocker()
+    assert state.blocker_evidence is None
+
+
+def test_classify_session_blocker_import_error() -> None:
+    state = SessionState(session_id="import-blocker")
+    state.record_attempt(1, [], "ModuleNotFoundError: No module named 'aragora.foo'", "failed")
+
+    result = classify_session_blocker(state)
+
+    assert result["blocker_type"] == "import_error"
+    assert "ModuleNotFoundError" in result["evidence"]
+
+
+def test_classify_session_blocker_dependency_missing() -> None:
+    state = SessionState(session_id="dependency-blocker")
+    state.record_attempt(127, [], "ruff: command not found", "failed")
+
+    result = classify_session_blocker(state)
+
+    assert result["blocker_type"] == "dependency_missing"
+    assert "command not found" in result["evidence"]
+
+
+def test_classify_session_blocker_timeout_from_exit_code() -> None:
+    state = SessionState(session_id="timeout-blocker")
+    state.record_attempt(-1, [], "Timed out after 600s", "failed")
+
+    result = classify_session_blocker(state)
+
+    assert result["blocker_type"] == "timeout"
+    assert "Timed out" in result["evidence"]
+
+
+def test_classify_session_blocker_scope_too_broad() -> None:
+    state = SessionState(session_id="scope-blocker")
+    state.set_blocker("Issue was quarantined by task sanitizer: file scope spans 6 files.")
+
+    result = classify_session_blocker(state)
+
+    assert result["blocker_type"] == "scope_too_broad"
+    assert "file scope spans 6 files" in result["evidence"]
+
+
+def test_classify_session_blocker_defaults_to_test_failure() -> None:
+    state = SessionState(session_id="test-blocker")
+    state.record_attempt(1, [], "AssertionError: expected blocker evidence", "failed")
+
+    result = classify_session_blocker(state)
+
+    assert result["blocker_type"] == "test_failure"
+    assert "AssertionError" in result["evidence"]
