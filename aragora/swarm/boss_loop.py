@@ -3,11 +3,6 @@
 Pulls candidate work from GitHub issues, selects one eligible task at a time,
 requires fresh eligible runners, runs supervised worker execution with bounded
 retries, and emits periodic status reports with truthful stop conditions.
-
-Usage:
-    loop = BossLoop(config=BossLoopConfig(max_iterations=20))
-    final_status = await loop.run()
-    print(json.dumps(final_status.to_dict(), indent=2))
 """
 
 from __future__ import annotations
@@ -30,6 +25,7 @@ from typing import Any
 from aragora.nomic.dev_coordination import DevCoordinationStore
 from aragora.pipeline.execution_mode import ExecutionMode
 from aragora.swarm.debate_gate import DebateGate, DebateGateConfig, DebateGateRequest
+from aragora.swarm.dispatch_contract_gate import dispatch_contract_gate
 from aragora.swarm.env_utils import git_safe_env
 from aragora.swarm.task_sanitizer import SanitizationOutcome, TaskSanitizer
 from aragora.swarm.terminal_truth import (
@@ -4765,10 +4761,7 @@ class BossLoop:
         issue: GitHubIssue,
         freshness: RunnerFreshnessResult,
     ) -> dict[str, Any]:
-        """Dispatch a supervised worker for the given issue.
-
-        Returns a dict with at minimum ``{"status": "completed"|"failed"|"needs_human"}``.
-        """
+        """Dispatch a supervised worker for the given issue."""
         from aragora.swarm.spec import SwarmSpec
 
         original_issue_body = str(issue.body or "").strip()
@@ -4780,7 +4773,6 @@ class BossLoop:
             sanitized_issue_body = sanitized_issue_body[len(issue_title_text) :].strip()
         if not sanitized_issue_body:
             sanitized_issue_body = original_issue_body
-
         logger.info(
             "task_sanitizer issue=#%s outcome=%s checks=%s",
             issue.number,
@@ -5099,6 +5091,19 @@ class BossLoop:
                 freshness,
                 requested_target_agent=requested_target_agent,
             )
+
+        gate_result = dispatch_contract_gate(
+            self,
+            issue,
+            spec,
+            selected_runner,
+            requested_target_agent,
+            refinement_worker_env,
+            claimed_runner_id,
+        )
+        if gate_result is not None:
+            return _with_sanitizer_metadata(gate_result)
+
         try:
             result = await dispatch_bounded_spec(
                 spec,
@@ -5108,9 +5113,6 @@ class BossLoop:
                 wait_for_completion=True,
                 default_target_agent=requested_target_agent,
                 default_reviewer_agent=self.config.default_reviewer_agent,
-                # The supervisor already provisions the worktree, so the session
-                # script wrapper is redundant and crashes on bash 3.2 (macOS
-                # default) due to ${VAR,,} syntax.  Matches tranche_queue.py.
                 use_managed_session_script=False,
                 selected_runner=selected_runner,
                 worker_env=refinement_worker_env or None,
@@ -5122,7 +5124,6 @@ class BossLoop:
             if claimed_runner_id:
                 self._release_runner_claim(claimed_runner_id)
 
-        # --- Backbone ledger: record dispatch outcome ---
         if backbone_run_id and runtime is not None:
             try:
                 runtime.update_run(
