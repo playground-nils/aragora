@@ -50,6 +50,28 @@ def _dict_value(value: Any, *, field_name: str) -> dict[str, Any]:
     return dict(value)
 
 
+def _issue_text_metadata(result: dict[str, Any]) -> dict[str, Any]:
+    original_body = _optional_text(result.get("original_issue_body"))
+    sanitized_body = _optional_text(result.get("sanitized_issue_body"))
+    sanitizer_outcome = _optional_text(result.get("sanitizer_outcome"))
+    checks_failed = _string_list(result.get("checks_failed"), field_name="checks_failed")
+    if not any((original_body, sanitized_body, sanitizer_outcome, checks_failed)):
+        return {}
+
+    payload: dict[str, Any] = {}
+    if original_body is not None:
+        payload["original_body"] = original_body
+    if sanitized_body is not None:
+        payload["sanitized_body"] = sanitized_body
+    if original_body is not None and sanitized_body is not None:
+        payload["changed"] = original_body != sanitized_body
+    if sanitizer_outcome is not None:
+        payload["sanitizer_outcome"] = sanitizer_outcome
+    if checks_failed:
+        payload["checks_failed"] = checks_failed
+    return payload
+
+
 def _coerce_bool(value: Any, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -356,7 +378,7 @@ class TrancheManifest:
 
     def to_yaml(self) -> str:
         try:
-            import yaml
+            import yaml  # type: ignore[import-untyped]
 
             return yaml.safe_dump(self.to_dict(), sort_keys=False, allow_unicode=False)
         except ImportError:
@@ -365,7 +387,7 @@ class TrancheManifest:
     @classmethod
     def from_text(cls, text: str) -> TrancheManifest:
         try:
-            import yaml
+            import yaml  # type: ignore[import-untyped]
 
             payload = yaml.safe_load(text) or {}
         except ImportError:
@@ -752,9 +774,11 @@ class TrancheExecutor:
         review_model: str,
         skip_review: bool,
     ) -> TrancheLaneArtifact:
-        run_dict = result.get("run") if isinstance(result.get("run"), dict) else {}
-        deliverable = (
-            result.get("deliverable") if isinstance(result.get("deliverable"), dict) else {}
+        run_value = result.get("run")
+        run_dict: dict[str, Any] = dict(run_value) if isinstance(run_value, dict) else {}
+        deliverable_value = result.get("deliverable")
+        deliverable: dict[str, Any] = (
+            dict(deliverable_value) if isinstance(deliverable_value, dict) else {}
         )
         urls = list(dict.fromkeys(_lane_source_urls(lane) + _deliverable_urls(deliverable)))
         metadata = dict(prepared.metadata)
@@ -795,6 +819,9 @@ class TrancheExecutor:
                 "run_id": run_dict.get("run_id"),
                 "status": run_dict.get("status"),
             }
+        issue_text = _issue_text_metadata(result)
+        if issue_text:
+            artifact.metadata["issue_text"] = issue_text
         if deliverable:
             artifact.metadata["deliverable"] = dict(deliverable)
         if (
@@ -926,7 +953,7 @@ class TrancheInspector:
         scope_conflicts = self._declared_scope_conflicts(manifest)
         artifacts = self.artifact_store.list(manifest.manifest_id)
         lanes = self._resolve_lanes(manifest, references, gates, artifacts, scope_conflicts)
-        blockers = []
+        blockers: list[str] = []
         blockers.extend(
             item["reason"]
             for item in references.values()
