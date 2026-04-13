@@ -137,7 +137,14 @@ def fetch_existing_boss_issues(repo: str) -> list[dict]:
             timeout=30,
         )
         if result.returncode == 0:
-            return json.loads(result.stdout or "[]")
+            issues = json.loads(result.stdout or "[]")
+            if len(issues) >= 200:
+                print(
+                    "WARNING: fetched 200 issues (hard cap). "
+                    "Dedup may miss issues beyond this limit.",
+                    file=sys.stderr,
+                )
+            return issues
     except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
         pass
     return []

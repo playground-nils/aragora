@@ -872,13 +872,26 @@ def run_remote_publish_validation_receipt(
                 detail="skipped (draft PR not created)",
             )
 
-        if pushed:
+        if pushed and draft_created:
+            # Safe: we know the PR was captured and closed above
             _run_check(
                 checks,
                 name="cleanup_remote_branch_delete",
                 cmd=["git", "push", "origin", "--delete", branch],
                 cwd=worktree_path if worktree_created else resolved_repo_root,
                 env=git_safe_env(),
+            )
+        elif pushed and not draft_created:
+            # Fail-closed: PR may exist on this branch but we couldn't
+            # capture it. Do NOT delete the branch — it may orphan a PR.
+            _append_check(
+                checks,
+                name="cleanup_remote_branch_delete",
+                passed=False,
+                detail=(
+                    "skipped (branch pushed but draft PR not captured — "
+                    "refusing to delete branch to avoid orphaning a PR)"
+                ),
             )
         else:
             _append_check(
