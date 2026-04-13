@@ -4867,8 +4867,12 @@ class BossLoop:
             )
             runtime.create_run(ledger)
             backbone_run_id = ledger.run_id
-        except Exception:
-            pass  # Never block autonomous dispatch
+        except Exception as exc:
+            logger.debug(
+                "Boss backbone ledger create failed for issue #%d: %s",
+                issue.number,
+                str(exc),
+            )
 
         claimed_runner_id: str | None = None
         selected_runner, claimed_runner_id = self._claim_runner_for_dispatch(
@@ -4921,8 +4925,12 @@ class BossLoop:
                     execution_id=result.get("run_id"),
                     receipt_id=result.get("receipt_id"),
                 )
-            except Exception:
-                pass  # Never block autonomous dispatch
+            except Exception as exc:
+                logger.debug(
+                    "Boss backbone ledger dispatch update failed for issue #%d: %s",
+                    issue.number,
+                    str(exc),
+                )
         if pending_handoff is not None:
             dispatch_started = _dispatch_result_started(result)
             if result.get("status") != "failed" or dispatch_started:
@@ -4953,8 +4961,12 @@ class BossLoop:
                     if postprocess_metadata
                     else {},
                 )
-            except Exception:
-                pass  # Never block autonomous dispatch
+            except Exception as exc:
+                logger.debug(
+                    "Boss backbone ledger postprocess update failed for issue #%d: %s",
+                    issue.number,
+                    str(exc),
+                )
         if result.get("status") == "failed":
             error = str(result.get("error", "")).strip()
             if error:
