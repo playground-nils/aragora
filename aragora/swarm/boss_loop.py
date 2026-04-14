@@ -52,6 +52,10 @@ from aragora.swarm.boss_feed import (  # noqa: F401
     scope_entries_overlap,
 )
 from aragora.swarm.boss_freshness import RunnerFreshnessResult, check_runner_freshness  # noqa: F401
+from aragora.swarm.boss_loop_claims import (
+    ISSUE_CLAIM_TTL_SECONDS,
+    issue_claim_path as _issue_claim_path_impl,
+)
 from aragora.swarm.boss_validation import (  # noqa: F401
     _compose_issue_dispatch_goal,
     _should_replace_with_focused_tests,
@@ -83,6 +87,7 @@ _ALREADY_DONE_MARKERS = (
     "there's nothing to commit",
 )
 _BOSS_PUBLISH_COMMENT_MARKER = "<!-- aragora-boss-loop-publish -->"
+_ISSUE_CLAIM_TTL_SECONDS = ISSUE_CLAIM_TTL_SECONDS
 
 
 def _strict_bool(value: Any) -> bool | None:
@@ -808,53 +813,33 @@ class BossLoop:
 
         return blocked
 
-    def _extract_iteration_metrics(self, worker_result: dict[str, Any]) -> tuple[int, int, int]:
-        """Summarize changed files and test verification from a worker run."""
-        run_dict = worker_result.get("run")
-        if not isinstance(run_dict, dict):
-            return 0, 0, 0
+    def _filter_issues_with_active_claims(
+        self,
+        issues: list[GitHubIssue],
+    ) -> list[GitHubIssue]:
+        from aragora.swarm.boss_loop_claims import filter_claimed_issues
 
-        changed_files: list[str] = []
-        tests_run: list[str] = []
-        tests_passed = 0
-        saw_verification_results = False
+        return filter_claimed_issues(issues, self.run_id)
 
-        for work_order in run_dict.get("work_orders", []):
-            if not isinstance(work_order, dict):
-                continue
+    @staticmethod
+    def _issue_claim_path(issue_number: int) -> Path:
+        return _issue_claim_path_impl(issue_number)
 
-            changed_files.extend(
-                str(path).strip()
-                for path in work_order.get("changed_paths", [])
-                if str(path).strip()
-            )
-            tests_run.extend(
-                str(command).strip()
-                for command in work_order.get("tests_run", [])
-                if str(command).strip()
-            )
+    def _claim_issue_dispatch(self, issue_number: int) -> tuple[bool, str | None]:
+        from aragora.swarm.boss_loop_claims import claim_issue
 
-            verification_results = work_order.get("verification_results", [])
-            if not isinstance(verification_results, list):
-                continue
+        return claim_issue(issue_number, self.run_id)
 
-            for verification in verification_results:
-                if not isinstance(verification, dict):
-                    continue
-                saw_verification_results = True
-                if verification.get("passed") is True:
-                    tests_passed += 1
+    def _release_issue_dispatch_claim(self, issue_number: int) -> None:
+        from aragora.swarm.boss_loop_claims import release_claim
 
-        unique_changed_files = list(dict.fromkeys(changed_files))
-        unique_tests_run = list(dict.fromkeys(tests_run))
-        if (
-            not saw_verification_results
-            and unique_tests_run
-            and str(worker_result.get("status", "")).strip().lower() == "completed"
-        ):
-            tests_passed = len(unique_tests_run)
+        release_claim(issue_number, self.run_id)
 
-        return len(unique_changed_files), len(unique_tests_run), tests_passed
+    @staticmethod
+    def _extract_iteration_metrics(worker_result: dict[str, Any]) -> tuple[int, int, int]:
+        from aragora.swarm.boss_loop_outcome import extract_iteration_metrics
+
+        return extract_iteration_metrics(worker_result)
 
     def _append_iteration_metrics(
         self,
@@ -3695,6 +3680,7 @@ class BossLoop:
         candidate_issues = [
             i for i in issues if i.number in pending_issue_numbers or i.number not in already_maxed
         ]
+        candidate_issues = self._filter_issues_with_active_claims(candidate_issues)
         eligibility_report = build_issue_eligibility_report(
             candidate_issues,
             skip_labels=self.config.skip_labels,
@@ -3845,6 +3831,26 @@ class BossLoop:
         if existing_pr_status is not None:
             return existing_pr_status
 
+        issue_claimed, issue_claim_reason = self._claim_issue_dispatch(selected.number)
+        if not issue_claimed:
+            issue_dict = self._issue_payload(selected)
+            return BossIterationStatus(
+                iteration=iteration,
+                run_id=self.run_id,
+                timestamp=now,
+                runner_freshness=freshness_dict,
+                selected_issue=issue_dict,
+                worker_status="skipped",
+                stop_reason=None,
+                needs_human_reasons=[],
+                next_actions=[
+                    issue_claim_reason
+                    or f"Issue #{selected.number} is already claimed by another boss loop."
+                ],
+                elapsed_seconds=time.monotonic() - iter_start,
+                worker_outcome="issue_claimed",
+            )
+
         # Step 4: Dispatch supervised work for this issue
         issue_dict = self._issue_payload(selected)
         self._attempted_issues.append(issue_dict)
@@ -3876,7 +3882,10 @@ class BossLoop:
             ),
         )
 
-        worker_result = await self._dispatch_issue(selected, freshness)
+        try:
+            worker_result = await self._dispatch_issue(selected, freshness)
+        finally:
+            self._release_issue_dispatch_claim(selected.number)
         return self._finalize_worker_result(
             iteration=iteration,
             timestamp=now,
@@ -3930,6 +3939,7 @@ class BossLoop:
         candidate_issues = [
             i for i in issues if i.number in pending_issue_numbers or i.number not in already_maxed
         ]
+        candidate_issues = self._filter_issues_with_active_claims(candidate_issues)
         eligibility_report = build_issue_eligibility_report(
             candidate_issues,
             skip_labels=self.config.skip_labels,
@@ -4051,6 +4061,27 @@ class BossLoop:
         while pending_issues and len(active_tasks) < parallel_limit:
             issue = pending_issues.pop(0)
             issue_dict = self._issue_payload(issue)
+            issue_claimed, issue_claim_reason = self._claim_issue_dispatch(issue.number)
+            if not issue_claimed:
+                statuses.append(
+                    BossIterationStatus(
+                        iteration=iteration,
+                        run_id=self.run_id,
+                        timestamp=now,
+                        runner_freshness=freshness_dict,
+                        selected_issue=issue_dict,
+                        worker_status="skipped",
+                        stop_reason=None,
+                        needs_human_reasons=[],
+                        next_actions=[
+                            issue_claim_reason
+                            or f"Issue #{issue.number} is already claimed by another boss loop."
+                        ],
+                        elapsed_seconds=time.monotonic() - iter_start,
+                        worker_outcome="issue_claimed",
+                    )
+                )
+                continue
             self._attempted_issues.append(issue_dict)
             self._issue_attempt_counts[issue.number] = (
                 self._issue_attempt_counts.get(issue.number, 0) + 1
@@ -4079,7 +4110,7 @@ class BossLoop:
                     elapsed_seconds=time.monotonic() - iter_start,
                 ),
             )
-            task = asyncio.create_task(self._dispatch_issue(issue, freshness))
+            task = asyncio.create_task(self._dispatch_issue_under_claim(issue, freshness))
             active_tasks[task] = (issue, issue_dict, time.monotonic())
 
         while active_tasks:
@@ -5097,6 +5128,16 @@ class BossLoop:
             if error:
                 logger.warning("Boss dispatch failed for issue #%d: %s", issue.number, error)
         return result
+
+    async def _dispatch_issue_under_claim(
+        self,
+        issue: GitHubIssue,
+        freshness: RunnerFreshnessResult,
+    ) -> dict[str, Any]:
+        try:
+            return await self._dispatch_issue(issue, freshness)
+        finally:
+            self._release_issue_dispatch_claim(issue.number)
 
     @staticmethod
     def _load_resume_context(issue_number: int | None) -> str:
