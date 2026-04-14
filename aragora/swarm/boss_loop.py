@@ -634,10 +634,14 @@ class BossLoop:
         self._configured_parallel_dispatches = max(1, int(self.config.max_parallel_dispatches or 1))
         self._current_effective_parallel_dispatches: int | None = None
         self._max_effective_parallel_dispatches_observed: int | None = None
+        issue_numbers = [int(item) for item in (self.config.issue_numbers or []) if int(item) > 0]
+        if self.config.issue_number is not None and int(self.config.issue_number) > 0:
+            if int(self.config.issue_number) not in issue_numbers:
+                issue_numbers.append(int(self.config.issue_number))
         self._feed = issue_feed or GitHubIssueFeed(
             repo=self.config.repo,
             label_filter=self.config.label_filter,
-            issue_numbers=self.config.issue_numbers,
+            issue_numbers=issue_numbers or None,
             limit=self.config.issue_limit,
         )
         self._freshness_checker = freshness_checker or check_runner_freshness
@@ -1098,73 +1102,15 @@ class BossLoop:
         return candidates
 
     def _target_issue_miss_guidance(self, issue_number: int) -> tuple[list[str], list[str]]:
-        reasons = [
-            f"Target issue #{issue_number} was not found in the issue feed or is not eligible under current filters/retry state."
-        ]
-        next_actions = [
-            f"Verify issue #{issue_number} is still open, eligible, and has not exceeded retry limits.",
-            "Remove --boss-issue-number to return to feed-driven selection.",
-        ]
-        fetch_issue = getattr(self._feed, "_fetch_issue", None)
-        if not callable(fetch_issue):
-            return reasons, next_actions
-        try:
-            issue = fetch_issue(issue_number, allow_closed=True)
-        except TypeError:
-            try:
-                issue = fetch_issue(issue_number)
-            except Exception:
-                return reasons, next_actions
-        except Exception:
-            return reasons, next_actions
-        if not isinstance(issue, GitHubIssue):
-            return reasons, next_actions
+        from aragora.swarm.boss_loop_selection import target_issue_miss_guidance
 
-        state = str(issue.state or "").strip().lower()
-        if state and state != "open":
-            return (
-                [
-                    f"Target issue #{issue_number} is {state} and cannot be selected by the open-issue boss feed."
-                ],
-                [
-                    f"Reopen issue #{issue_number} if it should be eligible for Boss dispatch.",
-                    "Remove --boss-issue-number to return to feed-driven selection.",
-                ],
-            )
-
-        labels = {str(label).strip() for label in issue.labels if str(label).strip()}
-        skipped = sorted(labels & set(self.config.skip_labels or set()))
-        if skipped:
-            return (
-                [f"Target issue #{issue_number} is excluded by skip labels: {', '.join(skipped)}."],
-                [
-                    f"Remove skip labels from issue #{issue_number} or adjust --label-filter/skip-label settings.",
-                    "Remove --boss-issue-number to return to feed-driven selection.",
-                ],
-            )
-
-        required = set(self.config.require_labels or set())
-        missing_labels = sorted(required - labels)
-        if missing_labels:
-            return (
-                [
-                    f"Target issue #{issue_number} is missing required labels: {', '.join(missing_labels)}."
-                ],
-                [
-                    f"Add the required labels to issue #{issue_number} or adjust --require-label settings.",
-                    "Remove --boss-issue-number to return to feed-driven selection.",
-                ],
-            )
-
-        if not issue.title:
-            return (
-                [f"Target issue #{issue_number} is missing a title and cannot be selected."],
-                [
-                    f"Add a non-empty title to issue #{issue_number}.",
-                    "Remove --boss-issue-number to return to feed-driven selection.",
-                ],
-            )
-        return reasons, next_actions
+        return target_issue_miss_guidance(
+            issue_number=issue_number,
+            fetch_issue=getattr(self._feed, "_fetch_issue", None),
+            skip_labels=self.config.skip_labels,
+            require_labels=self.config.require_labels,
+            blocked_scopes=self._blocked_issue_scopes(),
+        )
 
     @staticmethod
     def _skip_label_summary(report: IssueEligibilityReport) -> str | None:
