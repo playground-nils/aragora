@@ -5127,6 +5127,24 @@ class BossLoop:
             error = str(result.get("error", "")).strip()
             if error:
                 logger.warning("Boss dispatch failed for issue #%d: %s", issue.number, error)
+
+        if result.get("status") in {"needs_human", "failed"}:
+            try:
+                from aragora.swarm.conductor import Conductor
+
+                s = Conductor(repo_root=Path.cwd()).evaluate_worker_output(issue.number, result)
+                result.update(
+                    {
+                        "conductor_next_action": s.next_action,
+                        "conductor_next_prompt": (s.next_prompt or "")[:500],
+                        "conductor_terminal_class": s.terminal_class.value
+                        if hasattr(s.terminal_class, "value")
+                        else str(s.terminal_class),
+                    }
+                )
+            except Exception:
+                pass
+
         return result
 
     async def _dispatch_issue_under_claim(
