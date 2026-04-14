@@ -4910,16 +4910,14 @@ class BossLoop:
         self._attach_issue_handoff_metadata(spec, issue)
 
         # BC-02: Inject resume context from prior session state if available
-        resume_context = self._load_resume_context(issue.number)
-        if resume_context:
-            spec.raw_goal = (
-                f"{spec.raw_goal}\n\n## Resume Context (from prior attempt)\n{resume_context}"
-            )
-            logger.info(
-                "boss_loop_resume issue=#%s resume_context_len=%d",
-                issue.number,
-                len(resume_context),
-            )
+        try:
+            from aragora.swarm.session_state import load_resume_context_for_issue
+
+            _rc = load_resume_context_for_issue(issue.number)
+            if _rc:
+                spec.raw_goal = f"{spec.raw_goal}\n\n## Resume Context (from prior attempt)\n{_rc}"
+        except Exception:
+            pass
 
         gate = await check_pre_dispatch_gate(
             sanitized_issue_body,
@@ -4969,6 +4967,29 @@ class BossLoop:
                         ],
                     }
                 )
+
+        if not spec.is_dispatch_bounded():
+            try:
+                from aragora.swarm.issue_upgrader import upgrade_issue_heuristic
+
+                upgraded = upgrade_issue_heuristic(
+                    issue.title, sanitized_issue_body, repo_root=Path.cwd()
+                )
+                if upgraded is not None:
+                    spec = SwarmSpec(
+                        raw_goal=f"[Issue #{issue.number}] {issue.title}\n\n{upgraded.upgraded_body}",
+                        refined_goal=f"[Issue #{issue.number}] {issue.title}",
+                        constraints=list(spec.constraints),
+                        budget_limit_usd=self.config.budget_limit_usd,
+                        file_scope_hints=getattr(
+                            upgraded, "functions_found", spec.file_scope_hints
+                        ),
+                        requires_approval=True,
+                        interrogation_turns=0,
+                        user_expertise="developer",
+                    )
+            except Exception:
+                pass
 
         if not spec.is_dispatch_bounded():
             return _with_sanitizer_metadata(
@@ -5156,32 +5177,6 @@ class BossLoop:
             return await self._dispatch_issue(issue, freshness)
         finally:
             self._release_issue_dispatch_claim(issue.number)
-
-    @staticmethod
-    def _load_resume_context(issue_number: int | None) -> str:
-        """Load resume context from prior session state for this issue (BC-02).
-
-        Returns the resume_context string if a prior session exists with
-        resumable state, otherwise returns empty string.
-        """
-        if not issue_number:
-            return ""
-        try:
-            from aragora.swarm.session_state import SessionStateStore
-
-            store = SessionStateStore()
-            sessions = store.list_sessions(issue_number=issue_number)
-            if not sessions:
-                return ""
-            # Use the most recent session
-            latest = max(sessions, key=lambda s: s.updated_at)
-            if latest.should_resume():
-                context = latest.resume_context()
-                if context and len(context.strip()) > 20:
-                    return context.strip()
-        except Exception:
-            logger.debug("Session state resume lookup skipped", exc_info=True)
-        return ""
 
     def _attach_issue_handoff_metadata(self, spec: Any, issue: GitHubIssue) -> None:
         repo_slug = self._repo_slug_for_issue(issue) or ""
