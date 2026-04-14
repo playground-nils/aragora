@@ -4939,16 +4939,14 @@ class BossLoop:
         self._attach_issue_handoff_metadata(spec, issue)
 
         # BC-02: Inject resume context from prior session state if available
-        resume_context = self._load_resume_context(issue.number)
-        if resume_context:
-            spec.raw_goal = (
-                f"{spec.raw_goal}\n\n## Resume Context (from prior attempt)\n{resume_context}"
-            )
-            logger.info(
-                "boss_loop_resume issue=#%s resume_context_len=%d",
-                issue.number,
-                len(resume_context),
-            )
+        try:
+            from aragora.swarm.session_state import load_resume_context_for_issue
+
+            _rc = load_resume_context_for_issue(issue.number)
+            if _rc:
+                spec.raw_goal = f"{spec.raw_goal}\n\n## Resume Context (from prior attempt)\n{_rc}"
+        except Exception:
+            pass
 
         gate = await check_pre_dispatch_gate(
             sanitized_issue_body,
@@ -5167,15 +5165,6 @@ class BossLoop:
             return await self._dispatch_issue(issue, freshness)
         finally:
             self._release_issue_dispatch_claim(issue.number)
-
-    @staticmethod
-    def _load_resume_context(issue_number: int | None) -> str:
-        try:
-            from aragora.swarm.session_state import load_resume_context_for_issue
-
-            return load_resume_context_for_issue(issue_number)
-        except Exception:
-            return ""
 
     def _attach_issue_handoff_metadata(self, spec: Any, issue: GitHubIssue) -> None:
         repo_slug = self._repo_slug_for_issue(issue) or ""
