@@ -80,7 +80,7 @@ try:
 
     HAS_WATCHDOG = True
 except ImportError:
-    pass
+    pass  # Optional dependency: watchdog features disabled when module unavailable
 
 logger = get_logger(__name__)
 
@@ -197,7 +197,7 @@ class ControlPlaneCoordinator:
                 )
                 self._state_manager.set_km_adapter(adapter)
             except ImportError:
-                pass
+                logger.debug("ControlPlaneAdapter not available; skipping KM adapter setup")
 
         # Initialize scheduler bridge (with backward compatibility for scheduler param)
         self._scheduler_bridge = scheduler_bridge or SchedulerBridge(
