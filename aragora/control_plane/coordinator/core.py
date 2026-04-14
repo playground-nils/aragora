@@ -76,7 +76,7 @@ except ImportError:
 HAS_WATCHDOG = False
 IssueSeverityType: Any = None
 try:
-    from aragora.control_plane.watchdog import IssueSeverity as IssueSeverityType
+    from aragora.control_plane.watchdog import IssueSeverity as IssueSeverityType  # type: ignore[no-redef]
 
     HAS_WATCHDOG = True
 except ImportError:
