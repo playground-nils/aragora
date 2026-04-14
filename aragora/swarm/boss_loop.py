@@ -4719,8 +4719,37 @@ class BossLoop:
             SanitizationOutcome.DROPPED,
             SanitizationOutcome.QUARANTINED,
         }:
-            self._apply_sanitizer_issue_lifecycle(issue, sanitization=sanitization)
-            if "impossible_validation" in sanitization.checks_failed:
+            # LLM second opinion: before quarantining, ask RescuePlanner if this
+            # is a false positive. Uses frontier LLM call with regex as fallback.
+            if sanitization.outcome is SanitizationOutcome.QUARANTINED:
+                from aragora.swarm.rescue_planner import try_quarantine_override
+
+                override = try_quarantine_override(
+                    issue_number=issue.number,
+                    issue_title=issue.title,
+                    sanitization_reason=sanitization.reason,
+                    checks_failed=list(sanitization.checks_failed),
+                    issue_body=sanitized_issue_body,
+                    sanitizer=sanitizer,
+                )
+                if override is not None:
+                    sanitization, sanitized_issue_body = override
+
+            # If still quarantined/dropped after LLM check, return needs_human
+            if sanitization.outcome in {
+                SanitizationOutcome.DROPPED,
+                SanitizationOutcome.QUARANTINED,
+            }:
+                self._apply_sanitizer_issue_lifecycle(issue, sanitization=sanitization)
+
+            if (
+                sanitization.outcome
+                in {
+                    SanitizationOutcome.DROPPED,
+                    SanitizationOutcome.QUARANTINED,
+                }
+                and "impossible_validation" in sanitization.checks_failed
+            ):
                 outcome = "verification_target_missing"
                 missing_targets_text = sanitization.reason.partition(":")[2].strip()
                 if not missing_targets_text:
@@ -5141,29 +5170,12 @@ class BossLoop:
 
     @staticmethod
     def _load_resume_context(issue_number: int | None) -> str:
-        """Load resume context from prior session state for this issue (BC-02).
-
-        Returns the resume_context string if a prior session exists with
-        resumable state, otherwise returns empty string.
-        """
-        if not issue_number:
-            return ""
         try:
-            from aragora.swarm.session_state import SessionStateStore
+            from aragora.swarm.session_state import load_resume_context_for_issue
 
-            store = SessionStateStore()
-            sessions = store.list_sessions(issue_number=issue_number)
-            if not sessions:
-                return ""
-            # Use the most recent session
-            latest = max(sessions, key=lambda s: s.updated_at)
-            if latest.should_resume():
-                context = latest.resume_context()
-                if context and len(context.strip()) > 20:
-                    return context.strip()
+            return load_resume_context_for_issue(issue_number)
         except Exception:
-            logger.debug("Session state resume lookup skipped", exc_info=True)
-        return ""
+            return ""
 
     def _attach_issue_handoff_metadata(self, spec: Any, issue: GitHubIssue) -> None:
         repo_slug = self._repo_slug_for_issue(issue) or ""

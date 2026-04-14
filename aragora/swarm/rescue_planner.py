@@ -229,3 +229,57 @@ def _parse_action_plan(raw: str) -> ActionPlan:
         proposed_prompt=str(data.get("proposed_prompt", "")).strip()[:500],
         expected_receipt=str(data.get("expected_receipt", "")).strip()[:200],
     )
+
+
+def try_quarantine_override(
+    *,
+    issue_number: int,
+    issue_title: str,
+    sanitization_reason: str,
+    checks_failed: list[str],
+    issue_body: str,
+    sanitizer: Any,
+) -> tuple[Any, str] | None:
+    """Ask RescuePlanner if a sanitizer quarantine is a false positive.
+
+    Returns (new_sanitization, new_body) if the override succeeded,
+    or None if the quarantine should stand.
+    """
+    try:
+        rescue = plan_rescue(
+            session_summary=f"Issue #{issue_number}: {issue_title}",
+            blocker_evidence=(
+                f"Task sanitizer quarantined this issue: {sanitization_reason}. "
+                f"Failed checks: {', '.join(checks_failed)}. "
+                f"Is this a false positive? Should the issue be accepted for dispatch?"
+            ),
+            lane_metadata=issue_body[:500],
+        )
+        if rescue.confidence >= 0.7 and rescue.action in ("rewrite_issue", "send_followup"):
+            logger.info(
+                "rescue_planner_override issue=#%s action=%s confidence=%.2f reason=%s",
+                issue_number,
+                rescue.action,
+                rescue.confidence,
+                rescue.reason[:100],
+            )
+            from aragora.swarm.rescue_events import record_rescue
+
+            record_rescue(
+                "issue_rewrite",
+                f"RescuePlanner overrode quarantine: {rescue.reason[:200]}",
+                issue_number=issue_number,
+                outcome="override_accepted",
+            )
+            override_body = rescue.proposed_prompt or issue_body
+            new_sanitization = sanitizer.sanitize(issue_title, override_body)
+            from aragora.swarm.task_sanitizer import SanitizationOutcome
+
+            if new_sanitization.outcome not in {
+                SanitizationOutcome.DROPPED,
+                SanitizationOutcome.QUARANTINED,
+            }:
+                return new_sanitization, override_body
+    except Exception:
+        logger.debug("RescuePlanner quarantine override skipped", exc_info=True)
+    return None

@@ -380,3 +380,23 @@ def classify_session_blocker(state: SessionState) -> dict[str, str]:
         "evidence": fallback,
         "suggested_action": _suggested_action("test_failure"),
     }
+
+
+def load_resume_context_for_issue(issue_number: int | None) -> str:
+    """Load resume context from prior session state for an issue (BC-02).
+
+    Returns the resume_context string if a prior session exists with
+    resumable state, otherwise returns empty string.
+    """
+    if not issue_number:
+        return ""
+    store = SessionStateStore()
+    sessions = store.list_sessions(issue_number=issue_number)
+    if not sessions:
+        return ""
+    latest = max(sessions, key=lambda s: s.updated_at)
+    if latest.should_resume():
+        context = latest.resume_context()
+        if context and len(context.strip()) > 20:
+            return context.strip()
+    return ""
