@@ -798,7 +798,7 @@ def is_enabled(name: str) -> bool:
     return get_flag_registry().is_enabled(name)
 
 
-def get_flag(name: str, default: T = None) -> T:
+def get_flag(name: str, default: T = None) -> T:  # type: ignore
     """Get a feature flag value.
 
     Convenience function for getting feature flag values.
