@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 import logging
+import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 import re
@@ -514,7 +515,7 @@ def _telemetry_summary() -> dict[str, Any]:
             "avg_time_to_pr_seconds_7d": _LANE_TELEMETRY.get_avg_time_to_pr(window_days=7),
             "avg_time_to_merge_seconds_7d": _LANE_TELEMETRY.get_avg_time_to_merge(window_days=7),
         }
-    except (OSError, RuntimeError, TypeError, ValueError):
+    except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
         logger.exception("Failed to summarize lane telemetry")
         return {}
 
