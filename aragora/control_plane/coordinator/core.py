@@ -60,7 +60,7 @@ DeliberationOutcome: Any = None
 DELIBERATION_TASK_TYPE = "deliberation"
 try:
     from aragora.control_plane.arena_bridge import ArenaControlPlaneBridge
-    from aragora.control_plane.deliberation import (
+    from aragora.control_plane.deliberation import ( # type: ignore[no-redef]
         DELIBERATION_TASK_TYPE as _DELIBERATION_TASK_TYPE,
         DeliberationOutcome,
         DeliberationTask,
