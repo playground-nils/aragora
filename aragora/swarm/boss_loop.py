@@ -4512,7 +4512,6 @@ class BossLoop:
                     elapsed_seconds=elapsed_seconds,
                     worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
                 )
-
             # Ping-pong retry: dispatch to the OTHER agent with transcript context
             if self.config.enable_ping_pong_retry and not has_verification_failure:
                 pp_key = f"pingpong_{issue_num}"
@@ -4565,7 +4564,6 @@ class BossLoop:
                         elapsed_seconds=elapsed_seconds,
                         worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
                     )
-
             if self.config.auto_continue_on_needs_human:
                 self._consecutive_failures += 1
                 if has_untyped_deliverable:
@@ -5123,11 +5121,9 @@ class BossLoop:
                     issue.number,
                     str(exc),
                 )
-        if result.get("status") == "failed":
-            error = str(result.get("error", "")).strip()
-            if error:
+        if error := str(result.get("error", "")).strip():
+            if result.get("status") == "failed":
                 logger.warning("Boss dispatch failed for issue #%d: %s", issue.number, error)
-
         if result.get("status") in {"needs_human", "failed"}:
             try:
                 from aragora.swarm.conductor import Conductor
@@ -5144,7 +5140,6 @@ class BossLoop:
                 )
             except Exception:
                 pass
-
         return result
 
     async def _dispatch_issue_under_claim(
