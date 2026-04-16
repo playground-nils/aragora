@@ -107,6 +107,7 @@ RECOVERY_STOP_REASONS = {
 
 @dataclass
 class ProofFirstRuntimeState:
+    recovery_shift_id: str | None = None
     boss_restart_count: int = 0
     merge_restart_count: int = 0
     auth_failure_count: int = 0
@@ -151,6 +152,9 @@ def load_runtime_state(path: Path) -> ProofFirstRuntimeState:
     if not isinstance(payload, dict):
         return ProofFirstRuntimeState()
     return ProofFirstRuntimeState(
+        recovery_shift_id=(
+            str(payload["recovery_shift_id"]) if payload.get("recovery_shift_id") else None
+        ),
         boss_restart_count=int(payload.get("boss_restart_count", 0) or 0),
         merge_restart_count=int(payload.get("merge_restart_count", 0) or 0),
         auth_failure_count=int(payload.get("auth_failure_count", 0) or 0),
@@ -176,6 +180,25 @@ def load_runtime_state(path: Path) -> ProofFirstRuntimeState:
 def save_runtime_state(path: Path, state: ProofFirstRuntimeState) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(asdict(state), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def reset_recovery_budget_state(state: ProofFirstRuntimeState) -> None:
+    state.boss_restart_count = 0
+    state.merge_restart_count = 0
+    state.auth_failure_count = 0
+    state.publication_failure_count = 0
+    state.rate_limit_failure_count = 0
+    state.permission_mismatch_count = 0
+    state.runtime_failure_count = 0
+    state.github_outage_count = 0
+    state.recovery_attempt_counts = _default_recovery_attempt_counts()
+
+
+def bind_runtime_state_to_shift(state: ProofFirstRuntimeState, shift_id: str) -> None:
+    if state.recovery_shift_id == shift_id:
+        return
+    reset_recovery_budget_state(state)
+    state.recovery_shift_id = shift_id
 
 
 def recovery_budget_remaining(runtime_state: ProofFirstRuntimeState, failure_class: str) -> int:
@@ -314,8 +337,15 @@ def list_open_prs(*, repo_root: Path, repo: str) -> list[dict[str, Any]]:
 
 def count_automation_backlog(prs: list[dict[str, Any]]) -> int:
     return sum(
-        1 for pr in prs if str(pr.get("headRefName") or "").startswith(AUTOMATION_BRANCH_PREFIXES)
+        1
+        for pr in prs
+        if not bool(pr.get("isDraft"))
+        and str(pr.get("headRefName") or "").startswith(AUTOMATION_BRANCH_PREFIXES)
     )
+
+
+def actionable_open_prs(prs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [pr for pr in prs if not bool(pr.get("isDraft"))]
 
 
 def has_open_benchmark_publication_pr(prs: list[dict[str, Any]]) -> bool:
@@ -725,8 +755,10 @@ def run_shift_cycle(
         }
     snapshot = collect_boss_lane_snapshot(repo_root=repo_root, repo=repo)
     prs = list_open_prs(repo_root=repo_root, repo=repo)
-    automation_backlog = count_automation_backlog(prs)
-    open_pr_count = len(prs)
+    actionable_prs = actionable_open_prs(prs)
+    automation_backlog = count_automation_backlog(actionable_prs)
+    open_pr_count = len(actionable_prs)
+    draft_pr_count = len(prs) - open_pr_count
     canonical_queue_count = len(queue_report["kept"])
 
     boss_running = process_running(DEFAULT_BOSS_PROCESS_PATTERN)
@@ -1000,6 +1032,8 @@ def run_shift_cycle(
         "queue_report": queue_report,
         "snapshot": snapshot,
         "open_pr_count": open_pr_count,
+        "draft_pr_count": draft_pr_count,
+        "total_open_pr_count": len(prs),
         "automation_backlog": automation_backlog,
         "latest_benchmark_run": latest_run,
         "actions": actions,
@@ -1061,6 +1095,10 @@ async def _run_shift(args: argparse.Namespace) -> dict[str, Any]:
         await controller.resume_after_refresh(shift_id)
     elif restored.status != "running":
         await controller.start_shift(assessment_id=shift_id)
+
+    active_shift_id = controller.state.shift_id if controller.state is not None else shift_id
+    bind_runtime_state_to_shift(runtime_state, active_shift_id)
+    save_runtime_state(runtime_state_path, runtime_state)
 
     # Record shift start in ledger
     ledger.record_shift_start(
