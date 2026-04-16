@@ -25,6 +25,8 @@ DEFAULT_REPO = "synaptent/aragora"
 DEFAULT_LABELS = ("boss-ready",)
 DEFAULT_LIMIT = 2
 DEFAULT_MAX_OPEN_ISSUES = 12
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 45
+MAX_ISSUE_BODY_CHARS = 60_000
 DEFAULT_AUTOMATION_IDS = (
     "founder-review",
     "founder-triage",
@@ -66,6 +68,17 @@ STOPWORDS = {
     "with",
 }
 
+try:
+    from aragora.swarm.github_app_auth import github_cli_env
+except Exception:  # pragma: no cover - fallback for partially bootstrapped script contexts
+
+    def github_cli_env(
+        base_env: dict[str, str] | None = None,
+        *,
+        prefer_app: bool = True,
+    ) -> dict[str, str]:
+        return dict(os.environ if base_env is None else base_env)
+
 
 @dataclass(frozen=True)
 class Handoff:
@@ -89,7 +102,25 @@ class PublishDecision:
 
 
 def _run(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, text=True, capture_output=True, check=False)
+    env = github_cli_env(os.environ) if args and args[0] == "gh" else None
+    try:
+        return subprocess.run(
+            args,
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=DEFAULT_COMMAND_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        message = (
+            stderr
+            or f"command timed out after {DEFAULT_COMMAND_TIMEOUT_SECONDS}s: {' '.join(args)}"
+        )
+        return subprocess.CompletedProcess(args=args, returncode=124, stdout=stdout, stderr=message)
 
 
 def _codex_home(value: str | None) -> Path:
@@ -403,14 +434,46 @@ def _create_issue(
         "--title",
         handoff.task_title,
         "--body",
-        handoff.body,
+        _fit_issue_body(handoff.body),
     ]
     for label in labels:
         args.extend(["--label", label])
     proc = _run(args, cwd=repo_root)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "gh issue create failed")
-    return str(proc.stdout or "").strip().splitlines()[-1].strip()
+    url = str(proc.stdout or "").strip().splitlines()[-1].strip()
+    _add_issue_labels(repo_root, repo, url, labels)
+    return url
+
+
+def _fit_issue_body(body: str) -> str:
+    if len(body) <= MAX_ISSUE_BODY_CHARS:
+        return body
+    suffix = (
+        "\n\n---\n"
+        "Automation publisher truncated this issue body because it exceeded "
+        "GitHub's size limit. See the source automation memory path above for full evidence."
+    )
+    return body[: MAX_ISSUE_BODY_CHARS - len(suffix)].rstrip() + suffix
+
+
+def _issue_number_from_url(url: str) -> str | None:
+    match = re.search(r"/issues/(\d+)(?:$|[/?#])", url)
+    return match.group(1) if match else None
+
+
+def _add_issue_labels(repo_root: Path, repo: str, issue_url: str, labels: list[str]) -> None:
+    if not labels:
+        return
+    number = _issue_number_from_url(issue_url)
+    if not number:
+        return
+    proc = _run(
+        ["gh", "issue", "edit", number, "--repo", repo, "--add-label", ",".join(labels)],
+        cwd=repo_root,
+    )
+    if proc.returncode != 0:
+        return
 
 
 def decide_handoffs(
