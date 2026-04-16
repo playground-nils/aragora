@@ -154,6 +154,8 @@ class SessionRecord:
 
     @property
     def tmux_target(self) -> str:
+        if self.tmux_window.startswith("@"):
+            return f"{self.tmux_window}.{self.tmux_pane}"
         return f"{self.tmux_session}:{self.tmux_window}.{self.tmux_pane}"
 
     def to_dict(self) -> dict[str, Any]:
@@ -265,6 +267,18 @@ def build_tmux_list_panes_cmd(tmux_session: str) -> list[str]:
     ]
 
 
+def build_tmux_list_window_panes_cmd(*, tmux_session: str, tmux_window: str) -> list[str]:
+    target = tmux_window if tmux_window.startswith("@") else f"{tmux_session}:{tmux_window}"
+    return [
+        "tmux",
+        "list-panes",
+        "-t",
+        target,
+        "-F",
+        "#{window_index}\t#{pane_index}\t#{pane_current_path}",
+    ]
+
+
 def build_tmux_pipe_pane_cmd(*, target: str, log_path: Path) -> list[str]:
     sink = f"cat >> {shlex.quote(str(log_path))}"
     return ["tmux", "pipe-pane", "-o", "-t", target, sink]
@@ -319,6 +333,28 @@ def _primary_pane(tmux_session: str) -> dict[str, str]:
     }
 
 
+def _window_pane(*, tmux_session: str, tmux_window: str) -> dict[str, str]:
+    result = _run_tmux(
+        build_tmux_list_window_panes_cmd(tmux_session=tmux_session, tmux_window=tmux_window)
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(
+            f"Unable to inspect tmux panes for window {tmux_session}:{tmux_window}: {result.stderr.strip()}"
+        )
+    line = result.stdout.strip().splitlines()[0]
+    parts = line.split("\t")
+    if len(parts) != 3:
+        raise RuntimeError(
+            f"Unexpected tmux pane format for window {tmux_session}:{tmux_window}: {line}"
+        )
+    window, pane, current_path = parts
+    return {
+        "window": window,
+        "pane": pane,
+        "current_path": current_path,
+    }
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -364,7 +400,7 @@ def _git_branch(path: Path) -> str | None:
 def refresh_session_record(repo_root: Path, record: SessionRecord) -> SessionRecord:
     refreshed = SessionRecord.from_dict(record.to_dict())
     if _tmux_session_exists(refreshed.tmux_session):
-        pane = _primary_pane(refreshed.tmux_session)
+        pane = _window_pane(tmux_session=refreshed.tmux_session, tmux_window=refreshed.tmux_window)
         refreshed.tmux_window = pane["window"]
         refreshed.tmux_pane = pane["pane"]
         current_path = pane["current_path"].strip()
@@ -406,10 +442,16 @@ def list_sessions(repo_root: Path) -> list[dict[str, Any]]:
     registry = SessionMuxRegistry(repo_root)
     statuses: list[dict[str, Any]] = []
     for record in registry.list():
-        refreshed = refresh_session_record(repo_root, record)
-        registry.upsert(refreshed)
-        status = refreshed.to_dict()
-        status["running"] = _tmux_session_exists(refreshed.tmux_session)
+        try:
+            refreshed = refresh_session_record(repo_root, record)
+            registry.upsert(refreshed)
+            status = refreshed.to_dict()
+            status["running"] = _tmux_session_exists(refreshed.tmux_session)
+        except RuntimeError as exc:
+            status = record.to_dict()
+            status["running"] = False
+            status["error"] = str(exc)
+            refreshed = record
         status["tmux_target"] = refreshed.tmux_target
         log_text = (
             Path(refreshed.log_path).read_text(encoding="utf-8")
