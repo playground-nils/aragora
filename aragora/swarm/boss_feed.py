@@ -16,6 +16,7 @@ from fnmatch import fnmatch
 from typing import Any
 
 from aragora.swarm.boss_validation import assess_issue_body_sanitation
+from aragora.swarm.github_app_auth import github_cli_env
 
 logger = logging.getLogger(__name__)
 _SCOPE_ROOT_PREFIXES = (
@@ -173,6 +174,7 @@ class GitHubIssueFeed:
                 capture_output=True,
                 timeout=30,
                 check=False,
+                env=github_cli_env(),
             )
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
             logger.warning("gh issue list failed: %s", exc)
@@ -191,7 +193,7 @@ class GitHubIssueFeed:
         if not isinstance(raw_issues, list):
             return []
 
-        issues: list[GitHubIssue] = []
+        fetched_issues: list[GitHubIssue] = []
         for item in raw_issues:
             if not isinstance(item, dict):
                 continue
@@ -201,7 +203,7 @@ class GitHubIssueFeed:
                 for lbl in labels_raw
                 if str(lbl.get("name", "") if isinstance(lbl, dict) else lbl).strip()
             ]
-            issues.append(
+            fetched_issues.append(
                 GitHubIssue(
                     number=int(item.get("number", 0)),
                     title=str(item.get("title", "")).strip(),
@@ -212,7 +214,7 @@ class GitHubIssueFeed:
                     created_at=str(item.get("createdAt", "")).strip(),
                 )
             )
-        return issues
+        return fetched_issues
 
     def _fetch_issue(self, number: int, *, allow_closed: bool = False) -> GitHubIssue | None:
         cmd = [
@@ -233,6 +235,7 @@ class GitHubIssueFeed:
                 capture_output=True,
                 timeout=30,
                 check=False,
+                env=github_cli_env(),
             )
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
             logger.warning("gh issue view failed: %s", exc)

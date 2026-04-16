@@ -13,11 +13,13 @@ import json
 import hashlib
 import re
 import subprocess
+from collections.abc import Callable
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from aragora.swarm.github_app_auth import github_cli_env
 from aragora.swarm.outcome_learner import load_category_success_rates
 from aragora.swarm.terminal_truth import classify_from_metrics
 
@@ -117,6 +119,7 @@ def _fetch_issue_titles(
                 capture_output=True,
                 text=True,
                 timeout=20,
+                env=github_cli_env(),
             )
         except (OSError, subprocess.TimeoutExpired):
             return {}
@@ -746,7 +749,7 @@ def scan_all(
     min_success_rate: float = 0.3,
 ) -> list[BossIssueCandidate]:
     """Run all scanners and return merged, prioritized candidates."""
-    all_scanners = {
+    all_scanners: dict[str, Callable[[Path], list[BossIssueCandidate]]] = {
         "broad_exception": scan_bare_except_handlers,
         "silent_exception": scan_silent_exception_swallowing,
         "test_coverage": scan_untested_modules,
