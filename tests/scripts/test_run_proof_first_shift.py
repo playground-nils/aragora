@@ -505,6 +505,37 @@ def test_restart_boss_service_uses_direct_bootstrap_when_launchd_service_is_miss
     assert bootstrap_mock.called
 
 
+def test_restart_boss_service_keeps_generic_launchctl_failures_on_restart_path() -> None:
+    inspection_error = mod.LaunchdServiceStatus(
+        detail="launchctl print failed for com.aragora.swarm-boss-loop"
+    )
+    with (
+        patch(
+            "scripts.run_proof_first_shift.inspect_launchd_service", return_value=inspection_error
+        ),
+        patch(
+            "scripts.run_proof_first_shift.start_detached_boss_loop",
+            side_effect=AssertionError(
+                "direct bootstrap should not run for generic launchctl inspection failures"
+            ),
+        ),
+        patch(
+            "scripts.run_proof_first_shift.restart_service_via_launchd",
+            return_value=(False, "launchctl print failed for com.aragora.swarm-boss-loop"),
+        ) as restart_mock,
+    ):
+        ok, detail, action = mod.restart_boss_service(
+            repo_root=Path(".").resolve(),
+            repo="synaptent/aragora",
+            process_pattern="boss-loop",
+        )
+
+    assert ok is False
+    assert detail == "launchctl print failed for com.aragora.swarm-boss-loop"
+    assert action == "restart_boss_loop"
+    assert restart_mock.called
+
+
 def test_build_direct_boss_loop_command_uses_env_configuration() -> None:
     with patch.dict(
         "os.environ",
