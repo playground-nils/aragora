@@ -64,6 +64,7 @@ HANDLER_MODULES: dict[str, str] = {
     "ZoomHandler": "aragora.server.handlers.bots",
     # chat/ directory
     "ChatHandler": "aragora.server.handlers.chat.router",
+    "InboxCommandHandler": "aragora.server.handlers.inbox_command",
     # codebase/ directory
     "IntelligenceHandler": "aragora.server.handlers.codebase",
     # connectors/ directory
@@ -487,6 +488,7 @@ ALL_HANDLER_NAMES: list[str] = [
     "OAuthWizardHandler",
     "GmailIngestHandler",
     "GmailQueryHandler",
+    "InboxCommandHandler",
     "UnifiedInboxHandler",
     "SharedInboxHandler",
     "EmailWebhooksHandler",
@@ -658,6 +660,7 @@ ALL_HANDLER_NAMES: list[str] = [
     # top-level handlers
     "AuditTrailHandler",
     "BenchmarkingHandler",
+    "CoordinationHandler",
     "DifferentiationHandler",
     "ComplianceReportHandler",
     "ContextBudgetHandler",
