@@ -56,11 +56,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Import create_agent for agent creation
-create_agent: Any
 try:
-    from aragora.agents.base import create_agent
+    from aragora.agents.base import create_agent as _create_agent
 except ImportError:
-    create_agent = None
+    _create_agent = None
 
 if TYPE_CHECKING:
     from aragora.agents.base import AgentType
@@ -278,7 +277,7 @@ class DebateFactory:
         Returns:
             AgentCreationResult with created agents and failures
         """
-        if create_agent is None:
+        if _create_agent is None:
             raise ConfigurationError(
                 component="DebateFactory",
                 reason="create_agent not available - agents module failed to import",
@@ -310,7 +309,10 @@ class DebateFactory:
                 )
 
             try:
-                agent = create_agent(
+                if _create_agent is None:
+                    raise ImportError("aragora.agents.base.create_agent unavailable")
+
+                agent = _create_agent(
                     model_type=cast("AgentType", spec.provider),
                     name=spec.name,
                     role=role,
@@ -369,7 +371,11 @@ class DebateFactory:
         try:
             from aragora.server.stream.events import StreamEvent, StreamEventType
 
-            self.stream_emitter.emit(
+            emitter = self.stream_emitter
+            if emitter is None:
+                return
+
+            emitter.emit(
                 StreamEvent(
                     type=StreamEventType.ERROR,
                     data={
