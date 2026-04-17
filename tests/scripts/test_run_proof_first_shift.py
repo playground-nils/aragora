@@ -505,6 +505,54 @@ def test_restart_boss_service_uses_direct_bootstrap_when_launchd_service_is_miss
     assert bootstrap_mock.called
 
 
+def test_launchd_service_missing_requires_verified_missing_signal() -> None:
+    assert mod.launchd_service_missing(
+        mod.LaunchdServiceStatus(detail='Could not find service "com.aragora.swarm-boss-loop"')
+    )
+    assert mod.launchd_service_missing(
+        mod.LaunchdServiceStatus(detail="Service could not be found in domain")
+    )
+    assert not mod.launchd_service_missing(
+        mod.LaunchdServiceStatus(detail="launchctl print failed for com.aragora.swarm-boss-loop")
+    )
+    assert not mod.launchd_service_missing(
+        mod.LaunchdServiceStatus(detail="launchctl print timed out for com.aragora.swarm-boss-loop")
+    )
+    assert not mod.launchd_service_missing(
+        mod.LaunchdServiceStatus(detail="permission denied for com.aragora.swarm-boss-loop")
+    )
+
+
+def test_restart_boss_service_fails_closed_on_generic_launchctl_print_error() -> None:
+    generic_failure = mod.LaunchdServiceStatus(
+        detail="launchctl print failed for com.aragora.swarm-boss-loop"
+    )
+    with (
+        patch(
+            "scripts.run_proof_first_shift.inspect_launchd_service",
+            return_value=generic_failure,
+        ),
+        patch(
+            "scripts.run_proof_first_shift.start_detached_boss_loop",
+            side_effect=AssertionError("direct bootstrap should not run for generic print errors"),
+        ),
+        patch(
+            "scripts.run_proof_first_shift.restart_service_via_launchd",
+            return_value=(False, "launchctl print failed for com.aragora.swarm-boss-loop"),
+        ) as restart_mock,
+    ):
+        ok, detail, action = mod.restart_boss_service(
+            repo_root=Path(".").resolve(),
+            repo="synaptent/aragora",
+            process_pattern="boss-loop",
+        )
+
+    assert ok is False
+    assert detail == "launchctl print failed for com.aragora.swarm-boss-loop"
+    assert action == "restart_boss_loop"
+    assert restart_mock.called
+
+
 def test_build_direct_boss_loop_command_uses_env_configuration() -> None:
     with patch.dict(
         "os.environ",
@@ -793,6 +841,53 @@ def test_run_shift_cycle_records_direct_bootstrap_when_launchd_service_is_missin
 
     assert report["actions"] == ["bootstrap_boss_loop_direct"]
     assert report["stop_reason"] == ""
+
+
+def test_run_shift_cycle_records_truthful_restart_failure_for_generic_launchctl_errors() -> None:
+    state = mod.ProofFirstRuntimeState()
+    with (
+        patch(
+            "scripts.run_proof_first_shift.reconcile_proof_first_queue",
+            return_value={"kept": [{"id": 1}], "removed": []},
+        ),
+        patch(
+            "scripts.run_proof_first_shift.collect_boss_lane_snapshot", return_value={"ok": True}
+        ),
+        patch("scripts.run_proof_first_shift.list_open_prs", return_value=[]),
+        patch("scripts.run_proof_first_shift.process_running", side_effect=[False, True]),
+        patch(
+            "scripts.run_proof_first_shift.inspect_launchd_service",
+            return_value=mod.LaunchdServiceStatus(
+                detail="launchctl print failed for com.aragora.swarm-boss-loop"
+            ),
+        ),
+        patch(
+            "scripts.run_proof_first_shift.start_detached_boss_loop",
+            side_effect=AssertionError("direct bootstrap should not run for generic print errors"),
+        ),
+        patch(
+            "scripts.run_proof_first_shift.restart_service_via_launchd",
+            return_value=(False, "launchctl print failed for com.aragora.swarm-boss-loop"),
+        ),
+        patch("scripts.run_proof_first_shift.run_merge_arbiter_apply", return_value={"merged": []}),
+        patch("scripts.run_proof_first_shift.latest_benchmark_run", return_value=None),
+        patch("scripts.run_proof_first_shift.fetch_benchmark_failure_log", return_value=""),
+        patch("scripts.run_proof_first_shift.trigger_benchmark_workflow", return_value=None),
+    ):
+        report = mod.run_shift_cycle(
+            repo_root=Path(".").resolve(),
+            repo="synaptent/aragora",
+            benchmark_mode="disabled",
+            automation_backlog_limit=12,
+            runtime_state=state,
+            ledger=None,
+        )
+
+    assert report["actions"] == ["restart_boss_loop_failed"]
+    assert (
+        report["stop_reason"]
+        == "BossRestartFailed: launchctl print failed for com.aragora.swarm-boss-loop"
+    )
 
 
 def test_run_shift_cycle_stops_cleanly_when_github_is_unavailable(tmp_path: Path) -> None:

@@ -48,6 +48,10 @@ DEFAULT_BOSS_MAX_HOURS = "8"
 DEFAULT_BOSS_MAX_PARALLEL_DISPATCHES = "1"
 DEFAULT_BOSS_AUTONOMY_MODE = "full-auto"
 DEFAULT_BOSS_BOOTSTRAP_LOG = ".aragora/overnight/proof-first-boss-loop-bootstrap.log"
+VERIFIED_MISSING_LAUNCHD_SERVICE_MARKERS = (
+    "could not find service",
+    "service could not be found",
+)
 LAUNCHD_THROTTLE_GRACE_SECONDS = 60.0
 AUTH_FAILURE_STOP_AFTER = 2
 PUBLICATION_FAILURE_STOP_AFTER = 2
@@ -627,7 +631,7 @@ def should_restart_service(
 
 def launchd_service_missing(status: LaunchdServiceStatus) -> bool:
     detail = status.detail.lower()
-    return "could not find service" in detail or "launchctl print failed" in detail
+    return any(marker in detail for marker in VERIFIED_MISSING_LAUNCHD_SERVICE_MARKERS)
 
 
 def _env_or_default(name: str, default: str) -> str:
