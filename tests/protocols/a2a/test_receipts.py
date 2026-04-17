@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from aragora.protocols.a2a.receipts import (
     AGENT_RECEIPT_SCHEMA_VERSION,
     DEFAULT_FRESHNESS_SLA_SECONDS,
+    DEFAULT_SIGNATURE_ALGORITHM,
     DEFAULT_SETTLEMENT_WINDOW_SECONDS,
     AgentReceipt,
     DissentEntry,
     ReputationDelta,
 )
+
+ISSUER_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+ATTACKER_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32, 64)))
+ISSUER_PUBLIC_KEY = ISSUER_PRIVATE_KEY.public_key()
+ATTACKER_PUBLIC_KEY = ATTACKER_PRIVATE_KEY.public_key()
+SIGNATURE_KEY_ID = "test-issuer-key-v1"
 
 
 def _build_basic_receipt(**overrides) -> AgentReceipt:
@@ -22,6 +31,8 @@ def _build_basic_receipt(**overrides) -> AgentReceipt:
         subject_kind="decision",
         subject={"decision": "ship", "rationale": "tests pass"},
         issued_at="2026-04-17T12:00:00Z",
+        signing_key=ISSUER_PRIVATE_KEY,
+        signature_key_id=SIGNATURE_KEY_ID,
     )
     base.update(overrides)
     return AgentReceipt.build(**base)
@@ -63,6 +74,7 @@ class TestAgentReceiptBuild:
                 issuer=" ",
                 subject_kind="decision",
                 subject={"x": 1},
+                signing_key=ISSUER_PRIVATE_KEY,
             )
 
     def test_build_requires_non_empty_subject_kind(self) -> None:
@@ -71,6 +83,7 @@ class TestAgentReceiptBuild:
                 issuer="aragora.ai",
                 subject_kind="",
                 subject={"x": 1},
+                signing_key=ISSUER_PRIVATE_KEY,
             )
 
     def test_build_validates_freshness_sla(self) -> None:
@@ -80,6 +93,7 @@ class TestAgentReceiptBuild:
                 subject_kind="decision",
                 subject={"x": 1},
                 freshness_sla_seconds=0,
+                signing_key=ISSUER_PRIVATE_KEY,
             )
 
     def test_build_validates_settlement_window(self) -> None:
@@ -89,6 +103,34 @@ class TestAgentReceiptBuild:
                 subject_kind="decision",
                 subject={"x": 1},
                 settlement_window_seconds=-1,
+                signing_key=ISSUER_PRIVATE_KEY,
+            )
+
+    def test_build_requires_signing_key(self) -> None:
+        with pytest.raises(ValueError, match="signing_key"):
+            AgentReceipt.build(
+                issuer="aragora.ai",
+                subject_kind="decision",
+                subject={"x": 1},
+            )
+
+    def test_build_requires_non_empty_signature_key_id(self) -> None:
+        with pytest.raises(ValueError, match="signature_key_id"):
+            AgentReceipt.build(
+                issuer="aragora.ai",
+                subject_kind="decision",
+                subject={"x": 1},
+                signing_key=ISSUER_PRIVATE_KEY,
+                signature_key_id=" ",
+            )
+
+    def test_build_rejects_public_verification_key_as_signing_key(self) -> None:
+        with pytest.raises(ValueError, match="private key"):
+            AgentReceipt.build(
+                issuer="aragora.ai",
+                subject_kind="decision",
+                subject={"x": 1},
+                signing_key=ISSUER_PUBLIC_KEY,
             )
 
     def test_default_freshness_and_settlement_applied(self) -> None:
@@ -99,6 +141,10 @@ class TestAgentReceiptBuild:
     def test_schema_version_recorded(self) -> None:
         receipt = _build_basic_receipt()
         assert receipt.schema_version == AGENT_RECEIPT_SCHEMA_VERSION
+        assert receipt.signature_algorithm == DEFAULT_SIGNATURE_ALGORITHM
+        assert receipt.signature_key_id == SIGNATURE_KEY_ID
+        assert receipt.verification_key_sha256
+        assert receipt.to_json()["verification_key_sha256"] == receipt.verification_key_sha256
 
 
 class TestContentAddressing:
@@ -126,52 +172,73 @@ class TestContentAddressing:
         b = _build_basic_receipt(freshness_sla_seconds=7200)
         assert a.signature != b.signature
 
+    def test_different_signing_key_preserves_content_id_but_changes_signature(self) -> None:
+        a = _build_basic_receipt(signing_key=ISSUER_PRIVATE_KEY)
+        b = _build_basic_receipt(signing_key=ATTACKER_PRIVATE_KEY)
+        assert a.receipt_id == b.receipt_id
+        assert a.signature != b.signature
+        assert a.verification_key_sha256 != b.verification_key_sha256
+
 
 class TestSignatureVerification:
     def test_verify_signature_succeeds_on_valid_receipt(self) -> None:
         receipt = _build_basic_receipt()
-        assert receipt.verify_signature() is True
+        assert receipt.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is True
+
+    def test_verify_signature_uses_key_resolver(self) -> None:
+        receipt = _build_basic_receipt()
+
+        def resolve_key(issuer: str, key_id: str):
+            assert issuer == "aragora.ai"
+            assert key_id == SIGNATURE_KEY_ID
+            return ISSUER_PUBLIC_KEY
+
+        assert receipt.verify_signature(key_resolver=resolve_key) is True
+
+    def test_verify_signature_fails_without_verification_key(self) -> None:
+        receipt = _build_basic_receipt()
+        assert receipt.verify_signature() is False
+
+    def test_verify_signature_fails_with_wrong_key(self) -> None:
+        receipt = _build_basic_receipt()
+        assert receipt.verify_signature(verification_key=ATTACKER_PUBLIC_KEY) is False
 
     def test_verify_signature_fails_when_subject_mutated(self) -> None:
         receipt = _build_basic_receipt()
-        tampered = AgentReceipt(
-            receipt_id=receipt.receipt_id,
-            schema_version=receipt.schema_version,
-            issued_at=receipt.issued_at,
-            issuer=receipt.issuer,
-            subject_kind=receipt.subject_kind,
+        tampered = replace(
+            receipt,
             subject={"decision": "TAMPERED", "rationale": "tests pass"},
-            cruxset=receipt.cruxset,
-            dissent=receipt.dissent,
-            reputation_deltas_applied=receipt.reputation_deltas_applied,
-            freshness_sla_seconds=receipt.freshness_sla_seconds,
-            settlement_window_seconds=receipt.settlement_window_seconds,
-            provenance=receipt.provenance,
-            signature=receipt.signature,
         )
-        assert tampered.verify_signature() is False
+        assert tampered.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is False
 
     def test_verify_signature_fails_when_dissent_mutated(self) -> None:
         receipt = _build_basic_receipt(
             dissent=(DissentEntry(agent_id="bob", statement="risky"),),
         )
         # Reuse signature but with no dissent
-        tampered = AgentReceipt(
-            receipt_id=receipt.receipt_id,
-            schema_version=receipt.schema_version,
-            issued_at=receipt.issued_at,
-            issuer=receipt.issuer,
-            subject_kind=receipt.subject_kind,
-            subject=receipt.subject,
-            cruxset=receipt.cruxset,
+        tampered = replace(
+            receipt,
             dissent=(),
-            reputation_deltas_applied=receipt.reputation_deltas_applied,
-            freshness_sla_seconds=receipt.freshness_sla_seconds,
-            settlement_window_seconds=receipt.settlement_window_seconds,
-            provenance=receipt.provenance,
-            signature=receipt.signature,
         )
-        assert tampered.verify_signature() is False
+        assert tampered.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is False
+
+    def test_attacker_rebuilt_changed_subject_fails_under_issuer_key(self) -> None:
+        original = _build_basic_receipt()
+        forged = _build_basic_receipt(
+            subject={"decision": "hold", "rationale": "attacker changed subject"},
+            signing_key=ATTACKER_PRIVATE_KEY,
+        )
+
+        assert original.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is True
+        assert forged.issuer == original.issuer
+        assert forged.signature_key_id == original.signature_key_id
+        assert forged.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is False
+        assert forged.verify_signature(verification_key=ATTACKER_PUBLIC_KEY) is True
+
+    def test_verify_signature_fails_when_signature_metadata_mutated(self) -> None:
+        receipt = _build_basic_receipt()
+        tampered = replace(receipt, signature_key_id="attacker-key")
+        assert tampered.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is False
 
 
 class TestFreshnessAndSettlement:
@@ -203,20 +270,9 @@ class TestFreshnessAndSettlement:
             freshness_sla_seconds=3600,
         )
         # Manually construct a receipt with a bogus issued_at to exercise the branch
-        broken = AgentReceipt(
-            receipt_id=receipt.receipt_id,
-            schema_version=receipt.schema_version,
+        broken = replace(
+            receipt,
             issued_at="not-a-date",
-            issuer=receipt.issuer,
-            subject_kind=receipt.subject_kind,
-            subject=receipt.subject,
-            cruxset=receipt.cruxset,
-            dissent=receipt.dissent,
-            reputation_deltas_applied=receipt.reputation_deltas_applied,
-            freshness_sla_seconds=receipt.freshness_sla_seconds,
-            settlement_window_seconds=receipt.settlement_window_seconds,
-            provenance=receipt.provenance,
-            signature=receipt.signature,
         )
         assert broken.is_fresh() is False
         assert broken.is_settled() is False
@@ -244,7 +300,7 @@ class TestJsonRoundtrip:
         payload = receipt.to_json()
         roundtrip = AgentReceipt.from_json(payload)
         assert roundtrip == receipt
-        assert roundtrip.verify_signature() is True
+        assert roundtrip.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is True
 
     def test_roundtrip_without_optional_fields(self) -> None:
         receipt = _build_basic_receipt()
@@ -264,6 +320,7 @@ class TestJsonRoundtrip:
         assert rebuilt.reputation_deltas_applied == ()
         assert rebuilt.provenance == {}
         assert rebuilt.cruxset is None
+        assert rebuilt.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is True
 
 
 class TestForwardCompatibility:
@@ -277,4 +334,4 @@ class TestForwardCompatibility:
         assert rebuilt.receipt_id == receipt.receipt_id
         # Signature stays valid because the unknown field was not part of
         # the canonical payload that produced the original signature.
-        assert rebuilt.verify_signature() is True
+        assert rebuilt.verify_signature(verification_key=ISSUER_PUBLIC_KEY) is True
