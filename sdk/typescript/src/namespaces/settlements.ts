@@ -28,6 +28,10 @@ export class SettlementAPI {
     });
   }
 
+  async listPending(params?: { debate_id?: string; domain?: string; limit?: number }): Promise<Record<string, unknown>> {
+    return this.list(params);
+  }
+
   async getHistory(params?: { debate_id?: string; domain?: string; limit?: number }): Promise<Record<string, unknown>> {
     return this.client.request('GET', '/api/v1/settlements/history', {
       params: params as Record<string, unknown> | undefined,
@@ -69,3 +73,5 @@ export class SettlementAPI {
     );
   }
 }
+
+export class SettlementsAPI extends SettlementAPI {}

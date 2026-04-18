@@ -52,6 +52,10 @@ class SettlementAPI:
             params["limit"] = limit
         return self._client.request("GET", "/api/v1/settlements/history", params=params or None)
 
+    def list_pending(self, **params: Any) -> dict[str, Any]:
+        """Backward-compatible alias for listing pending settlements."""
+        return self.list(**params)
+
     def get_summary(self) -> dict[str, Any]:
         """Get settlement summary statistics."""
         return self._client.request("GET", "/api/v1/settlements/summary")
@@ -147,6 +151,10 @@ class AsyncSettlementAPI:
             params=params or None,
         )
 
+    async def list_pending(self, **params: Any) -> dict[str, Any]:
+        """Backward-compatible alias for listing pending settlements."""
+        return await self.list(**params)
+
     async def get_summary(self) -> dict[str, Any]:
         """Get settlement summary statistics."""
         return await self._client.request("GET", "/api/v1/settlements/summary")
@@ -196,3 +204,11 @@ class AsyncSettlementAPI:
             "GET",
             f"/api/v1/settlements/agent/{agent_name}/accuracy",
         )
+
+
+class SettlementsAPI(SettlementAPI):
+    """Backward-compatible settlement namespace alias."""
+
+
+class AsyncSettlementsAPI(AsyncSettlementAPI):
+    """Backward-compatible async settlement namespace alias."""

@@ -1820,6 +1820,9 @@ export { ReadinessAPI } from './readiness';
 // Tasks
 export { TasksAPI } from './tasks';
 
+// Settlements
+export { SettlementsAPI } from './settlements';
+
 // Templates
 export { TemplatesAPI } from './templates';
 

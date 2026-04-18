@@ -154,7 +154,7 @@ from .security import AsyncSecurityAPI, SecurityAPI
 from .selection import AsyncSelectionAPI, SelectionAPI
 from .self_improve import AsyncSelfImproveAPI, SelfImproveAPI
 from .services import AsyncServicesAPI, ServicesAPI
-from .settlements import AsyncSettlementAPI, SettlementAPI
+from .settlements import AsyncSettlementAPI, AsyncSettlementsAPI, SettlementAPI, SettlementsAPI
 from .shared_inbox import AsyncSharedInboxAPI, SharedInboxAPI
 from .skills import AsyncSkillsAPI, SkillsAPI
 from .slo import SLOAPI, AsyncSLOAPI
@@ -500,6 +500,8 @@ __all__ = [
     "AsyncSMEAPI",
     "SocialAPI",
     "AsyncSocialAPI",
+    "SettlementsAPI",
+    "AsyncSettlementsAPI",
     "SSOAPI",
     "AsyncSSOAPI",
     "SupportAPI",
