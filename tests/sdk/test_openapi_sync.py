@@ -108,6 +108,9 @@ def _load_baseline() -> dict[str, set[str]]:
     }
 
 
+IGNORED_TS_NAMESPACES = {"openapi"}
+
+
 # ---------------------------------------------------------------------------
 # Tests: OpenAPI Spec Structure
 # ---------------------------------------------------------------------------
@@ -298,7 +301,11 @@ class TestTypeScriptSDKDrift:
 
         ts_drift: list[tuple[str, str, str]] = []
         for ts_file in sorted(TS_NAMESPACES.glob("*.ts")):
-            if ts_file.stem == "index" or ts_file.name.startswith("_"):
+            if (
+                ts_file.stem == "index"
+                or ts_file.name.startswith("_")
+                or ts_file.stem in IGNORED_TS_NAMESPACES
+            ):
                 continue
             content = ts_file.read_text()
             eps = _extract_ts_endpoints(content)
