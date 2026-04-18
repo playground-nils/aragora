@@ -310,6 +310,7 @@ class AragoraClient:
         from .namespaces.selection import SelectionAPI
         from .namespaces.self_improve import SelfImproveAPI
         from .namespaces.services import ServicesAPI
+        from .namespaces.settlements import SettlementsAPI
         from .namespaces.shared_inbox import SharedInboxAPI
         from .namespaces.skills import SkillsAPI
         from .namespaces.slo import SLOAPI
@@ -494,6 +495,7 @@ class AragoraClient:
         self.scim = SCIMAPI(self)
         self.search = SearchAPI(self)
         self.security = SecurityAPI(self)
+        self.settlements = SettlementsAPI(self)
         self.selection = SelectionAPI(self)
         self.self_improve = SelfImproveAPI(self)
         self.services = ServicesAPI(self)
@@ -956,6 +958,7 @@ class AragoraAsyncClient:
         from .namespaces.selection import AsyncSelectionAPI
         from .namespaces.self_improve import AsyncSelfImproveAPI
         from .namespaces.services import AsyncServicesAPI
+        from .namespaces.settlements import AsyncSettlementsAPI
         from .namespaces.shared_inbox import AsyncSharedInboxAPI
         from .namespaces.skills import AsyncSkillsAPI
         from .namespaces.slo import AsyncSLOAPI
@@ -1127,6 +1130,7 @@ class AragoraAsyncClient:
         self.scim = AsyncSCIMAPI(self)
         self.search = AsyncSearchAPI(self)
         self.security = AsyncSecurityAPI(self)
+        self.settlements = AsyncSettlementsAPI(self)
         self.selection = AsyncSelectionAPI(self)
         self.self_improve = AsyncSelfImproveAPI(self)
         self.services = AsyncServicesAPI(self)

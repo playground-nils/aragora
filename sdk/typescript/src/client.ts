@@ -195,6 +195,7 @@ import {
   DocumentsAPI,
   RetentionAPI,
   NotificationsAPI,
+  SettlementsAPI,
   PulseAPI,
   LeaderboardAPI,
   ReplaysAPI,
@@ -626,6 +627,11 @@ export class AragoraClient {
    * Provides methods for notification settings and delivery.
    */
   readonly notifications: NotificationsAPI;
+
+  /**
+   * Provides methods for debate claim settlement management.
+   */
+  readonly settlements: SettlementsAPI;
 
   /**
    * Pulse API namespace.
@@ -1063,6 +1069,7 @@ export class AragoraClient {
     this.documents = new DocumentsAPI(this);
     this.retention = new RetentionAPI(this);
     this.notifications = new NotificationsAPI(this);
+    this.settlements = new SettlementsAPI(this);
     this.pulse = new PulseAPI(this);
     this.leaderboard = new LeaderboardAPI(this);
     this.replays = new ReplaysAPI(this);
