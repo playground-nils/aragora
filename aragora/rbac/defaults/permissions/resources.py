@@ -210,6 +210,23 @@ PERM_INBOX_DELETE = _permission(
 )
 
 # ============================================================================
+# SETTLEMENT PERMISSIONS
+# ============================================================================
+
+PERM_SETTLEMENT_READ = _permission(
+    ResourceType.SETTLEMENT,
+    Action.READ,
+    "View Settlements",
+    "View settlement queues, history, and accuracy rollups",
+)
+PERM_SETTLEMENT_WRITE = _permission(
+    ResourceType.SETTLEMENT,
+    Action.WRITE,
+    "Manage Settlements",
+    "Submit settlement outcomes and batch adjudications",
+)
+
+# ============================================================================
 # COMPUTER-USE PERMISSIONS
 # ============================================================================
 
@@ -383,6 +400,9 @@ __all__ = [
     "PERM_INBOX_CREATE",
     "PERM_INBOX_WRITE",
     "PERM_INBOX_DELETE",
+    # Settlements
+    "PERM_SETTLEMENT_READ",
+    "PERM_SETTLEMENT_WRITE",
     # Computer-Use
     "PERM_COMPUTER_USE_READ",
     "PERM_COMPUTER_USE_EXECUTE",

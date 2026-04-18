@@ -609,6 +609,8 @@ PERMISSION_MATRIX: dict[str, list[str]] = {
     "audit:receipts.read": ["admin", "owner"],
     "audit:receipts.verify": ["admin", "owner"],
     "receipts:share": ["member", "admin", "owner"],
+    "settlements:read": ["member", "admin", "owner"],
+    "settlements:write": ["admin", "owner"],
     # Policy/Compliance permissions
     "policies:read": ["member", "admin", "owner"],
     "policies:create": ["admin", "owner"],

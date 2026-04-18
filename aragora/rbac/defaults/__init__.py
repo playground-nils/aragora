@@ -79,6 +79,8 @@ from .permissions import (  # noqa: F401
     # Inbox
     PERM_INBOX_READ,
     PERM_INBOX_UPDATE,
+    PERM_SETTLEMENT_READ,
+    PERM_SETTLEMENT_WRITE,
     # Skills
     PERM_SKILLS_READ,
     PERM_SKILLS_INSTALL,

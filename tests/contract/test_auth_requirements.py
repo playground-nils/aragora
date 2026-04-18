@@ -341,6 +341,37 @@ class TestAuthConsistency:
         assert get_req.level == AuthLevel.PUBLIC
         assert not requires_auth("/api/v2/receipts/share/share-token", "get")
 
+    @pytest.mark.parametrize(
+        ("path", "method", "permission"),
+        [
+            ("/api/v1/settlements", "get", "settlements:read"),
+            ("/api/v1/settlements/history", "get", "settlements:read"),
+            ("/api/v1/settlements/summary", "get", "settlements:read"),
+            ("/api/v1/settlements/settle-123", "get", "settlements:read"),
+            ("/api/v1/settlements/agent/codex/accuracy", "get", "settlements:read"),
+            ("/api/v1/settlements/settle-123/settle", "post", "settlements:write"),
+            ("/api/v1/settlements/batch", "post", "settlements:write"),
+            ("/api/settlements", "get", "settlements:read"),
+            ("/api/settlements/history", "get", "settlements:read"),
+            ("/api/settlements/summary", "get", "settlements:read"),
+            ("/api/settlements/settle-123", "get", "settlements:read"),
+            ("/api/settlements/agent/codex/accuracy", "get", "settlements:read"),
+            ("/api/settlements/settle-123/settle", "post", "settlements:write"),
+            ("/api/settlements/batch", "post", "settlements:write"),
+        ],
+    )
+    def test_settlement_paths_use_template_matching(
+        self, path: str, method: str, permission: str
+    ) -> None:
+        """Settlement endpoints should resolve to explicit manifest permissions."""
+        from aragora.server.auth_requirements import AuthLevel, get_requirement, requires_auth
+
+        req = get_requirement(path, method)
+        assert req is not None
+        assert req.level == AuthLevel.PERMISSION
+        assert req.permission == permission
+        assert requires_auth(path, method)
+
     def test_get_required_permission_helper(self) -> None:
         """The get_required_permission helper should work correctly."""
         from aragora.server.auth_requirements import get_required_permission
@@ -350,6 +381,11 @@ class TestAuthConsistency:
         assert (
             get_required_permission("/api/v2/receipts/rcpt_test123/share", "post")
             == "receipts:share"
+        )
+        assert get_required_permission("/api/v1/settlements", "get") == "settlements:read"
+        assert (
+            get_required_permission("/api/v1/settlements/settle-123/settle", "post")
+            == "settlements:write"
         )
 
         # Non-permission endpoints should return None

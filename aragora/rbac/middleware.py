@@ -670,6 +670,16 @@ DEFAULT_ROUTE_PERMISSIONS = [
     RoutePermission(r"^/api/(v1/)?inbox/([^/]+)/read$", "POST", "inbox.write", 2),
     RoutePermission(r"^/api/(v1/)?inbox/([^/]+)/archive$", "POST", "inbox.write", 2),
     RoutePermission(r"^/api/(v1/)?inbox/mark-all-read$", "POST", "inbox.write"),
+    # ── Settlement management ──
+    RoutePermission(r"^/api/(v1/)?settlements$", "GET", "settlements.read"),
+    RoutePermission(r"^/api/(v1/)?settlements/history$", "GET", "settlements.read"),
+    RoutePermission(r"^/api/(v1/)?settlements/summary$", "GET", "settlements.read"),
+    RoutePermission(
+        r"^/api/(v1/)?settlements/agent/([^/]+)/accuracy$", "GET", "settlements.read", 2
+    ),
+    RoutePermission(r"^/api/(v1/)?settlements/([^/]+)$", "GET", "settlements.read", 2),
+    RoutePermission(r"^/api/(v1/)?settlements/batch$", "POST", "settlements.write"),
+    RoutePermission(r"^/api/(v1/)?settlements/([^/]+)/settle$", "POST", "settlements.write", 2),
     # ── Canvas (visual collaboration) ──
     RoutePermission(r"^/api/(v1/)?canvas$", "GET", "canvas.read"),
     RoutePermission(r"^/api/(v1/)?canvas$", "POST", "canvas.write"),

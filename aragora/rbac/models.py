@@ -125,6 +125,7 @@ class ResourceType(str, Enum):
     # Financial operations
     FINANCE = "finance"  # Financial operations (invoices, payments, AR/AP)
     RECEIPT = "receipts"  # Decision receipts and audit trails
+    SETTLEMENT = "settlements"  # Debate outcome settlements and adjudication
     COST = "costs"  # Cost tracking and optimization
 
     # Scheduling operations

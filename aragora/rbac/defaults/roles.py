@@ -71,6 +71,8 @@ from .permissions import (
     # Inbox
     PERM_INBOX_READ,
     PERM_INBOX_UPDATE,
+    PERM_SETTLEMENT_READ,
+    PERM_SETTLEMENT_WRITE,
     # Skills
     PERM_SKILLS_READ,
     PERM_SKILLS_INSTALL,
@@ -416,6 +418,8 @@ ROLE_ADMIN = Role(
         PERM_FINDINGS_BULK.key,
         # Provenance (all operations)
         PERM_PROVENANCE_READ.key,
+        PERM_SETTLEMENT_READ.key,
+        PERM_SETTLEMENT_WRITE.key,
         PERM_PROVENANCE_VERIFY.key,
         PERM_PROVENANCE_EXPORT.key,
         # Admin (limited)
@@ -582,6 +586,7 @@ ROLE_ANALYST = Role(
         PERM_MARKETPLACE_READ.key,
         PERM_EXPLAINABILITY_READ.key,
         PERM_FINDINGS_READ.key,
+        PERM_SETTLEMENT_READ.key,
         PERM_USER_READ.key,
         PERM_ORG_READ.key,
     },
@@ -636,6 +641,7 @@ ROLE_MEMBER = Role(
         PERM_PROVENANCE_READ.key,
         PERM_INBOX_READ.key,
         PERM_INBOX_UPDATE.key,
+        PERM_SETTLEMENT_READ.key,
         PERM_BOTS_READ.key,
         PERM_FEEDBACK_READ.key,
         PERM_FEEDBACK_WRITE.key,
