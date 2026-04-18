@@ -534,7 +534,7 @@ class SessionState:
         repair_journal = recent_attempts or [
             dict(item) for item in self.repair_journal[-max(1, int(max_attempts or 1)) :]
         ]
-        context = {
+        context: dict[str, Any] = {
             "session_id": self.session_id,
             "issue_number": self.issue_number,
             "phase": self.phase,
