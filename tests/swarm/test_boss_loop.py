@@ -4226,6 +4226,7 @@ async def test_dispatch_issue_injects_session_resume_context_into_work_order_met
     store = SessionStateStore(state_dir=tmp_path)
     store.record_attempt(
         issue_number=1734,
+        repo_slug="synaptent/aragora",
         status="needs_human",
         outcome="blocked",
         exit_code=1,
@@ -4237,6 +4238,24 @@ async def test_dispatch_issue_injects_session_resume_context_into_work_order_met
             "failure_reason": "pytest -q tests/swarm/test_boss_loop.py failed",
             "failing_verification": {
                 "command": "pytest -q tests/swarm/test_boss_loop.py",
+                "exit_code": 1,
+            },
+        },
+    )
+    store.record_attempt(
+        issue_number=1734,
+        repo_slug="other/repo",
+        status="needs_human",
+        outcome="blocked",
+        exit_code=1,
+        changed_files=["other/repo.py"],
+        target_agent="codex",
+        runner_type="codex",
+        resume_hint="other repo should not leak",
+        metadata={
+            "failure_reason": "other repo should not leak",
+            "failing_verification": {
+                "command": "pytest -q tests/other_repo.py",
                 "exit_code": 1,
             },
         },
@@ -4256,12 +4275,16 @@ async def test_dispatch_issue_injects_session_resume_context_into_work_order_met
     loop._attach_issue_handoff_metadata(
         spec,
         issue,
-        session_state=store.latest_for_issue(issue.number),
+        session_state=store.latest_for_issue(issue.number, repo_slug="synaptent/aragora"),
     )
     metadata = spec.work_orders[0]["metadata"]
 
     assert metadata["resume_context"]["issue_number"] == 1734
     assert metadata["resume_context"]["retry_count"] == 1
+    assert (
+        metadata["resume_context"]["resume_hint"]
+        == "pytest -q tests/swarm/test_boss_loop.py failed"
+    )
     assert metadata["repair_journal"][0]["failing_verification"]["command"] == (
         "pytest -q tests/swarm/test_boss_loop.py"
     )
@@ -4318,12 +4341,13 @@ def test_record_session_attempt_persists_session_state_after_dispatch(tmp_path: 
         requested_target_agent="codex",
     )
 
-    state = store.latest_for_issue(issue.number)
+    state = store.latest_for_issue(issue.number, repo_slug="synaptent/aragora")
 
     assert state is not None
     assert state.retry_count == 1
     assert state.target_agent == "codex"
     assert state.branch_name == "codex/issue-1735"
+    assert state.metadata["repo_slug"] == "synaptent/aragora"
     assert state.attempts[-1]["exit_code"] == 1
     assert state.attempts[-1]["changed_paths"] == ["aragora/swarm/boss_loop.py"]
 

@@ -739,13 +739,12 @@ async def dispatch_issue(
             )
         )
 
-    prior_session_state = loop._session_state_for_issue(issue.number)
+    repo_slug = loop._repo_slug_for_issue(issue)
+    prior_session_state = loop._session_state_for_issue(issue.number, repo_slug=repo_slug)
     loop._attach_issue_handoff_metadata(spec, issue, session_state=prior_session_state)
 
     try:
-        from aragora.swarm.session_state import load_resume_context_for_issue
-
-        resume_context = load_resume_context_for_issue(issue.number)
+        resume_context = prior_session_state.resume_context() if prior_session_state else ""
         if resume_context:
             spec.raw_goal = (
                 f"{spec.raw_goal}\n\n## Resume Context (from prior attempt)\n{resume_context}"

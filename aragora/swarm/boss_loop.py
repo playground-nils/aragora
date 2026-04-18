@@ -1332,9 +1332,18 @@ class BossLoop:
                     return result
         return None
 
-    def _session_state_for_issue(self, issue_number: int) -> SessionState | None:
+    def _session_state_for_issue(
+        self,
+        issue_number: int,
+        *,
+        repo_slug: str | None = None,
+    ) -> SessionState | None:
         try:
-            return self._session_state_store.latest_for_issue(issue_number)
+            resolved_repo_slug = repo_slug or str(self.config.repo or "").strip() or None
+            return self._session_state_store.latest_for_issue(
+                issue_number,
+                repo_slug=resolved_repo_slug,
+            )
         except Exception:
             logger.debug(
                 "Boss loop session-state lookup failed for issue #%s",
@@ -1419,10 +1428,14 @@ class BossLoop:
             metadata["branch_name"] = branch_name
         if pr_url:
             metadata["pr_url"] = pr_url
+        repo_slug = self._repo_slug_for_issue(issue)
+        if repo_slug:
+            metadata["repo_slug"] = repo_slug
 
         try:
             self._session_state_store.record_attempt(
                 issue_number=issue.number,
+                repo_slug=repo_slug,
                 status=str(worker_result.get("status", "")).strip() or "unknown",
                 outcome=str(worker_result.get("outcome", "")).strip()
                 or str(worker_result.get("status", "")).strip()

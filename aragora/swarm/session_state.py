@@ -87,6 +87,14 @@ def _coerce_dict(value: Any) -> dict[str, Any] | None:
     return dict(value)
 
 
+def _normalize_repo_slug(value: Any) -> str | None:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    normalized = text.strip().strip("/").lower()
+    return normalized or None
+
+
 def _coerce_exit_code(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
@@ -187,6 +195,20 @@ def _attempt_changed_paths(attempt: Mapping[str, Any]) -> list[str]:
     if paths:
         return paths
     return _coerce_path_list(attempt.get("changed_files"))
+
+
+def _session_repo_slug(state: "SessionState") -> str | None:
+    for key in ("repo_slug", "boss_repo", "repo", "repo_full_name"):
+        slug = _normalize_repo_slug(state.metadata.get(key))
+        if slug is not None:
+            return slug
+    return None
+
+
+def _default_issue_session_id(issue_number: int, repo_slug: str | None = None) -> str:
+    if repo_slug:
+        return f"issue-{repo_slug}-{issue_number}"
+    return f"issue-{issue_number}"
 
 
 @dataclass(slots=True)
@@ -584,9 +606,15 @@ class SessionStateStore:
             raise ValueError("session state payload must be a JSON object")
         return SessionState.from_dict(payload)
 
-    def list_sessions(self, *, issue_number: int | None = None) -> list[SessionState]:
+    def list_sessions(
+        self,
+        *,
+        issue_number: int | None = None,
+        repo_slug: str | None = None,
+    ) -> list[SessionState]:
         items: list[SessionState] = []
         issue_filter = _coerce_issue_number(issue_number)
+        repo_filter = _normalize_repo_slug(repo_slug)
         for path in sorted(self._state_dir.glob("*.json")):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -597,6 +625,8 @@ class SessionStateStore:
                 continue
             if issue_filter is not None and state.issue_number != issue_filter:
                 continue
+            if repo_filter is not None and _session_repo_slug(state) != repo_filter:
+                continue
             items.append(state)
         items.sort(
             key=lambda state: (state.updated_at, state.created_at, state.session_id),
@@ -604,14 +634,20 @@ class SessionStateStore:
         )
         return items
 
-    def latest_for_issue(self, issue_number: int) -> SessionState | None:
-        sessions = self.list_sessions(issue_number=issue_number)
+    def latest_for_issue(
+        self,
+        issue_number: int,
+        *,
+        repo_slug: str | None = None,
+    ) -> SessionState | None:
+        sessions = self.list_sessions(issue_number=issue_number, repo_slug=repo_slug)
         return sessions[0] if sessions else None
 
     def record_attempt(
         self,
         *,
         issue_number: int,
+        repo_slug: str | None = None,
         status: str,
         outcome: str | None = None,
         exit_code: int | None = None,
@@ -628,16 +664,29 @@ class SessionStateStore:
         issue_value = _coerce_issue_number(issue_number)
         if issue_value is None:
             raise ValueError("issue_number must be a positive integer")
+        payload_metadata = dict(metadata or {})
+        repo_value = _normalize_repo_slug(repo_slug)
+        if repo_value is None:
+            for key in ("repo_slug", "boss_repo", "repo", "repo_full_name"):
+                repo_value = _normalize_repo_slug(payload_metadata.get(key))
+                if repo_value is not None:
+                    break
+        if repo_value is not None:
+            payload_metadata.setdefault("repo_slug", repo_value)
+            payload_metadata.setdefault("boss_repo", repo_value)
         state = (
             self.load(session_id) if session_id is not None else None
-        ) or self.latest_for_issue(issue_value)
+        ) or self.latest_for_issue(issue_value, repo_slug=repo_value)
         if state is None:
             state = SessionState(
-                session_id=session_id or f"issue-{issue_value}",
+                session_id=session_id or _default_issue_session_id(issue_value, repo_value),
                 issue_number=issue_value,
                 status="created",
             )
         state.issue_number = issue_value
+        if repo_value is not None:
+            state.metadata.setdefault("repo_slug", repo_value)
+            state.metadata.setdefault("boss_repo", repo_value)
         state.record_attempt(
             status=status,
             outcome=outcome,
@@ -649,7 +698,7 @@ class SessionStateStore:
             branch_name=branch_name,
             pr_url=pr_url,
             resume_hint=resume_hint,
-            metadata=metadata,
+            metadata=payload_metadata,
         )
         self.save(state)
         return state
@@ -744,7 +793,11 @@ def classify_session_blocker(state: SessionState) -> dict[str, str]:
     }
 
 
-def load_resume_context_for_issue(issue_number: int | None) -> str:
+def load_resume_context_for_issue(
+    issue_number: int | None,
+    *,
+    repo_slug: str | None = None,
+) -> str:
     """Load resume context from prior session state for an issue (BC-02).
 
     Returns the resume_context string if a prior session exists with
@@ -753,7 +806,7 @@ def load_resume_context_for_issue(issue_number: int | None) -> str:
     if not issue_number:
         return ""
     store = SessionStateStore()
-    sessions = store.list_sessions(issue_number=issue_number)
+    sessions = store.list_sessions(issue_number=issue_number, repo_slug=repo_slug)
     if not sessions:
         return ""
     latest = max(sessions, key=lambda s: s.updated_at)
