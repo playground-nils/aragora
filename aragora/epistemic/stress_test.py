@@ -28,7 +28,10 @@ def stress_test_enabled(*, override: bool | None = None) -> bool:
     if override is not None:
         return override
     return os.environ.get("ARAGORA_STRESS_TEST_ENABLED", "").strip().lower() in {
-        "1", "true", "yes", "on"
+        "1",
+        "true",
+        "yes",
+        "on",
     }
 
 
@@ -125,8 +128,15 @@ def _probe_unit(uid: str, baseline: float, p: StressPerturbation) -> FragilityRe
         reason = f"{p.kind}: {p.description[:120]}"
     else:
         stressed, delta, reason = round(baseline, 4), 0.0, "not in perturbation scope"
-    return FragilityReport(uid, p.perturbation_id, round(baseline, 4), stressed, delta,
-                           reason, _recommended_action(delta, stressed))
+    return FragilityReport(
+        uid,
+        p.perturbation_id,
+        round(baseline, 4),
+        stressed,
+        delta,
+        reason,
+        _recommended_action(delta, stressed),
+    )
 
 
 def run_stress_test(
@@ -147,9 +157,7 @@ def run_stress_test(
     Raises: ``RuntimeError`` when gate is off and ``enabled`` is not ``True``.
     """
     if not stress_test_enabled(override=enabled):
-        raise RuntimeError(
-            "Set ARAGORA_STRESS_TEST_ENABLED=1 to enable the stress-test subsystem."
-        )
+        raise RuntimeError("Set ARAGORA_STRESS_TEST_ENABLED=1 to enable the stress-test subsystem.")
     reports = [
         _probe_unit(uid, baseline, p)
         for p in perturbations
@@ -160,5 +168,6 @@ def run_stress_test(
         most_fragile = next(r.proof_unit_id for r in reports if r.fragility_delta == max_delta)
     else:
         max_delta, most_fragile = 0.0, ""
-    return StressTestResult(len(perturbations), len(proof_unit_integrities),
-                            reports, most_fragile, round(max_delta, 4))
+    return StressTestResult(
+        len(perturbations), len(proof_unit_integrities), reports, most_fragile, round(max_delta, 4)
+    )

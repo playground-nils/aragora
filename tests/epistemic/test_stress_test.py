@@ -19,11 +19,13 @@ from aragora.epistemic.stress_test import (
 
 
 def _p(pid: str = "p1", impact: float = 0.4, units: list[str] | None = None) -> StressPerturbation:
-    return StressPerturbation(pid, "cve_drop", "Synthetic.", impact,
-                              affected_proof_unit_ids=units or [])
+    return StressPerturbation(
+        pid, "cve_drop", "Synthetic.", impact, affected_proof_unit_ids=units or []
+    )
 
 
 # --- Flag gate ---
+
 
 def test_disabled_by_default() -> None:
     with pytest.raises(RuntimeError, match="ARAGORA_STRESS_TEST_ENABLED"):
@@ -44,6 +46,7 @@ def test_env_var_truthiness(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # --- _probe_unit ---
 
+
 def test_probe_reduces_integrity() -> None:
     rep = _probe_unit("u1", 0.8, _p(impact=0.3, units=["u1"]))
     assert rep.stressed_integrity == pytest.approx(0.5, abs=1e-4)
@@ -62,13 +65,16 @@ def test_probe_out_of_scope_unchanged() -> None:
 
 
 def test_probe_empty_scope_hits_all() -> None:
-    assert _probe_unit("any", 0.9, _p(impact=0.35, units=[])).fragility_delta == pytest.approx(0.35, abs=1e-4)
+    assert _probe_unit("any", 0.9, _p(impact=0.35, units=[])).fragility_delta == pytest.approx(
+        0.35, abs=1e-4
+    )
 
 
 # --- _recommended_action ---
 
+
 def test_recommended_actions() -> None:
-    assert _recommended_action(0.1, 0.25) == "fail_closed"    # stressed < 0.3
+    assert _recommended_action(0.1, 0.25) == "fail_closed"  # stressed < 0.3
     assert _recommended_action(0.45, 0.55) == "repair_required"
     assert _recommended_action(0.25, 0.7) == "monitor"
     assert _recommended_action(0.05, 0.9) == "pass"
@@ -76,10 +82,12 @@ def test_recommended_actions() -> None:
 
 # --- run_stress_test ---
 
+
 def test_identifies_most_fragile_unit() -> None:
     result = run_stress_test(
         [_p("p1", 0.6, ["u1"]), _p("p2", 0.15, ["u2"])],
-        {"u1": 0.9, "u2": 0.8}, enabled=True,
+        {"u1": 0.9, "u2": 0.8},
+        enabled=True,
     )
     assert result.most_fragile_unit_id == "u1"
     assert result.max_fragility_delta == pytest.approx(0.6, abs=1e-4)
@@ -95,11 +103,14 @@ def test_high_fragility_filter() -> None:
         FragilityReport("u1", "p1", 0.9, 0.4, 0.5, "t", "repair_required"),
         FragilityReport("u2", "p1", 0.8, 0.75, 0.05, "t", "pass"),
     ]
-    result = StressTestResult(1, 2, reports=reports, most_fragile_unit_id="u1", max_fragility_delta=0.5)
+    result = StressTestResult(
+        1, 2, reports=reports, most_fragile_unit_id="u1", max_fragility_delta=0.5
+    )
     assert [r.proof_unit_id for r in result.high_fragility_units] == ["u1"]
 
 
 # --- Serialisation ---
+
 
 def test_serialisation_round_trips() -> None:
     result = run_stress_test([_p(impact=0.4, units=["u1"])], {"u1": 0.9}, enabled=True)
