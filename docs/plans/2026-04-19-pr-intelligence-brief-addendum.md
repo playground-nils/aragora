@@ -3,7 +3,7 @@
 Last updated: 2026-04-19
 Status: implementation-ready design addendum
 
-**Extends:** [`docs/plans/2026-04-19-pr-intelligence-brief.md`](2026-04-19-pr-intelligence-brief.md) (PR #6309)
+**Extends:** the primary PR Intelligence Brief plan proposed in PR #6309 (`docs/plans/2026-04-19-pr-intelligence-brief.md` once landed)
 **Tracking:** #6303 (epic) · #6304 (UI) · #6305 (cost) · #6306 (protocol) · #6307 (receipts)
 
 ## Purpose
