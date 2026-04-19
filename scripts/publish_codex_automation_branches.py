@@ -30,10 +30,11 @@ DEFAULT_SINCE_HOURS = 72
 DEFAULT_PUBLISH_LIMIT = 1
 DEFAULT_MAX_OPEN_PRS = 1
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 45
-DEFAULT_GIT_TIMEOUT_SECONDS = 15
+DEFAULT_GIT_TIMEOUT_SECONDS = 60
 DEFAULT_SCAN_LIMIT = 12
 CODEX_BRANCH_PREFIX = "codex/"
 DEFAULT_PREFLIGHT_SCRIPT = "scripts/automation_pr_preflight.sh"
+DEFAULT_PRE_PUSH_SKIP_HOOKS = "mypy-baseline"
 STOPWORDS = {
     "and",
     "are",
@@ -66,7 +67,7 @@ ACTIVE_SESSION_FILES = (
 )
 
 try:
-    from aragora.swarm.github_app_auth import github_cli_env
+    from aragora.swarm.github_app_auth import gh_subprocess_run, github_cli_env
 except Exception:  # pragma: no cover - fallback for partially bootstrapped script contexts
 
     def github_cli_env(
@@ -75,6 +76,25 @@ except Exception:  # pragma: no cover - fallback for partially bootstrapped scri
         prefer_app: bool = True,
     ) -> dict[str, str]:
         return dict(os.environ if base_env is None else base_env)
+
+    def gh_subprocess_run(
+        args: list[str],
+        *,
+        timeout: float = 30.0,
+        prefer_app: bool = True,
+        write_op: bool = False,
+        env: dict[str, str] | None = None,
+        max_retries: int = 0,
+    ) -> subprocess.CompletedProcess[str]:
+        del prefer_app, write_op, max_retries
+        return subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=dict(os.environ if env is None else env),
+            check=False,
+        )
 
 
 @dataclass(frozen=True)
@@ -109,16 +129,46 @@ class PublishDecision:
     worktree_paths: list[str]
 
 
+def _gh_write_op(args: list[str]) -> bool:
+    return len(args) >= 2 and (args[0], args[1]) in {
+        ("pr", "create"),
+        ("pr", "edit"),
+    }
+
+
 def _run(
     args: list[str],
     *,
     cwd: Path,
     check: bool = False,
+    env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = github_cli_env(os.environ) if args and args[0] == "gh" else None
-    timeout = (
-        DEFAULT_COMMAND_TIMEOUT_SECONDS if args and args[0] == "gh" else DEFAULT_GIT_TIMEOUT_SECONDS
-    )
+    if env_overrides:
+        env = dict(os.environ if env is None else env)
+        env.update(env_overrides)
+    if args and args[0] == "gh":
+        timeout = int(
+            os.environ.get(
+                "ARAGORA_AUTOMATION_GH_TIMEOUT_SECONDS",
+                str(DEFAULT_COMMAND_TIMEOUT_SECONDS),
+            )
+        )
+        return gh_subprocess_run(
+            args[1:],
+            timeout=timeout,
+            prefer_app=True,
+            write_op=_gh_write_op(args[1:]),
+            env=dict(os.environ if env is None else env),
+            max_retries=0,
+        )
+    else:
+        timeout = int(
+            os.environ.get(
+                "ARAGORA_AUTOMATION_GIT_TIMEOUT_SECONDS",
+                str(DEFAULT_GIT_TIMEOUT_SECONDS),
+            )
+        )
     try:
         return subprocess.run(
             args,
@@ -499,13 +549,29 @@ def _github_base_ref(base: str) -> str:
     return base.removeprefix("origin/")
 
 
+def _merge_skip_hooks(existing: str | None, additions: str) -> str:
+    merged: list[str] = []
+    for raw in (existing or "").split(",") + additions.split(","):
+        hook_id = raw.strip()
+        if hook_id and hook_id not in merged:
+            merged.append(hook_id)
+    return ",".join(merged)
+
+
 def _push_branch(repo_root: Path, branch: str, upstream: str | None) -> None:
     args = ["git", "push"]
     if upstream:
         args.extend(["origin", branch])
     else:
         args.extend(["-u", "origin", branch])
-    proc = _run(args, cwd=repo_root)
+    pre_push_skip = os.environ.get(
+        "ARAGORA_AUTOMATION_PRE_PUSH_SKIP",
+        DEFAULT_PRE_PUSH_SKIP_HOOKS,
+    ).strip()
+    env_overrides = None
+    if pre_push_skip:
+        env_overrides = {"SKIP": _merge_skip_hooks(os.environ.get("SKIP"), pre_push_skip)}
+    proc = _run(args, cwd=repo_root, env_overrides=env_overrides)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or f"failed to push {branch}")
 
