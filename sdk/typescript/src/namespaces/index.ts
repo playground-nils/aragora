@@ -1718,8 +1718,6 @@ export {
   ServicesNamespace,
   type ServiceHealthStatus,
   type Service as DiscoveredService,
-  type ServiceDependency,
-  type RegisterServiceRequest,
 } from './services';
 
 // E-commerce (Product & Order Management)
