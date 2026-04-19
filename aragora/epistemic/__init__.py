@@ -1,4 +1,4 @@
-"""Epistemic CI and crux-engine helpers (DIC-13..22 tranche).
+"""Epistemic CI and crux-engine helpers (DIC-13..22 + DIC-25 tranche).
 
 Exposes:
 - DIC-14: executable claim verification (:class:`ClaimVerifier`)
@@ -8,10 +8,14 @@ Exposes:
   :func:`propose_followup_for_failed_claim`)
 - DIC-20: epistemic decay monitor (:class:`DecaySignal`,
   :class:`DecayReason`, :func:`evaluate_unit`)
+- DIC-25: adversarial world-state stress-test (:class:`StressPerturbation`,
+  :class:`FragilityReport`, :class:`StressTestResult`,
+  :func:`run_stress_test`, :func:`stress_test_enabled`)
+  Flag gate: ``ARAGORA_STRESS_TEST_ENABLED`` (default off).
 
 See ``docs/plans/EPISTEMIC_CI_AND_CRUX_ENGINE.md`` for the full
-DIC-13..22 sequence and ``docs/status/NEXT_STEPS_CANONICAL.md`` for
-the queue-governance activation gate.
+DIC-13..22 + DIC-23..28 sequence and ``docs/status/NEXT_STEPS_CANONICAL.md``
+for the queue-governance activation gate.
 """
 
 from __future__ import annotations
@@ -27,6 +31,13 @@ from .followup import (
     propose_followup_for_crux,
     propose_followup_for_cruxset,
     propose_followup_for_failed_claim,
+)
+from .stress_test import (
+    FragilityReport,
+    StressPerturbation,
+    StressTestResult,
+    run_stress_test,
+    stress_test_enabled,
 )
 
 __all__ = [
@@ -44,6 +55,12 @@ __all__ = [
     "propose_followup_for_crux",
     "propose_followup_for_cruxset",
     "propose_followup_for_failed_claim",
+    # DIC-25
+    "FragilityReport",
+    "StressPerturbation",
+    "StressTestResult",
+    "run_stress_test",
+    "stress_test_enabled",
 ]
 
 
