@@ -150,6 +150,7 @@ Examples:
     _add_bench_parser(subparsers)
     _add_review_parser(subparsers)
     _add_review_pr_parser(subparsers)
+    _add_review_queue_parser(subparsers)
     _add_codebase_audit_parser(subparsers)
     _add_external_parsers(subparsers)
     _add_badge_parser(subparsers)
@@ -1366,6 +1367,13 @@ def _add_review_pr_parser(subparsers) -> None:
     from aragora.cli.document_audit import create_document_audit_parser
 
     create_document_audit_parser(subparsers)
+
+
+def _add_review_queue_parser(subparsers) -> None:
+    """Register read-only review-queue (Phase 2a of #6279)."""
+    from aragora.cli.commands.review_queue import add_review_queue_parser
+
+    add_review_queue_parser(subparsers)
 
 
 def _add_codebase_audit_parser(subparsers) -> None:
