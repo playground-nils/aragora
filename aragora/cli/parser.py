@@ -150,6 +150,7 @@ Examples:
     _add_bench_parser(subparsers)
     _add_review_parser(subparsers)
     _add_review_pr_parser(subparsers)
+    _add_review_queue_parser(subparsers)
     _add_codebase_audit_parser(subparsers)
     _add_external_parsers(subparsers)
     _add_badge_parser(subparsers)
@@ -1355,6 +1356,13 @@ def _add_review_pr_parser(subparsers) -> None:
         action="store_true",
         help="Print the final run summary as JSON",
     )
+    parser.add_argument(
+        "--no-publish-review",
+        dest="publish_review",
+        action="store_false",
+        help="Persist artifacts without posting any GitHub review output.",
+    )
+    parser.set_defaults(publish_review=True)
     parser.set_defaults(func=_lazy("aragora.cli.commands.review_pr", "cmd_review_pr"))
 
     # Audit command (compliance audit logs)
@@ -1366,6 +1374,73 @@ def _add_review_pr_parser(subparsers) -> None:
     from aragora.cli.document_audit import create_document_audit_parser
 
     create_document_audit_parser(subparsers)
+
+
+def _add_review_queue_parser(subparsers) -> None:
+    """Add the batched PR review queue parser without importing its runtime."""
+    parser = subparsers.add_parser(
+        "review-queue",
+        help="Build and run a batched human settlement queue for automation PRs",
+        description=(
+            "Generate advisory review packets for automation PRs and drive a "
+            "human-in-the-loop settlement loop over the current queue."
+        ),
+    )
+    queue_subparsers = parser.add_subparsers(dest="review_queue_command")
+
+    build_parser = queue_subparsers.add_parser(
+        "build",
+        help="Build a prioritized queue of automation PR review packets",
+    )
+    build_parser.add_argument("--limit", type=int, default=30, help="Maximum PRs to include")
+    build_parser.add_argument(
+        "--ready-only",
+        action="store_true",
+        help="Only include packets already bucketed as ready_now",
+    )
+    build_parser.add_argument(
+        "--refresh-packets",
+        action="store_true",
+        help="Rebuild advisory packets instead of using cached packet artifacts",
+    )
+    build_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Print the queue as JSON",
+    )
+    build_parser.set_defaults(func=_lazy("aragora.cli.commands.review_queue", "cmd_review_queue"))
+
+    packet_parser = queue_subparsers.add_parser(
+        "packet",
+        help="Build or load a single advisory packet for one PR",
+    )
+    packet_parser.add_argument("pr", help="PR number or PR URL")
+    packet_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Force a fresh machine packet instead of using the cached artifact",
+    )
+    packet_parser.set_defaults(func=_lazy("aragora.cli.commands.review_queue", "cmd_review_queue"))
+
+    run_parser = queue_subparsers.add_parser(
+        "run",
+        help="Run an interactive batched review queue session",
+    )
+    run_parser.add_argument("--limit", type=int, default=30, help="Maximum PRs to include")
+    run_parser.add_argument(
+        "--ready-only",
+        action="store_true",
+        help="Only include packets already bucketed as ready_now",
+    )
+    run_parser.add_argument(
+        "--refresh-packets",
+        action="store_true",
+        help="Rebuild advisory packets instead of using cached packet artifacts",
+    )
+    run_parser.set_defaults(func=_lazy("aragora.cli.commands.review_queue", "cmd_review_queue"))
+
+    parser.set_defaults(review_queue_command="build")
 
 
 def _add_codebase_audit_parser(subparsers) -> None:
