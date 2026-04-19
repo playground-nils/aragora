@@ -663,3 +663,27 @@ def test_summarize_session_blocker_reports_no_committed_changes() -> None:
         "Issue #8105 exhausted retries; last attempt made no committed file changes: "
         "Worker exited cleanly with no deliverable."
     )
+
+
+def test_summarize_session_blocker_reports_acceptance_gate_failure_outcome() -> None:
+    state = SessionState(
+        session_id="issue-8106",
+        issue_number=8106,
+        retry_count=1,
+        attempts=[
+            {
+                "at": "2026-04-18T10:45:00+00:00",
+                "status": "needs_human",
+                "worker_outcome": "acceptance_gate_failed",
+                "changed_paths": ["aragora/swarm/boss_loop.py"],
+                "failure_reason": "Acceptance gate failed review",
+            }
+        ],
+    )
+
+    summary = summarize_session_blocker(state)
+
+    assert summary == (
+        "Issue #8106 exhausted retries; last recorded outcome was "
+        "acceptance_gate_failed: Acceptance gate failed review."
+    )

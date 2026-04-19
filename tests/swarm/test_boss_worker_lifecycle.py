@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -46,6 +47,7 @@ from aragora.swarm.boss_worker_lifecycle import (
     dispatch_issue_under_claim,
     finalize_worker_result,
 )
+from aragora.swarm.session_state import SessionStateStore, summarize_session_blocker
 from aragora.swarm.task_sanitizer import SanitizationOutcome, SanitizationResult
 
 UTC = timezone.utc
@@ -1035,6 +1037,81 @@ class TestDispatchIssuePreDispatchGate:
         assert result["status"] == "needs_human"
         assert result["outcome"] == "verification_target_missing"
         assert "tests/missing_file.py" in result["reasons"][0]
+
+    def test_dispatch_records_post_acceptance_verdict_in_session_state(self, tmp_path: Path):
+        loop = self._make_gate_dispatch_loop()
+        loop._session_state_store = SessionStateStore(state_dir=tmp_path)
+        loop._extract_worker_files_changed = MagicMock(return_value=["aragora/swarm/boss_loop.py"])
+        issue = _make_issue(
+            1736,
+            "Persist acceptance gate verdict",
+            body=(
+                "Summary:\n"
+                "- Persist the final acceptance gate verdict in session state.\n\n"
+                "Acceptance Criteria:\n"
+                "- pytest -q tests/swarm/test_boss_loop.py\n"
+                "\nScope hints:\n"
+                "- aragora/swarm/boss_loop.py\n"
+            ),
+        )
+        module_mock = self._build_module_mock()
+        module_mock.TaskSanitizer.return_value.sanitize.return_value = SanitizationResult(
+            outcome=SanitizationOutcome.ACCEPTED,
+            original_text=issue.body,
+            sanitized_text=issue.body,
+            reason="accepted",
+            confidence=0.9,
+            checks_failed=[],
+        )
+        module_mock.dispatch_bounded_spec = AsyncMock(
+            return_value={
+                "status": "completed",
+                "outcome": "completed",
+                "run_id": "run-1736",
+                "receipt_id": "receipt-1736",
+                "deliverable": {
+                    "type": "branch",
+                    "branch": "codex/issue-1736",
+                    "changed_paths": ["aragora/swarm/boss_loop.py"],
+                },
+                "run": {
+                    "work_orders": [
+                        {
+                            "status": "completed",
+                            "target_agent": "codex",
+                            "worktree_path": "/tmp/aragora-1736",
+                            "branch": "codex/issue-1736",
+                            "changed_paths": ["aragora/swarm/boss_loop.py"],
+                        }
+                    ]
+                },
+            }
+        )
+
+        with patch(
+            "aragora.swarm.boss_worker_lifecycle._boss_loop_module", return_value=module_mock
+        ):
+            with patch(
+                "aragora.swarm.dispatch_followups.maybe_upgrade_dispatch_spec",
+                side_effect=lambda **kw: kw.get("spec"),
+            ):
+                with patch(
+                    "aragora.swarm.dispatch_followups.annotate_result_with_conductor",
+                    side_effect=lambda *, result, **_: result,
+                ):
+                    result = asyncio.get_event_loop().run_until_complete(
+                        dispatch_issue(loop, issue, _fresh_result())
+                    )
+
+        state = loop._session_state_store.latest_for_issue(issue.number, repo_slug="org/repo")
+
+        assert result["status"] == "needs_human"
+        assert result["outcome"] == "acceptance_gate_failed"
+        assert state is not None
+        assert state.status == "needs_human"
+        assert state.attempts[-1]["status"] == "needs_human"
+        assert state.attempts[-1]["worker_outcome"] == "acceptance_gate_failed"
+        assert "acceptance_gate_failed" in summarize_session_blocker(state)
 
 
 # ---------------------------------------------------------------------------
