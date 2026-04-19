@@ -48,6 +48,13 @@ def test_review_pr_parser_accepts_fix_loop_flags() -> None:
     assert args.json_output is True
 
 
+def test_review_pr_parser_accepts_no_publish_flag() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["review-pr", "1137", "--no-publish-review"])
+    assert args.command == "review-pr"
+    assert args.publish_review is False
+
+
 @pytest.mark.asyncio
 async def test_run_review_pr_loop_review_only_writes_artifact(
     tmp_path: Path,
@@ -195,6 +202,52 @@ async def test_run_review_pr_loop_auto_reruns_after_fix(
     assert published["final_status"] == "passed"
     assert published["fix_run"]["status"] == "applied"
     assert published["advisory_only"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_review_pr_loop_can_skip_github_review_publish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sample_target: review_pr.PullRequestTarget,
+) -> None:
+    monkeypatch.setattr(review_pr, "_fetch_pr_target", lambda *_, **__: sample_target)
+    monkeypatch.setattr(review_pr, "_fetch_pr_diff", lambda *_: "diff --git a/foo b/foo\n+ok\n")
+
+    async def _fake_review(**_: object) -> review_pr.ReviewPass:
+        return review_pr.ReviewPass(
+            reviewer="claude",
+            reviewed_at="2026-03-21T10:00:00+00:00",
+            status="passed",
+            summary="Looks good",
+            findings=[],
+            candidate={"label": "claude:max-01"},
+            attempts=[],
+            raw_response='{"status":"passed","summary":"Looks good","findings":[]}',
+        )
+
+    async def _fake_publish(**_: object) -> dict[str, object]:
+        raise AssertionError("publish should be skipped when publish_review=False")
+
+    monkeypatch.setattr(review_pr, "_run_review_pass", _fake_review)
+    monkeypatch.setattr(review_pr, "_publish_review_outcome", _fake_publish)
+
+    result = await review_pr.run_review_pr_loop(
+        pr_ref="1137",
+        repo_root=tmp_path,
+        reviewer="claude",
+        artifact_root=tmp_path / "artifacts",
+        publish_review=False,
+    )
+
+    assert result["final_status"] == "passed"
+    assert result["publish_review"] is False
+    assert result["github_review"] == {
+        "posted": False,
+        "event": None,
+        "mode": "advisory",
+        "url": None,
+        "error": None,
+    }
 
 
 def test_build_github_review_body_includes_fix_and_findings(

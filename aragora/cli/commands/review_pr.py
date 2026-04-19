@@ -44,6 +44,7 @@ class PullRequestTarget:
     files: list[str] = field(default_factory=list)
     mergeable: str | None = None
     review_decision: str | None = None
+    is_draft: bool = False
     is_cross_repository: bool = False
 
 
@@ -122,6 +123,13 @@ def add_review_pr_parser(subparsers) -> None:
         action="store_true",
         help="Print the final run summary as JSON",
     )
+    parser.add_argument(
+        "--no-publish-review",
+        dest="publish_review",
+        action="store_false",
+        help="Persist artifacts without posting any GitHub review output.",
+    )
+    parser.set_defaults(publish_review=True)
     parser.set_defaults(func=cmd_review_pr)
 
 
@@ -139,6 +147,7 @@ def cmd_review_pr(args: argparse.Namespace) -> int:
             if getattr(args, "artifact_dir", None)
             else None,
             keep_worktree=bool(getattr(args, "keep_worktree", False)),
+            publish_review=bool(getattr(args, "publish_review", True)),
         )
     )
     if getattr(args, "json_output", False):
@@ -164,6 +173,7 @@ async def run_review_pr_loop(
     artifact_root: Path | None = None,
     keep_worktree: bool = False,
     advisory_only: bool = True,
+    publish_review: bool = True,
 ) -> dict[str, Any]:
     target = _fetch_pr_target(pr_ref, repo_override=repo_override, repo_root=repo_root)
     run_dir = _artifact_run_dir(repo_root, target.number, artifact_root=artifact_root)
@@ -225,14 +235,24 @@ async def run_review_pr_loop(
         "review_runs": review_runs,
         "fix_run": fix_run,
         "final_status": final_status,
+        "publish_review": publish_review,
     }
-    payload["github_review"] = await _publish_review_outcome(
-        target=target,
-        review_runs=review_runs,
-        fix_run=fix_run,
-        final_status=final_status,
-        advisory_only=advisory_only,
-    )
+    if publish_review:
+        payload["github_review"] = await _publish_review_outcome(
+            target=target,
+            review_runs=review_runs,
+            fix_run=fix_run,
+            final_status=final_status,
+            advisory_only=advisory_only,
+        )
+    else:
+        payload["github_review"] = {
+            "posted": False,
+            "event": None,
+            "mode": "advisory" if advisory_only else "status",
+            "url": None,
+            "error": None,
+        }
     _write_json(run_dir / "run.json", payload)
     return payload
 
@@ -258,6 +278,7 @@ def _fetch_pr_target(
                 "files",
                 "mergeable",
                 "reviewDecision",
+                "isDraft",
                 "isCrossRepository",
             ]
         ),
@@ -284,6 +305,7 @@ def _fetch_pr_target(
         files=files,
         mergeable=str(payload.get("mergeable", "")).strip() or None,
         review_decision=str(payload.get("reviewDecision", "")).strip() or None,
+        is_draft=bool(payload.get("isDraft", False)),
         is_cross_repository=bool(payload.get("isCrossRepository", False)),
     )
 

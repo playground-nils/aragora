@@ -28,6 +28,7 @@ def test_build_parser_keeps_review_pr_runtime_lazy(monkeypatch):
             "--fixer",
             "codex",
             "--auto-rerun",
+            "--no-publish-review",
             "--json",
         ]
     )
@@ -36,6 +37,7 @@ def test_build_parser_keeps_review_pr_runtime_lazy(monkeypatch):
     assert args.pr == "123"
     assert args.fixer == "codex"
     assert args.auto_rerun is True
+    assert args.publish_review is False
     assert args.json_output is True
     assert args.func.__name__ == "cmd_review_pr"
 
