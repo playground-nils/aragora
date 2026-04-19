@@ -172,7 +172,7 @@ def maybe_autofill_queue(
     repo_root: Path,
     consecutive_empty_ticks: int,
     existing_candidates: Iterable[Any] = (),
-    create_issue: Callable[[AutofillCandidate], bool] | None = None,
+    create_issue: Callable[[AutofillCandidate, str], bool] | None = None,
     env: dict[str, str] | None = None,
     now: float | None = None,
     threshold: int = DEFAULT_EMPTY_TICK_THRESHOLD,
@@ -196,8 +196,9 @@ def maybe_autofill_queue(
 
     ``create_issue`` is a thin callback provided by the caller (typically a
     wrapper around ``gh issue create``).  We call it once per candidate that
-    survives every gate.  Returning ``False`` is treated as a failed create
-    and is surfaced via :attr:`AutofillResult.errors`.
+    survives every gate, passing both the candidate summary and the formatted
+    issue body. Returning ``False`` is treated as a failed create and is
+    surfaced via :attr:`AutofillResult.errors`.
     """
     threshold = max(1, int(threshold))
     max_issues = max(0, int(max_issues))
@@ -382,10 +383,10 @@ def maybe_autofill_queue(
         _write_last_run(sentinel_path, timestamp)
         return _finalize(result, metrics_jsonl_path)
 
-    for candidate, _body, lane in trimmed:
+    for candidate, body, lane in trimmed:
         autofill = _as_autofill_candidate(candidate, lane)
         try:
-            ok = bool(create_issue(autofill))
+            ok = bool(create_issue(autofill, body))
         except Exception as exc:
             errors.append(f"{autofill.title}: {exc}")
             continue

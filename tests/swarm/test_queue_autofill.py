@@ -190,7 +190,7 @@ def test_ignores_candidates_outside_allowed_categories(tmp_path: Path) -> None:
         scan_fn=_make_scan(candidates),
         classify_fn=_make_classify(),
         validate_body_fn=_make_validate(),
-        create_issue=lambda candidate: (created.append(candidate) or True),
+        create_issue=lambda candidate, _body: (created.append(candidate) or True),
         sentinel_path=tmp_path / "sentinel.json",
         metrics_jsonl_path=tmp_path / "metrics.jsonl",
     )
@@ -270,7 +270,7 @@ def test_passes_rate_limit_when_interval_elapsed(tmp_path: Path) -> None:
         scan_fn=_make_scan([candidate]),
         classify_fn=_make_classify(),
         validate_body_fn=_make_validate(),
-        create_issue=lambda item: (created.append(item) or True),
+        create_issue=lambda item, _body: (created.append(item) or True),
         sentinel_path=sentinel,
         metrics_jsonl_path=tmp_path / "metrics.jsonl",
     )
@@ -280,6 +280,44 @@ def test_passes_rate_limit_when_interval_elapsed(tmp_path: Path) -> None:
     # Sentinel bumped forward to now=5000.0
     payload = json.loads(sentinel.read_text(encoding="utf-8"))
     assert payload == {"last_run_ts": 5000.0}
+
+
+def test_create_issue_callback_receives_formatted_body(tmp_path: Path) -> None:
+    candidate = _FakeCandidate(
+        category="test_coverage",
+        title="Add unit tests for baz.py",
+        description="Cover baz.py",
+        file_scope=["aragora/baz.py"],
+        validation_command="pytest -q tests/test_baz.py",
+        acceptance_criteria=["Add focused regression coverage."],
+        fingerprint="fp-baz",
+    )
+    seen: dict[str, Any] = {}
+
+    def create_issue(item: AutofillCandidate, body: str) -> bool:
+        seen["candidate"] = item
+        seen["body"] = body
+        return True
+
+    result = maybe_autofill_queue(
+        repo_root=tmp_path,
+        consecutive_empty_ticks=5,
+        env=FLAG_ENV,
+        scan_fn=_make_scan([candidate]),
+        classify_fn=_make_classify(),
+        validate_body_fn=_make_validate(),
+        create_issue=create_issue,
+        sentinel_path=tmp_path / "sentinel.json",
+        metrics_jsonl_path=tmp_path / "metrics.jsonl",
+    )
+
+    assert result.reason == "created"
+    assert seen["candidate"].title == "Add unit tests for baz.py"
+    body = str(seen["body"])
+    assert "## Task" in body
+    assert "Cover baz.py" in body
+    assert "pytest -q tests/test_baz.py" in body
+    assert "<!-- fingerprint:fp-baz -->" in body
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +345,7 @@ def test_creates_up_to_max_issues(tmp_path: Path) -> None:
         scan_fn=_make_scan(candidates),
         classify_fn=_make_classify(),
         validate_body_fn=_make_validate(),
-        create_issue=lambda item: (created.append(item) or True),
+        create_issue=lambda item, _body: (created.append(item) or True),
         sentinel_path=tmp_path / "sentinel.json",
         metrics_jsonl_path=tmp_path / "metrics.jsonl",
     )
@@ -401,7 +439,7 @@ def test_metrics_row_includes_created_titles(tmp_path: Path) -> None:
         scan_fn=_make_scan([candidate]),
         classify_fn=_make_classify(),
         validate_body_fn=_make_validate(),
-        create_issue=lambda _c: True,
+        create_issue=lambda _c, _body: True,
         sentinel_path=tmp_path / "sentinel.json",
         metrics_jsonl_path=metrics,
     )
@@ -445,7 +483,7 @@ def test_create_issue_failure_surfaces_in_errors(tmp_path: Path) -> None:
         file_scope=["aragora/foo.py"],
     )
 
-    def flaky_create(_: AutofillCandidate) -> bool:
+    def flaky_create(_: AutofillCandidate, _body: str) -> bool:
         return False
 
     result = maybe_autofill_queue(

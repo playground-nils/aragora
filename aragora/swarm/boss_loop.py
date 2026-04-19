@@ -1174,6 +1174,7 @@ class BossLoop:
                 repo_root=Path.cwd(),
                 consecutive_empty_ticks=self._consecutive_empty_iterations,
                 existing_candidates=candidate_issues,
+                create_issue=self._create_queue_autofill_issue,
                 env=self._env,
             )
         except Exception:  # pragma: no cover - defensive guard
@@ -1184,6 +1185,33 @@ class BossLoop:
         if payload.get("attempted") and payload.get("reason") in {"created", "created_dry_run"}:
             self._consecutive_empty_iterations = 0
         return payload
+
+    def _create_queue_autofill_issue(self, candidate: Any, body: str) -> bool:
+        repo = str(self.config.repo or "").strip()
+        if not repo:
+            raise RuntimeError("missing_repo_slug")
+
+        from aragora.swarm.github_app_auth import gh_subprocess_run
+
+        cmd = [
+            "issue",
+            "create",
+            "--repo",
+            repo,
+            "--title",
+            str(getattr(candidate, "title", "") or "").strip(),
+            "--body",
+            body,
+            "--label",
+            "boss-ready",
+            "--label",
+            "autonomous",
+        ]
+        proc = gh_subprocess_run(cmd, timeout=30, write_op=True)
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(detail or "gh issue create failed")
+        return True
 
     def _no_suitable_issue_guidance(
         self,

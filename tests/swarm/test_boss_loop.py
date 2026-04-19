@@ -54,6 +54,7 @@ from aragora.swarm.boss_loop import (
     sanitize_issue_body_for_dispatch,
     select_eligible_issue,
 )
+from aragora.swarm.queue_autofill import AutofillCandidate, AutofillResult, QUEUE_AUTOFILL_FLAG_ENV
 from aragora.swarm.roadmap_priority import RoadmapPriorityPolicy
 from aragora.swarm.session_state import SessionStateStore
 from aragora.swarm.task_sanitizer import SanitizationOutcome
@@ -142,6 +143,86 @@ def _preflight_receipt(
         expires_at="2026-04-14T01:19:05Z",
         artifacts={"target_ref": "main"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Queue autofill wiring
+# ---------------------------------------------------------------------------
+
+
+def test_maybe_autofill_queue_creates_live_issue_with_expected_labels() -> None:
+    loop = BossLoop(
+        config=_boss_config(repo="synaptent/aragora"),
+        env={QUEUE_AUTOFILL_FLAG_ENV: "1"},
+    )
+    commands: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_maybe_autofill_queue(**kwargs: Any) -> AutofillResult:
+        create_issue = kwargs["create_issue"]
+        candidate = AutofillCandidate(
+            title="Add unit tests for foo.py",
+            category="test_coverage",
+            fingerprint="fp-foo",
+            file_scope=("aragora/foo.py",),
+            lane="test_coverage_autofill",
+        )
+        ok = create_issue(candidate, "## Task\n\nCover foo.py")
+        return AutofillResult(
+            attempted=True,
+            reason="created" if ok else "create_failed",
+            consecutive_empty_ticks=kwargs["consecutive_empty_ticks"],
+            threshold=3,
+            created=(candidate,) if ok else (),
+        )
+
+    def fake_gh(args: list[str], **kwargs: Any) -> Any:
+        commands.append((list(args), dict(kwargs)))
+        return SimpleNamespace(
+            returncode=0,
+            stdout="https://github.com/synaptent/aragora/issues/999\n",
+            stderr="",
+        )
+
+    with (
+        patch(
+            "aragora.swarm.queue_autofill.maybe_autofill_queue",
+            side_effect=fake_maybe_autofill_queue,
+        ),
+        patch("aragora.swarm.github_app_auth.gh_subprocess_run", side_effect=fake_gh),
+    ):
+        payload = loop._maybe_autofill_queue(candidate_issues=[])
+
+    assert payload is not None
+    assert payload["reason"] == "created"
+    assert payload["created_count"] == 1
+    assert loop._consecutive_empty_iterations == 0
+    assert len(commands) == 1
+    cmd, kwargs = commands[0]
+    assert cmd[:3] == ["issue", "create", "--repo"]
+    assert cmd[3] == "synaptent/aragora"
+    assert cmd[cmd.index("--title") + 1] == "Add unit tests for foo.py"
+    assert cmd[cmd.index("--body") + 1] == "## Task\n\nCover foo.py"
+    label_flags = [cmd[i + 1] for i, token in enumerate(cmd) if token == "--label"]
+    assert label_flags == ["boss-ready", "autonomous"]
+    assert kwargs["write_op"] is True
+
+
+def test_create_queue_autofill_issue_surfaces_gh_failure_detail() -> None:
+    loop = BossLoop(config=_boss_config(repo="synaptent/aragora"))
+    candidate = AutofillCandidate(
+        title="Add unit tests for foo.py",
+        category="test_coverage",
+        fingerprint="fp-foo",
+        file_scope=("aragora/foo.py",),
+        lane="test_coverage_autofill",
+    )
+
+    with patch(
+        "aragora.swarm.github_app_auth.gh_subprocess_run",
+        return_value=SimpleNamespace(returncode=1, stdout="", stderr="forbidden"),
+    ):
+        with pytest.raises(RuntimeError, match="forbidden"):
+            loop._create_queue_autofill_issue(candidate, "## Task\n\nCover foo.py")
 
 
 # ---------------------------------------------------------------------------
