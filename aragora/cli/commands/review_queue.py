@@ -405,14 +405,25 @@ def _build_packet(pr_ref: str, *, repo_override: str | None) -> ReviewPacket:
             path = str(item.get("path", "")).strip()
             if path:
                 files.append(path)
+    labels = [
+        str(lab.get("name", "")).strip()
+        for lab in (pr.get("labels") or [])
+        if isinstance(lab, dict) and lab.get("name")
+    ]
+    parked_label_hits = [lab for lab in labels if lab in PARKED_LABELS]
     touched = sorted({_subsystem_for(p) for p in files})
     high_risk = [p for p in files if _is_high_risk_path(p)]
     checks_summary, has_failures, has_pending = _summarize_checks(pr.get("statusCheckRollup") or [])
     additions = int(pr.get("additions", 0) or 0)
     deletions = int(pr.get("deletions", 0) or 0)
+    is_draft = bool(pr.get("isDraft", False))
     mergeable = str(pr.get("mergeable", "")).strip().upper()
 
     risk_flags: list[str] = []
+    if is_draft:
+        risk_flags.append("draft PR")
+    if parked_label_hits:
+        risk_flags.append(f"parked label ({','.join(parked_label_hits)})")
     if high_risk:
         sample = ", ".join(high_risk[:5])
         more = "" if len(high_risk) <= 5 else f" (+{len(high_risk) - 5} more)"
@@ -427,6 +438,14 @@ def _build_packet(pr_ref: str, *, repo_override: str | None) -> ReviewPacket:
     if has_failures or mergeable == "CONFLICTING":
         recommendation = "repair_first"
         recommendation_reason = "checks failing or merge conflict — fix before review"
+    elif is_draft:
+        recommendation = "needs_human_attention"
+        recommendation_reason = "draft PR — keep parked until it is ready for review"
+    elif parked_label_hits:
+        recommendation = "needs_human_attention"
+        recommendation_reason = (
+            f"parked label present ({','.join(parked_label_hits)}) — keep parked until cleared"
+        )
     elif high_risk or additions + deletions > LARGE_DIFF_THRESHOLD:
         recommendation = "needs_human_attention"
         recommendation_reason = "high-risk paths touched or large diff — human should read it"
@@ -448,7 +467,7 @@ def _build_packet(pr_ref: str, *, repo_override: str | None) -> ReviewPacket:
         url=str(pr.get("url", "")).strip(),
         head_sha=str(pr.get("headRefOid", "")).strip(),
         author=author,
-        is_draft=bool(pr.get("isDraft", False)),
+        is_draft=is_draft,
         additions=additions,
         deletions=deletions,
         changed_files=int(pr.get("changedFiles", 0) or 0),

@@ -375,6 +375,30 @@ class TestBuildQueueAndPacket:
         packet = _build_packet("99", repo_override=None)
         assert packet.machine_recommendation == "repair_first"
 
+    def test_build_packet_draft_needs_attention(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        pr_payload = _make_pr(number=101, is_draft=True)
+        monkeypatch.setattr(
+            "aragora.cli.commands.review_queue._gh_json",
+            lambda args: pr_payload,
+        )
+        packet = _build_packet("101", repo_override=None)
+        assert packet.machine_recommendation == "needs_human_attention"
+        assert "draft" in packet.machine_recommendation_reason.lower()
+        assert "draft PR" in packet.risk_flags
+
+    def test_build_packet_parked_label_needs_attention(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pr_payload = _make_pr(number=102, labels=["blocked"])
+        monkeypatch.setattr(
+            "aragora.cli.commands.review_queue._gh_json",
+            lambda args: pr_payload,
+        )
+        packet = _build_packet("102", repo_override=None)
+        assert packet.machine_recommendation == "needs_human_attention"
+        assert "parked label" in packet.machine_recommendation_reason.lower()
+        assert "parked label (blocked)" in packet.risk_flags
+
     def test_build_packet_pending_checks_need_attention(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
