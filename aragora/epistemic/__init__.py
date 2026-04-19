@@ -8,6 +8,8 @@ Exposes:
   :func:`propose_followup_for_failed_claim`)
 - DIC-20: epistemic decay monitor (:class:`DecaySignal`,
   :class:`DecayReason`, :func:`evaluate_unit`)
+- DIC-22: bounded repair-spec producer (:class:`RepairSpec`,
+  :func:`propose_repair`, :func:`repair_pipeline_enabled`)
 
 See ``docs/plans/EPISTEMIC_CI_AND_CRUX_ENGINE.md`` for the full
 DIC-13..22 sequence and ``docs/status/NEXT_STEPS_CANONICAL.md`` for
@@ -20,6 +22,12 @@ import os
 
 from .claim_verifier import ClaimResult, ClaimStatus, ClaimVerifier
 from .decay_monitor import DecayReason, DecaySignal, evaluate_unit
+from .repair import (
+    RepairSpec,
+    enable_repair_pipeline,
+    propose_repair,
+    repair_pipeline_enabled,
+)
 from .followup import (
     DEFAULT_CRUX_LOAD_BEARING_THRESHOLD,
     DEFAULT_DELTA_LOSS_THRESHOLD,
@@ -38,12 +46,16 @@ __all__ = [
     "DecayReason",
     "DecaySignal",
     "FollowupProposal",
+    "RepairSpec",
     "enable_epistemic_followup",
+    "enable_repair_pipeline",
     "epistemic_followup_enabled",
     "evaluate_unit",
     "propose_followup_for_crux",
     "propose_followup_for_cruxset",
     "propose_followup_for_failed_claim",
+    "propose_repair",
+    "repair_pipeline_enabled",
 ]
 
 
