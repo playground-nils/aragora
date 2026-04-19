@@ -1,7 +1,28 @@
 # AI Agent Coordination
 
-**Last updated:** 2026-03-05
+**Last updated:** 2026-04-18
 **Maintainer:** Update this file when starting/finishing work
+
+---
+
+## Autonomous pipeline (2026-04-18)
+
+**Auto-approver for safe automation PRs** is deployed in **dry-run mode**:
+
+- Script: `scripts/auto_approve_safe_prs.py`
+- Design: `docs/plans/2026-04-18-auto-approver-design.md`
+- LaunchAgent: `scripts/launchd/com.aragora.auto-approver.plist` (every 5 min)
+- Uses the `aragora-automation` GitHub App (App ID `3328101`) to submit
+  `APPROVE` reviews on PRs that satisfy an 8-point conservative allowlist
+  (author, opt-in label, CI green, no protected paths, small diff, idempotent).
+- **Default: dry-run.** Live approvals require
+  `~/.aragora/auto_approver.live` (created via
+  `scripts/auto_approver_activate.sh on`).
+- Kill switch: `touch ~/.aragora/auto_approver.disabled`.
+- Audit trail: `~/.aragora/auto_approver_audit.jsonl`.
+
+Future sessions that touch automation-gated PR flow should read the design
+doc first and consult the audit log before debugging approvals.
 
 ---
 
