@@ -82,6 +82,10 @@ _META_REVIEW_MARKERS = (
     "since the diff is truncated",
     "since the diff may be truncated",
 )
+_REVIEW_AGENT_ALIASES = {
+    "gemini-api": "gemini",
+    "openrouter-api": "openrouter",
+}
 
 
 def generate_review_id(findings: dict, diff_hash: str) -> str:
@@ -241,7 +245,11 @@ This code review identified **2 critical security issues** that all AI models ag
 
 def _parse_review_agents(agents_str: str) -> list[str]:
     """Parse a comma-separated review agent list."""
-    return [spec.strip() for spec in agents_str.split(",") if spec.strip()]
+    return [
+        _REVIEW_AGENT_ALIASES.get(spec.strip(), spec.strip())
+        for spec in agents_str.split(",")
+        if spec.strip()
+    ]
 
 
 def build_review_prompt(diff: str, focus_areas: list[str] | None = None) -> str:

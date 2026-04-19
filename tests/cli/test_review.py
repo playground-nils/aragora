@@ -18,6 +18,7 @@ from aragora.cli.review import (
     DEFAULT_REVIEW_AGENTS,
     DEFAULT_ROUNDS,
     MAX_DIFF_SIZE,
+    _parse_review_agents,
     build_review_prompt,
     cmd_review,
     create_review_parser,
@@ -27,6 +28,7 @@ from aragora.cli.review import (
     get_available_agents,
     get_demo_findings,
     get_shareable_url,
+    run_review_debate,
     save_review_for_sharing,
 )
 
@@ -244,6 +246,53 @@ class TestGetAvailableAgents:
 
         result = get_available_agents()
         assert result == "openrouter,gemini"
+
+
+# ===========================================================================
+# Tests: _parse_review_agents / run_review_debate
+# ===========================================================================
+
+
+class TestReviewAgentNormalization:
+    """Tests for stale review-agent alias normalization."""
+
+    def test_parse_review_agents_normalizes_stale_aliases(self):
+        """Explicit stale aliases should map to registered agent ids."""
+        assert _parse_review_agents("anthropic-api, gemini-api,openrouter-api") == [
+            "anthropic-api",
+            "gemini",
+            "openrouter",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_run_review_debate_normalizes_explicit_aliases(self, monkeypatch):
+        """Review debate should not pass stale aliases through to create_agent."""
+        created: list[str] = []
+
+        def fake_create_agent(*, model_type, name, role):
+            created.append(model_type)
+            return MagicMock(name=name)
+
+        class DummyArena:
+            def __init__(self, env, agents, protocol):
+                self.env = env
+                self.agents = agents
+                self.protocol = protocol
+
+            async def run(self):
+                return MockDebateResult()
+
+        monkeypatch.setattr("aragora.cli.review.create_agent", fake_create_agent)
+        monkeypatch.setattr("aragora.cli.review.Arena", DummyArena)
+
+        result = await run_review_debate(
+            diff="--- a/foo.py\n+++ b/foo.py\n+print('ok')\n",
+            agents_str="gemini-api,openrouter-api",
+            rounds=1,
+        )
+
+        assert isinstance(result, MockDebateResult)
+        assert created == ["gemini", "openrouter"]
 
 
 # ===========================================================================
