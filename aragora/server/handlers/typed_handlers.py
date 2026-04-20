@@ -105,7 +105,7 @@ class TypedHandler(BaseHandler):
         import json
 
         try:
-            content_length = int(handler.headers.get("Content-Length", "0"))
+            content_length = int(handler.headers.get("Content-Length", "0") or "0")
             if max_size and content_length > max_size:
                 return None
             if content_length == 0:
@@ -281,8 +281,9 @@ class TypedHandler(BaseHandler):
             or (None, HandlerResult) with 401/403 error if not
         """
         user, err = self.require_auth_or_error(handler)
-        if err:
+        if err is not None:
             return None, err
+        assert user is not None  # noqa: S101 -- narrowed by err is None branch
 
         # Check for admin role or permission
         roles = getattr(user, "roles", []) or []
@@ -309,8 +310,9 @@ class TypedHandler(BaseHandler):
             or (None, HandlerResult) with 401/403 error if not
         """
         user, err = self.require_auth_or_error(handler)
-        if err:
+        if err is not None:
             return None, err
+        assert user is not None  # noqa: S101 -- narrowed by err is None branch
 
         # Check permission using role and permissions
         roles = getattr(user, "roles", []) or []
@@ -415,9 +417,10 @@ class AuthenticatedHandler(TypedHandler):
                 # Use user.user_id, user.email, etc.
         """
         user, err = self.require_auth_or_error(handler)
-        if err:
+        if err is not None:
             self._current_user = None
             return None, err
+        assert user is not None  # noqa: S101 -- narrowed by err is None branch
         self._current_user = user
         return user, None
 
@@ -435,9 +438,10 @@ class AuthenticatedHandler(TypedHandler):
             or (None, error_response) if not authenticated or not admin
         """
         user, err = self.require_admin_or_error(handler)
-        if err:
+        if err is not None:
             self._current_user = None
             return None, err
+        assert user is not None  # noqa: S101 -- narrowed by err is None branch
         self._current_user = user
         return user, None
 
@@ -495,8 +499,9 @@ class PermissionHandler(AuthenticatedHandler):
         """
         # First ensure authentication
         user, err = self._ensure_authenticated(handler)
-        if err:
+        if err is not None:
             return None, err
+        assert user is not None  # noqa: S101 -- narrowed by err is None branch
 
         # Determine the required permission
         if method is None:
@@ -509,8 +514,9 @@ class PermissionHandler(AuthenticatedHandler):
 
         # Check the permission
         user_with_perm, perm_err = self.require_permission_or_error(handler, permission)
-        if perm_err:
+        if perm_err is not None:
             return None, perm_err
+        assert user_with_perm is not None  # noqa: S101 -- narrowed by perm_err is None branch
 
         return user_with_perm, None
 
@@ -578,7 +584,7 @@ class AdminHandler(AuthenticatedHandler):
             return
 
         user = self.current_user
-        user_id = user.user_id if user else "unknown"
+        user_id: str = (user.user_id if user else None) or "unknown"
 
         logger.info(
             "Admin action: user=%s action=%s resource=%s details=%s",

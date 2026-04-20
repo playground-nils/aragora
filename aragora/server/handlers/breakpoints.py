@@ -38,17 +38,19 @@ from .utils.rate_limit import RateLimiter, get_client_ip
 # Rate limiter for breakpoints endpoints (60 requests per minute - debug feature)
 _breakpoints_limiter = RateLimiter(requests_per_minute=60)
 
+_ImportedHumanGuidance: Any = None
+_ImportedBreakpointManager: Any = None
+
 try:
     from aragora.debate.breakpoints import (
-        BreakpointManager as ImportedBreakpointManager,
-        HumanGuidance as ImportedHumanGuidance,
+        BreakpointManager as _ImportedBreakpointManager,  # noqa: F811
+        HumanGuidance as _ImportedHumanGuidance,  # noqa: F811
     )
 except ImportError:
-    ImportedHumanGuidance = None
-    ImportedBreakpointManager = None
+    pass
 
-HumanGuidance: Any = ImportedHumanGuidance
-BreakpointManager: Any = ImportedBreakpointManager
+HumanGuidance: Any = _ImportedHumanGuidance
+BreakpointManager: Any = _ImportedBreakpointManager
 
 
 class BreakpointsHandler(BaseHandler):
@@ -120,7 +122,7 @@ class BreakpointsHandler(BaseHandler):
             # Validate breakpoint ID
             is_valid, err = validate_path_segment(breakpoint_id, "breakpoint_id", SAFE_ID_PATTERN)
             if not is_valid:
-                return error_response(err, 400)
+                return error_response(err or "Invalid breakpoint id", 400)
 
             if action == "status":
                 return self._get_breakpoint_status(breakpoint_id)
@@ -147,7 +149,7 @@ class BreakpointsHandler(BaseHandler):
         # Validate breakpoint ID
         is_valid, err = validate_path_segment(breakpoint_id, "breakpoint_id", SAFE_ID_PATTERN)
         if not is_valid:
-            return error_response(err, 400)
+            return error_response(err or "Invalid breakpoint id", 400)
 
         if action == "resolve":
             return self._resolve_breakpoint(breakpoint_id, body)

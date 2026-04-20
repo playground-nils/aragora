@@ -243,12 +243,16 @@ def _corpus_freshness(
         "status": status,
         "stale_closed_issue_count": len(stale_closed_issues),
         "stale_closed_issue_numbers": [
-            item["issue_number"] for item in stale_closed_issues if item["issue_number"] > 0
+            item["issue_number"]
+            for item in stale_closed_issues
+            if isinstance(item["issue_number"], int) and item["issue_number"] > 0
         ],
         "stale_closed_issues": stale_closed_issues,
         "closure_hygiene_issue_count": len(closure_hygiene_issues),
         "closure_hygiene_issue_numbers": [
-            item["issue_number"] for item in closure_hygiene_issues if item["issue_number"] > 0
+            item["issue_number"]
+            for item in closure_hygiene_issues
+            if isinstance(item["issue_number"], int) and item["issue_number"] > 0
         ],
         "closure_hygiene_issues": closure_hygiene_issues,
         "linkage_error_count": len(linkage_errors),

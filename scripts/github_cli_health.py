@@ -12,12 +12,14 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from collections.abc import Mapping
+
 try:
     from aragora.swarm.github_app_auth import github_cli_env
 except Exception:  # pragma: no cover - fallback for partially bootstrapped script contexts
 
     def github_cli_env(
-        base_env: dict[str, str] | None = None,
+        base_env: Mapping[str, str] | None = None,
         *,
         prefer_app: bool = True,
     ) -> dict[str, str]:
