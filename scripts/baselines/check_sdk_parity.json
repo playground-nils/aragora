@@ -1,5 +1,8 @@
 {
-  "missing_from_both_sdks": [],
+  "missing_from_both_sdks": [
+    "/api/review-queue",
+    "/api/review-queue/{param}"
+  ],
   "stale_python_sdk_paths": [
     "/api/admin/organizations/{param}",
     "/api/admin/organizations/{param}/credits",
