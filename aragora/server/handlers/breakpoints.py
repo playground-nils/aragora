@@ -38,17 +38,14 @@ from .utils.rate_limit import RateLimiter, get_client_ip
 # Rate limiter for breakpoints endpoints (60 requests per minute - debug feature)
 _breakpoints_limiter = RateLimiter(requests_per_minute=60)
 
+debate_breakpoints: Any = None
 try:
-    from aragora.debate.breakpoints import (
-        BreakpointManager as ImportedBreakpointManager,
-        HumanGuidance as ImportedHumanGuidance,
-    )
+    from aragora.debate import breakpoints as debate_breakpoints
 except ImportError:
-    ImportedHumanGuidance = None
-    ImportedBreakpointManager = None
+    pass
 
-HumanGuidance: Any = ImportedHumanGuidance
-BreakpointManager: Any = ImportedBreakpointManager
+HumanGuidance: Any = getattr(debate_breakpoints, "HumanGuidance", None)
+BreakpointManager: Any = getattr(debate_breakpoints, "BreakpointManager", None)
 
 
 class BreakpointsHandler(BaseHandler):

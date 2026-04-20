@@ -31,7 +31,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 from collections.abc import Awaitable, Callable
 
 from aragora.billing.auth.context import UserAuthContext
@@ -311,6 +311,7 @@ class TypedHandler(BaseHandler):
         user, err = self.require_auth_or_error(handler)
         if err:
             return None, err
+        user = cast(UserAuthContext, user)
 
         # Check permission using role and permissions
         roles = getattr(user, "roles", []) or []
@@ -511,6 +512,7 @@ class PermissionHandler(AuthenticatedHandler):
         user_with_perm, perm_err = self.require_permission_or_error(handler, permission)
         if perm_err:
             return None, perm_err
+        user_with_perm = cast(UserAuthContext, user_with_perm)
 
         return user_with_perm, None
 

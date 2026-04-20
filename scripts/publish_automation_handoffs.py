@@ -18,7 +18,7 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -80,22 +80,25 @@ try:
 except Exception:  # pragma: no cover - fallback for partially bootstrapped script contexts
 
     def github_cli_env(
-        base_env: dict[str, str] | None = None,
+        base_env: Mapping[str, str] | None = None,
         *,
         prefer_app: bool = True,
     ) -> dict[str, str]:
         return dict(os.environ if base_env is None else base_env)
 
     def gh_subprocess_run(
-        args: list[str],
+        args: Sequence[str],
         *,
         timeout: float = 30.0,
         prefer_app: bool = True,
         write_op: bool = False,
-        env: dict[str, str] | None = None,
-        max_retries: int = 0,
+        env: Mapping[str, str] | None = None,
+        max_retries: int = 3,
+        base_backoff: float = 5.0,
+        max_backoff: float = 600.0,
+        sleep: Callable[[float], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        del prefer_app, write_op, max_retries
+        del prefer_app, write_op, max_retries, base_backoff, max_backoff, sleep
         return subprocess.run(
             ["gh", *args],
             capture_output=True,

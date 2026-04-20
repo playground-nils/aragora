@@ -1065,6 +1065,7 @@ class BaseHandler:
         user, err = self.require_auth_or_error(handler)
         if err:
             return None, err
+        user = cast(UserAuthContext, user)
 
         # Check permission using role and permissions
         roles = getattr(user, "roles", []) or []

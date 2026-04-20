@@ -239,17 +239,25 @@ def _corpus_freshness(
         status = "closure_hygiene_drift_detected"
     elif linkage_errors:
         status = "linkage_verification_incomplete"
+    stale_closed_issue_numbers = [
+        issue_number
+        for item in stale_closed_issues
+        for issue_number in [item.get("issue_number")]
+        if isinstance(issue_number, int) and issue_number > 0
+    ]
+    closure_hygiene_issue_numbers = [
+        issue_number
+        for item in closure_hygiene_issues
+        for issue_number in [item.get("issue_number")]
+        if isinstance(issue_number, int) and issue_number > 0
+    ]
     return {
         "status": status,
         "stale_closed_issue_count": len(stale_closed_issues),
-        "stale_closed_issue_numbers": [
-            item["issue_number"] for item in stale_closed_issues if item["issue_number"] > 0
-        ],
+        "stale_closed_issue_numbers": stale_closed_issue_numbers,
         "stale_closed_issues": stale_closed_issues,
         "closure_hygiene_issue_count": len(closure_hygiene_issues),
-        "closure_hygiene_issue_numbers": [
-            item["issue_number"] for item in closure_hygiene_issues if item["issue_number"] > 0
-        ],
+        "closure_hygiene_issue_numbers": closure_hygiene_issue_numbers,
         "closure_hygiene_issues": closure_hygiene_issues,
         "linkage_error_count": len(linkage_errors),
         "linkage_errors": linkage_errors,
