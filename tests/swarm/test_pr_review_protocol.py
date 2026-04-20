@@ -26,7 +26,7 @@ def test_resolve_provider_slots_prefers_available_candidates(
             "gemini": "/usr/bin/gemini",
         }.get(binary)
 
-    monkeypatch.setattr("aragora.swarm.pr_review_protocol.shutil.which", fake_which)
+    monkeypatch.setattr("aragora.review.provider_slots.shutil.which", fake_which)
 
     protocol = default_pr_review_protocol()
     slots = protocol.resolve_provider_slots()
@@ -40,6 +40,9 @@ def test_resolve_provider_slots_prefers_available_candidates(
     ]
     assert slots[3].status == "unavailable"
     assert "No configured provider available for grok" in slots[3].detail
+    assert slots[4].status == "available_opt_in"
+    assert slots[4].selected_allowlisted is False
+    assert slots[4].candidate_checks[0].provider == "mistral-api"
 
 
 def test_build_packet_recommendation_and_binding() -> None:
@@ -77,6 +80,8 @@ def test_build_packet_recommendation_and_binding() -> None:
         "pytest -q tests/swarm/test_pr_review_protocol.py"
     ]
     assert packet.top_findings[0].finding_id == "validation-failing"
+    assert packet.availability_summary.total_slots == 5
+    assert packet.availability_summary.core_slots_total == 2
     assert packet.cost_estimate["low"] == pytest.approx(3.0)
     assert packet.cost_estimate["high"] == pytest.approx(5.0)
 
@@ -169,3 +174,4 @@ def test_packet_to_dict_round_trips_to_json() -> None:
     assert roundtrip["protocol_version"] == PROTOCOL_VERSION
     assert roundtrip["binding"]["repo"] == "synaptent/aragora"
     assert roundtrip["review_roles"][-1] == "synthesizer"
+    assert roundtrip["availability_summary"]["total_slots"] == 5

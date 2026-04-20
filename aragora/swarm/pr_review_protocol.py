@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-import os
-import shutil
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from aragora.review.provider_slots import (
+    ProviderSlotAvailabilitySummary,
+    ProviderSlotDefinition,
+    ProviderSlotResolution,
+    ProviderSlotResolver,
+)
 
 PROTOCOL_VERSION = "pr_review_protocol.v1"
 PROTOCOL_STATUS = "metadata_heuristic"
@@ -33,50 +38,6 @@ _SLOT_CATALOG: tuple[tuple[str, str, str, str, tuple[str, ...]], ...] = (
     ("skeptic", "skeptic", "heterodox", "grok", ("grok-cli", "grok")),
     ("regulatory", "skeptic", "regulatory", "mistral", ("mistral-api", "mistral")),
 )
-
-_CLI_TO_BINARY = {
-    "claude": "claude",
-    "codex": "codex",
-    "openai": "openai",
-    "gemini-cli": "gemini",
-    "grok-cli": "grok",
-}
-
-_ENV_REQUIREMENTS: dict[str, tuple[str, ...]] = {
-    "anthropic-api": ("ANTHROPIC_API_KEY",),
-    "openai-api": ("OPENAI_API_KEY",),
-    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-    "grok": ("XAI_API_KEY", "GROK_API_KEY"),
-    "mistral-api": ("MISTRAL_API_KEY",),
-    "mistral": ("OPENROUTER_API_KEY",),
-}
-
-
-@dataclass(frozen=True, slots=True)
-class ProviderSlotDefinition:
-    slot_id: str
-    review_role: str
-    lens: str
-    family: str
-    candidates: tuple[str, ...]
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(slots=True)
-class ProviderSlotResolution:
-    slot_id: str
-    review_role: str
-    lens: str
-    family: str
-    selected_provider: str | None
-    status: str
-    detail: str
-    candidates: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 @dataclass(slots=True)
@@ -110,6 +71,7 @@ class PRReviewProtocolPacket:
     binding: PRReviewBinding
     review_roles: list[str]
     provider_slots: list[ProviderSlotResolution]
+    availability_summary: ProviderSlotAvailabilitySummary
     recommendation_class: str
     recommendation_reason: str
     confidence: float
@@ -148,7 +110,7 @@ class PRReviewProtocol:
         )
 
     def resolve_provider_slots(self) -> list[ProviderSlotResolution]:
-        return [self._resolve_slot(slot) for slot in self.provider_slots]
+        return ProviderSlotResolver().resolve_slots(self.provider_slots)
 
     def build_packet(
         self,
@@ -172,7 +134,9 @@ class PRReviewProtocol:
         machine_recommendation: str,
         machine_recommendation_reason: str,
     ) -> PRReviewProtocolPacket:
-        provider_slots = self.resolve_provider_slots()
+        slot_resolver = ProviderSlotResolver()
+        provider_slots = slot_resolver.resolve_slots(self.provider_slots)
+        availability_summary = slot_resolver.summarize(provider_slots)
         findings = self._build_findings(
             has_failures=has_failures,
             has_pending=has_pending,
@@ -227,6 +191,7 @@ class PRReviewProtocol:
             ),
             review_roles=list(self.review_roles),
             provider_slots=provider_slots,
+            availability_summary=availability_summary,
             recommendation_class=machine_recommendation,
             recommendation_reason=machine_recommendation_reason,
             confidence=confidence,
@@ -236,31 +201,6 @@ class PRReviewProtocol:
             validation_summary=validation_summary,
             top_findings=findings[:5],
             cost_estimate=cost_estimate,
-        )
-
-    def _resolve_slot(self, slot: ProviderSlotDefinition) -> ProviderSlotResolution:
-        for candidate in slot.candidates:
-            ok, detail = _provider_available(candidate)
-            if ok:
-                return ProviderSlotResolution(
-                    slot_id=slot.slot_id,
-                    review_role=slot.review_role,
-                    lens=slot.lens,
-                    family=slot.family,
-                    selected_provider=candidate,
-                    status="available",
-                    detail=detail,
-                    candidates=list(slot.candidates),
-                )
-        return ProviderSlotResolution(
-            slot_id=slot.slot_id,
-            review_role=slot.review_role,
-            lens=slot.lens,
-            family=slot.family,
-            selected_provider=None,
-            status="unavailable",
-            detail=f"No configured provider available for {slot.family}",
-            candidates=list(slot.candidates),
         )
 
     def _build_findings(
@@ -377,28 +317,12 @@ def default_pr_review_protocol() -> PRReviewProtocol:
     return PRReviewProtocol.default()
 
 
-def _provider_available(candidate: str) -> tuple[bool, str]:
-    binary = _CLI_TO_BINARY.get(candidate)
-    if binary:
-        if shutil.which(binary):
-            return True, f"{binary} CLI available"
-        return False, f"{binary} CLI not found on PATH"
-
-    env_names = _ENV_REQUIREMENTS.get(candidate)
-    if env_names:
-        for env_name in env_names:
-            if os.environ.get(env_name):
-                return True, f"{env_name} configured"
-        return False, f"missing env ({', '.join(env_names)})"
-
-    return False, f"unsupported provider candidate: {candidate}"
-
-
 __all__ = [
     "PRReviewBinding",
     "PRReviewFinding",
     "PRReviewProtocol",
     "PRReviewProtocolPacket",
+    "ProviderSlotAvailabilitySummary",
     "PROTOCOL_STATUS",
     "PROTOCOL_VERSION",
     "ProviderSlotDefinition",
