@@ -394,10 +394,12 @@ def _shape_pr(pr: dict[str, Any], deferred: set[int]) -> dict[str, Any]:
 class ReviewQueueHandler(BaseHandler):
     """HTTP handler for PDB UI v0 review-queue endpoints."""
 
+    # Base paths are intentionally omitted: the root /api/review-queue is
+    # not itself a real endpoint (handle() returns 404 for empty subpath),
+    # so declaring it would pollute OpenAPI with a placeholder. The wildcard
+    # captures all real routes (/prs, /prs/{n}/brief, etc.).
     ROUTES = [
-        "/api/review-queue",
         "/api/review-queue/*",
-        "/api/v1/review-queue",
         "/api/v1/review-queue/*",
     ]
 
