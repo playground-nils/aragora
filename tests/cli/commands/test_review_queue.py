@@ -432,6 +432,9 @@ class TestBuildQueueAndPacket:
         assert "aragora/cli" in packet.touched_subsystems
         assert "tests/cli" in packet.touched_subsystems
         assert packet.high_risk_paths_touched == []
+        assert packet.protocol["binding"]["repo"] == "synaptent/aragora"
+        assert packet.protocol["binding"]["base_sha"] == "basesha0001"
+        assert packet.protocol["recommendation_class"] == "approve_candidate"
         assert packet.validation == [
             "`python3 -m pytest tests/cli/commands/test_review_pr.py -q`",
             "`bash scripts/automation_pr_preflight.sh origin/main HEAD`",
@@ -597,12 +600,14 @@ class TestJsonOutput:
             "machine_recommendation_reason",
             "packet_sha",
             "generated_at",
+            "protocol",
             "advisory_only",
             "settlement_note",
         ):
             assert key in d, f"ReviewPacket dict missing key: {key}"
         # ReviewPacket.advisory_only must always be True (signature property).
         assert d["advisory_only"] is True
+        assert d["protocol"]["binding"]["repo"] == "synaptent/aragora"
 
     def test_packet_json_round_trip(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
@@ -613,6 +618,7 @@ class TestJsonOutput:
         roundtrip = json.loads(json.dumps(packet.to_dict()))
         assert roundtrip["pr_number"] == 1
         assert roundtrip["advisory_only"] is True
+        assert roundtrip["protocol"]["protocol_version"] == "pr_review_protocol.v1"
 
 
 # --- cmd_review_queue dispatch + parser ------------------------------------
