@@ -298,11 +298,11 @@ class AragoraClient:
         from .namespaces.receipts import ReceiptsAPI
         from .namespaces.reconciliation import ReconciliationAPI
         from .namespaces.relationships import RelationshipsAPI
-        from .namespaces.review_queue import ReviewQueueAPI
         from .namespaces.replays import ReplaysAPI
         from .namespaces.repository import RepositoryAPI
         from .namespaces.reputation import ReputationAPI
         from .namespaces.retention import RetentionAPI
+        from .namespaces.review_queue import ReviewQueueAPI
         from .namespaces.reviews import ReviewsAPI
         from .namespaces.rlm import RLMAPI
         from .namespaces.routing import RoutingAPI
@@ -950,11 +950,11 @@ class AragoraAsyncClient:
         from .namespaces.receipts import AsyncReceiptsAPI
         from .namespaces.reconciliation import AsyncReconciliationAPI
         from .namespaces.relationships import AsyncRelationshipsAPI
-        from .namespaces.review_queue import AsyncReviewQueueAPI
         from .namespaces.replays import AsyncReplaysAPI
         from .namespaces.repository import AsyncRepositoryAPI
         from .namespaces.reputation import AsyncReputationAPI
         from .namespaces.retention import AsyncRetentionAPI
+        from .namespaces.review_queue import AsyncReviewQueueAPI
         from .namespaces.reviews import AsyncReviewsAPI
         from .namespaces.rlm import AsyncRLMAPI
         from .namespaces.routing import AsyncRoutingAPI

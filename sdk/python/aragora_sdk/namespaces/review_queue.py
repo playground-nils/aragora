@@ -31,7 +31,7 @@ class ReviewQueueAPI:
         ...     print(pr["number"], pr["title"])
     """
 
-    def __init__(self, client: "AragoraClient") -> None:
+    def __init__(self, client: AragoraClient) -> None:
         self._client = client
 
     def list_prs(self, *, include_deferred: bool = False) -> dict[str, Any]:
@@ -47,9 +47,7 @@ class ReviewQueueAPI:
 
     def get_brief(self, pr_number: int) -> dict[str, Any]:
         """Fetch the PDB brief for a specific PR, or 404 if no brief exists."""
-        return self._client.request(
-            "GET", f"/api/v1/review-queue/prs/{pr_number}/brief"
-        )
+        return self._client.request("GET", f"/api/v1/review-queue/prs/{pr_number}/brief")
 
     def approve(self, pr_number: int, *, note: str | None = None) -> dict[str, Any]:
         """Submit a GitHub APPROVE review for the PR using the caller's identity."""
@@ -70,9 +68,7 @@ class ReviewQueueAPI:
 
     def defer(self, pr_number: int) -> dict[str, Any]:
         """Defer the PR locally (hides it from the queue for ~4 hours)."""
-        return self._client.request(
-            "POST", f"/api/v1/review-queue/prs/{pr_number}/defer"
-        )
+        return self._client.request("POST", f"/api/v1/review-queue/prs/{pr_number}/defer")
 
     def stats(self) -> dict[str, Any]:
         """Fetch session stats: approvals today, median decision time, streak."""
@@ -88,7 +84,7 @@ class AsyncReviewQueueAPI:
         >>> prs = await client.review_queue.list_prs()
     """
 
-    def __init__(self, client: "AragoraAsyncClient") -> None:
+    def __init__(self, client: AragoraAsyncClient) -> None:
         self._client = client
 
     async def list_prs(self, *, include_deferred: bool = False) -> dict[str, Any]:
@@ -96,19 +92,13 @@ class AsyncReviewQueueAPI:
         params: dict[str, Any] = {}
         if include_deferred:
             params["include_deferred"] = "1"
-        return await self._client.request(
-            "GET", "/api/v1/review-queue/prs", params=params
-        )
+        return await self._client.request("GET", "/api/v1/review-queue/prs", params=params)
 
     async def get_brief(self, pr_number: int) -> dict[str, Any]:
         """Fetch the PDB brief for a specific PR, or 404 if no brief exists."""
-        return await self._client.request(
-            "GET", f"/api/v1/review-queue/prs/{pr_number}/brief"
-        )
+        return await self._client.request("GET", f"/api/v1/review-queue/prs/{pr_number}/brief")
 
-    async def approve(
-        self, pr_number: int, *, note: str | None = None
-    ) -> dict[str, Any]:
+    async def approve(self, pr_number: int, *, note: str | None = None) -> dict[str, Any]:
         """Submit a GitHub APPROVE review for the PR using the caller's identity."""
         body: dict[str, Any] = {}
         if note is not None:
@@ -127,9 +117,7 @@ class AsyncReviewQueueAPI:
 
     async def defer(self, pr_number: int) -> dict[str, Any]:
         """Defer the PR locally (hides it from the queue for ~4 hours)."""
-        return await self._client.request(
-            "POST", f"/api/v1/review-queue/prs/{pr_number}/defer"
-        )
+        return await self._client.request("POST", f"/api/v1/review-queue/prs/{pr_number}/defer")
 
     async def stats(self) -> dict[str, Any]:
         """Fetch session stats: approvals today, median decision time, streak."""
