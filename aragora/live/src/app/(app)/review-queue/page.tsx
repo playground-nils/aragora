@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Scanlines, CRTVignette } from '@/components/MatrixRain';
 import {
   useReviewQueue,
   useReviewQueueStats,
@@ -46,11 +47,30 @@ export default function ReviewQueuePage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 text-slate-100">
-      <div className="mb-4 flex items-baseline gap-3">
-        <h1 className="font-theme-data text-2xl">Review queue</h1>
-        <span className="text-xs text-slate-400">PDB UI v0</span>
-      </div>
+    <div className="min-h-screen bg-bg text-text relative overflow-hidden">
+      <Scanlines />
+      <CRTVignette />
+      <div className="max-w-6xl mx-auto px-4 py-8 relative z-10">
+        <div className="mb-8">
+          <div className="flex items-baseline gap-3 mb-2">
+            <h1 className="text-xl font-theme-data font-bold text-[var(--accent)]">
+              Review queue
+            </h1>
+            <span
+              className="text-xs font-theme-data"
+              style={{
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'var(--text-muted)',
+              }}
+            >
+              PDB UI v0
+            </span>
+          </div>
+          <p className="text-text-muted font-theme-data text-sm">
+            Presidential-brief-style PR settlement. Scan, decide, move on.
+          </p>
+        </div>
 
       <StatsHeader
         visible={visible}
@@ -65,14 +85,23 @@ export default function ReviewQueuePage() {
         <div
           role="alert"
           data-testid="review-queue-page-error"
-          className="mb-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+          className="mb-4 rounded-xl border px-4 py-3 text-sm"
+          style={{
+            borderColor: 'var(--crimson)',
+            backgroundColor: 'rgba(255, 0, 64, 0.08)',
+            color: 'var(--crimson)',
+          }}
         >
           Failed to load queue: {(error as Error).message || 'unknown error'}
         </div>
       )}
 
       {isLoading ? (
-        <div data-testid="review-queue-page-loading" className="py-8 text-center text-slate-400">
+        <div
+          data-testid="review-queue-page-loading"
+          className="py-12 text-center text-sm"
+          style={{ color: 'var(--text-muted)' }}
+        >
           loading queue…
         </div>
       ) : (
@@ -83,14 +112,26 @@ export default function ReviewQueuePage() {
         <div
           role="status"
           data-testid="review-queue-inbox-zero"
-          className="fixed bottom-6 right-6 z-30 rounded border border-green-500/60 bg-green-500/10 px-4 py-3 text-sm text-green-200 shadow-xl"
+          className="fixed bottom-6 right-6 z-30 rounded-xl border px-5 py-4 shadow-xl"
+          style={{
+            borderColor: 'var(--accent)',
+            backgroundColor: 'var(--surface-elevated)',
+            boxShadow: 'var(--shadow-floating)',
+            color: 'var(--text)',
+          }}
         >
-          <div className="font-theme-data text-base">inbox zero 🎉</div>
-          <div className="text-xs text-green-300/80">
+          <div
+            className="font-theme-data text-base"
+            style={{ color: 'var(--accent)' }}
+          >
+            inbox zero 🎉
+          </div>
+          <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
             Queue is clear. Streak: {stats?.streak ?? 0}.
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
