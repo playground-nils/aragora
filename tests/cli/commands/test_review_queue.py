@@ -677,13 +677,18 @@ class TestSettlementHelpers:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         recorded: list[list[str]] = []
+
+        def _record_gh_text(args: list[str]) -> str:
+            recorded.append(args)
+            return ""
+
         monkeypatch.setattr(
             "aragora.cli.commands.review_queue._current_head_sha",
             lambda pr_number, repo_override=None: "headsha123",
         )
         monkeypatch.setattr(
             "aragora.cli.commands.review_queue._gh_text",
-            lambda args: recorded.append(args) or "",
+            _record_gh_text,
         )
         monkeypatch.setattr(
             "aragora.cli.commands.review_queue._github_actor",
