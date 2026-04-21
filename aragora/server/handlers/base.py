@@ -414,11 +414,13 @@ def get_host_header(handler: HTTPRequestHandler | None, default: str | None = No
         # After:
         host = get_host_header(handler)
     """
-    if default is None:
-        default = _DEFAULT_HOST
+    resolved_default = default if default is not None else _DEFAULT_HOST
     if handler is None:
-        return default
-    return handler.headers.get("Host", default) if hasattr(handler, "headers") else default
+        return resolved_default
+    if not hasattr(handler, "headers"):
+        return resolved_default
+    host = handler.headers.get("Host", resolved_default)
+    return host if host is not None else resolved_default
 
 
 def get_agent_name(agent: dict[str, Any] | AgentRating | Any | None) -> str | None:
