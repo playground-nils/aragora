@@ -1,0 +1,10 @@
+{
+  "subtype": "success",
+  "is_error": false,
+  "duration_ms": 24785,
+  "duration_api_ms": 24808,
+  "num_turns": 1,
+  "result": "OK",
+  "session_id": "16329fce-3484-47a4-ad98-6676fdfb7477",
+  "total_cost_usd": 0
+}

@@ -54,6 +54,7 @@ HANDLER_MODULES: dict[str, str] = {
     "AudienceSuggestionsHandler": "aragora.server.handlers.audience_suggestions",
     "AutomationHandler": "aragora.server.handlers.integrations.automation",
     "AutonomousLearningHandler": "aragora.server.handlers.autonomous_learning",
+    "AgentBridgeHandler": "aragora.server.handlers.agent_bridge",
     # approvals inbox
     "UnifiedApprovalsHandler": "aragora.server.handlers.approvals_inbox",
     # bots/ directory
@@ -508,6 +509,7 @@ ALL_HANDLER_NAMES: list[str] = [
     "GauntletValidateReceiptHandler",
     "GauntletHandler",
     "ReviewQueueHandler",
+    "AgentBridgeHandler",
     "ReviewsHandler",
     "FormalVerificationHandler",
     "SlackHandler",
