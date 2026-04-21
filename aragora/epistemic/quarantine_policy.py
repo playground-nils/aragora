@@ -31,8 +31,12 @@ PolicyAction = Literal[
 ]
 
 _RANK: dict[str, int] = {
-    "report_only": 0, "degrade": 1, "fallback": 2,
-    "quarantine": 3, "repair_required": 4, "fail_closed": 5,
+    "report_only": 0,
+    "degrade": 1,
+    "fallback": 2,
+    "quarantine": 3,
+    "repair_required": 4,
+    "fail_closed": 5,
 }
 _RANK_TO_ACTION: dict[int, PolicyAction] = {v: k for k, v in _RANK.items()}  # type: ignore[misc]
 
@@ -162,4 +166,9 @@ def apply_quarantine_policy(
 
 def quarantine_policy_enabled() -> bool:
     """Return True when ``ARAGORA_QUARANTINE_POLICY_ENABLED`` is set. Default: False."""
-    return str(os.environ.get("ARAGORA_QUARANTINE_POLICY_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
+    return str(os.environ.get("ARAGORA_QUARANTINE_POLICY_ENABLED") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
