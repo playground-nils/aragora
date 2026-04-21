@@ -83,8 +83,23 @@ class PRReviewProtocolPacket:
     cost_estimate: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload["confidence"] = round(float(self.confidence), 2)
+        payload = {
+            "protocol_version": self.protocol_version,
+            "status": self.status,
+            "binding": self.binding.to_dict(),
+            "review_roles": list(self.review_roles),
+            "provider_slots": [slot.to_packet_dict() for slot in self.provider_slots],
+            "availability_summary": self.availability_summary.to_dict(),
+            "recommendation_class": self.recommendation_class,
+            "recommendation_reason": self.recommendation_reason,
+            "confidence": round(float(self.confidence), 2),
+            "confidence_basis": self.confidence_basis,
+            "dissent_summary": self.dissent_summary,
+            "dissenting_views": list(self.dissenting_views),
+            "validation_summary": dict(self.validation_summary),
+            "top_findings": [finding.to_dict() for finding in self.top_findings],
+            "cost_estimate": dict(self.cost_estimate),
+        }
         return payload
 
 

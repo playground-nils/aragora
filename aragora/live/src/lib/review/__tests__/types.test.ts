@@ -41,6 +41,7 @@ import {
   type PRReviewProtocolPacket,
   type ProtocolCostEstimate,
   type ProtocolValidationSummary,
+  type ProviderSlotAvailabilitySummary,
   type ProviderSlotResolution,
   type QueueItem,
   type ReviewBrief,
@@ -605,12 +606,24 @@ describe("python-json payloads parse as TS types", () => {
       high: 5.0,
       basis: "bounded heterogeneous metadata-first protocol",
     };
+    const availability_summary: ProviderSlotAvailabilitySummary = {
+      total_slots: 5,
+      resolved_slots: 4,
+      unresolved_slots: ["skeptic"],
+      core_slots_total: 2,
+      core_slots_resolved: 2,
+      available_families: ["claude", "gemini", "gpt", "mistral"],
+      unresolved_families: ["grok"],
+      opt_in_slots: ["regulatory"],
+      degraded: true,
+    };
     const protocol: PRReviewProtocolPacket = {
       protocol_version: "pr_review_protocol.v1",
       status: "metadata_heuristic",
       binding,
       review_roles: [ReviewRole.LOGIC, ReviewRole.SECURITY],
       provider_slots: [slot],
+      availability_summary,
       recommendation_class: Recommendation.APPROVE_CANDIDATE,
       recommendation_reason: "All gates green.",
       confidence: 0.9,
@@ -632,6 +645,7 @@ describe("python-json payloads parse as TS types", () => {
     // Typed validation summary + cost estimate preserve field-level access.
     expect(protocol.validation_summary.diffstat.additions).toBe(656);
     expect(protocol.cost_estimate.currency).toBe("USD");
+    expect(protocol.availability_summary.opt_in_slots).toContain("regulatory");
   });
 
   test("ProviderSlotResolution rejects drift values at compile time", () => {

@@ -46,7 +46,7 @@ def test_provider_slot_resolver_reports_candidate_checks(
     assert [slot.selected_provider for slot in resolutions] == ["claude", "mistral-api"]
     assert resolutions[0].candidate_checks[0].provider == "claude"
     assert resolutions[0].candidate_checks[0].available is True
-    assert resolutions[1].status == "available_opt_in"
+    assert resolutions[1].status == "available"
     assert resolutions[1].candidate_checks[0].allowlisted is False
     assert "not allowlisted by default" in resolutions[1].detail
 
@@ -97,7 +97,7 @@ def test_provider_slot_summary_counts_core_and_opt_in_slots() -> None:
                 lens="regulatory",
                 family="mistral",
                 selected_provider="mistral-api",
-                status="available_opt_in",
+                status="available",
                 detail="MISTRAL_API_KEY configured; provider is registered but not allowlisted by default",
                 candidates=["mistral-api", "mistral"],
                 selected_allowlisted=False,

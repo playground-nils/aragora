@@ -63,6 +63,24 @@ class ProviderSlotResolution:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+    def to_packet_dict(self) -> dict[str, Any]:
+        """Return the stable public packet shape mirrored by the UI types.
+
+        Keep richer resolver-only diagnostics (`candidate_checks`,
+        `selected_allowlisted`) available to Python callers without
+        widening the serialized review-packet contract unnecessarily.
+        """
+        return {
+            "slot_id": self.slot_id,
+            "review_role": self.review_role,
+            "lens": self.lens,
+            "family": self.family,
+            "selected_provider": self.selected_provider,
+            "status": self.status,
+            "detail": self.detail,
+            "candidates": list(self.candidates),
+        }
+
 
 @dataclass(slots=True)
 class ProviderSlotAvailabilitySummary:
@@ -127,7 +145,7 @@ class ProviderSlotResolver:
                 lens=slot.lens,
                 family=slot.family,
                 selected_provider=selected.provider,
-                status=selected.status,
+                status="available",
                 detail=selected.detail,
                 candidates=list(slot.candidates),
                 candidate_checks=candidate_checks,

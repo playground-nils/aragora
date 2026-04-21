@@ -40,7 +40,7 @@ def test_resolve_provider_slots_prefers_available_candidates(
     ]
     assert slots[3].status == "unavailable"
     assert "No configured provider available for grok" in slots[3].detail
-    assert slots[4].status == "available_opt_in"
+    assert slots[4].status == "available"
     assert slots[4].selected_allowlisted is False
     assert slots[4].candidate_checks[0].provider == "mistral-api"
 
@@ -175,3 +175,5 @@ def test_packet_to_dict_round_trips_to_json() -> None:
     assert roundtrip["binding"]["repo"] == "synaptent/aragora"
     assert roundtrip["review_roles"][-1] == "synthesizer"
     assert roundtrip["availability_summary"]["total_slots"] == 5
+    assert "candidate_checks" not in roundtrip["provider_slots"][0]
+    assert "selected_allowlisted" not in roundtrip["provider_slots"][0]
