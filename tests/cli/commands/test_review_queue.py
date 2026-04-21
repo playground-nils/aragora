@@ -434,6 +434,7 @@ class TestBuildQueueAndPacket:
         assert packet.high_risk_paths_touched == []
         assert packet.protocol["binding"]["repo"] == "synaptent/aragora"
         assert packet.protocol["binding"]["base_sha"] == "basesha0001"
+        assert packet.protocol["availability_summary"]["total_slots"] == 5
         assert packet.protocol["recommendation_class"] == "approve_candidate"
         assert packet.validation == [
             "`python3 -m pytest tests/cli/commands/test_review_pr.py -q`",

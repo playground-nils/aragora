@@ -1098,6 +1098,21 @@ def _render_packet(packet: ReviewPacket) -> None:
             f"({protocol.get('confidence_basis', 'unknown')})"
         )
         print(f"  dissent: {protocol.get('dissent_summary', '')}")
+        availability_summary = protocol.get("availability_summary") or {}
+        if availability_summary:
+            print(
+                "  availability: "
+                f"{availability_summary.get('resolved_slots', 0)}/"
+                f"{availability_summary.get('total_slots', 0)} slots resolved"
+            )
+            unresolved_slots = availability_summary.get("unresolved_slots") or []
+            if unresolved_slots:
+                unresolved = ", ".join(str(slot) for slot in unresolved_slots)
+                print(f"    unresolved: {unresolved}")
+            opt_in_slots = availability_summary.get("opt_in_slots") or []
+            if opt_in_slots:
+                opt_in = ", ".join(str(slot) for slot in opt_in_slots)
+                print(f"    opt-in: {opt_in}")
         print(
             f"  cost estimate: ${cost_estimate.get('low', 0):.2f}"
             f"-${cost_estimate.get('high', 0):.2f}"

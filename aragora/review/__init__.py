@@ -41,6 +41,13 @@ from aragora.review.receipt import (
     ValidationRef,
     ValidationResult,
 )
+from aragora.review.provider_slots import (
+    ProviderCandidateCheck,
+    ProviderSlotAvailabilitySummary,
+    ProviderSlotDefinition,
+    ProviderSlotResolution,
+    ProviderSlotResolver,
+)
 
 __all__ = [
     "ADVISORY_NOTE",
@@ -54,6 +61,11 @@ __all__ = [
     "EvidenceKind",
     "EvidenceRef",
     "PRReviewProtocol",
+    "ProviderCandidateCheck",
+    "ProviderSlotAvailabilitySummary",
+    "ProviderSlotDefinition",
+    "ProviderSlotResolution",
+    "ProviderSlotResolver",
     "Recommendation",
     "ReviewBrief",
     "ReviewBudget",

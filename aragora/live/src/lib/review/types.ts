@@ -449,6 +449,24 @@ export interface ProtocolCostEstimate {
 }
 
 /**
+ * Provider-slot availability summary embedded in ``PRReviewProtocolPacket``.
+ *
+ * Mirrors the concrete aggregate emitted by
+ * ``aragora.review.provider_slots.ProviderSlotAvailabilitySummary``.
+ */
+export interface ProviderSlotAvailabilitySummary {
+  readonly total_slots: number;
+  readonly resolved_slots: number;
+  readonly unresolved_slots: readonly string[];
+  readonly core_slots_total: number;
+  readonly core_slots_resolved: number;
+  readonly available_families: readonly string[];
+  readonly unresolved_families: readonly string[];
+  readonly opt_in_slots: readonly string[];
+  readonly degraded: boolean;
+}
+
+/**
  * The nested heterogeneous-protocol packet embedded in ``ReviewPacket.protocol``.
  *
  * Mirrors ``aragora.swarm.pr_review_protocol.PRReviewProtocolPacket``.
@@ -467,6 +485,7 @@ export interface PRReviewProtocolPacket {
   readonly binding: PRReviewBinding;
   readonly review_roles: readonly ReviewRole[];
   readonly provider_slots: readonly ProviderSlotResolution[];
+  readonly availability_summary: ProviderSlotAvailabilitySummary;
   readonly recommendation_class: Recommendation;
   readonly recommendation_reason: string;
   readonly confidence: number;
