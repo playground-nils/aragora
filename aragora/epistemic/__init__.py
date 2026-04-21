@@ -1,4 +1,4 @@
-"""Epistemic CI and crux-engine helpers (DIC-13..22 tranche).
+"""Epistemic CI and crux-engine helpers (DIC-13..22 + DIC-26 tranche).
 
 Exposes:
 - DIC-14: executable claim verification (:class:`ClaimVerifier`)
@@ -10,6 +10,8 @@ Exposes:
   :class:`DecayReason`, :func:`evaluate_unit`)
 - DIC-22: bounded repair-spec producer (:class:`RepairSpec`,
   :func:`propose_repair`, :func:`repair_pipeline_enabled`)
+- DIC-26: belief coherence monitor (:class:`BeliefEntry`,
+  :class:`CoherenceReport`, :func:`scan_coherence`)
 
 See ``docs/plans/EPISTEMIC_CI_AND_CRUX_ENGINE.md`` for the full
 DIC-13..22 sequence and ``docs/status/NEXT_STEPS_CANONICAL.md`` for
@@ -21,6 +23,15 @@ from __future__ import annotations
 import os
 
 from .claim_verifier import ClaimResult, ClaimStatus, ClaimVerifier
+from .coherence import (
+    BeliefEntry,
+    CoherenceIssue,
+    CoherenceReport,
+    IncoherenceKind,
+    coherence_monitor_enabled,
+    from_belief_node,
+    scan_coherence,
+)
 from .decay_monitor import DecayReason, DecaySignal, evaluate_unit
 from .repair import (
     RepairSpec,
@@ -38,24 +49,31 @@ from .followup import (
 )
 
 __all__ = [
+    "BeliefEntry",
     "ClaimResult",
     "ClaimStatus",
     "ClaimVerifier",
+    "CoherenceIssue",
+    "CoherenceReport",
     "DEFAULT_CRUX_LOAD_BEARING_THRESHOLD",
     "DEFAULT_DELTA_LOSS_THRESHOLD",
     "DecayReason",
     "DecaySignal",
     "FollowupProposal",
     "RepairSpec",
+    "IncoherenceKind",
+    "coherence_monitor_enabled",
     "enable_epistemic_followup",
     "enable_repair_pipeline",
     "epistemic_followup_enabled",
     "evaluate_unit",
+    "from_belief_node",
     "propose_followup_for_crux",
     "propose_followup_for_cruxset",
     "propose_followup_for_failed_claim",
     "propose_repair",
     "repair_pipeline_enabled",
+    "scan_coherence",
 ]
 
 
