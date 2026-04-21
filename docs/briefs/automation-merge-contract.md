@@ -20,6 +20,8 @@ For local Codex app automation branches, `scripts/publish_codex_automation_branc
 
 For local Codex app automation handoffs, `scripts/publish_automation_handoffs.py --apply` reads structured memory blocks, deduplicates them against existing GitHub issues and PRs, and creates missing `boss-ready` issues from a normal shell with working `gh` access. Scout automations should leave structured handoffs in memory/inbox when GitHub writes fail instead of using browser fallback for issue or PR creation.
 
+If a handoff explicitly targets an already-open pull request (for example `PR #6288` in the task title or evidence block), the handoff publisher should treat it as PR follow-up work instead of minting a new `boss-ready` issue. PR-targeted follow-ups must not consume boss-ready issue capacity.
+
 For Aragora boss-loop workers, run the same script against the worker branch before merge arbitration:
 
 ```bash
@@ -59,9 +61,19 @@ If any gate fails, the next useful action is a repair attempt with the failure o
 
 The bridge intentionally does not use browser fallback. Browser profiles can be locked by other tools, and interactive safety prompts make browser-based GitHub publishing unreliable for unattended automations. If `gh` is unavailable, automations should keep the handoff in memory/inbox and let the next bridge pass retry.
 
+The publisher bridge now has an explicit GitHub health probe at `scripts/github_cli_health.py`. Sandboxed coding automations should treat a failed probe as a hard boundary and switch into handoff-only mode immediately instead of retrying `gh issue create`, `gh pr create`, `gh workflow run`, or merge-watch commands from inside the sandbox.
+
+For steady local operation, install the publisher bridge as a LaunchAgent from a normal user shell:
+
+```bash
+bash scripts/install_codex_automation_publisher_launchd.sh
+```
+
+Use `bash scripts/status_codex_automation_publisher_launchd.sh` to inspect the job and `bash scripts/uninstall_codex_automation_publisher_launchd.sh` to remove it.
+
 ## Prompt Snippet For Codex App Automations
 
-Use this repo's automation merge contract at `docs/briefs/automation-merge-contract.md`. Work on one bounded issue or maintenance task. Make the smallest credible change, run the targeted validation, and before publishing run `bash scripts/automation_pr_preflight.sh origin/main HEAD`. If validation or publishing fails, leave an exact handoff with branch, failing command, blocker, and next action instead of opening a misleading PR. Do not use browser fallback for GitHub publishing; leave structured memory/inbox evidence for `scripts/run_codex_automation_publisher.sh`.
+Use this repo's automation merge contract at `docs/briefs/automation-merge-contract.md`. Work on one bounded issue or maintenance task. Make the smallest credible change, run the targeted validation, and before publishing run `bash scripts/automation_pr_preflight.sh origin/main HEAD`. If GitHub health is degraded or publishing fails, switch to handoff-only mode: leave the exact branch, failing command, blocker, and next action in structured memory/inbox evidence for `scripts/run_codex_automation_publisher.sh` instead of opening a misleading PR. Do not use browser fallback for GitHub publishing.
 
 ## Prompt Snippet For Boss-Loop Operators
 

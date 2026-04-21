@@ -38,12 +38,17 @@ from .utils.rate_limit import RateLimiter, get_client_ip
 # Rate limiter for breakpoints endpoints (60 requests per minute - debug feature)
 _breakpoints_limiter = RateLimiter(requests_per_minute=60)
 
-HumanGuidance: Any = None
-BreakpointManager: Any = None
 try:
-    from aragora.debate.breakpoints import HumanGuidance, BreakpointManager
+    from aragora.debate.breakpoints import (
+        BreakpointManager as ImportedBreakpointManager,
+        HumanGuidance as ImportedHumanGuidance,
+    )
 except ImportError:
-    pass
+    ImportedHumanGuidance = None
+    ImportedBreakpointManager = None
+
+HumanGuidance: Any = ImportedHumanGuidance
+BreakpointManager: Any = ImportedBreakpointManager
 
 
 class BreakpointsHandler(BaseHandler):
@@ -246,7 +251,7 @@ class BreakpointsHandler(BaseHandler):
             body: Request body with resolution details:
                 - action: "continue" | "abort" | "redirect" | "inject"
                 - message: Human guidance message
-                - redirect_task: New task if redirecting (optional)
+                - redirect_task: New task if redirecting (required for "redirect")
 
         Returns:
             Resolution confirmation
@@ -273,10 +278,10 @@ class BreakpointsHandler(BaseHandler):
             return error_response("Field 'message' must be a string", 400)
         if redirect_task is not None and not isinstance(redirect_task, str):
             return error_response("Field 'redirect_task' must be a string", 400)
+        if isinstance(redirect_task, str):
+            redirect_task = redirect_task.strip() or None
         if not isinstance(reviewer_id, str) or not reviewer_id.strip():
             return error_response("Field 'reviewer_id' must be a non-empty string", 400)
-        if action == "redirect" and (redirect_task is None or not redirect_task.strip()):
-            return error_response("Field 'redirect_task' is required for redirect action", 400)
 
         try:
             import uuid
