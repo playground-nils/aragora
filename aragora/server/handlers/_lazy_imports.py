@@ -20,6 +20,7 @@ HANDLER_MODULES: dict[str, str] = {
     "HealthHandler": "aragora.server.handlers.admin",
     "LivenessHandler": "aragora.server.handlers.admin.health.liveness",
     "ReadinessHandler": "aragora.server.handlers.admin.health.readiness",
+    "RotationStatusHandler": "aragora.server.handlers.admin.rotation_status",
     "StorageHealthHandler": "aragora.server.handlers.admin.health.storage_health",
     "SystemHandler": "aragora.server.handlers.admin",
     "SystemIntelligenceHandler": "aragora.server.handlers.system_intelligence",
@@ -161,6 +162,7 @@ HANDLER_MODULES: dict[str, str] = {
     # notifications/ directory
     "NotificationHistoryHandler": "aragora.server.handlers.notifications.history",
     "NotificationPreferencesHandler": "aragora.server.handlers.notifications.preferences",
+    "NotificationTemplatesHandler": "aragora.server.handlers.notifications.templates",
     # pipeline/ directory
     "PipelineGraphHandler": "aragora.server.handlers.pipeline_graph",
     "PipelineTransitionsHandler": "aragora.server.handlers.pipeline.transitions",
@@ -289,6 +291,7 @@ HANDLER_MODULES: dict[str, str] = {
     "ReceiptsHandler": "aragora.server.handlers.receipts",
     "ReplaysHandler": "aragora.server.handlers.replays",
     "RepositoryHandler": "aragora.server.handlers.repository",
+    "ReviewQueueHandler": "aragora.server.handlers.review_queue",
     "ReviewsHandler": "aragora.server.handlers.reviews",
     "RLMContextHandler": "aragora.server.handlers.rlm",
     "RoutingHandler": "aragora.server.handlers.routing",
@@ -504,6 +507,7 @@ ALL_HANDLER_NAMES: list[str] = [
     "GauntletHeatmapExportHandler",
     "GauntletValidateReceiptHandler",
     "GauntletHandler",
+    "ReviewQueueHandler",
     "ReviewsHandler",
     "FormalVerificationHandler",
     "SlackHandler",
@@ -596,6 +600,7 @@ ALL_HANDLER_NAMES: list[str] = [
     "FeatureFlagAdminHandler",
     "LivenessHandler",
     "ReadinessHandler",
+    "RotationStatusHandler",
     "StorageHealthHandler",
     # agents/ sub-handlers
     "AgentRecommendationHandler",
@@ -635,6 +640,7 @@ ALL_HANDLER_NAMES: list[str] = [
     # notifications
     "NotificationHistoryHandler",
     "NotificationPreferencesHandler",
+    "NotificationTemplatesHandler",
     # payments
     "PaymentRoutesHandler",
     # pipeline
