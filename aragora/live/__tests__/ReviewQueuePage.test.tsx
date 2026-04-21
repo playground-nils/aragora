@@ -46,6 +46,19 @@ jest.mock('../src/hooks/useReviewQueue', () => ({
   useSettlePR: () => jest.fn().mockResolvedValue({ status: 'ok' }),
   settlePR: jest.fn(),
   fetchBrief: jest.fn().mockResolvedValue(null),
+  generateBrief: jest.fn().mockResolvedValue({ state: 'queued' }),
+  getBriefState: jest.fn().mockResolvedValue({ state: 'absent' }),
+  cancelBriefGeneration: jest.fn().mockResolvedValue(undefined),
+  getBriefGenerationFlag: jest.fn(() => null),
+  __resetBriefGenerationFlagForTests: jest.fn(),
+  useBriefState: jest.fn(() => ({
+    snapshot: null,
+    isLoading: false,
+    error: null,
+    featureDisabled: false,
+    refresh: jest.fn().mockResolvedValue(null),
+    setSnapshot: jest.fn(),
+  })),
 }));
 
 import ReviewQueuePage from '../src/app/(app)/review-queue/page';

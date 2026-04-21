@@ -10,11 +10,24 @@ jest.mock('../src/config', () => ({
 
 jest.mock('../src/hooks/useReviewQueue', () => ({
   fetchBrief: jest.fn(),
+  generateBrief: jest.fn().mockResolvedValue({ state: 'queued' }),
+  getBriefState: jest.fn().mockResolvedValue({ state: 'absent' }),
+  cancelBriefGeneration: jest.fn().mockResolvedValue(undefined),
+  getBriefGenerationFlag: jest.fn(() => null),
+  __resetBriefGenerationFlagForTests: jest.fn(),
+  useBriefState: jest.fn(() => ({
+    snapshot: null,
+    isLoading: false,
+    error: null,
+    featureDisabled: false,
+    refresh: jest.fn().mockResolvedValue(null),
+    setSnapshot: jest.fn(),
+  })),
 }));
 
 import { ReviewQueueCard } from '../src/components/review-queue/ReviewQueueCard';
 import type { ReviewQueuePR } from '../src/hooks/useReviewQueue';
-import { fetchBrief } from '../src/hooks/useReviewQueue';
+import { fetchBrief, useBriefState } from '../src/hooks/useReviewQueue';
 
 function makePR(overrides: Partial<ReviewQueuePR> = {}): ReviewQueuePR {
   return {

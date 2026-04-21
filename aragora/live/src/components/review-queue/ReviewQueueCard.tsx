@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReviewQueuePR, SettlementAction } from '@/hooks/useReviewQueue';
+import { ApproveDecisionModal } from './ApproveDecisionModal';
 import { BriefPanel } from './BriefPanel';
 import {
   ciGlyph,
@@ -9,7 +10,13 @@ import {
   toneColor,
   verdictGlyph,
 } from './format';
-import { fetchBrief, type ReviewQueueBrief } from '@/hooks/useReviewQueue';
+import {
+  cancelBriefGeneration,
+  fetchBrief,
+  generateBrief,
+  useBriefState,
+  type ReviewQueueBrief,
+} from '@/hooks/useReviewQueue';
 
 export interface ReviewQueueCardProps {
   pr: ReviewQueuePR;
@@ -19,6 +26,9 @@ export interface ReviewQueueCardProps {
   onToggleExpand: () => void;
   onSettle: (action: SettlementAction, options?: { note?: string; reason?: string }) => Promise<void>;
 }
+
+/** Maximum ms between two `a` keystrokes to count as a "bypass" chord. */
+const APPROVE_BYPASS_WINDOW_MS = 500;
 
 export function ReviewQueueCard({
   pr,
@@ -39,6 +49,19 @@ export function ReviewQueueCard({
   const [briefFetched, setBriefFetched] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [generateInFlight, setGenerateInFlight] = useState(false);
+  const lastApproveKeyAtRef = useRef<number>(0);
+
+  // Poll lifecycle state while card is expanded. Hook is a no-op when
+  // disabled (expanded === false), preserving the legacy collapsed-card
+  // behavior and keeping unexpanded tests from issuing fetch calls.
+  const {
+    snapshot,
+    featureDisabled,
+    refresh: refreshBriefState,
+    setSnapshot,
+  } = useBriefState(pr.number, { enabled: expanded });
 
   const loadBrief = useCallback(async () => {
     if (briefFetched || briefLoading) return;
@@ -65,6 +88,18 @@ export function ReviewQueueCard({
     }
   }, [expanded, loadBrief]);
 
+  // When lifecycle transitions to ready, refresh the brief body so the
+  // panel shows the final output without a page reload.
+  useEffect(() => {
+    if (snapshot?.state === 'ready' && !briefLoading) {
+      setBriefFetched(false);
+      void loadBrief();
+    }
+    // We intentionally don't add loadBrief to the deps — it's stable
+    // behind an idempotent guard and would otherwise loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot?.state]);
+
   const runSettle = useCallback(
     async (action: SettlementAction, options?: { note?: string; reason?: string }) => {
       setError(null);
@@ -80,12 +115,86 @@ export function ReviewQueueCard({
     [onSettle],
   );
 
+  // Decide whether to show the modal on Approve. The rules:
+  //   - feature flag off → legacy confirm path
+  //   - state unknown AND brief_present on row summary → use legacy confirm
+  //     for verdict disagreement; otherwise silent approve
+  //   - state known and not ready → show modal
+  //   - state ready but verdict disagrees with approve_candidate → show modal
+  const shouldShowApproveModal = useCallback((): boolean => {
+    if (featureDisabled) return false;
+    if (!snapshot) return false;
+    if (snapshot.state === 'ready') {
+      // Modal appears only when the verdict disagrees with the user's
+      // intent to approve.
+      const v = brief?.verdict ?? pr.verdict ?? null;
+      return v !== null && v !== 'approve_candidate';
+    }
+    return true;
+  }, [brief?.verdict, featureDisabled, pr.verdict, snapshot]);
+
+  const performApprove = useCallback(() => {
+    setShowApproveModal(false);
+    void runSettle('approve');
+  }, [runSettle]);
+
+  const handleGenerate = useCallback(async () => {
+    if (generateInFlight) return;
+    setGenerateInFlight(true);
+    setError(null);
+    try {
+      const force =
+        snapshot?.state === 'failed' || snapshot?.state === 'stale';
+      const resp = await generateBrief(pr.number, force ? { force: true } : {});
+      // Optimistically flip the snapshot to queued so the user sees
+      // immediate feedback even before the next poll.
+      setSnapshot({
+        state: resp.state ?? 'queued',
+        headSha: resp.head_sha,
+        panelModels: resp.panel_models,
+      });
+      void refreshBriefState();
+    } catch (err) {
+      const status = (err as Error & { status?: number }).status;
+      if (status === 503) {
+        // Feature flag off mid-session. Fall back to legacy confirm.
+        if (typeof window !== 'undefined') {
+          // eslint-disable-next-line no-console
+          console.info('brief generation is disabled on this backend');
+        }
+      } else {
+        setError((err as Error).message || 'generation failed');
+      }
+    } finally {
+      setGenerateInFlight(false);
+    }
+  }, [generateInFlight, pr.number, refreshBriefState, setSnapshot, snapshot?.state]);
+
+  const handleRetry = useCallback(() => {
+    void handleGenerate();
+  }, [handleGenerate]);
+
+  const handleGenerateFromModal = useCallback(() => {
+    setShowApproveModal(false);
+    void handleGenerate();
+  }, [handleGenerate]);
+
   const handleApprove = useCallback(() => {
-    // The brief-generation pipeline isn't operational yet (#6306 landed type
-    // contracts only; Mode 1/2/3 execution paths are not built). Until briefs
-    // actually exist, there's no point warning the user that they're absent —
-    // the warning would fire on every approve and train the user to ignore it.
-    // Only warn when a brief IS present and its verdict disagrees with approval.
+    const now = Date.now();
+    const interval = now - lastApproveKeyAtRef.current;
+    lastApproveKeyAtRef.current = now;
+    if (interval > 0 && interval <= APPROVE_BYPASS_WINDOW_MS) {
+      // Double-click / rapid double-press: bypass modal.
+      lastApproveKeyAtRef.current = 0;
+      performApprove();
+      return;
+    }
+    if (shouldShowApproveModal()) {
+      setShowApproveModal(true);
+      return;
+    }
+    // Legacy path: warn only when a brief IS present and its verdict
+    // disagrees with approval.
     if (pr.brief_present && pr.verdict && pr.verdict !== 'approve_candidate') {
       const ok = typeof window !== 'undefined'
         ? window.confirm(
@@ -94,8 +203,18 @@ export function ReviewQueueCard({
         : true;
       if (!ok) return;
     }
-    void runSettle('approve');
-  }, [pr.brief_present, pr.verdict, runSettle]);
+    performApprove();
+  }, [performApprove, pr.brief_present, pr.verdict, shouldShowApproveModal]);
+
+  const handleCancelGeneration = useCallback(async () => {
+    try {
+      await cancelBriefGeneration(pr.number);
+    } catch (err) {
+      setError((err as Error).message || 'cancel failed');
+    } finally {
+      void refreshBriefState();
+    }
+  }, [pr.number, refreshBriefState]);
 
   const handleRequestChanges = useCallback(() => {
     setReasonForAction('request-changes');
@@ -123,10 +242,22 @@ export function ReviewQueueCard({
     void runSettle(action, { reason });
   }, [reasonDraft, reasonForAction, runSettle]);
 
+  const briefGenerationEnabled = !featureDisabled && snapshot !== null;
+  const isRunning = snapshot?.state === 'running';
+  const pulseTooltip = isRunning
+    ? `Brief generation in progress${snapshot?.phase ? ` — ${snapshot.phase} phase` : ''}${
+        typeof snapshot?.rolesComplete === 'number' &&
+        typeof snapshot?.rolesTotal === 'number'
+          ? ` (${snapshot.rolesComplete}/${snapshot.rolesTotal})`
+          : ''
+      }`
+    : undefined;
+
   return (
     <article
       data-testid={`review-queue-card-${pr.number}`}
       data-selected={selected ? 'true' : 'false'}
+      data-brief-state={snapshot?.state ?? 'unknown'}
       aria-selected={selected}
       tabIndex={selected ? 0 : -1}
       role="option"
@@ -156,7 +287,11 @@ export function ReviewQueueCard({
       <div className="flex items-start gap-5">
         {/* Number badge, tone-colored by verdict if brief exists, else by CI */}
         <div
-          className="flex shrink-0 flex-col items-center justify-center rounded-lg px-3 py-2 font-theme-data"
+          data-testid={`review-queue-badge-${pr.number}`}
+          data-running={isRunning ? 'true' : 'false'}
+          className={`flex shrink-0 flex-col items-center justify-center rounded-lg px-3 py-2 font-theme-data${
+            isRunning && selected ? ' review-queue-badge-running' : ''
+          }`}
           style={{
             minWidth: '4rem',
             backgroundColor: (pr.brief_present ? verdict.tone : ci.tone) === 'ok' ? 'rgba(57, 255, 20, 0.14)'
@@ -171,10 +306,25 @@ export function ReviewQueueCard({
               : (pr.brief_present ? verdict.tone : ci.tone) === 'warn' ? 'rgba(255, 255, 0, 0.25)'
               : (pr.brief_present ? verdict.tone : ci.tone) === 'fail' ? 'rgba(255, 0, 64, 0.25)'
               : 'var(--border)'}`,
+            animation: isRunning && selected ? 'review-queue-pulse 1.2s ease-in-out infinite' : undefined,
           }}
-          title={pr.brief_present ? verdict.label : ci.label}
+          title={pulseTooltip ?? (pr.brief_present ? verdict.label : ci.label)}
+          aria-label={pulseTooltip ?? (pr.brief_present ? verdict.label : ci.label)}
         >
-          <div className="text-[10px] uppercase tracking-wider opacity-60">PR</div>
+          <div className="flex items-center gap-1">
+            <div className="text-[10px] uppercase tracking-wider opacity-60">PR</div>
+            {isRunning && (
+              <span
+                aria-hidden="true"
+                data-testid={`review-queue-badge-spinner-${pr.number}`}
+                className="inline-block h-2 w-2 animate-spin rounded-full border-2"
+                style={{
+                  borderColor: 'transparent',
+                  borderTopColor: 'currentColor',
+                }}
+              />
+            )}
+          </div>
           <div className="text-lg leading-tight">{pr.number}</div>
         </div>
 
@@ -300,6 +450,20 @@ export function ReviewQueueCard({
         >
           Open diff ↗
         </button>
+        {isRunning && (
+          <button
+            type="button"
+            data-testid={`review-queue-cancel-generation-${pr.number}`}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              void handleCancelGeneration();
+            }}
+            className="text-xs underline-offset-4 transition-opacity hover:underline hover:opacity-100"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Cancel generation
+          </button>
+        )}
         <button
           type="button"
           data-testid={`review-queue-expand-${pr.number}`}
@@ -390,7 +554,15 @@ export function ReviewQueueCard({
 
       {expanded && (
         <div className="mt-4 space-y-3">
-          <BriefPanel brief={brief} loading={briefLoading} error={briefError} />
+          <BriefPanel
+            brief={brief}
+            loading={briefLoading}
+            error={briefError}
+            state={snapshot}
+            generationEnabled={briefGenerationEnabled}
+            onGenerate={handleGenerate}
+            onRetry={handleRetry}
+          />
           <div
             className="rounded-lg border px-4 py-3 text-xs"
             style={{
@@ -413,6 +585,24 @@ export function ReviewQueueCard({
           </div>
         </div>
       )}
+
+      {showApproveModal && snapshot && (
+        <ApproveDecisionModal
+          prNumber={pr.number}
+          state={snapshot.state}
+          verdict={brief?.verdict ?? pr.verdict ?? undefined}
+          onGenerate={handleGenerateFromModal}
+          onApproveAnyway={performApprove}
+          onClose={() => setShowApproveModal(false)}
+        />
+      )}
+
+      <style jsx>{`
+        @keyframes review-queue-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+      `}</style>
     </article>
   );
 }
