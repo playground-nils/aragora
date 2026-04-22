@@ -8,6 +8,8 @@ _autogenerate_missing_paths re-adds them without schemas).
 These definitions use /api/v1/ versioned paths to survive the pipeline.
 """
 
+from typing import Any
+
 from aragora.server.openapi.helpers import (
     AUTH_REQUIREMENTS,
     STANDARD_ERRORS,
@@ -1084,6 +1086,232 @@ _MEDIA_SCHEMA_ENDPOINTS = {
 
 
 # ---------------------------------------------------------------------------
+# Agent Bridge read API schemas
+# ---------------------------------------------------------------------------
+_NULLABLE_STRING = {"type": ["string", "null"]}
+_SCHEMA_VERSION_FIELD = {"type": "integer", "enum": [1]}
+_NULLABLE_DATE_TIME_FIELD = {"type": ["string", "null"], "format": "date-time"}
+
+AGENT_BRIDGE_FOOTER_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summary", "next_actor", "needs_human", "done", "artifacts", "tests_run"],
+    "properties": {
+        "summary": {"type": "string"},
+        "next_actor": _NULLABLE_STRING,
+        "needs_human": {"type": "boolean"},
+        "done": {"type": "boolean"},
+        "artifacts": {"type": "array", "items": {"type": "string"}},
+        "tests_run": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+AGENT_BRIDGE_RUN_SUMMARY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "schema_version",
+        "run_id",
+        "task",
+        "status",
+        "created_at",
+        "updated_at",
+        "completed_at",
+        "last_turn_index",
+        "next_actor",
+        "repair_budget_per_turn",
+        "footer_mode",
+        "worktree_cleanup_mode",
+        "participants",
+        "last_event_id",
+    ],
+    "properties": {
+        "schema_version": _SCHEMA_VERSION_FIELD,
+        "run_id": {"type": "string"},
+        "task": {"type": "string"},
+        "status": {"type": "string"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "updated_at": {"type": "string", "format": "date-time"},
+        "completed_at": _NULLABLE_DATE_TIME_FIELD,
+        "last_turn_index": {"type": "integer"},
+        "next_actor": _NULLABLE_STRING,
+        "repair_budget_per_turn": {"type": "integer"},
+        "footer_mode": {"type": "string"},
+        "worktree_cleanup_mode": {"type": "string"},
+        "participants": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["role", "harness", "model"],
+                "properties": {
+                    "role": {"type": "string"},
+                    "harness": {"type": "string"},
+                    "model": {"type": "string"},
+                },
+            },
+        },
+        "last_event_id": _NULLABLE_STRING,
+    },
+}
+
+AGENT_BRIDGE_SESSION_ENTRY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "role",
+        "harness",
+        "model",
+        "session_id",
+        "worktree_agent_slug",
+        "worktree_path",
+        "branch",
+        "session_status",
+        "started_at",
+        "last_turn_index",
+        "last_completed_at",
+    ],
+    "properties": {
+        "role": {"type": "string"},
+        "harness": {"type": "string"},
+        "model": {"type": "string"},
+        "session_id": _NULLABLE_STRING,
+        "worktree_agent_slug": _NULLABLE_STRING,
+        "worktree_path": _NULLABLE_STRING,
+        "branch": _NULLABLE_STRING,
+        "session_status": {
+            "type": "string",
+            "enum": ["not_started", "active", "completed", "failed"],
+        },
+        "started_at": _NULLABLE_DATE_TIME_FIELD,
+        "last_turn_index": {"type": "integer"},
+        "last_completed_at": _NULLABLE_DATE_TIME_FIELD,
+        "harness_options": {"type": "object", "additionalProperties": True},
+    },
+}
+
+AGENT_BRIDGE_RUN_DETAIL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        *AGENT_BRIDGE_RUN_SUMMARY_SCHEMA["required"],
+        "roles",
+        "worktree_path",
+        "worktree_agent_slug",
+    ],
+    "properties": {
+        **AGENT_BRIDGE_RUN_SUMMARY_SCHEMA["properties"],
+        "roles": {
+            "type": "object",
+            "additionalProperties": AGENT_BRIDGE_SESSION_ENTRY_SCHEMA,
+        },
+        "worktree_path": _NULLABLE_STRING,
+        "worktree_agent_slug": _NULLABLE_STRING,
+    },
+}
+
+AGENT_BRIDGE_EVENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "schema_version",
+        "event_id",
+        "run_id",
+        "ts",
+        "event_type",
+        "turn_index",
+        "role",
+        "harness",
+        "session_id",
+        "parse_status",
+        "payload",
+    ],
+    "properties": {
+        "schema_version": _SCHEMA_VERSION_FIELD,
+        "event_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "ts": {"type": "string", "format": "date-time"},
+        "event_type": {
+            "type": "string",
+            "enum": [
+                "run_started",
+                "run_failed",
+                "run_completed",
+                "turn.started",
+                "turn.result",
+                "turn.completed",
+                "turn.repair_requested",
+                "footer_ok",
+                "footer_malformed",
+                "footer_missing",
+            ],
+        },
+        "turn_index": {"type": "integer"},
+        "role": {"type": "string"},
+        "harness": {"type": "string"},
+        "session_id": _NULLABLE_STRING,
+        "parse_status": {"type": ["string", "null"], "enum": ["ok", "missing", "malformed", None]},
+        "payload": {"type": "object", "additionalProperties": True},
+    },
+}
+
+AGENT_BRIDGE_TURN_RECORD_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "turn_index",
+        "author_role",
+        "started_at",
+        "completed_at",
+        "parse_status",
+        "footer",
+        "body_markdown",
+    ],
+    "properties": {
+        "turn_index": {"type": "integer"},
+        "author_role": {"type": "string"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "completed_at": _NULLABLE_STRING,
+        "parse_status": {"type": "string", "enum": ["ok", "missing", "malformed"]},
+        "footer": {"oneOf": [AGENT_BRIDGE_FOOTER_SCHEMA, {"type": "null"}]},
+        "body_markdown": {"type": "string"},
+    },
+}
+
+AGENT_BRIDGE_RUN_LIST_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schema_version", "runs"],
+    "properties": {
+        "schema_version": _SCHEMA_VERSION_FIELD,
+        "runs": {"type": "array", "items": AGENT_BRIDGE_RUN_SUMMARY_SCHEMA},
+        "next_cursor": _NULLABLE_STRING,
+    },
+}
+
+AGENT_BRIDGE_EVENTS_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schema_version", "events"],
+    "properties": {
+        "schema_version": _SCHEMA_VERSION_FIELD,
+        "events": {"type": "array", "items": AGENT_BRIDGE_EVENT_SCHEMA},
+        "next_cursor": _NULLABLE_STRING,
+    },
+}
+
+AGENT_BRIDGE_TRANSCRIPT_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schema_version", "turns"],
+    "properties": {
+        "schema_version": _SCHEMA_VERSION_FIELD,
+        "turns": {"type": "array", "items": AGENT_BRIDGE_TURN_RECORD_SCHEMA},
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Combined export
 # ---------------------------------------------------------------------------
 RESPONSE_SCHEMA_ENDPOINTS = {
@@ -1094,4 +1322,15 @@ RESPONSE_SCHEMA_ENDPOINTS = {
     **_MEDIA_SCHEMA_ENDPOINTS,
 }
 
-__all__ = ["RESPONSE_SCHEMA_ENDPOINTS"]
+__all__ = [
+    "AGENT_BRIDGE_EVENTS_RESPONSE_SCHEMA",
+    "AGENT_BRIDGE_EVENT_SCHEMA",
+    "AGENT_BRIDGE_FOOTER_SCHEMA",
+    "AGENT_BRIDGE_RUN_DETAIL_SCHEMA",
+    "AGENT_BRIDGE_RUN_LIST_RESPONSE_SCHEMA",
+    "AGENT_BRIDGE_RUN_SUMMARY_SCHEMA",
+    "AGENT_BRIDGE_SESSION_ENTRY_SCHEMA",
+    "AGENT_BRIDGE_TRANSCRIPT_RESPONSE_SCHEMA",
+    "AGENT_BRIDGE_TURN_RECORD_SCHEMA",
+    "RESPONSE_SCHEMA_ENDPOINTS",
+]
