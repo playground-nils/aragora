@@ -162,6 +162,46 @@ def _translate_input_error(err: InputLoaderError) -> HandlerResult:
     return error_response(err.detail or reason.value, status=502)
 
 
+_CREDENTIAL_KEYS_FOR_INVOKER: tuple[str, ...] = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GROK_API_KEY",
+    "XAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "MISTRAL_API_KEY",
+)
+
+
+def _hydrate_provider_credentials() -> None:
+    """Lazily hydrate provider credentials from AWS Secrets Manager.
+
+    The CLI (:mod:`scripts.generate_one_brief`) hydrates credentials at
+    module-load time, but the server handler is imported before
+    ``ARAGORA_USE_SECRETS_MANAGER`` may be set in the process
+    environment. Calling ``hydrate_env_from_secrets`` per factory
+    construction keeps the server invoker path working when the UI
+    generates a brief, while remaining a no-op when Secrets Manager is
+    disabled or the keys are already set in ambient env.
+    """
+
+    try:
+        from aragora.config.secrets import hydrate_env_from_secrets
+    except ImportError:
+        # Secrets module unavailable (e.g. in a stripped-down test
+        # harness). Fall through to whatever env vars are already set.
+        return
+    try:
+        hydrate_env_from_secrets(list(_CREDENTIAL_KEYS_FOR_INVOKER))
+    except Exception:  # noqa: BLE001 — hydration must never block briefs
+        # If Secrets Manager is misconfigured or unreachable, the
+        # downstream ``build_default_invoker`` call raises a clean
+        # ``InvokerFactoryError`` that the handler maps to a 503.
+        logger.warning(
+            "review_queue_brief: hydrate_env_from_secrets failed; falling back to ambient env"
+        )
+
+
 def _resolve_invoker_factory() -> Callable[[], ProviderInvoker]:
     if _INVOKER_FACTORY_OVERRIDE is not None:
         return _INVOKER_FACTORY_OVERRIDE
@@ -172,6 +212,7 @@ def _resolve_invoker_factory() -> Callable[[], ProviderInvoker]:
         # qwen / mistral) degrade gracefully via the executor's
         # per-slot unavailable path. See
         # :mod:`aragora.pdb.invoker_factory`.
+        _hydrate_provider_credentials()
         try:
             return build_default_invoker()
         except InvokerFactoryError as exc:
