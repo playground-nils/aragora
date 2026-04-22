@@ -1,229 +1,227 @@
 'use client';
 
-import Link from 'next/link';
+import { TabPanel, Tabs } from '@/components/Tabs';
+import { StatusBadge } from '@/components/shared/StatusBadge';
+import { BridgeEventStream } from '@/components/autonomous/bridge/BridgeEventStream';
+import { BridgeRoleCard } from '@/components/autonomous/bridge/BridgeRoleCard';
+import { BridgeTranscriptView } from '@/components/autonomous/bridge/BridgeTranscriptView';
+import { useAgentBridgeEvents } from '@/hooks/useAgentBridgeEvents';
+import { useAgentBridgeRun } from '@/hooks/useAgentBridgeRun';
+import { useAgentBridgeTranscript } from '@/hooks/useAgentBridgeTranscript';
 
-import { useSWRFetch } from '@/hooks/useSWRFetch';
-
-import type { BridgeEvent, BridgeRunSummary, BridgeSession } from './types';
+import type { AgentBridgeRunDetail } from './types';
+import { formatBridgeTimestamp } from './types';
 
 interface BridgeRunDetailProps {
   runId: string;
 }
 
-interface BridgeRunDetailResponse {
-  run: Omit<BridgeRunSummary, 'session_count' | 'agents'>;
-  sessions: BridgeSession[];
-}
-
-interface BridgeEventResponse {
-  events: BridgeEvent[];
-  count: number;
-}
-
-function formatTimestamp(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
+function getRunStatusVariant(status: AgentBridgeRunDetail['status']) {
+  switch (status) {
+    case 'running':
+      return 'info' as const;
+    case 'awaiting_human':
+      return 'warning' as const;
+    case 'completed':
+      return 'success' as const;
+    case 'failed':
+      return 'error' as const;
   }
-  return date.toLocaleString();
 }
 
-function humanStatus(status: string): string {
-  if (status === 'awaiting_human') return 'Awaiting human input';
-  if (status === 'completed') return 'Completed';
-  if (status === 'failed') return 'Failed';
-  return 'Running';
+function buildRunJsonView(run: AgentBridgeRunDetail) {
+  return {
+    schema_version: run.schema_version,
+    run_id: run.run_id,
+    task: run.task,
+    status: run.status,
+    created_at: run.created_at,
+    updated_at: run.updated_at,
+    completed_at: run.completed_at,
+    last_turn_index: run.last_turn_index,
+    next_actor: run.next_actor,
+    repair_budget_per_turn: run.repair_budget_per_turn,
+    footer_mode: run.footer_mode,
+    worktree_cleanup_mode: run.worktree_cleanup_mode,
+    participants: run.participants,
+    worktree_path: run.worktree_path,
+    worktree_agent_slug: run.worktree_agent_slug,
+    last_event_id: run.last_event_id,
+  };
 }
 
-function eventSummary(event: BridgeEvent): string {
-  const footer = typeof event.footer === 'object' && event.footer ? event.footer : null;
-  if (footer && typeof footer.summary === 'string' && footer.summary) {
-    return footer.summary;
-  }
-  if (typeof event.reason === 'string' && event.reason) {
-    return event.reason;
-  }
-  return event.type.replaceAll('.', ' ').replaceAll('_', ' ');
+function buildSessionsJsonView(run: AgentBridgeRunDetail) {
+  return {
+    schema_version: run.schema_version,
+    run_id: run.run_id,
+    updated_at: run.updated_at,
+    sessions: run.roles,
+  };
+}
+
+function orderedRoleEntries(run: AgentBridgeRunDetail) {
+  const orderedEntries = run.participants
+    .map((participant) => [participant.role, run.roles[participant.role]] as const)
+    .filter(
+      (entry): entry is [string, AgentBridgeRunDetail['roles'][string]] => Boolean(entry[1])
+    );
+
+  const seenRoles = new Set(orderedEntries.map(([role]) => role));
+  const remainingEntries = Object.entries(run.roles).filter(([role]) => !seenRoles.has(role));
+
+  return [...orderedEntries, ...remainingEntries];
 }
 
 export function BridgeRunDetail({ runId }: BridgeRunDetailProps) {
-  const run = useSWRFetch<BridgeRunDetailResponse>(`/api/v1/agent-bridge/runs/${runId}`, {
-    refreshInterval: 5000,
+  const runQuery = useAgentBridgeRun(runId, { enabled: Boolean(runId) });
+  const shouldPoll = runQuery.run?.status === 'running';
+  const eventsQuery = useAgentBridgeEvents(runId, {
+    enabled: Boolean(runId),
+    poll: shouldPoll,
+    limit: 500,
   });
-  const events = useSWRFetch<BridgeEventResponse>(`/api/v1/agent-bridge/runs/${runId}/events`, {
-    refreshInterval: 5000,
+  const transcriptQuery = useAgentBridgeTranscript(runId, {
+    enabled: Boolean(runId),
+    poll: shouldPoll,
   });
 
-  if (run.error) {
+  if (
+    runQuery.errorStatus === 403 ||
+    eventsQuery.errorStatus === 403 ||
+    transcriptQuery.errorStatus === 403
+  ) {
+    throw new Error('Forbidden: agent_bridge:read');
+  }
+
+  if (runQuery.isLoading && !runQuery.run) {
+    return <div className="text-sm text-white/50">Loading bridge run…</div>;
+  }
+
+  if (runQuery.error && !runQuery.run) {
     return (
       <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
-        Failed to load bridge run {runId}.
+        Bridge API unreachable
+        <button
+          onClick={runQuery.retry}
+          className="ml-3 underline underline-offset-2 hover:no-underline"
+        >
+          Retry
+        </button>
       </div>
     );
   }
 
-  if (run.isLoading || !run.data) {
-    return <div className="text-sm text-white/50">Loading bridge run…</div>;
+  if (!runQuery.run) {
+    return null;
   }
 
-  const runData = run.data.run;
-  const sessions = run.data.sessions ?? [];
-  const eventItems = events.data?.events ?? [];
+  const run = runQuery.run;
+  const roleEntries = orderedRoleEntries(run);
+  const runJson = buildRunJsonView(run);
+  const sessionsJson = buildSessionsJsonView(run);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="mb-2 text-xs uppercase tracking-[0.25em] text-white/35">
-            Agent Bridge Run
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.25em] text-white/35">Agent Bridge Run</div>
+            <h1 className="mt-1 text-3xl font-theme-display text-white">{run.run_id}</h1>
+            <p className="mt-2 max-w-3xl text-sm text-white/60">{run.task}</p>
           </div>
-          <h1 className="font-theme-display text-3xl text-white">{runData.run_id}</h1>
-          <p className="mt-2 max-w-3xl text-sm text-white/70">{runData.task}</p>
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge label={run.status} variant={getRunStatusVariant(run.status)} size="md" />
+            <StatusBadge label={run.footer_mode} variant="neutral" size="md" />
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Link
-            href="/autonomous/bridge"
-            className="rounded border border-white/10 px-3 py-2 text-sm text-white/60 transition-colors hover:border-white/20 hover:text-white"
-          >
-            All runs
-          </Link>
-          <button
-            onClick={() => {
-              void run.mutate();
-              void events.mutate();
-            }}
-            className="rounded border border-[var(--accent)]/30 px-3 py-2 text-sm text-[var(--accent)] transition-colors hover:border-[var(--accent)]/60"
-          >
-            Refresh
-          </button>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-white/35">Worktree path</div>
+            <div className="mt-2 break-all text-sm text-white/80">{run.worktree_path ?? 'n/a'}</div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-white/35">Active role</div>
+            <div className="mt-2 text-sm text-white/80">{run.next_actor ?? 'none'}</div>
+          </div>
         </div>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
-        <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm uppercase tracking-[0.2em] text-white/40">Run State</h2>
-            <span className="rounded-full border border-white/10 px-2 py-1 text-xs text-white/70">
-              {humanStatus(runData.status)}
-            </span>
-          </div>
+        <div className="mt-4 flex flex-wrap gap-4 text-xs text-white/50">
+          <span>created: {formatBridgeTimestamp(run.created_at)}</span>
+          <span>updated: {formatBridgeTimestamp(run.updated_at)}</span>
+          <span>turns: {run.last_turn_index}</span>
+          <span>cleanup: {run.worktree_cleanup_mode}</span>
+        </div>
+      </section>
 
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Worktree agent</dt>
-              <dd className="mt-1 text-sm text-white/85">{runData.worktree_agent_slug}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Next actor</dt>
-              <dd className="mt-1 text-sm text-white/85">{runData.next_actor ?? 'none'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Created</dt>
-              <dd className="mt-1 text-sm text-white/85">{formatTimestamp(runData.created_at)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Updated</dt>
-              <dd className="mt-1 text-sm text-white/85">{formatTimestamp(runData.updated_at)}</dd>
-            </div>
-          </dl>
+      <section className="space-y-3">
+        <div className="text-xs uppercase tracking-[0.25em] text-white/35">Participant sessions</div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {roleEntries.map(([role, session]) => (
+            <BridgeRoleCard key={role} role={role} session={session} />
+          ))}
+        </div>
+      </section>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <div className="text-xs uppercase tracking-[0.2em] text-white/35">Turns</div>
-              <div className="mt-1 text-sm text-white/85">{runData.last_turn_index}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-[0.2em] text-white/35">Worktree path</div>
-              <div className="mt-1 break-all text-sm text-white/70">{runData.worktree_path}</div>
-            </div>
-          </div>
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+        <Tabs
+          ariaLabel="Bridge run detail tabs"
+          defaultTab="transcript"
+          tabs={[
+            {
+              id: 'transcript',
+              label: 'Transcript',
+              badge: transcriptQuery.turns.length,
+            },
+            {
+              id: 'events',
+              label: 'Events',
+              badge: eventsQuery.events.length,
+            },
+            {
+              id: 'metadata',
+              label: 'Metadata',
+            },
+          ]}
+          variant="underline"
+        >
+          <TabPanel tabId="transcript">
+            <BridgeTranscriptView
+              turns={transcriptQuery.turns}
+              isLoading={transcriptQuery.isLoading}
+              error={transcriptQuery.error}
+            />
+          </TabPanel>
 
-          {runData.status === 'awaiting_human' ? (
-            <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">
-              This run is paused for a human decision before the baton can advance.
-            </div>
-          ) : null}
+          <TabPanel tabId="events">
+            <BridgeEventStream
+              events={eventsQuery.events}
+              isLoading={eventsQuery.isLoading}
+              error={eventsQuery.error}
+            />
+          </TabPanel>
 
-          {runData.last_summary ? (
-            <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-white/70">
-              {runData.last_summary}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <h2 className="mb-4 text-sm uppercase tracking-[0.2em] text-white/40">Sessions</h2>
-          <div className="space-y-3">
-            {sessions.map((session) => (
-              <div
-                key={session.name}
-                className="rounded-lg border border-white/10 bg-black/20 p-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium text-white">{session.name}</div>
-                    <div className="text-xs text-white/45">
-                      {session.harness}
-                      {session.model ? ` · ${session.model}` : ''}
-                    </div>
-                  </div>
-                  <div className="text-xs text-white/45">{session.turn_count} turns</div>
+          <TabPanel tabId="metadata">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+                <div className="mb-3 text-xs uppercase tracking-[0.2em] text-white/35">
+                  run.json
                 </div>
-                <div className="mt-3 space-y-1 text-xs text-white/50">
-                  <div>Role: {session.role || 'unassigned'}</div>
-                  <div>Status: {session.session_status}</div>
-                  <div>Branch: {session.branch ?? 'pending worktree'}</div>
-                  <div>Worktree agent: {session.worktree_agent_slug ?? 'inherit run default'}</div>
-                  <div>Worktree: {session.worktree_path ?? 'pending worktree'}</div>
-                </div>
+                <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all text-xs text-white/70">
+                  {JSON.stringify(runJson, null, 2)}
+                </pre>
               </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm uppercase tracking-[0.2em] text-white/40">Event Feed</h2>
-          <div className="text-xs text-white/40">{eventItems.length} events</div>
-        </div>
-
-        {events.error ? (
-          <div className="text-sm text-red-300">Failed to load event log.</div>
-        ) : eventItems.length === 0 ? (
-          <div className="text-sm text-white/50">No events recorded yet.</div>
-        ) : (
-          <ol className="space-y-3">
-            {eventItems.map((event, index) => (
-              <li
-                key={`${event.timestamp}-${event.type}-${index}`}
-                className="rounded-lg border border-white/10 bg-black/20 p-3"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm text-white">
-                    <span className="font-medium">{event.type}</span>
-                    {event.actor ? <span className="text-white/45"> · {event.actor}</span> : null}
-                  </div>
-                  <div className="text-xs text-white/45">{formatTimestamp(event.timestamp)}</div>
+              <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+                <div className="mb-3 text-xs uppercase tracking-[0.2em] text-white/35">
+                  sessions.json
                 </div>
-
-                <div className="mt-2 text-sm text-white/65">{eventSummary(event)}</div>
-
-                {event.footer && Array.isArray(event.footer.tests_run) && event.footer.tests_run.length > 0 ? (
-                  <div className="mt-2 text-xs text-white/45">
-                    Tests: {event.footer.tests_run.join(', ')}
-                  </div>
-                ) : null}
-
-                {event.footer && Array.isArray(event.footer.artifacts) && event.footer.artifacts.length > 0 ? (
-                  <div className="mt-1 text-xs text-white/45">
-                    Artifacts: {event.footer.artifacts.join(', ')}
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        )}
+                <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all text-xs text-white/70">
+                  {JSON.stringify(sessionsJson, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </TabPanel>
+        </Tabs>
       </section>
     </div>
   );

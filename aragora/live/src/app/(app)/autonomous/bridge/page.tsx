@@ -13,22 +13,22 @@ export default function AgentBridgeRunsPage() {
   useEffect(() => {
     setContext({
       title: 'Agent Bridge',
-      subtitle: 'Persistent CLI-resume orchestration',
+      subtitle: 'Read-only broker state',
       statsContent: (
         <div className="space-y-4">
-          <div className="text-xs uppercase tracking-wider text-white/40">Transport</div>
+          <div className="text-xs uppercase tracking-wider text-white/40">Mode</div>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-white/50">Primary path</span>
-              <span className="text-[var(--accent)]">CLI resume</span>
+              <span className="text-white/50">Surface</span>
+              <span className="text-[var(--accent)]">Read only</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-white/50">Persistence</span>
-              <span className="text-cyan-300">Repo-local</span>
+              <span className="text-white/50">Transport</span>
+              <span className="text-cyan-300">HTTP polling</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-white/50">Transport fallback</span>
-              <span className="text-white/60">tmux legacy</span>
+              <span className="text-white/50">Broker store</span>
+              <span className="text-white/60">.aragora/agent_bridge</span>
             </div>
           </div>
         </div>
@@ -61,8 +61,9 @@ export default function AgentBridgeRunsPage() {
             </div>
             <h1 className="font-theme-display text-3xl text-white">Agent Bridge Runs</h1>
             <p className="mt-2 max-w-3xl text-sm text-white/55">
-              Observe persistent Codex, Claude, and Droid sessions without relying on tmux keystroke
-              transport. This surface reads broker state from <code className="text-white/75">.aragora/agent_bridge</code>.
+              Inspect persistent bridge runs and role-keyed session state without mutation controls
+              or WebSocket transport. This surface reads broker state from{' '}
+              <code className="text-white/75">.aragora/agent_bridge</code>.
             </p>
           </div>
 

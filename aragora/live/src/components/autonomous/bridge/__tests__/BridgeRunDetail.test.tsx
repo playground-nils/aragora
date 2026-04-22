@@ -1,121 +1,193 @@
-import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
+import { useAgentBridgeEvents } from '@/hooks/useAgentBridgeEvents';
+import { useAgentBridgeRun } from '@/hooks/useAgentBridgeRun';
+import { useAgentBridgeTranscript } from '@/hooks/useAgentBridgeTranscript';
+
+import type {
+  AgentBridgeEvent,
+  AgentBridgeRunDetail,
+  AgentBridgeTurnRecord,
+} from '../types';
 import { BridgeRunDetail } from '../BridgeRunDetail';
 
-const mockUseSWRFetch = jest.fn();
+jest.mock('@/hooks/useAgentBridgeRun');
+jest.mock('@/hooks/useAgentBridgeEvents');
+jest.mock('@/hooks/useAgentBridgeTranscript');
 
-jest.mock('next/link', () => ({
-  __esModule: true,
-  default: ({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) => (
-    <a href={href} className={className}>{children}</a>
-  ),
-}));
+const mockUseAgentBridgeRun = useAgentBridgeRun as jest.MockedFunction<typeof useAgentBridgeRun>;
+const mockUseAgentBridgeEvents = useAgentBridgeEvents as jest.MockedFunction<
+  typeof useAgentBridgeEvents
+>;
+const mockUseAgentBridgeTranscript = useAgentBridgeTranscript as jest.MockedFunction<
+  typeof useAgentBridgeTranscript
+>;
 
-jest.mock('@/hooks/useSWRFetch', () => ({
-  useSWRFetch: (...args: unknown[]) => mockUseSWRFetch(...args),
-}));
+function buildRunDetail(overrides: Partial<AgentBridgeRunDetail> = {}): AgentBridgeRunDetail {
+  return {
+    schema_version: 1,
+    run_id: 'bridge_20260421T191953Z_pr6306',
+    task: 'Review and refine the protocol orchestrator implementation plan.',
+    status: 'running',
+    created_at: '2026-04-21T19:19:53Z',
+    updated_at: '2026-04-21T19:24:10Z',
+    completed_at: null,
+    last_turn_index: 2,
+    next_actor: 'reviewer',
+    repair_budget_per_turn: 1,
+    footer_mode: 'prompt_injected',
+    worktree_cleanup_mode: 'operator_triggered',
+    participants: [
+      { role: 'implementer', harness: 'codex', model: 'gpt-5.4' },
+      { role: 'reviewer', harness: 'claude', model: 'claude-opus-4-7' },
+    ],
+    last_event_id: 'bridge:event:002',
+    worktree_path: '/tmp/bridge-worktree',
+    worktree_agent_slug: 'bridge-pr6306',
+    roles: {
+      implementer: {
+        role: 'implementer',
+        harness: 'codex',
+        model: 'gpt-5.4',
+        session_id: '019db172-4d01-7072-860c-99114afe8792',
+        worktree_agent_slug: 'bridge-pr6306-implementer',
+        worktree_path: '/tmp/bridge-worktree/implementer',
+        branch: 'codex/bridge-pr6306-implementer',
+        session_status: 'active',
+        started_at: '2026-04-21T19:21:02Z',
+        last_turn_index: 2,
+        last_completed_at: '2026-04-21T19:24:10Z',
+      },
+      reviewer: {
+        role: 'reviewer',
+        harness: 'claude',
+        model: 'claude-opus-4-7',
+        session_id: null,
+        worktree_agent_slug: 'bridge-pr6306-reviewer',
+        worktree_path: '/tmp/bridge-worktree/reviewer',
+        branch: 'codex/bridge-pr6306-reviewer',
+        session_status: 'not_started',
+        started_at: null,
+        last_turn_index: 0,
+        last_completed_at: null,
+      },
+    },
+    ...overrides,
+  };
+}
+
+function buildTranscriptTurn(overrides: Partial<AgentBridgeTurnRecord> = {}): AgentBridgeTurnRecord {
+  return {
+    turn_index: 1,
+    author_role: 'implementer',
+    started_at: '2026-04-21T19:23:40Z',
+    completed_at: '2026-04-21T19:24:09Z',
+    parse_status: 'ok',
+    footer: {
+      summary: 'Outlined the persistence and transport slices.',
+      next_actor: 'reviewer',
+      needs_human: false,
+      done: false,
+      artifacts: [],
+      tests_run: [],
+    },
+    body_markdown: 'Turn body',
+    ...overrides,
+  };
+}
+
+function buildEvent(overrides: Partial<AgentBridgeEvent> = {}): AgentBridgeEvent {
+  return {
+    schema_version: 1,
+    event_id: 'bridge:event:001',
+    run_id: 'bridge_20260421T191953Z_pr6306',
+    ts: '2026-04-21T19:24:09Z',
+    event_type: 'turn.completed',
+    turn_index: 1,
+    role: 'implementer',
+    harness: 'codex',
+    session_id: '019db172-4d01-7072-860c-99114afe8792',
+    parse_status: 'ok',
+    payload: {
+      footer: {
+        summary: 'Outlined the persistence and transport slices.',
+        next_actor: 'reviewer',
+        needs_human: false,
+        done: false,
+        artifacts: [],
+        tests_run: [],
+      },
+    },
+    ...overrides,
+  };
+}
 
 describe('BridgeRunDetail', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-
-    mockUseSWRFetch.mockImplementation((endpoint: string) => {
-      if (endpoint === '/api/v1/agent-bridge/runs/run-123') {
-        return {
-          data: {
-            run: {
-              run_id: 'run-123',
-              task: 'Review the bounded bridge slice',
-              status: 'awaiting_human',
-              created_at: '2026-04-21T18:00:00Z',
-              updated_at: '2026-04-21T18:05:00Z',
-              completed_at: null,
-              next_actor: 'human',
-              last_turn_index: 2,
-              last_summary: 'Reviewer requested a human choice.',
-              worktree_path: '/repo/.worktrees/agent-bridge',
-              worktree_agent_slug: 'codex',
-            },
-            sessions: [
-              {
-                name: 'codex-a',
-                harness: 'codex',
-                role: 'implementer',
-                model: 'gpt-5.4',
-                session_id: 'thread-1',
-                worktree_agent_slug: 'codex',
-                worktree_path: '/repo/.worktrees/agent-bridge/codex-a',
-                branch: 'codex/bridge-a',
-                session_status: 'active',
-                created_at: '2026-04-21T18:00:00Z',
-                updated_at: '2026-04-21T18:04:00Z',
-                turn_count: 2,
-              },
-            ],
-          },
-          error: null,
-          isLoading: false,
-          mutate: jest.fn(),
-        };
-      }
-
-      if (endpoint === '/api/v1/agent-bridge/runs/run-123/events') {
-        return {
-          data: {
-            count: 2,
-            events: [
-              {
-                timestamp: '2026-04-21T18:01:00Z',
-                type: 'run_started',
-                run_id: 'run-123',
-                actor: 'codex-a',
-              },
-              {
-                timestamp: '2026-04-21T18:03:00Z',
-                type: 'footer_ok',
-                run_id: 'run-123',
-                actor: 'claude-review',
-                footer: {
-                  summary: 'Reviewer requested a human choice.',
-                  next_actor: null,
-                  needs_human: true,
-                  done: false,
-                  artifacts: ['turns/0002-claude-review.json'],
-                  tests_run: ['pytest tests/swarm/test_agent_bridge.py -q'],
-                },
-              },
-            ],
-          },
-          error: null,
-          isLoading: false,
-          mutate: jest.fn(),
-        };
-      }
-
-      return {
-        data: null,
-        error: null,
-        isLoading: false,
-        mutate: jest.fn(),
-      };
+    mockUseAgentBridgeRun.mockReturnValue({
+      run: buildRunDetail(),
+      isLoading: false,
+      error: null,
+      errorStatus: null,
+      retry: jest.fn(),
+    });
+    mockUseAgentBridgeEvents.mockReturnValue({
+      events: [buildEvent()],
+      nextCursor: null,
+      isLoading: false,
+      error: null,
+      errorStatus: null,
+      retry: jest.fn(),
+    });
+    mockUseAgentBridgeTranscript.mockReturnValue({
+      turns: [buildTranscriptTurn()],
+      isLoading: false,
+      error: null,
+      errorStatus: null,
+      retry: jest.fn(),
     });
   });
 
-  it('renders run detail, pending-human state, and ordered events', () => {
-    render(<BridgeRunDetail runId="run-123" />);
+  it('renders transcript, events, and metadata tabs', () => {
+    render(<BridgeRunDetail runId="bridge-run" />);
 
-    expect(screen.getByText('run-123')).toBeInTheDocument();
-    expect(screen.getByText('Awaiting human input')).toBeInTheDocument();
-    expect(screen.getByText('This run is paused for a human decision before the baton can advance.')).toBeInTheDocument();
-    expect(screen.getByText('codex-a')).toBeInTheDocument();
-    expect(screen.getByText('Branch: codex/bridge-a')).toBeInTheDocument();
-    expect(screen.getByText('Worktree agent: codex')).toBeInTheDocument();
-    expect(screen.getAllByText('Reviewer requested a human choice.')).toHaveLength(2);
+    expect(screen.getByText('Turn body')).toBeInTheDocument();
 
-    const items = screen.getAllByRole('listitem');
-    expect(within(items[0]).getByText('run_started')).toBeInTheDocument();
-    expect(within(items[1]).getByText('footer_ok')).toBeInTheDocument();
-    expect(within(items[1]).getByText(/Tests: pytest tests\/swarm\/test_agent_bridge.py -q/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Events/i }));
+    expect(screen.getByText('turn.completed')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Metadata/i }));
+    expect(screen.getByText('run.json')).toBeInTheDocument();
+    expect(screen.getByText('sessions.json')).toBeInTheDocument();
+  });
+
+  it('renders role cards from the role-keyed registry', () => {
+    render(<BridgeRunDetail runId="bridge-run" />);
+
+    expect(screen.getAllByText('implementer').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('reviewer').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('codex').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('claude').length).toBeGreaterThan(0);
+  });
+
+  it('stops polling when the run is not running', () => {
+    mockUseAgentBridgeRun.mockReturnValue({
+      run: buildRunDetail({ status: 'completed' }),
+      isLoading: false,
+      error: null,
+      errorStatus: null,
+      retry: jest.fn(),
+    });
+
+    render(<BridgeRunDetail runId="bridge-run" />);
+
+    expect(mockUseAgentBridgeEvents).toHaveBeenCalledWith(
+      'bridge-run',
+      expect.objectContaining({ poll: false })
+    );
+    expect(mockUseAgentBridgeTranscript).toHaveBeenCalledWith(
+      'bridge-run',
+      expect.objectContaining({ poll: false })
+    );
   });
 });
