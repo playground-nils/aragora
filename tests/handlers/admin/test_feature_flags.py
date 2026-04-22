@@ -866,6 +866,48 @@ class TestSetFlag:
 
 
 # ===========================================================================
+# Tests: PUT /api/v1/admin/feature-flags (batch set flags)
+# ===========================================================================
+
+
+class TestSetFlagsCollection:
+    """Tests for updating multiple feature flags from the collection route."""
+
+    def test_set_multiple_flags_from_collection_path(self, handler, mock_registry):
+        http = _make_http_handler(body={"enable_checkpointing": True, "max_agent_retries": 7})
+        with _patch_flags_available(mock_registry):
+            result = handler.handle_put("/api/v1/admin/feature-flags", {}, http)
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["enable_checkpointing"]["value"] is True
+        assert body["max_agent_retries"]["value"] == 7
+        assert os.environ["ARAGORA_ENABLE_CHECKPOINTING"] == "True"
+        assert os.environ["ARAGORA_MAX_AGENT_RETRIES"] == "7"
+
+    def test_set_multiple_flags_accepts_nested_flags_map(self, handler, mock_registry):
+        http = _make_http_handler(body={"flags": {"enable_checkpointing": True}})
+        with _patch_flags_available(mock_registry):
+            result = handler.handle_put("/api/v1/admin/feature-flags", {}, http)
+        assert _status(result) == 200
+        body = _body(result)
+        assert body["enable_checkpointing"]["updated"] is True
+
+    def test_set_multiple_flags_rejects_empty_object(self, handler, mock_registry):
+        http = _make_http_handler(body={})
+        with _patch_flags_available(mock_registry):
+            result = handler.handle_put("/api/v1/admin/feature-flags", {}, http)
+        assert _status(result) == 400
+        assert "Expected at least one feature flag update" in _body(result)["error"]
+
+    def test_set_multiple_flags_rejects_invalid_value_type(self, handler, mock_registry):
+        http = _make_http_handler(body={"max_agent_retries": "seven"})
+        with _patch_flags_available(mock_registry):
+            result = handler.handle_put("/api/v1/admin/feature-flags", {}, http)
+        assert _status(result) == 400
+        assert "expects int" in _body(result)["error"]
+
+
+# ===========================================================================
 # Tests: PUT on unrecognized path (returns None)
 # ===========================================================================
 
@@ -880,11 +922,12 @@ class TestPutUnrecognizedPath:
         assert result is None
 
     def test_put_base_path_without_name(self, handler, mock_registry):
-        """PUT to /api/admin/feature-flags (no trailing slash, no name) should return None."""
+        """Collection PUT interprets bare object keys as feature flag updates."""
         h = _make_http_handler(body={"value": True})
         with _patch_flags_available(mock_registry):
             result = handler.handle_put("/api/v1/admin/feature-flags", {}, h)
-        assert result is None
+        assert _status(result) == 404
+        assert "Flag not found: value" in _body(result)["error"]
 
 
 # ===========================================================================

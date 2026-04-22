@@ -3,6 +3,7 @@ Feature flag administration endpoint handlers.
 
 Endpoints:
 - GET /api/v1/admin/feature-flags - List all flags with values, categories, statuses
+- PUT /api/v1/admin/feature-flags - Update multiple flags in one request
 - GET /api/v1/admin/feature-flags/:name - Get flag value + usage stats
 - PUT /api/v1/admin/feature-flags/:name - Toggle/set flag value (admin RBAC)
 """
@@ -107,6 +108,9 @@ class FeatureFlagAdminHandler(BaseHandler):
 
         if not FLAGS_AVAILABLE:
             return error_response("Feature flag system not available", 503)
+
+        if path == "/api/admin/feature-flags":
+            return self._set_flags(handler)
 
         if path.startswith("/api/admin/feature-flags/"):
             name = path.split("/api/admin/feature-flags/", 1)[1]
@@ -219,6 +223,58 @@ class FeatureFlagAdminHandler(BaseHandler):
             }
 
         return json_response(result)
+
+    @require_permission("admin:feature_flags")
+    @rate_limit(requests_per_minute=30, limiter_name="feature_flags_batch_set")
+    def _set_flags(self, handler: Any = None, user: Any = None) -> HandlerResult:
+        """Set multiple feature flags in a single request.
+
+        Accepts either a plain JSON object mapping ``flag_name -> value`` or an
+        object with a top-level ``flags`` dictionary for compatibility with
+        older collection-level clients.
+        """
+        registry = get_flag_registry()
+
+        body, parsed = self._read_json_body_value(handler)
+        if not parsed:
+            return error_response("Invalid JSON body", 400)
+        if not isinstance(body, dict):
+            return error_response("JSON body must deserialize to an object", 400)
+
+        updates = body.get("flags", body)
+        if not isinstance(updates, dict) or not updates:
+            return error_response("Expected at least one feature flag update", 400)
+
+        results: dict[str, dict[str, Any]] = {}
+        for name, new_value in updates.items():
+            if not isinstance(name, str) or not name:
+                return error_response("Feature flag names must be non-empty strings", 400)
+
+            definition = registry.get_definition(name)
+            if not definition:
+                return error_response(f"Flag not found: {name}", 404)
+
+            if not isinstance(new_value, definition.flag_type):
+                return error_response(
+                    f"Flag '{name}' expects {definition.flag_type.__name__}, "
+                    f"got {type(new_value).__name__}",
+                    400,
+                )
+
+            if definition.env_var:
+                import os
+
+                os.environ[definition.env_var] = str(new_value)
+                logger.info("Feature flag '%s' set to %s via admin API", name, new_value)
+
+            results[name] = {
+                "name": name,
+                "value": new_value,
+                "previous_default": definition.default,
+                "updated": True,
+            }
+
+        return json_response(results)
 
     @require_permission("admin:feature_flags")
     @rate_limit(requests_per_minute=30, limiter_name="feature_flags_set")
