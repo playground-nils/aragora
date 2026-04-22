@@ -27,13 +27,15 @@ describe('BridgeRunDetail', () => {
             run: {
               run_id: 'run-123',
               task: 'Review the bounded bridge slice',
-              repo_root: '/repo',
-              base_branch: 'main',
-              status: 'waiting_human',
+              status: 'awaiting_human',
               created_at: '2026-04-21T18:00:00Z',
               updated_at: '2026-04-21T18:05:00Z',
-              active_actor: 'human',
+              completed_at: null,
+              next_actor: 'human',
+              last_turn_index: 2,
               last_summary: 'Reviewer requested a human choice.',
+              worktree_path: '/repo/.worktrees/agent-bridge',
+              worktree_agent_slug: 'codex',
             },
             sessions: [
               {
@@ -42,8 +44,10 @@ describe('BridgeRunDetail', () => {
                 role: 'implementer',
                 model: 'gpt-5.4',
                 session_id: 'thread-1',
+                worktree_agent_slug: 'codex',
                 worktree_path: '/repo/.worktrees/agent-bridge/codex-a',
                 branch: 'codex/bridge-a',
+                session_status: 'active',
                 created_at: '2026-04-21T18:00:00Z',
                 updated_at: '2026-04-21T18:04:00Z',
                 turn_count: 2,
@@ -63,13 +67,13 @@ describe('BridgeRunDetail', () => {
             events: [
               {
                 timestamp: '2026-04-21T18:01:00Z',
-                type: 'turn_started',
+                type: 'run_started',
                 run_id: 'run-123',
                 actor: 'codex-a',
               },
               {
                 timestamp: '2026-04-21T18:03:00Z',
-                type: 'turn_completed',
+                type: 'footer_ok',
                 run_id: 'run-123',
                 actor: 'claude-review',
                 footer: {
@@ -106,11 +110,12 @@ describe('BridgeRunDetail', () => {
     expect(screen.getByText('This run is paused for a human decision before the baton can advance.')).toBeInTheDocument();
     expect(screen.getByText('codex-a')).toBeInTheDocument();
     expect(screen.getByText('Branch: codex/bridge-a')).toBeInTheDocument();
+    expect(screen.getByText('Worktree agent: codex')).toBeInTheDocument();
     expect(screen.getAllByText('Reviewer requested a human choice.')).toHaveLength(2);
 
     const items = screen.getAllByRole('listitem');
-    expect(within(items[0]).getByText('turn_started')).toBeInTheDocument();
-    expect(within(items[1]).getByText('turn_completed')).toBeInTheDocument();
+    expect(within(items[0]).getByText('run_started')).toBeInTheDocument();
+    expect(within(items[1]).getByText('footer_ok')).toBeInTheDocument();
     expect(within(items[1]).getByText(/Tests: pytest tests\/swarm\/test_agent_bridge.py -q/)).toBeInTheDocument();
   });
 });

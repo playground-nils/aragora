@@ -29,7 +29,7 @@ function formatTimestamp(value: string): string {
 }
 
 function humanStatus(status: string): string {
-  if (status === 'waiting_human') return 'Awaiting human input';
+  if (status === 'awaiting_human') return 'Awaiting human input';
   if (status === 'completed') return 'Completed';
   if (status === 'failed') return 'Failed';
   return 'Running';
@@ -43,7 +43,7 @@ function eventSummary(event: BridgeEvent): string {
   if (typeof event.reason === 'string' && event.reason) {
     return event.reason;
   }
-  return event.type.replaceAll('_', ' ');
+  return event.type.replaceAll('.', ' ').replaceAll('_', ' ');
 }
 
 export function BridgeRunDetail({ runId }: BridgeRunDetailProps) {
@@ -110,12 +110,12 @@ export function BridgeRunDetail({ runId }: BridgeRunDetailProps) {
 
           <dl className="grid gap-3 sm:grid-cols-2">
             <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Base branch</dt>
-              <dd className="mt-1 text-sm text-white/85">{runData.base_branch}</dd>
+              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Worktree agent</dt>
+              <dd className="mt-1 text-sm text-white/85">{runData.worktree_agent_slug}</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Active actor</dt>
-              <dd className="mt-1 text-sm text-white/85">{runData.active_actor ?? 'none'}</dd>
+              <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Next actor</dt>
+              <dd className="mt-1 text-sm text-white/85">{runData.next_actor ?? 'none'}</dd>
             </div>
             <div>
               <dt className="text-xs uppercase tracking-[0.2em] text-white/35">Created</dt>
@@ -127,7 +127,18 @@ export function BridgeRunDetail({ runId }: BridgeRunDetailProps) {
             </div>
           </dl>
 
-          {runData.status === 'waiting_human' ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-white/35">Turns</div>
+              <div className="mt-1 text-sm text-white/85">{runData.last_turn_index}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-white/35">Worktree path</div>
+              <div className="mt-1 break-all text-sm text-white/70">{runData.worktree_path}</div>
+            </div>
+          </div>
+
+          {runData.status === 'awaiting_human' ? (
             <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">
               This run is paused for a human decision before the baton can advance.
             </div>
@@ -160,7 +171,9 @@ export function BridgeRunDetail({ runId }: BridgeRunDetailProps) {
                 </div>
                 <div className="mt-3 space-y-1 text-xs text-white/50">
                   <div>Role: {session.role || 'unassigned'}</div>
+                  <div>Status: {session.session_status}</div>
                   <div>Branch: {session.branch ?? 'pending worktree'}</div>
+                  <div>Worktree agent: {session.worktree_agent_slug ?? 'inherit run default'}</div>
                   <div>Worktree: {session.worktree_path ?? 'pending worktree'}</div>
                 </div>
               </div>

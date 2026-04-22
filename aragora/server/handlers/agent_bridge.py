@@ -10,6 +10,9 @@ import os
 
 from aragora.server.versioning.compat import strip_version_prefix
 from aragora.swarm.agent_bridge import AgentBridgeBroker
+from aragora.swarm.agent_bridge import BridgeRun
+from aragora.swarm.agent_bridge import BridgeSession
+from aragora.swarm.agent_bridge import TurnRecord
 
 from .base import BaseHandler, HandlerResult, error_response, json_response
 
@@ -31,6 +34,42 @@ def _parse_limit(raw: Any, *, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(minimum, min(maximum, value))
+
+
+def _footer_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    footer = payload.get("footer")
+    if isinstance(footer, dict):
+        return footer
+    parsed_turn = payload.get("parsed_turn")
+    if isinstance(parsed_turn, dict):
+        nested = parsed_turn.get("footer")
+        if isinstance(nested, dict):
+            return nested
+    return None
+
+
+def _event_reason(payload: dict[str, Any]) -> str | None:
+    error = payload.get("error")
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+    errors = payload.get("errors")
+    if isinstance(errors, list):
+        parts = [str(item).strip() for item in errors if str(item).strip()]
+        if parts:
+            return "; ".join(parts)
+    return None
+
+
+def _event_summary(record: TurnRecord) -> str:
+    footer = _footer_payload(record.payload)
+    if footer:
+        summary = footer.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return summary.strip()
+    reason = _event_reason(record.payload)
+    if reason:
+        return reason
+    return ""
 
 
 class AgentBridgeHandler(BaseHandler):
@@ -90,26 +129,8 @@ class AgentBridgeHandler(BaseHandler):
         return error_response("Not found", 404)
 
     def _list_runs(self, *, limit: int) -> HandlerResult:
-        runs = self._broker.list_runs(limit=limit)
-        payload = []
-        for run in runs:
-            sessions = self._broker.load_sessions(run.run_id)
-            payload.append(
-                {
-                    **run.to_dict(),
-                    "session_count": len(sessions),
-                    "agents": [
-                        {
-                            "name": session.name,
-                            "harness": session.harness.value,
-                            "role": session.role,
-                            "model": session.model,
-                            "turn_count": session.turn_count,
-                        }
-                        for session in sessions
-                    ],
-                }
-            )
+        runs = self._broker.list_runs()[:limit]
+        payload = [self._serialize_run(run) for run in runs]
         return json_response({"runs": payload, "total": len(payload)})
 
     def _get_run(self, run_id: str) -> HandlerResult:
@@ -117,11 +138,14 @@ class AgentBridgeHandler(BaseHandler):
             run = self._broker.load_run(run_id)
         except FileNotFoundError:
             return error_response(f"Run not found: {run_id}", 404)
-        sessions = self._broker.load_sessions(run_id)
+        registry = self._broker.load_sessions(run_id)
         return json_response(
             {
-                "run": run.to_dict(),
-                "sessions": [session.to_dict() for session in sessions],
+                "run": self._serialize_run(run),
+                "sessions": [
+                    self._serialize_session(name, session)
+                    for name, session in sorted(registry.sessions.items())
+                ],
             }
         )
 
@@ -130,5 +154,85 @@ class AgentBridgeHandler(BaseHandler):
             self._broker.load_run(run_id)
         except FileNotFoundError:
             return error_response(f"Run not found: {run_id}", 404)
-        events = self._broker.load_events(run_id, limit=limit)
-        return json_response({"events": events, "count": len(events)})
+        events = self._broker.load_events(run_id)
+        if limit > 0:
+            events = events[-limit:]
+        payload = [self._serialize_event(event) for event in events]
+        return json_response({"events": payload, "count": len(payload)})
+
+    def _serialize_run(self, run: BridgeRun) -> dict[str, Any]:
+        registry = self._broker.load_sessions(run.run_id)
+        events = self._broker.load_events(run.run_id)
+        last_summary = ""
+        for event in reversed(events):
+            last_summary = _event_summary(event)
+            if last_summary:
+                break
+        return {
+            "run_id": run.run_id,
+            "task": run.task,
+            "status": run.status,
+            "created_at": run.created_at,
+            "updated_at": run.updated_at,
+            "completed_at": run.completed_at,
+            "next_actor": run.next_actor,
+            "last_turn_index": run.last_turn_index,
+            "last_summary": last_summary,
+            "worktree_path": run.worktree_path,
+            "worktree_agent_slug": run.worktree_agent_slug,
+            "session_count": len(registry.sessions),
+            "agents": [
+                self._serialize_agent(name, session)
+                for name, session in sorted(registry.sessions.items())
+            ],
+        }
+
+    def _serialize_agent(self, name: str, session: BridgeSession) -> dict[str, Any]:
+        return {
+            "name": name,
+            "harness": session.harness,
+            "role": session.role,
+            "model": session.model or None,
+            "turn_count": session.last_turn_index,
+            "status": session.session_status,
+        }
+
+    def _serialize_session(self, name: str, session: BridgeSession) -> dict[str, Any]:
+        return {
+            "name": name,
+            "harness": session.harness,
+            "role": session.role,
+            "model": session.model or None,
+            "session_id": session.session_id,
+            "worktree_path": session.worktree_path,
+            "worktree_agent_slug": session.worktree_agent_slug,
+            "branch": session.branch,
+            "session_status": session.session_status,
+            "created_at": session.started_at,
+            "updated_at": session.last_completed_at,
+            "turn_count": session.last_turn_index,
+        }
+
+    def _serialize_event(self, event: TurnRecord) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "timestamp": event.ts,
+            "type": event.event_type,
+            "run_id": event.run_id,
+            "actor": event.role,
+            "harness": event.harness,
+            "session_id": event.session_id,
+            "parse_status": event.parse_status,
+        }
+        footer = _footer_payload(event.payload)
+        if footer is not None:
+            payload["footer"] = footer
+        reason = _event_reason(event.payload)
+        if reason:
+            payload["reason"] = reason
+        artifact_path = event.payload.get("transcript_path")
+        if isinstance(artifact_path, str) and artifact_path.strip():
+            payload["artifact_path"] = artifact_path
+        next_actor = event.payload.get("next_actor")
+        if isinstance(next_actor, str) and next_actor.strip():
+            payload["next_actor"] = next_actor
+        return payload

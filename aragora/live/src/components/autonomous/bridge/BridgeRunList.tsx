@@ -24,7 +24,7 @@ function formatTimestamp(value: string): string {
 }
 
 function statusLabel(status: string): string {
-  if (status === 'waiting_human') return 'Awaiting human input';
+  if (status === 'awaiting_human') return 'Awaiting human input';
   if (status === 'completed') return 'Completed';
   if (status === 'failed') return 'Failed';
   return 'Running';
@@ -32,7 +32,7 @@ function statusLabel(status: string): string {
 
 function statusClasses(status: string): string {
   if (status === 'completed') return 'border-[var(--accent)]/40 text-[var(--accent)]';
-  if (status === 'waiting_human') return 'border-yellow-500/40 text-yellow-300';
+  if (status === 'awaiting_human') return 'border-yellow-500/40 text-yellow-300';
   if (status === 'failed') return 'border-red-500/40 text-red-300';
   return 'border-cyan-500/40 text-cyan-300';
 }
@@ -103,9 +103,10 @@ export function BridgeRunList({
                 </div>
                 <p className="text-sm text-white/85">{run.task}</p>
                 <div className="flex flex-wrap gap-4 text-xs text-white/45">
-                  <span>Base: {run.base_branch}</span>
+                  <span>Worktree agent: {run.worktree_agent_slug}</span>
                   <span>Updated: {formatTimestamp(run.updated_at)}</span>
-                  <span>Active actor: {run.active_actor ?? 'none'}</span>
+                  <span>Next actor: {run.next_actor ?? 'none'}</span>
+                  <span>Turns: {run.last_turn_index}</span>
                   <span>Sessions: {run.session_count}</span>
                 </div>
               </div>

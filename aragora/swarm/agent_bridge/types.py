@@ -1,28 +1,244 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from datetime import UTC
 from datetime import datetime
-from enum import Enum
-from pathlib import Path
 from typing import Any
+from typing import Literal
+from typing import TypeAlias
+
+SCHEMA_VERSION = 1
+
+ParseStatus: TypeAlias = Literal["ok", "missing", "malformed"]
+RunStatus: TypeAlias = Literal["running", "awaiting_human", "completed", "failed"]
+SessionStatus: TypeAlias = Literal["not_started", "active", "completed", "failed"]
+EventType: TypeAlias = Literal[
+    "run_started",
+    "run_failed",
+    "run_completed",
+    "turn.started",
+    "turn.result",
+    "turn.completed",
+    "turn.repair_requested",
+    "footer_ok",
+    "footer_malformed",
+    "footer_missing",
+]
 
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-class HarnessKind(str, Enum):
-    CLAUDE = "claude"
-    CODEX = "codex"
-    DROID = "droid"
+@dataclass(slots=True)
+class Participant:
+    role: str
+    harness: str
+    model: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "role": self.role,
+            "harness": self.harness,
+            "model": self.model,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "Participant":
+        role = payload.get("role")
+        harness = payload.get("harness")
+        model = payload.get("model")
+        if not isinstance(role, str) or not isinstance(harness, str) or not isinstance(model, str):
+            raise TypeError("participant role, harness, and model must be strings")
+        return cls(role=role, harness=harness, model=model)
 
 
-class BridgeRunStatus(str, Enum):
-    RUNNING = "running"
-    WAITING_HUMAN = "waiting_human"
-    COMPLETED = "completed"
-    FAILED = "failed"
+@dataclass(slots=True)
+class BridgeRun:
+    run_id: str
+    task: str
+    created_at: str
+    updated_at: str
+    status: RunStatus
+    completed_at: str | None
+    last_turn_index: int
+    next_actor: str | None
+    repair_budget_per_turn: int
+    footer_mode: str
+    worktree_cleanup_mode: str
+    participants: list[Participant]
+    worktree_path: str
+    worktree_agent_slug: str
+    last_event_id: str | None = None
+    schema_version: int = SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "run_id": self.run_id,
+            "task": self.task,
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "completed_at": self.completed_at,
+            "last_turn_index": self.last_turn_index,
+            "next_actor": self.next_actor,
+            "repair_budget_per_turn": self.repair_budget_per_turn,
+            "footer_mode": self.footer_mode,
+            "worktree_cleanup_mode": self.worktree_cleanup_mode,
+            "participants": [participant.to_dict() for participant in self.participants],
+            "worktree_path": self.worktree_path,
+            "worktree_agent_slug": self.worktree_agent_slug,
+            "last_event_id": self.last_event_id,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "BridgeRun":
+        participants = payload.get("participants")
+        if not isinstance(participants, list):
+            raise TypeError("participants must be a list")
+        task = payload.get("task")
+        if not isinstance(task, str):
+            raise TypeError("task must be a string")
+        next_actor = payload.get("next_actor")
+        if next_actor is not None and not isinstance(next_actor, str):
+            raise TypeError("next_actor must be a string or null")
+        completed_at = payload.get("completed_at")
+        if completed_at is not None and not isinstance(completed_at, str):
+            raise TypeError("completed_at must be a string or null")
+        return cls(
+            schema_version=int(payload.get("schema_version", SCHEMA_VERSION)),
+            run_id=str(payload["run_id"]),
+            task=task,
+            created_at=str(payload["created_at"]),
+            updated_at=str(payload["updated_at"]),
+            status=payload["status"],
+            completed_at=completed_at,
+            last_turn_index=int(payload.get("last_turn_index", 0)),
+            next_actor=next_actor,
+            repair_budget_per_turn=int(payload.get("repair_budget_per_turn", 1)),
+            footer_mode=str(payload["footer_mode"]),
+            worktree_cleanup_mode=str(payload.get("worktree_cleanup_mode", "operator_triggered")),
+            participants=[
+                Participant.from_dict(item) for item in participants if isinstance(item, dict)
+            ],
+            worktree_path=str(payload["worktree_path"]),
+            worktree_agent_slug=str(payload["worktree_agent_slug"]),
+            last_event_id=(
+                str(payload["last_event_id"]) if payload.get("last_event_id") is not None else None
+            ),
+        )
+
+
+@dataclass(slots=True)
+class BridgeSession:
+    role: str
+    harness: str
+    model: str
+    session_id: str | None
+    worktree_agent_slug: str | None
+    worktree_path: str | None
+    branch: str | None
+    session_status: SessionStatus
+    started_at: str | None
+    last_turn_index: int
+    last_completed_at: str | None
+    harness_options: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "role": self.role,
+            "harness": self.harness,
+            "model": self.model,
+            "session_id": self.session_id,
+            "worktree_agent_slug": self.worktree_agent_slug,
+            "worktree_path": self.worktree_path,
+            "branch": self.branch,
+            "session_status": self.session_status,
+            "started_at": self.started_at,
+            "last_turn_index": self.last_turn_index,
+            "last_completed_at": self.last_completed_at,
+        }
+        if self.harness_options:
+            payload["harness_options"] = dict(self.harness_options)
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "BridgeSession":
+        harness_options = payload.get("harness_options", {})
+        if not isinstance(harness_options, dict):
+            raise TypeError("harness_options must be a mapping")
+        session_status = payload.get("session_status", "not_started")
+        if session_status not in {"not_started", "active", "completed", "failed"}:
+            raise TypeError("session_status is invalid")
+        role = payload.get("role")
+        harness = payload.get("harness")
+        model = payload.get("model", "")
+        if not isinstance(role, str) or not isinstance(harness, str) or not isinstance(model, str):
+            raise TypeError("role, harness, and model must be strings")
+        session_id = payload.get("session_id")
+        started_at = payload.get("started_at")
+        last_completed_at = payload.get("last_completed_at")
+        worktree_agent_slug = payload.get("worktree_agent_slug")
+        worktree_path = payload.get("worktree_path")
+        branch = payload.get("branch")
+        for value, name in (
+            (session_id, "session_id"),
+            (started_at, "started_at"),
+            (last_completed_at, "last_completed_at"),
+            (worktree_agent_slug, "worktree_agent_slug"),
+            (worktree_path, "worktree_path"),
+            (branch, "branch"),
+        ):
+            if value is not None and not isinstance(value, str):
+                raise TypeError(f"{name} must be a string or null")
+        return cls(
+            role=role,
+            harness=harness,
+            model=model,
+            session_id=session_id,
+            worktree_agent_slug=worktree_agent_slug,
+            worktree_path=worktree_path,
+            branch=branch,
+            session_status=session_status,
+            started_at=started_at,
+            last_turn_index=int(payload.get("last_turn_index", 0)),
+            last_completed_at=last_completed_at,
+            harness_options=dict(harness_options),
+        )
+
+
+@dataclass(slots=True)
+class SessionRegistry:
+    run_id: str
+    updated_at: str
+    sessions: dict[str, BridgeSession]
+    schema_version: int = SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "run_id": self.run_id,
+            "updated_at": self.updated_at,
+            "sessions": {role: session.to_dict() for role, session in self.sessions.items()},
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "SessionRegistry":
+        raw_sessions = payload.get("sessions", {})
+        if not isinstance(raw_sessions, dict):
+            raise TypeError("sessions must be a mapping")
+        return cls(
+            schema_version=int(payload.get("schema_version", SCHEMA_VERSION)),
+            run_id=str(payload["run_id"]),
+            updated_at=str(payload["updated_at"]),
+            sessions={
+                str(role): BridgeSession.from_dict(session)
+                for role, session in raw_sessions.items()
+                if isinstance(session, dict)
+            },
+        )
 
 
 @dataclass(slots=True)
@@ -31,8 +247,8 @@ class BridgeFooter:
     next_actor: str | None
     needs_human: bool
     done: bool
-    artifacts: list[str] = field(default_factory=list)
-    tests_run: list[str] = field(default_factory=list)
+    artifacts: list[str]
+    tests_run: list[str]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,147 +262,99 @@ class BridgeFooter:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "BridgeFooter":
+        summary = payload.get("summary")
+        next_actor = payload.get("next_actor")
+        needs_human = payload.get("needs_human")
+        done = payload.get("done")
+        artifacts = payload.get("artifacts")
+        tests_run = payload.get("tests_run")
+        if not isinstance(summary, str):
+            raise TypeError("summary must be a string")
+        if next_actor is not None and not isinstance(next_actor, str):
+            raise TypeError("next_actor must be a string or null")
+        if not isinstance(needs_human, bool):
+            raise TypeError("needs_human must be a bool")
+        if not isinstance(done, bool):
+            raise TypeError("done must be a bool")
+        if not isinstance(artifacts, list) or not all(isinstance(item, str) for item in artifacts):
+            raise TypeError("artifacts must be a list[str]")
+        if not isinstance(tests_run, list) or not all(isinstance(item, str) for item in tests_run):
+            raise TypeError("tests_run must be a list[str]")
         return cls(
-            summary=str(payload.get("summary", "") or "").strip(),
-            next_actor=(
-                str(payload.get("next_actor", "")).strip()
-                if payload.get("next_actor") not in (None, "")
-                else None
-            ),
-            needs_human=bool(payload.get("needs_human", False)),
-            done=bool(payload.get("done", False)),
-            artifacts=[
-                str(item).strip()
-                for item in list(payload.get("artifacts", []) or [])
-                if str(item).strip()
-            ],
-            tests_run=[
-                str(item).strip()
-                for item in list(payload.get("tests_run", []) or [])
-                if str(item).strip()
-            ],
+            summary=summary,
+            next_actor=next_actor,
+            needs_human=needs_human,
+            done=done,
+            artifacts=list(artifacts),
+            tests_run=list(tests_run),
         )
 
 
 @dataclass(slots=True)
-class BridgeSession:
-    name: str
-    harness: HarnessKind
-    role: str = ""
-    model: str | None = None
-    session_id: str | None = None
-    worktree_path: str | None = None
-    branch: str | None = None
-    created_at: str = field(default_factory=utc_now_iso)
-    updated_at: str = field(default_factory=utc_now_iso)
-    turn_count: int = 0
-    full_auto: bool = False
-    allow_dangerous: bool = False
-    droid_auto: str | None = None
+class ParsedTurn:
+    footer: BridgeFooter | None
+    body_without_footer: str
+    parse_status: ParseStatus
+    footer_raw: str | None = None
+    parse_errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "name": self.name,
-            "harness": self.harness.value,
-            "role": self.role,
-            "model": self.model,
-            "session_id": self.session_id,
-            "worktree_path": self.worktree_path,
-            "branch": self.branch,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "turn_count": self.turn_count,
-            "full_auto": self.full_auto,
-            "allow_dangerous": self.allow_dangerous,
-            "droid_auto": self.droid_auto,
-        }
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "BridgeSession":
-        return cls(
-            name=str(payload.get("name", "") or ""),
-            harness=HarnessKind(str(payload.get("harness", HarnessKind.CODEX.value))),
-            role=str(payload.get("role", "") or ""),
-            model=str(payload.get("model")) if payload.get("model") else None,
-            session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
-            worktree_path=(
-                str(payload.get("worktree_path")) if payload.get("worktree_path") else None
-            ),
-            branch=str(payload.get("branch")) if payload.get("branch") else None,
-            created_at=str(payload.get("created_at", utc_now_iso()) or utc_now_iso()),
-            updated_at=str(payload.get("updated_at", utc_now_iso()) or utc_now_iso()),
-            turn_count=int(payload.get("turn_count", 0) or 0),
-            full_auto=bool(payload.get("full_auto", False)),
-            allow_dangerous=bool(payload.get("allow_dangerous", False)),
-            droid_auto=str(payload.get("droid_auto")) if payload.get("droid_auto") else None,
-        )
-
-    @property
-    def worktree(self) -> Path | None:
-        if not self.worktree_path:
-            return None
-        return Path(self.worktree_path)
-
-
-@dataclass(slots=True)
-class BridgeRun:
-    run_id: str
-    task: str
-    repo_root: str
-    base_branch: str = "main"
-    status: BridgeRunStatus = BridgeRunStatus.RUNNING
-    created_at: str = field(default_factory=utc_now_iso)
-    updated_at: str = field(default_factory=utc_now_iso)
-    active_actor: str | None = None
-    last_summary: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "run_id": self.run_id,
-            "task": self.task,
-            "repo_root": self.repo_root,
-            "base_branch": self.base_branch,
-            "status": self.status.value,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "active_actor": self.active_actor,
-            "last_summary": self.last_summary,
-        }
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "BridgeRun":
-        return cls(
-            run_id=str(payload.get("run_id", "") or ""),
-            task=str(payload.get("task", "") or ""),
-            repo_root=str(payload.get("repo_root", "") or ""),
-            base_branch=str(payload.get("base_branch", "main") or "main"),
-            status=BridgeRunStatus(str(payload.get("status", BridgeRunStatus.RUNNING.value))),
-            created_at=str(payload.get("created_at", utc_now_iso()) or utc_now_iso()),
-            updated_at=str(payload.get("updated_at", utc_now_iso()) or utc_now_iso()),
-            active_actor=(
-                str(payload.get("active_actor", "")).strip()
-                if payload.get("active_actor") not in (None, "")
-                else None
-            ),
-            last_summary=str(payload.get("last_summary", "") or ""),
-        )
-
-
-@dataclass(slots=True)
-class BridgeTurnResult:
-    session_id: str
-    response_text: str
-    raw_stdout: str
-    raw_stderr: str
-    footer: BridgeFooter | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "session_id": self.session_id,
-            "response_text": self.response_text,
-            "raw_stdout": self.raw_stdout,
-            "raw_stderr": self.raw_stderr,
             "footer": self.footer.to_dict() if self.footer is not None else None,
-            "metadata": dict(self.metadata),
+            "body_without_footer": self.body_without_footer,
+            "parse_status": self.parse_status,
+            "footer_raw": self.footer_raw,
+            "parse_errors": list(self.parse_errors),
         }
+
+
+@dataclass(slots=True)
+class TurnRecord:
+    event_id: str
+    run_id: str
+    turn_index: int
+    event_type: EventType
+    role: str
+    harness: str
+    session_id: str | None
+    ts: str
+    payload: dict[str, Any]
+    parse_status: ParseStatus | None = None
+    schema_version: int = SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "event_id": self.event_id,
+            "run_id": self.run_id,
+            "ts": self.ts,
+            "event_type": self.event_type,
+            "turn_index": self.turn_index,
+            "role": self.role,
+            "harness": self.harness,
+            "session_id": self.session_id,
+            "parse_status": self.parse_status,
+            "payload": dict(self.payload),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "TurnRecord":
+        data = payload.get("payload", {})
+        if not isinstance(data, dict):
+            raise TypeError("payload must be a mapping")
+        session_id = payload.get("session_id")
+        if session_id is not None and not isinstance(session_id, str):
+            raise TypeError("session_id must be a string or null")
+        return cls(
+            schema_version=int(payload.get("schema_version", SCHEMA_VERSION)),
+            event_id=str(payload["event_id"]),
+            run_id=str(payload["run_id"]),
+            turn_index=int(payload["turn_index"]),
+            event_type=payload["event_type"],
+            role=str(payload["role"]),
+            harness=str(payload["harness"]),
+            session_id=session_id,
+            parse_status=payload.get("parse_status"),
+            ts=str(payload["ts"]),
+            payload=dict(data),
+        )
