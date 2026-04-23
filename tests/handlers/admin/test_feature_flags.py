@@ -906,6 +906,76 @@ class TestSetFlagsCollection:
         assert _status(result) == 400
         assert "expects int" in _body(result)["error"]
 
+    def test_batch_with_invalid_entry_is_atomic_no_env_mutation(self, handler, mock_registry):
+        """Regression: Mode 3 panel flagged partial-mutation as blocking defect.
+
+        When a batch contains an invalid entry, none of the batch's env vars
+        should be mutated — the handler must validate all updates up front
+        and only write ``os.environ`` once every entry has been accepted.
+        """
+        env_key_valid = "ARAGORA_ENABLE_CHECKPOINTING"
+        env_key_other = "ARAGORA_MAX_AGENT_RETRIES"
+        os.environ.pop(env_key_valid, None)
+        os.environ.pop(env_key_other, None)
+        try:
+            http = _make_http_handler(
+                body={
+                    "enable_checkpointing": True,  # valid
+                    "max_agent_retries": "seven",  # invalid (str for int flag)
+                }
+            )
+            with _patch_flags_available(mock_registry):
+                result = handler.handle_put("/api/v1/admin/feature-flags", {}, http)
+
+            assert _status(result) == 400
+            assert "expects int" in _body(result)["error"]
+            # The key assertion: the valid earlier entry must NOT have been
+            # written because validation failed later in the batch.
+            assert env_key_valid not in os.environ
+            assert env_key_other not in os.environ
+        finally:
+            os.environ.pop(env_key_valid, None)
+            os.environ.pop(env_key_other, None)
+
+    def test_batch_with_unknown_flag_is_atomic_no_env_mutation(self, handler, mock_registry):
+        """Regression: 404 on unknown flag must not leave earlier entries applied."""
+        env_key_valid = "ARAGORA_ENABLE_CHECKPOINTING"
+        os.environ.pop(env_key_valid, None)
+        try:
+            http = _make_http_handler(
+                body={
+                    "enable_checkpointing": True,
+                    "no_such_flag": True,
+                }
+            )
+            with _patch_flags_available(mock_registry):
+                result = handler.handle_put("/api/v1/admin/feature-flags", {}, http)
+
+            assert _status(result) == 404
+            assert "Flag not found: no_such_flag" in _body(result)["error"]
+            assert env_key_valid not in os.environ
+        finally:
+            os.environ.pop(env_key_valid, None)
+
+    def test_batch_rejects_bool_for_int_flag(self, handler, mock_registry):
+        """Regression: bool is a subclass of int in Python — isinstance(True, int) is True.
+
+        The collection handler must treat ``bool`` and ``int`` as distinct
+        types so an int-typed flag can't silently accept a boolean payload.
+        """
+        env_key = "ARAGORA_MAX_AGENT_RETRIES"
+        os.environ.pop(env_key, None)
+        try:
+            http = _make_http_handler(body={"max_agent_retries": True})
+            with _patch_flags_available(mock_registry):
+                result = handler.handle_put("/api/v1/admin/feature-flags", {}, http)
+            assert _status(result) == 400
+            assert "expects int" in _body(result)["error"]
+            assert "got bool" in _body(result)["error"]
+            assert env_key not in os.environ
+        finally:
+            os.environ.pop(env_key, None)
+
 
 # ===========================================================================
 # Tests: PUT on unrecognized path (returns None)

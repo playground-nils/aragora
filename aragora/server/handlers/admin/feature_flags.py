@@ -47,6 +47,19 @@ except ImportError:
     FlagStatus = None  # type: ignore[assignment,misc]
 
 
+def _value_matches_flag_type(value: Any, flag_type: type) -> bool:
+    """isinstance check that rejects ``bool`` values against ``int`` flags.
+
+    ``bool`` is a subclass of ``int`` in Python, so ``isinstance(True, int)``
+    is ``True``. That would let a batch update set an int-typed flag to a
+    boolean and silently coerce to ``0``/``1`` at use time. Treating ``bool``
+    as a distinct type across the admin API surfaces the mistake instead.
+    """
+    if flag_type is int and isinstance(value, bool):
+        return False
+    return isinstance(value, flag_type)
+
+
 class FeatureFlagAdminHandler(BaseHandler):
     """Handler for feature flag administration endpoints."""
 
@@ -232,6 +245,18 @@ class FeatureFlagAdminHandler(BaseHandler):
         Accepts either a plain JSON object mapping ``flag_name -> value`` or an
         object with a top-level ``flags`` dictionary for compatibility with
         older collection-level clients.
+
+        Atomicity: all updates are validated up-front in a first pass; if any
+        update is invalid the handler returns an error without mutating any
+        feature flag. Only after every update passes validation do the
+        ``os.environ`` writes happen. This avoids leaving the feature-flag
+        runtime in a partially-applied state when a batch contains an
+        invalid entry.
+
+        Type check: ``bool`` is a subclass of ``int`` in Python, so a naive
+        ``isinstance(value, int)`` check would accept booleans for integer
+        flags. ``_value_matches_flag_type`` rejects that case explicitly to
+        keep the numeric/boolean types separate across the admin API.
         """
         registry = get_flag_registry()
 
@@ -245,7 +270,7 @@ class FeatureFlagAdminHandler(BaseHandler):
         if not isinstance(updates, dict) or not updates:
             return error_response("Expected at least one feature flag update", 400)
 
-        results: dict[str, dict[str, Any]] = {}
+        validated: list[tuple[str, Any, Any]] = []
         for name, new_value in updates.items():
             if not isinstance(name, str) or not name:
                 return error_response("Feature flag names must be non-empty strings", 400)
@@ -254,23 +279,29 @@ class FeatureFlagAdminHandler(BaseHandler):
             if not definition:
                 return error_response(f"Flag not found: {name}", 404)
 
-            if not isinstance(new_value, definition.flag_type):
+            if not _value_matches_flag_type(new_value, definition.flag_type):
                 return error_response(
                     f"Flag '{name}' expects {definition.flag_type.__name__}, "
                     f"got {type(new_value).__name__}",
                     400,
                 )
 
-            if definition.env_var:
-                import os
+            validated.append((name, new_value, definition))
 
-                os.environ[definition.env_var] = str(new_value)
-                logger.info("Feature flag '%s' set to %s via admin API", name, new_value)
+        import os
 
-            results[name] = {
-                "name": name,
-                "value": new_value,
-                "previous_default": definition.default,
+        results: dict[str, dict[str, Any]] = {}
+        for applied_name, applied_value, applied_def in validated:
+            if applied_def.env_var:
+                os.environ[applied_def.env_var] = str(applied_value)
+                logger.info(
+                    "Feature flag '%s' set to %s via admin API", applied_name, applied_value
+                )
+
+            results[applied_name] = {
+                "name": applied_name,
+                "value": applied_value,
+                "previous_default": applied_def.default,
                 "updated": True,
             }
 
