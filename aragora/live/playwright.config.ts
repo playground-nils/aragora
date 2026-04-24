@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export const SPECIALTY_PROJECT_TEST_IGNORE = [
+  '**/production/**',
   '**/accessibility.spec.ts',
   '**/visual-regression.spec.ts',
   '**/mobile/mobile-audit.spec.ts',
