@@ -166,6 +166,7 @@ _CREDENTIAL_KEYS_FOR_INVOKER: tuple[str, ...] = (
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",  # invoker_factory accepts either GEMINI_API_KEY or GOOGLE_API_KEY for the Gemini slot
     "GROK_API_KEY",
     "XAI_API_KEY",
     "OPENROUTER_API_KEY",
@@ -173,33 +174,54 @@ _CREDENTIAL_KEYS_FOR_INVOKER: tuple[str, ...] = (
 )
 
 
-def _hydrate_provider_credentials() -> None:
-    """Lazily hydrate provider credentials from AWS Secrets Manager.
+def _collect_provider_credentials() -> dict[str, str]:
+    """Read provider credentials for this specific brief request.
 
-    The CLI (:mod:`scripts.generate_one_brief`) hydrates credentials at
-    module-load time, but the server handler is imported before
-    ``ARAGORA_USE_SECRETS_MANAGER`` may be set in the process
-    environment. Calling ``hydrate_env_from_secrets`` per factory
-    construction keeps the server invoker path working when the UI
-    generates a brief, while remaining a no-op when Secrets Manager is
-    disabled or the keys are already set in ambient env.
+    Returns a per-call env mapping suitable for passing to
+    ``build_default_invoker(env=...)``. This function is non-mutating:
+    it does NOT write to ``os.environ``. That matters because the
+    server handles concurrent requests, and mutating process-global
+    env from a live request path would make provider credentials
+    shared mutable global state — a correctness bug on any deployment
+    with more than one concurrent brief request.
+
+    Ambient env wins over Secrets Manager so local-dev workflows
+    (direnv / ``.env``) keep working without extra config. Secrets
+    Manager fills in gaps when ``ARAGORA_USE_SECRETS_MANAGER=true``.
     """
 
+    env: dict[str, str] = {}
+    # Start with whatever is already in ambient env for these keys.
+    for name in _CREDENTIAL_KEYS_FOR_INVOKER:
+        value = os.environ.get(name)
+        if value:
+            env[name] = value
+
+    # Fill missing keys from Secrets Manager (non-mutating: uses the
+    # single-value getter, does not touch os.environ).
     try:
-        from aragora.config.secrets import hydrate_env_from_secrets
+        from aragora.config.secrets import get_secret
     except ImportError:
-        # Secrets module unavailable (e.g. in a stripped-down test
-        # harness). Fall through to whatever env vars are already set.
-        return
-    try:
-        hydrate_env_from_secrets(list(_CREDENTIAL_KEYS_FOR_INVOKER))
-    except Exception:  # noqa: BLE001 — hydration must never block briefs
-        # If Secrets Manager is misconfigured or unreachable, the
-        # downstream ``build_default_invoker`` call raises a clean
-        # ``InvokerFactoryError`` that the handler maps to a 503.
-        logger.warning(
-            "review_queue_brief: hydrate_env_from_secrets failed; falling back to ambient env"
-        )
+        return env
+
+    for name in _CREDENTIAL_KEYS_FOR_INVOKER:
+        if name in env:
+            continue
+        try:
+            # strict=False: Secrets Manager may not be configured;
+            # that's fine — we'll hand whatever we collected to the
+            # invoker factory, which raises a clean InvokerFactoryError
+            # if required core slots are missing.
+            value = get_secret(name, strict=False)
+        except Exception:  # noqa: BLE001 — credential lookup must never block briefs
+            logger.warning(
+                "review_queue_brief: get_secret(%r) failed; falling back to whatever env is set",
+                name,
+            )
+            continue
+        if value:
+            env[name] = value
+    return env
 
 
 def _resolve_invoker_factory() -> Callable[[], ProviderInvoker]:
@@ -212,9 +234,13 @@ def _resolve_invoker_factory() -> Callable[[], ProviderInvoker]:
         # qwen / mistral) degrade gracefully via the executor's
         # per-slot unavailable path. See
         # :mod:`aragora.pdb.invoker_factory`.
-        _hydrate_provider_credentials()
+        #
+        # Per-call credentials instead of os.environ mutation — the
+        # server handles concurrent requests and must not share
+        # provider credentials as a mutable global.
+        env = _collect_provider_credentials()
         try:
-            return build_default_invoker()
+            return build_default_invoker(env=env)
         except InvokerFactoryError as exc:
             # Re-raise with the factory's message; the handler turns
             # this into a 503 so the UI explains which env var is
