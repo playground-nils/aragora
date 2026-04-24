@@ -62,6 +62,7 @@ The merge decision should use GitHub branch protection as the authoritative hard
 Advisory workflows are still useful evidence, but they should not create a hidden second merge policy. Treat advisory checks as follows:
 
 - Passing advisory checks increase confidence but are not required for low-risk automation PRs.
+- Matrix shards named `test-fast (...)`, including server shards such as `test-fast (server, tests/server, 30)`, are advisory unless they are explicitly configured as required branch-protection checks.
 - Cancelled advisory checks caused by a newer push are queue churn, not a blocker. Re-run them only when the cancelled workflow is directly relevant to the changed files.
 - Failed advisory checks are blockers only when the failure is in-scope for the PR diff or reveals a mainline regression that would be worsened by the PR.
 - Summary-only jobs such as analytics, admission signals, and AI review comments should prefer warnings and PR comments over failing statuses.
