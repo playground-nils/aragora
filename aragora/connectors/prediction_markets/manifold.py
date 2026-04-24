@@ -320,20 +320,9 @@ class ManifoldBetResult:
 class ManifoldBetAdapter(ManifoldAdapter):
     """Write-capable Manifold adapter (AGT-03 Phase 2).
 
-    Adds prediction-submission on top of :class:`ManifoldAdapter`'s
-    read-only methods. All write calls are gated behind
-    ``ARAGORA_MANIFOLD_WRITE_ENABLED`` (default off) and require an
-    ``api_key``. In-memory counters enforce the AGT-03 stake caps before
-    the network call; Manifold also enforces limits server-side.
-
-    Invariants per the AGT-03 plan
-    --------------------------------
-    - **Per-market cap**: 50 mana by default (operator may raise to 200
-      after 30 days of stable behaviour by constructing with a higher
-      ``per_market_cap_mana``).
-    - **Per-day cap**: 1 000 mana across all markets per UTC calendar day.
-    - **Liquidity fraction**: never >5% of a market's ``totalLiquidity``
-      in a single bet.
+    Gated behind ARAGORA_MANIFOLD_WRITE_ENABLED (default off).
+    Enforces per-market (50 mana), per-day (1 000 mana), and
+    liquidity-fraction (5%) caps before each API call.
     """
 
     api_key: str = ""
@@ -409,26 +398,9 @@ class ManifoldBetAdapter(ManifoldAdapter):
         outcome: str = "YES",
         now: datetime | None = None,
     ) -> ManifoldBetResult:
-        """Submit a prediction bet to Manifold Markets.
+        """Submit a prediction bet. Checks all caps before the API call.
 
-        All cap invariants are checked before the API call is made.
-        Stake counters are updated in memory only after a successful
-        response; a failed API call leaves counters unchanged.
-
-        Parameters
-        ----------
-        market_id:
-            Manifold market id (``contractId`` in the bet endpoint).
-        probability:
-            Predicted probability in ``(0, 1)`` for the YES outcome.
-            Stored in the result for Brier-score computation downstream.
-        stake_mana:
-            Mana to stake. Must satisfy all cap invariants.
-        outcome:
-            ``"YES"`` or ``"NO"``. Defaults to ``"YES"``.
-        now:
-            Override the current UTC datetime for cap-window calculations
-            (useful in tests; leave ``None`` in production).
+        Stake counters are only updated after a successful response.
         """
         self._require_write_enabled()
         if not market_id:
