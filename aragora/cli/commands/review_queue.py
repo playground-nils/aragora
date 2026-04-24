@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sqlite3
 import subprocess
 import sys
 import time
@@ -32,7 +33,11 @@ from pathlib import Path
 from typing import Any
 
 from aragora.review.reviewer_output import ReviewerOutput
-from aragora.swarm.pr_review_protocol import PRReviewerExecutionFailure, default_pr_review_protocol
+from aragora.swarm.pr_review_protocol import (
+    PRReviewerExecutionFailure,
+    default_pr_review_protocol,
+)
+from aragora.triage.auto_handle_calibration import AutoHandleCalibrationStore
 from aragora.worktree.fleet import resolve_repo_root
 
 UTC = timezone.utc
@@ -1060,6 +1065,7 @@ def _render_table(items: list[QueueItem]) -> None:
         counts[item.lane] = counts.get(item.lane, 0) + 1
     lane_summary = ", ".join(f"{lane}={counts.get(lane, 0)}" for lane in LANE_ORDER)
     print(f"Review queue ({len(items)} PRs): {lane_summary}")
+    _render_active_auto_handle_alerts()
     print()
     current_lane = ""
     for item in items:
@@ -1178,6 +1184,7 @@ def _render_packet(packet: ReviewPacket) -> None:
                 )
     print()
     print(f"generated at: {packet.generated_at}")
+    _render_active_auto_handle_alerts()
     print()
     print(f"-- {packet.settlement_note}")
 
@@ -1207,3 +1214,25 @@ def _render_settlement_receipt(receipt: SettlementReceipt) -> None:
     if receipt.elapsed_seconds is not None:
         print(f"  elapsed:      {receipt.elapsed_seconds:.3f}s")
     print(f"  receipt:      {receipt.receipt_path}")
+
+
+def _render_active_auto_handle_alerts() -> None:
+    try:
+        alerts = AutoHandleCalibrationStore().list_active_alerts(limit=3)
+    except (OSError, RuntimeError, sqlite3.Error, ValueError, TypeError) as exc:
+        print(f"warning: auto-handle calibration unavailable: {exc}", file=sys.stderr)
+        return
+    if not alerts:
+        return
+    print()
+    print("ACTIVE AUTO-HANDLE DRIFT ALERTS:")
+    for alert in alerts:
+        current_rate = (
+            f"{alert.current_success_rate:.1%}"
+            if alert.current_success_rate is not None
+            else "unknown"
+        )
+        print(
+            f"  - {alert.auto_handle_path}: {alert.decision_class} "
+            f"(success={current_rate}, action={alert.remediation_action})"
+        )

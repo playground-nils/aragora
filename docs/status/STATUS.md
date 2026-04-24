@@ -1,9 +1,24 @@
 # Aragora Project Status
 
-*Last updated: April 22, 2026*
+*Last updated: April 24, 2026*
 
 > See [README](../README.md) for the five pillars framework. See [Documentation Index](../INDEX.md) for the curated technical reference map.
 > For roadmap extraction, doc drift, and partial-feature tracking, see [DOCUMENTATION_HYGIENE_AND_GAP_REGISTER.md](DOCUMENTATION_HYGIENE_AND_GAP_REGISTER.md).
+
+## April 24, 2026 — Auto-Handle Calibration Gate Ready On #6448
+
+### Canonical Current Reality
+
+- `#6372` is represented on this branch in code rather than only in the thesis:
+  - `aragora/triage/auto_handle_calibration.py` adds a SQLite-backed calibration store for auto-handle paths.
+  - `fire_and_forget` low-risk auto-merge in `aragora/swarm/tranche_integrate.py` now consults calibrated decision classes before executing.
+  - The `wait_for_review` + `admin_merge_allowed` bypass in `aragora/ralph/supervisor.py` now consults the same calibration gate before issuing an admin merge.
+  - Per-event drift detection can narrow a class, emit a JSON drift receipt under `.aragora/review-queue/drift/`, and keep the class human-gated until recovery.
+  - `aragora review-queue` now surfaces active auto-handle drift alerts directly in CLI output.
+- Merging this branch closes the broad “static heuristics only” gap for Commitment 1. Remaining work is refinement:
+  - richer post-merge invalidation producers
+  - richer decision-class fingerprints once more samples exist
+  - continued empirical tuning of thresholds
 
 ## April 22, 2026 — Thesis Landed, Heterogeneous PR Review Shipped, Legacy Fallback Needs Truthful Labeling
 
@@ -37,7 +52,7 @@
   - `aragora/swarm/pr_review_protocol.py` still declares `PROTOCOL_STATUS = "metadata_heuristic"` because it remains the schema/fallback default for packets constructed without execution
   - the remaining work is source-of-truth alignment: docs and any schema-only callers must treat the PDB path as canonical and the metadata-only packet as an explicit fallback
 - The thesis implementation-gap issues are now explicit and open:
-  - [#6372](https://github.com/synaptent/aragora/issues/6372) auto-handle calibration + drift gating
+  - [#6372](https://github.com/synaptent/aragora/issues/6372) auto-handle calibration + drift gating `[shipped on this branch; close on merge]`
   - [#6373](https://github.com/synaptent/aragora/issues/6373) rolling-window triage metrics
   - [#6374](https://github.com/synaptent/aragora/issues/6374) now narrows to aligning the legacy schema/fallback labeling with the shipped heterogeneous PDB path
   - [#6375](https://github.com/synaptent/aragora/issues/6375) empirical threshold grounding
@@ -62,7 +77,7 @@ The frontier is now:
 
 - **finish source-of-truth alignment on the PR-review path** — narrow [#6374](https://github.com/synaptent/aragora/issues/6374) to the remaining legacy-schema/fallback cleanup rather than the already-shipped heterogeneous execution path
 - **ship rolling-window triage metrics** — close [#6373](https://github.com/synaptent/aragora/issues/6373) so the triage layer is measured by outcomes, not daily counts only
-- **add auto-handle calibration + drift gating** — close [#6372](https://github.com/synaptent/aragora/issues/6372) so low-stakes automation is constrained by real outcome history
+- **refine auto-handle calibration + invalidation sources** — build on [#6372](https://github.com/synaptent/aragora/issues/6372) now that the base calibration gate is implemented
 - **ground threshold claims empirically** — close [#6375](https://github.com/synaptent/aragora/issues/6375) after the metrics layer exists
 - **keep queue growth bounded** — continue the single-slice cadence in the PDB lane rather than opening large successor chains in parallel
 
@@ -70,10 +85,10 @@ The frontier is now:
 
 The current bounded queue should be treated in this order:
 
-1. close [#6373](https://github.com/synaptent/aragora/issues/6373) with rolling-window metrics and outcome linkage
-2. close [#6372](https://github.com/synaptent/aragora/issues/6372) with calibration + drift gating for auto-handle paths
-3. close [#6375](https://github.com/synaptent/aragora/issues/6375) using the metrics substrate above
-4. narrow and then close [#6374](https://github.com/synaptent/aragora/issues/6374) as the remaining legacy-schema/fallback alignment work is completed
+1. merge [#6448](https://github.com/synaptent/aragora/pull/6448) to close [#6372](https://github.com/synaptent/aragora/issues/6372) with calibration + drift gating for auto-handle paths
+2. close [#6375](https://github.com/synaptent/aragora/issues/6375) using the metrics and calibration substrates above
+3. narrow and then close [#6374](https://github.com/synaptent/aragora/issues/6374) as the remaining legacy-schema/fallback alignment work is completed
+4. keep refining [#6373](https://github.com/synaptent/aragora/issues/6373) from rolling-window metrics into outcome-linked reporting
 5. keep the agent-bridge lane scoped to bounded, observable increments rather than a parallel subsystem explosion
 
 ### Strategic Direction

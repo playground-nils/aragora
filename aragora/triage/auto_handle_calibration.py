@@ -6,15 +6,15 @@ gate named in ``docs/THESIS.md`` Commitment 1 for the two auto-handle paths:
   - ``fire_and_forget`` low-risk merge in :mod:`aragora.swarm.tranche_integrate`
   - ``admin_merge_allowed`` review-gate bypass in :mod:`aragora.ralph.supervisor`
 
-Scope of PR A
--------------
+Scope
+-----
 
-PR A ships **only the store primitives**: decision-class fingerprints, the
-SQLite schema, outcome recording, drift-alert upsert/clear, and JSON drift
-receipts. The gate integration (``evaluate_gate``), the call-sites in
-``tranche_integrate`` / ``ralph/supervisor``, the CLI drift-alert surface,
-and F4 externally-merged seeding are intentionally deferred to PR B and
-PR C so this change stays bounded and reviewable.
+The mainline PR A shipped the store primitives: decision-class
+fingerprints, the SQLite schema, outcome recording, drift-alert
+upsert/clear, and JSON drift receipts. This branch layers the
+``evaluate_gate`` decision surface on top of those primitives so
+auto-handle call-sites can ask whether a decision class is still
+calibrated enough to run without human settlement.
 
 Connection lifecycle
 --------------------
@@ -183,12 +183,7 @@ class AutoHandleClassSummary:
 
 @dataclass(frozen=True, slots=True)
 class AutoHandleGateDecision:
-    """Return type for the (deferred) ``evaluate_gate`` method.
-
-    The gate evaluator is deferred to PR B (per the #6448 split); the
-    dataclass is defined here so callers that import the module see a
-    stable surface once PR B lands.
-    """
+    """Return type for :meth:`AutoHandleCalibrationStore.evaluate_gate`."""
 
     allowed: bool
     auto_handle_path: str
@@ -538,6 +533,84 @@ class AutoHandleCalibrationStore:
                 (int(limit),),
             ).fetchall()
         return [self._alert_from_row(row) for row in rows]
+
+    def evaluate_gate(
+        self,
+        *,
+        auto_handle_path: str,
+        decision_class: str,
+    ) -> AutoHandleGateDecision:
+        """Return whether an auto-handle class is calibrated enough to run.
+
+        Warm classes with no observed failures are allowed while they
+        collect samples, but any failure before the minimum sample count
+        forces human settlement. Once the class is warmed, the rolling
+        success rate must meet ``min_success_rate`` and any active drift
+        alert keeps the class narrowed until recovery.
+        """
+        summary = self.summarize_class(
+            auto_handle_path=auto_handle_path,
+            decision_class=decision_class,
+        )
+        active_alert = self.get_active_alert(
+            auto_handle_path=auto_handle_path,
+            decision_class=decision_class,
+        )
+        if active_alert is not None:
+            return AutoHandleGateDecision(
+                allowed=False,
+                auto_handle_path=auto_handle_path,
+                decision_class=decision_class,
+                reason=(
+                    "class is currently narrowed by drift gating until its "
+                    "rolling success rate recovers"
+                ),
+                summary=summary,
+                active_drift_alert=True,
+            )
+        if summary.total_samples < self.min_samples:
+            if summary.failures == 0:
+                return AutoHandleGateDecision(
+                    allowed=True,
+                    auto_handle_path=auto_handle_path,
+                    decision_class=decision_class,
+                    reason=(
+                        f"class is in calibration warm-up: {summary.total_samples} < "
+                        f"{self.min_samples} samples in the last {summary.window_days}d; "
+                        "allowing auto-handle while outcome history is seeded"
+                    ),
+                    summary=summary,
+                    warmup_active=True,
+                )
+            return AutoHandleGateDecision(
+                allowed=False,
+                auto_handle_path=auto_handle_path,
+                decision_class=decision_class,
+                reason=(
+                    f"class remains uncalibrated after {summary.failures} recorded failure(s): "
+                    f"{summary.total_samples} < {self.min_samples} in the last "
+                    f"{summary.window_days}d"
+                ),
+                summary=summary,
+            )
+        if summary.success_rate is None or summary.success_rate < self.min_success_rate:
+            rate = summary.success_rate if summary.success_rate is not None else 0.0
+            return AutoHandleGateDecision(
+                allowed=False,
+                auto_handle_path=auto_handle_path,
+                decision_class=decision_class,
+                reason=(
+                    f"class success rate {rate:.1%} is below required {self.min_success_rate:.1%}"
+                ),
+                summary=summary,
+            )
+        return AutoHandleGateDecision(
+            allowed=True,
+            auto_handle_path=auto_handle_path,
+            decision_class=decision_class,
+            reason="class is calibrated for auto-handle",
+            summary=summary,
+        )
 
     # -- Writes -------------------------------------------------------------
 

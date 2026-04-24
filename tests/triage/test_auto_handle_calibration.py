@@ -899,6 +899,136 @@ class TestReceiptWrite:
 
 
 # ---------------------------------------------------------------------------
+# evaluate_gate — calibration and drift gating
+# ---------------------------------------------------------------------------
+
+
+def _seed_successes(
+    store: AutoHandleCalibrationStore,
+    *,
+    count: int,
+    decision_class: str = TEST_CLASS,
+    repo_root: Path | None = None,
+) -> None:
+    for idx in range(count):
+        store.record_outcome(
+            decision_id=f"seed-success-{idx}",
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=decision_class,
+            outcome=OUTCOME_SUCCESS,
+            pr_url=f"https://example.com/pr/{idx}",
+            repo_root=repo_root,
+        )
+
+
+class TestEvaluateGate:
+    def test_gate_allows_warmup_class_without_failures(
+        self, store: AutoHandleCalibrationStore
+    ) -> None:
+        _seed_successes(store, count=1)
+
+        gate = store.evaluate_gate(
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+        )
+
+        assert gate.allowed is True
+        assert gate.warmup_active is True
+        assert gate.summary.total_samples == 1
+
+    def test_gate_rejects_uncalibrated_class_with_failures(
+        self, store: AutoHandleCalibrationStore
+    ) -> None:
+        store.record_outcome(
+            decision_id="warmup-failure",
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+            outcome=OUTCOME_HUMAN_OVERRIDE,
+            pr_url="https://example.com/pr/bad",
+        )
+
+        gate = store.evaluate_gate(
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+        )
+
+        assert gate.allowed is False
+        assert "uncalibrated" in gate.reason
+        assert gate.summary.failures == 1
+
+    def test_gate_rejects_below_threshold_classes(self, tmp_path: Path) -> None:
+        store = AutoHandleCalibrationStore(
+            db_path=str(tmp_path / "threshold.db"),
+            min_samples=2,
+            min_success_rate=0.80,
+            drift_threshold=0.05,
+        )
+        _seed_successes(store, count=1)
+        store.record_outcome(
+            decision_id="threshold-failure",
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+            outcome=OUTCOME_HUMAN_OVERRIDE,
+            pr_url="https://example.com/pr/bad",
+        )
+
+        gate = store.evaluate_gate(
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+        )
+
+        assert gate.allowed is False
+        assert gate.active_drift_alert is True
+        assert gate.summary.total_samples == 2
+        assert gate.summary.failures == 1
+
+    def test_drift_detector_blocks_until_recovery(self, tmp_path: Path) -> None:
+        store = AutoHandleCalibrationStore(
+            db_path=str(tmp_path / "drift.db"),
+            min_samples=2,
+            min_success_rate=0.75,
+            drift_threshold=0.10,
+        )
+        _seed_successes(store, count=2, repo_root=tmp_path)
+
+        result = store.record_outcome(
+            decision_id="regressed",
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+            outcome=OUTCOME_HUMAN_OVERRIDE,
+            pr_url="https://example.com/pr/regressed",
+            repo_root=tmp_path,
+        )
+
+        assert isinstance(result["alert"], dict)
+        receipt_path = Path(str(result["alert"]["receipt_path"]))
+        assert receipt_path.exists()
+
+        blocked = store.evaluate_gate(
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+        )
+        assert blocked.allowed is False
+        assert blocked.active_drift_alert is True
+
+        store.record_outcome(
+            decision_id="recovery",
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+            outcome=OUTCOME_SUCCESS,
+            pr_url="https://example.com/pr/recovery",
+            repo_root=tmp_path,
+        )
+
+        recovered = store.evaluate_gate(
+            auto_handle_path=AUTO_HANDLE_PATH_FIRE_AND_FORGET,
+            decision_class=TEST_CLASS,
+        )
+        assert recovered.allowed is True
+        assert recovered.active_drift_alert is False
+
+
+# ---------------------------------------------------------------------------
 # Helper sanity — fingerprints + decision ids are pure
 # ---------------------------------------------------------------------------
 
