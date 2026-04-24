@@ -114,6 +114,48 @@ def test_load_outbox_handoffs_skips_terminal_receipt(tmp_path: Path) -> None:
     assert mod.load_outbox_handoffs(tmp_path) == []
 
 
+def test_load_outbox_handoffs_skips_non_github_and_expired(tmp_path: Path) -> None:
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    outbox.mkdir(parents=True)
+    common = {
+        "task": "Publish validated repair branch",
+        "requested_action": "open_pr",
+        "repo": str(tmp_path),
+        "local_evidence": {},
+        "validation": [],
+        "created_at": "2026-04-24T16:00:00+00:00",
+    }
+    (outbox / "local-only.json").write_text(
+        json.dumps(
+            {
+                **common,
+                "requires_github": False,
+                "idempotency_key": "local-only",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (outbox / "expired.json").write_text(
+        json.dumps(
+            {
+                **common,
+                "requires_github": True,
+                "idempotency_key": "expired",
+                "expires_at": "2026-04-24T15:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        mod.load_outbox_handoffs(
+            tmp_path,
+            now=datetime(2026, 4, 24, 16, 0, tzinfo=timezone.utc),
+        )
+        == []
+    )
+
+
 def test_load_handoffs_skips_expired_and_none_tasks(tmp_path: Path) -> None:
     expired = _memory(tmp_path, "expired", _handoff("Old task"))
     none = _memory(tmp_path, "none", _handoff("NONE").replace("Priority: MEDIUM", "Priority: NONE"))
@@ -505,6 +547,70 @@ def test_publish_handoffs_writes_outbox_receipt(monkeypatch: Any, tmp_path: Path
     assert published[0].reason == "published"
     assert receipt["status"] == "published"
     assert receipt["created_issue_url"] == "https://github.com/synaptent/aragora/issues/7000"
+
+
+def test_main_preview_does_not_write_outbox_receipt(
+    monkeypatch: Any, tmp_path: Path, capsys
+) -> None:
+    receipts = tmp_path / ".aragora" / "automation-receipts"
+    handoff = Handoff(
+        source_file=str(tmp_path / ".aragora" / "automation-outbox" / "example.json"),
+        task_title="Publish validated repair branch",
+        priority="MEDIUM",
+        body="body",
+        labels={},
+        expires_at=None,
+        idempotency_key="open-pr-codex-example-abc123",
+        source_kind="outbox",
+    )
+    monkeypatch.setattr(mod, "_repo_root", lambda path: tmp_path)
+    monkeypatch.setattr(mod, "load_handoffs", lambda codex_home, automation_ids=None: [])
+    monkeypatch.setattr(
+        mod,
+        "load_outbox_handoffs",
+        lambda repo_root, outbox_dir=None, receipt_dir=None: [handoff],
+    )
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda repo_root: GitHubCLIHealth(
+            ready=True,
+            auth_ok=True,
+            api_ok=True,
+            mode="ok",
+            error=None,
+            repo=str(tmp_path),
+        ),
+    )
+    monkeypatch.setattr(
+        mod,
+        "decide_handoffs",
+        lambda *args, **kwargs: [
+            PublishDecision(
+                task_title=handoff.task_title,
+                source_file=handoff.source_file,
+                eligible=False,
+                reason="existing_issue",
+                existing_issue_url="https://github.com/synaptent/aragora/issues/1",
+            )
+        ],
+    )
+
+    exit_code = mod.main(
+        [
+            "--repo",
+            str(tmp_path),
+            "--codex-home",
+            str(tmp_path),
+            "--receipt-dir",
+            str(receipts),
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    assert not receipts.exists()
+    assert '"reason": "existing_issue"' in capsys.readouterr().out
 
 
 def test_main_reports_github_health_when_unavailable(

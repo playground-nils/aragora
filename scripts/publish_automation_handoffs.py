@@ -451,9 +451,11 @@ def load_outbox_handoffs(
     *,
     outbox_dir: Path | None = None,
     receipt_dir: Path | None = None,
+    now: datetime | None = None,
 ) -> list[Handoff]:
     outbox_root = (outbox_dir or repo_root / DEFAULT_OUTBOX_DIR).resolve()
     receipt_root = (receipt_dir or repo_root / DEFAULT_RECEIPT_DIR).resolve()
+    current_time = now or datetime.now(UTC)
     handoffs: list[Handoff] = []
     for source_file in _outbox_files(outbox_root):
         try:
@@ -465,7 +467,15 @@ def load_outbox_handoffs(
         task_title = str(payload.get("task") or payload.get("title") or "").strip()
         requested_action = str(payload.get("requested_action") or "").strip()
         idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        requires_github = payload.get("requires_github", True)
+        if isinstance(requires_github, str):
+            requires_github = requires_github.strip().lower() not in {"0", "false", "no"}
+        if requires_github is False:
+            continue
         if not task_title or not requested_action or not idempotency_key:
+            continue
+        expires_at = str(payload.get("expires_at") or "").strip() or None
+        if _is_expired(expires_at, now=current_time):
             continue
         if _terminal_receipt_exists(receipt_root, idempotency_key):
             continue
@@ -476,7 +486,7 @@ def load_outbox_handoffs(
                 priority=str(payload.get("priority") or "MEDIUM").strip() or "MEDIUM",
                 body=_format_outbox_body(payload, source_file),
                 labels={key: _format_json_block(value) for key, value in payload.items()},
-                expires_at=str(payload.get("expires_at") or "").strip() or None,
+                expires_at=expires_at,
                 idempotency_key=idempotency_key,
                 source_kind="outbox",
             )
@@ -973,10 +983,11 @@ def main(argv: list[str] | None = None) -> int:
         else decisions
     )
     by_key = {(item.task_title, item.source_file): item for item in handoffs}
-    for item in results:
-        handoff = by_key.get((item.task_title, item.source_file))
-        if handoff is not None:
-            _write_receipt(receipt_dir, handoff, item, repo=args.github_repo)
+    if args.apply:
+        for item in results:
+            handoff = by_key.get((item.task_title, item.source_file))
+            if handoff is not None:
+                _write_receipt(receipt_dir, handoff, item, repo=args.github_repo)
 
     payload = {
         "repo": str(repo_root),
