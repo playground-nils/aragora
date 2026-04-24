@@ -227,7 +227,7 @@ Source of truth: [Next Steps (Canonical)](./next-steps-canonical).
 
 ### Milestone 6.5 — Crux Engine, Epistemic CI & Epistemic Runtime `[365d]`
 
-Design brief: [Epistemic CI, Crux Engine, and Epistemic Runtime Plan](../plans/EPISTEMIC_CI_AND_CRUX_ENGINE.md).
+Design brief: [Epistemic CI, Crux Engine, and Epistemic Runtime Plan](https://github.com/synaptent/aragora/blob/main/docs/plans/EPISTEMIC_CI_AND_CRUX_ENGINE.md).
 
 - [ ] **DIC-13** Define executable claim manifest schema ([#6023](https://github.com/synaptent/aragora/issues/6023))
 - [ ] **DIC-14** Add executable claim verification runner ([#6024](https://github.com/synaptent/aragora/issues/6024))

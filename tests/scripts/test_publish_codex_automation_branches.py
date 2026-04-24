@@ -230,7 +230,9 @@ def test_run_uses_env_overrides_for_git_timeout(monkeypatch: Any, tmp_path: Path
     assert recorded["timeout"] == 90
 
 
-def test_push_branch_skips_only_configured_pre_push_hooks(monkeypatch: Any, tmp_path: Path) -> None:
+def test_push_branch_disables_local_pre_push_hooks_by_default(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     recorded: dict[str, Any] = {}
 
     def fake_run(
@@ -250,8 +252,30 @@ def test_push_branch_skips_only_configured_pre_push_hooks(monkeypatch: Any, tmp_
 
     mod._push_branch(tmp_path, "codex/test-branch", "origin/main")
 
-    assert recorded["args"] == ["git", "push", "origin", "codex/test-branch"]
+    assert recorded["args"] == ["git", "push", "--no-verify", "origin", "codex/test-branch"]
     assert recorded["env_overrides"] == {"SKIP": "gitleaks,mypy-baseline"}
+
+
+def test_push_branch_can_opt_into_git_pre_push_hooks(monkeypatch: Any, tmp_path: Path) -> None:
+    recorded: dict[str, Any] = {}
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool = False,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        recorded["args"] = args
+        recorded["env_overrides"] = env_overrides
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setenv("ARAGORA_AUTOMATION_GIT_PUSH_VERIFY", "true")
+    monkeypatch.setattr(mod, "_run", fake_run)
+
+    mod._push_branch(tmp_path, "codex/test-branch", None)
+
+    assert recorded["args"] == ["git", "push", "-u", "origin", "codex/test-branch"]
 
 
 def test_run_uses_user_auth_for_gh_write_ops(monkeypatch: Any, tmp_path: Path) -> None:
