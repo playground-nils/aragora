@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -152,3 +153,75 @@ def test_audit_publishable_backlog_excludes_stale_local_only_branches(
     assert payload["summary"]["publishable_branch_backlog"] == 2
     assert payload["summary"]["stale_local_only_salvage_candidates"] == 1
     assert payload["summary"]["writer_should_pause_for_branch_backlog"] is False
+
+
+def test_audit_excludes_terminal_outbox_receipts_from_publishable_backlog(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    now = datetime.now(timezone.utc)
+    rows = [
+        _branch_row("codex/receipted", committed_at=now),
+        _branch_row("codex/stale-remote", committed_at=now.replace(year=now.year - 1)),
+    ]
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    receipts = tmp_path / ".aragora" / "automation-receipts"
+    outbox.mkdir(parents=True)
+    receipts.mkdir(parents=True)
+    key = "open-pr-codex-receipted-abc123"
+    (outbox / "receipted.json").write_text(
+        json.dumps(
+            {
+                "task": "Publish receipted branch",
+                "requires_github": True,
+                "requested_action": "open_pr",
+                "repo": "synaptent/aragora",
+                "local_evidence": {"branch": "codex/receipted", "head": "abc123"},
+                "validation": ["pytest tests/example.py -q"],
+                "idempotency_key": key,
+                "created_at": "2026-04-24T16:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (receipts / f"{key}.json").write_text(
+        json.dumps({"idempotency_key": key, "status": "published"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "local_branches", lambda _root, _prefix, _base: rows)
+    monkeypatch.setattr(mod, "remote_branch_names", lambda _root, _prefix: {"codex/stale-remote"})
+    monkeypatch.setattr(mod, "merged_branch_names", lambda _root, _base, _prefix: set())
+    monkeypatch.setattr(mod, "worktree_map", lambda _root: {})
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="offline",
+            repo=str(tmp_path),
+        ),
+    )
+
+    payload = mod.audit(
+        root=tmp_path,
+        base="origin/main",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=False,
+        publisher_backlog_limit=2,
+    )
+
+    by_category = payload["summary"]["by_category"]
+    assert by_category["protected_handoff_receipt"] == 1
+    assert by_category["salvage_stale_remote_unique"] == 1
+    assert payload["summary"]["protected"] == 1
+    assert payload["summary"]["publishable_branch_backlog"] == 1
+    assert payload["summary"]["handoff_receipted_branches"] == 1
+    assert payload["summary"]["writer_should_pause_for_branch_backlog"] is False
+    receipted = next(record for record in payload["records"] if record["name"] == "codex/receipted")
+    assert receipted["handoff_receipt_exists"] is True
+    assert receipted["category"] == "protected_handoff_receipt"

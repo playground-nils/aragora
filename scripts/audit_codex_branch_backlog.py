@@ -29,6 +29,9 @@ ACTIVE_SESSION_FILES = (
     ".codex_session_active",
     ".nomic-session-active",
 )
+DEFAULT_OUTBOX_DIR = Path(".aragora/automation-outbox")
+DEFAULT_RECEIPT_DIR = Path(".aragora/automation-receipts")
+TERMINAL_RECEIPT_STATUSES = {"published", "already_satisfied"}
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,7 @@ class BranchRecord:
     worktree_paths: list[str]
     dirty_worktree_paths: list[str]
     active_worktree_paths: list[str]
+    handoff_receipt_exists: bool
     category: str
 
 
@@ -168,6 +172,65 @@ def active_worktree(path: Path) -> bool:
     return any((path / marker).exists() for marker in ACTIVE_SESSION_FILES)
 
 
+def _repo_relative(root: Path, path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return root / path
+
+
+def _json_files(path: Path) -> list[Path]:
+    if not path.exists():
+        return []
+    return sorted(item for item in path.glob("*.json") if item.is_file())
+
+
+def terminal_receipted_handoff_branches(
+    root: Path,
+    *,
+    outbox_dir: Path | None = None,
+    receipt_dir: Path | None = None,
+) -> set[str]:
+    """Return branch names that already have terminal automation handoff receipts."""
+
+    outbox_root = _repo_relative(root, outbox_dir or DEFAULT_OUTBOX_DIR)
+    receipt_root = _repo_relative(root, receipt_dir or DEFAULT_RECEIPT_DIR)
+    terminal_keys: set[str] = set()
+    for receipt_file in _json_files(receipt_root):
+        try:
+            payload = json.loads(receipt_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("status") or "") not in TERMINAL_RECEIPT_STATUSES:
+            continue
+        idempotency_key = str(payload.get("idempotency_key") or receipt_file.stem).strip()
+        if idempotency_key:
+            terminal_keys.add(idempotency_key)
+
+    if not terminal_keys:
+        return set()
+
+    branches: set[str] = set()
+    for outbox_file in _json_files(outbox_root):
+        try:
+            payload = json.loads(outbox_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        if idempotency_key not in terminal_keys:
+            continue
+        local_evidence = payload.get("local_evidence")
+        if not isinstance(local_evidence, dict):
+            continue
+        branch = str(local_evidence.get("branch") or "").strip()
+        if branch:
+            branches.add(branch)
+    return branches
+
+
 def open_pr_heads(root: Path, repo: str, prefix: str) -> dict[str, int]:
     proc = run_gh(
         [
@@ -231,6 +294,7 @@ def classify(
     ahead_count: int,
     merged_to_base: bool,
     patch_equivalent_to_base: bool,
+    handoff_receipt_exists: bool,
     committed_at: datetime,
     recent_cutoff: datetime,
     remote_branch_exists: bool,
@@ -245,6 +309,8 @@ def classify(
         return "cleanup_local_merged"
     if patch_equivalent_to_base:
         return "cleanup_patch_equivalent"
+    if handoff_receipt_exists:
+        return "protected_handoff_receipt"
     if committed_at >= recent_cutoff:
         return "salvage_recent_unique"
     if remote_branch_exists:
@@ -262,6 +328,8 @@ def audit(
     max_branches: int | None,
     include_patch_equivalence: bool,
     publisher_backlog_limit: int,
+    outbox_dir: Path | None = None,
+    receipt_dir: Path | None = None,
 ) -> dict[str, Any]:
     rows = local_branches(root, prefix, base)
     rows.sort(key=lambda row: parse_dt(row["committed_at"]), reverse=True)
@@ -274,6 +342,11 @@ def audit(
     worktrees = worktree_map(root)
     github_health = check_github_cli_health(root)
     prs = open_pr_heads(root, repo, prefix) if github_health.ready else {}
+    handoff_receipted_branches = terminal_receipted_handoff_branches(
+        root,
+        outbox_dir=outbox_dir,
+        receipt_dir=receipt_dir,
+    )
 
     records: list[BranchRecord] = []
     for row in rows:
@@ -291,6 +364,7 @@ def audit(
         if include_patch_equivalence and ahead_count > 0 and not merged_to_base:
             patch_equivalent = is_patch_equivalent(root, base, branch)
         remote_exists = branch in remotes
+        handoff_receipted = branch in handoff_receipted_branches
         category = classify(
             open_pr=prs.get(branch),
             active_paths=active_paths,
@@ -298,6 +372,7 @@ def audit(
             ahead_count=ahead_count,
             merged_to_base=merged_to_base,
             patch_equivalent_to_base=patch_equivalent,
+            handoff_receipt_exists=handoff_receipted,
             committed_at=committed_at,
             recent_cutoff=recent_cutoff,
             remote_branch_exists=remote_exists,
@@ -317,6 +392,7 @@ def audit(
                 worktree_paths=[str(path) for path in paths],
                 dirty_worktree_paths=dirty_paths,
                 active_worktree_paths=active_paths,
+                handoff_receipt_exists=handoff_receipted,
                 category=category,
             )
         )
@@ -327,6 +403,7 @@ def audit(
         counts["protected_open_pr"]
         + counts["protected_active_worktree"]
         + counts["protected_dirty_worktree"]
+        + counts["protected_handoff_receipt"]
     )
     salvage = (
         counts["salvage_recent_unique"]
@@ -352,6 +429,7 @@ def audit(
             "salvage_candidates": salvage,
             "publishable_branch_backlog": publishable_branch_backlog,
             "stale_local_only_salvage_candidates": counts["salvage_stale_local_unique"],
+            "handoff_receipted_branches": counts["protected_handoff_receipt"],
             "writer_should_pause_for_branch_backlog": (
                 publishable_branch_backlog >= publisher_backlog_limit
             ),
@@ -370,6 +448,7 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
     print(f"- Safe cleanup candidates: `{summary['safe_cleanup_candidates']}`")
     print(f"- Salvage candidates: `{summary['salvage_candidates']}`")
     print(f"- Publishable branch backlog: `{summary['publishable_branch_backlog']}`")
+    print(f"- Handoff-receipted branches: `{summary['handoff_receipted_branches']}`")
     print(
         "- Writer should pause for branch backlog: "
         f"`{summary['writer_should_pause_for_branch_backlog']}`"
@@ -389,6 +468,7 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
         "protected_open_pr",
         "protected_active_worktree",
         "protected_dirty_worktree",
+        "protected_handoff_receipt",
     ):
         matches = [record for record in records if record["category"] == category]
         if not matches:
@@ -440,6 +520,24 @@ def build_parser() -> argparse.ArgumentParser:
             "on historical local ref cache."
         ),
     )
+    parser.add_argument(
+        "--outbox-dir",
+        type=Path,
+        default=DEFAULT_OUTBOX_DIR,
+        help=(
+            "Automation outbox directory to use for terminal handoff receipt matching. "
+            "Relative paths are resolved from the repo root."
+        ),
+    )
+    parser.add_argument(
+        "--receipt-dir",
+        type=Path,
+        default=DEFAULT_RECEIPT_DIR,
+        help=(
+            "Automation receipt directory to use for terminal handoff receipt matching. "
+            "Relative paths are resolved from the repo root."
+        ),
+    )
     parser.add_argument("--examples", type=int, default=10, help="Examples per Markdown category")
     return parser
 
@@ -456,6 +554,8 @@ def main(argv: list[str] | None = None) -> int:
         max_branches=args.max_branches,
         include_patch_equivalence=args.include_patch_equivalence,
         publisher_backlog_limit=args.publisher_backlog_limit,
+        outbox_dir=args.outbox_dir,
+        receipt_dir=args.receipt_dir,
     )
     if args.markdown:
         print_markdown(payload, examples=args.examples)
