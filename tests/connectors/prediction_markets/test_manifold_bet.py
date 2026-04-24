@@ -16,6 +16,20 @@ from aragora.connectors.prediction_markets.manifold import (
 )
 
 
+def test_package_namespace_exports_write_adapter() -> None:
+    from aragora.connectors.prediction_markets import (
+        MANIFOLD_WRITE_FLAG as package_flag,
+        ManifoldBetAdapter as PackageBetAdapter,
+        ManifoldBetResult as PackageBetResult,
+        manifold_write_enabled as package_write_enabled,
+    )
+
+    assert package_flag == MANIFOLD_WRITE_FLAG
+    assert PackageBetAdapter is ManifoldBetAdapter
+    assert PackageBetResult is ManifoldBetResult
+    assert package_write_enabled is manifold_write_enabled
+
+
 def _mkt(mid: str = "m1", *, liq: int | None = 2000) -> str:
     p: dict = {
         "id": mid,
