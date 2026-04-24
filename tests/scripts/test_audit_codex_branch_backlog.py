@@ -9,12 +9,16 @@ from scripts.github_cli_health import GitHubCLIHealth
 import scripts.audit_codex_branch_backlog as mod
 
 
-def _branch_row(name: str = "codex/example") -> dict[str, str]:
+def _branch_row(
+    name: str = "codex/example",
+    *,
+    committed_at: datetime | None = None,
+) -> dict[str, str]:
     return {
         "name": name,
         "upstream": "",
         "head_sha": "abc1234",
-        "committed_at": datetime.now(timezone.utc).isoformat(),
+        "committed_at": (committed_at or datetime.now(timezone.utc)).isoformat(),
         "ahead_count": "1",
         "subject": "test branch",
     }
@@ -57,6 +61,7 @@ def test_audit_skips_open_pr_lookup_when_github_health_degraded(
         recent_hours=72,
         max_branches=None,
         include_patch_equivalence=False,
+        publisher_backlog_limit=12,
     )
 
     assert payload["github_health"]["mode"] == "connectivity_failed"
@@ -92,9 +97,58 @@ def test_audit_uses_open_pr_lookup_when_github_health_is_ready(
         recent_hours=72,
         max_branches=None,
         include_patch_equivalence=False,
+        publisher_backlog_limit=12,
     )
 
     assert payload["github_health"]["ready"] is True
     assert payload["open_pr_lookup_skipped"] is False
     assert payload["records"][0]["open_pr"] == 6500
     assert payload["records"][0]["category"] == "protected_open_pr"
+
+
+def test_audit_publishable_backlog_excludes_stale_local_only_branches(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    now = datetime.now(timezone.utc)
+    rows = [
+        _branch_row("codex/recent-local", committed_at=now),
+        _branch_row("codex/stale-local", committed_at=now.replace(year=now.year - 1)),
+        _branch_row("codex/stale-remote", committed_at=now.replace(year=now.year - 1)),
+    ]
+    monkeypatch.setattr(mod, "local_branches", lambda _root, _prefix, _base: rows)
+    monkeypatch.setattr(mod, "remote_branch_names", lambda _root, _prefix: {"codex/stale-remote"})
+    monkeypatch.setattr(mod, "merged_branch_names", lambda _root, _base, _prefix: set())
+    monkeypatch.setattr(mod, "worktree_map", lambda _root: {})
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=True,
+            auth_ok=True,
+            api_ok=True,
+            mode="ready",
+            error="",
+            repo=str(tmp_path),
+        ),
+    )
+    monkeypatch.setattr(mod, "open_pr_heads", lambda _root, _repo, _prefix: {})
+
+    payload = mod.audit(
+        root=tmp_path,
+        base="origin/main",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=False,
+        publisher_backlog_limit=3,
+    )
+
+    by_category = payload["summary"]["by_category"]
+    assert by_category["salvage_recent_unique"] == 1
+    assert by_category["salvage_stale_remote_unique"] == 1
+    assert by_category["salvage_stale_local_unique"] == 1
+    assert payload["summary"]["salvage_candidates"] == 3
+    assert payload["summary"]["publishable_branch_backlog"] == 2
+    assert payload["summary"]["stale_local_only_salvage_candidates"] == 1
+    assert payload["summary"]["writer_should_pause_for_branch_backlog"] is False
