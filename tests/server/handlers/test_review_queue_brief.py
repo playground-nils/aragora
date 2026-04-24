@@ -494,6 +494,60 @@ class TestStaleInvalidation:
 
 
 # ---------------------------------------------------------------------------
+# Invoker credential hydration
+# ---------------------------------------------------------------------------
+
+
+class TestInvokerFactoryResolution:
+    def test_default_factory_collects_credentials_before_building_invoker(self, monkeypatch):
+        calls: list[tuple[str, dict[str, str] | None]] = []
+        invoker = MagicMock()
+        collected_env = {
+            "ANTHROPIC_API_KEY": "sm-anthropic",
+            "OPENAI_API_KEY": "sm-openai",
+        }
+
+        def fake_collect() -> dict[str, str]:
+            calls.append(("collect", None))
+            return collected_env
+
+        def fake_build_default_invoker(*, env: dict[str, str]):
+            calls.append(("build", env))
+            return invoker
+
+        monkeypatch.setattr(rqb, "_collect_provider_credentials", fake_collect)
+        monkeypatch.setattr(rqb, "build_default_invoker", fake_build_default_invoker)
+
+        factory = rqb._resolve_invoker_factory()
+
+        assert factory() is invoker
+        assert calls == [
+            ("collect", None),
+            ("build", collected_env),
+        ]
+
+    def test_default_factory_maps_invoker_factory_error(self, monkeypatch):
+        calls: list[str] = []
+
+        def fake_collect() -> dict[str, str]:
+            calls.append("collect")
+            return {}
+
+        def fake_build_default_invoker(*, env: dict[str, str]):
+            calls.append("build")
+            raise rqb.InvokerFactoryError("missing OPENAI_API_KEY")
+
+        monkeypatch.setattr(rqb, "_collect_provider_credentials", fake_collect)
+        monkeypatch.setattr(rqb, "build_default_invoker", fake_build_default_invoker)
+
+        factory = rqb._resolve_invoker_factory()
+
+        with pytest.raises(NotImplementedError, match="missing OPENAI_API_KEY"):
+            factory()
+        assert calls == ["collect", "build"]
+
+
+# ---------------------------------------------------------------------------
 # Input loader errors surfacing as HTTP codes
 # ---------------------------------------------------------------------------
 
