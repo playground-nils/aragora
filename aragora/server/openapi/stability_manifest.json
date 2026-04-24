@@ -1071,8 +1071,6 @@
     "GET /api/v1/self-improve/metrics/comparison",
     "GET /api/v1/self-improve/trends/cycles",
     "GET /api/v1/services",
-    "GET /api/v1/services/{param}/health",
-    "GET /api/v1/services/{param}/metrics",
     "GET /api/v1/skills",
     "GET /api/v1/skills/invoke",
     "GET /api/v1/skills/marketplace/installed",
