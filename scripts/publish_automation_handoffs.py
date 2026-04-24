@@ -484,7 +484,7 @@ def load_outbox_handoffs(
     outbox_root = (outbox_dir or repo_root / DEFAULT_OUTBOX_DIR).resolve()
     receipt_root = (receipt_dir or repo_root / DEFAULT_RECEIPT_DIR).resolve()
     current_time = now or datetime.now(UTC)
-    handoffs: list[Handoff] = []
+    handoffs_by_key: dict[str, Handoff] = {}
     for source_file in _outbox_files(outbox_root):
         try:
             payload = json.loads(source_file.read_text(encoding="utf-8"))
@@ -509,20 +509,27 @@ def load_outbox_handoffs(
             continue
         if _terminal_receipt_exists(receipt_root, idempotency_key):
             continue
-        handoffs.append(
-            Handoff(
-                source_file=str(source_file),
-                task_title=task_title,
-                priority=str(payload.get("priority") or "MEDIUM").strip() or "MEDIUM",
-                body=_format_outbox_body(payload, source_file),
-                labels={key: _format_json_block(value) for key, value in payload.items()},
-                expires_at=expires_at,
-                idempotency_key=idempotency_key,
-                source_kind="outbox",
-            )
+        handoff = Handoff(
+            source_file=str(source_file),
+            task_title=task_title,
+            priority=str(payload.get("priority") or "MEDIUM").strip() or "MEDIUM",
+            body=_format_outbox_body(payload, source_file),
+            labels={key: _format_json_block(value) for key, value in payload.items()},
+            expires_at=expires_at,
+            idempotency_key=idempotency_key,
+            source_kind="outbox",
         )
+        existing = handoffs_by_key.get(idempotency_key)
+        if existing is None or (
+            _source_mtime(handoff.source_file),
+            handoff.source_file,
+        ) > (
+            _source_mtime(existing.source_file),
+            existing.source_file,
+        ):
+            handoffs_by_key[idempotency_key] = handoff
     return sorted(
-        handoffs,
+        handoffs_by_key.values(),
         key=lambda item: (_source_mtime(item.source_file), item.priority),
         reverse=True,
     )
