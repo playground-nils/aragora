@@ -1602,9 +1602,22 @@ jobs:
   frontend:
     needs: [scope]
     if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.scope.outputs.frontend_e2e == 'true')
-    name: Frontend E2E Tests
+    name: Frontend E2E Tests (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 25
+    # Sharded 3-way smoke PR lane to keep wall-clock below the job ceiling.
+    # Previously a single unsharded all-project job with timeout-minutes=35
+    # regularly hit the ceiling, causing the whole Tests workflow to end
+    # 'cancelled' (not 'failure'), which hid the underlying failure and
+    # produced dashboard lies. See #6495. Production/specialty suites and the
+    # broad Chromium suite remain explicit via dedicated projects/scripts. The
+    # shell timeout below is intentionally lower than the job timeout so
+    # overruns surface as normal failures and still leave time to upload
+    # Playwright artifacts.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     services:
       redis:
@@ -1718,7 +1731,11 @@ jobs:
 
       - name: Run E2E tests
         working-directory: aragora/live
-        run: npx playwright test
+        run: |
+          timeout 16m npx playwright test \
+            --project=ci-smoke \
+            --shard=${{ matrix.shard }}/3 \
+            --pass-with-no-tests
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8080
           NEXT_PUBLIC_WS_URL: ws://localhost:8765
@@ -1727,7 +1744,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: aragora/live/playwright-report/
           retention-days: 7
 
@@ -1735,7 +1752,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-results
+          name: playwright-results-shard-${{ matrix.shard }}
           path: aragora/live/test-results/
           retention-days: 7
 
@@ -1743,7 +1760,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: frontend-e2e-server-logs
+          name: frontend-e2e-server-logs-shard-${{ matrix.shard }}
           path: /tmp/aragora-server.log
           retention-days: 7
 
