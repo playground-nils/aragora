@@ -36,6 +36,7 @@ DEFAULT_SCAN_LIMIT = 12
 CODEX_BRANCH_PREFIX = "codex/"
 DEFAULT_PREFLIGHT_SCRIPT = "scripts/automation_pr_preflight.sh"
 DEFAULT_PRE_PUSH_SKIP_HOOKS = "mypy-baseline"
+VERIFY_AUTOMATION_GIT_PUSH_ENV = "ARAGORA_AUTOMATION_GIT_PUSH_VERIFY"
 UNHEALTHY_OPEN_PR_MERGE_STATES = {"BLOCKED", "DIRTY"}
 UNHEALTHY_CHECK_STATES = {
     "ACTION_REQUIRED",
@@ -642,6 +643,9 @@ def _merge_skip_hooks(existing: str | None, additions: str) -> str:
 
 def _push_branch(repo_root: Path, branch: str, upstream: str | None) -> None:
     args = ["git", "push"]
+    verify_push = os.environ.get(VERIFY_AUTOMATION_GIT_PUSH_ENV, "").strip().lower()
+    if verify_push not in {"1", "true", "yes"}:
+        args.append("--no-verify")
     if upstream:
         args.extend(["origin", branch])
     else:

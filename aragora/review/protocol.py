@@ -21,10 +21,10 @@ trusting prose.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 UTC = timezone.utc
 
@@ -51,12 +51,22 @@ class ReviewRole(str, Enum):
 class Recommendation(str, Enum):
     """Top-line recommendation classes a brief can produce.
 
-    Same three classes used by ``aragora.cli.commands.review_queue.ReviewPacket``
-    so downstream consumers (queue, UI, ledger) can treat brief and packet
-    outputs uniformly when both are present.
+    Four classes, originally three. The ``APPROVE_WITH_FOLLOWUPS`` class
+    was added under #6505 to separate "the panel surfaced real issues
+    but none are hard blockers" from "the panel found a real blocker."
+    The verdict rule downgrades ``REPAIR_FIRST`` to
+    ``APPROVE_WITH_FOLLOWUPS`` when no slot reports a ``high``-severity
+    finding, so the sharp-end class (``REPAIR_FIRST``) is reserved for
+    cases where at least one lens flags a high-severity issue.
+
+    Same class strings are used by
+    ``aragora.cli.commands.review_queue.ReviewPacket`` so downstream
+    consumers (queue, UI, ledger) can treat brief and packet outputs
+    uniformly when both are present.
     """
 
     APPROVE_CANDIDATE = "approve_candidate"
+    APPROVE_WITH_FOLLOWUPS = "approve_with_followups"
     NEEDS_HUMAN_ATTENTION = "needs_human_attention"
     REPAIR_FIRST = "repair_first"
 
@@ -188,6 +198,11 @@ class ReviewBrief:
     generated_at: str  # ISO-8601 with timezone
     advisory_only: bool = True
     settlement_note: str = ADVISORY_NOTE
+    # Aggregate severity counts across the panel's top findings. Keys are
+    # "high" | "medium" | "low"; values are ints. Empty when no structured
+    # severity signal was supplied (legacy/degraded briefs). Exposed at the
+    # brief level so operators can triage without reading every finding.
+    findings_severity_counts: Mapping[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -195,6 +210,7 @@ class ReviewBrief:
         d["role_findings"] = [f.to_dict() for f in self.role_findings]
         d["dissent"] = [v.to_dict() for v in self.dissent]
         d["agent_roster"] = list(self.agent_roster)
+        d["findings_severity_counts"] = dict(self.findings_severity_counts)
         return d
 
 

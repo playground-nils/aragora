@@ -168,6 +168,22 @@ class TestReviewBrief:
         assert d["overall_confidence"] == 0.72
         assert d["disagreement_score"] == 0.41
 
+    def test_findings_severity_counts_defaults_to_empty(self) -> None:
+        # Briefs built without structured severity input (legacy callers,
+        # degraded paths) must not crash; the field carries an empty dict.
+        brief = self._brief()
+        assert brief.findings_severity_counts == {}
+        assert brief.to_dict()["findings_severity_counts"] == {}
+
+    def test_findings_severity_counts_round_trip(self) -> None:
+        # First-class operator triage signal per #6505: "1 high finding"
+        # and "5 low-severity editorial comments" must be mechanically
+        # distinguishable without reading every finding's prose.
+        counts = {"high": 1, "medium": 2, "low": 5}
+        brief = self._brief(findings_severity_counts=counts)
+        assert brief.findings_severity_counts == counts
+        assert brief.to_dict()["findings_severity_counts"] == counts
+
     def test_advisory_only_default_is_true(self) -> None:
         # SAFETY INVARIANT: a brief is never an approval.
         brief = self._brief()
@@ -442,10 +458,19 @@ class TestContractCoherence:
         # ReviewBrief.recommendation values must match ReviewPacket
         # machine_recommendation values, since downstream consumers (queue,
         # UI, ledger) may receive either output kind.
-        from aragora.cli.commands.review_queue import ReviewPacket
+        from aragora.cli.commands.review_queue import ReviewPacket  # noqa: F401
 
         # Build a minimal ReviewPacket and confirm its machine_recommendation
         # field accepts the same strings ReviewBrief.recommendation produces.
-        packet_recommendations = {"approve_candidate", "needs_human_attention", "repair_first"}
+        # ``approve_with_followups`` was added under #6505; the CLI
+        # heuristic path still emits only the three classic strings, but
+        # the downstream type must know about all four so brief-driven
+        # consumers can render the extra class.
+        packet_recommendations = {
+            "approve_candidate",
+            "approve_with_followups",
+            "needs_human_attention",
+            "repair_first",
+        }
         brief_recommendations = {r.value for r in Recommendation}
         assert packet_recommendations == brief_recommendations

@@ -478,7 +478,7 @@ aragora context --preview --rlm
 - `aragora-js` -- Use `@aragora/sdk` instead
 - `@aragora/client` -- Use `@aragora/sdk` instead
 
-See [SDK_COMPARISON.md](SDK_COMPARISON.md) for detailed feature comparison.
+See [SDK_COMPARISON.md](https://github.com/synaptent/aragora/blob/main/docs/SDK_COMPARISON.md) for detailed feature comparison.
 
 ---
 
@@ -759,7 +759,7 @@ export ARAGORA_WS_MAX_MESSAGE_SIZE=65536
 | [Data Classification](../security/data-classification) | Data handling policies and sensitivity levels |
 | [Incident Response](../operations/incident-response) | Incident playbooks and escalation procedures |
 | [Privacy Policy](../security/privacy-policy) | Data collection and retention policies |
-| [Nomic Governance](./enterprise/NOMIC_GOVERNANCE.md) | Autonomous loop safety controls |
+| [Nomic Governance](https://github.com/synaptent/aragora/blob/main/docs/enterprise/NOMIC_GOVERNANCE.md) | Autonomous loop safety controls |
 
 ---
 
@@ -898,7 +898,7 @@ See implementations in:
 - `aragora/debate/session.py` -- Session lifecycle (claude-squad patterns)
 - `aragora/debate/cancellation.py` -- Cancellation tokens (claude-code-by-agents)
 
-See the full attribution table in [CREDITS.md](./reference/CREDITS.md).
+See the full attribution table in [CREDITS.md](https://github.com/synaptent/aragora/blob/main/docs/reference/CREDITS.md).
 
 ---
 
