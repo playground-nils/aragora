@@ -1628,9 +1628,18 @@ jobs:
   frontend:
     needs: [scope]
     if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.scope.outputs.frontend_e2e == 'true')
-    name: Frontend E2E Tests
+    name: Frontend E2E Tests (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
+    # Sharded 3-way to keep wall-clock <20 min per shard. Previously
+    # a single unsharded job with timeout-minutes=35 regularly hit
+    # the ceiling, causing the whole Tests workflow to end
+    # 'cancelled' (not 'failure'), which hid the underlying failure
+    # and produced dashboard lies. See #6495.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     services:
       redis:
@@ -1744,7 +1753,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: aragora/live
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/3
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8080
           NEXT_PUBLIC_WS_URL: ws://localhost:8765
@@ -1753,7 +1762,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: aragora/live/playwright-report/
           retention-days: 7
 
@@ -1761,7 +1770,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-results
+          name: playwright-results-shard-${{ matrix.shard }}
           path: aragora/live/test-results/
           retention-days: 7
 
@@ -1769,7 +1778,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: frontend-e2e-server-logs
+          name: frontend-e2e-server-logs-shard-${{ matrix.shard }}
           path: /tmp/aragora-server.log
           retention-days: 7
 
