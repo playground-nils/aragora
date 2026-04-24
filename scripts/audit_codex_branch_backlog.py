@@ -261,6 +261,7 @@ def audit(
     recent_hours: int,
     max_branches: int | None,
     include_patch_equivalence: bool,
+    publisher_backlog_limit: int,
 ) -> dict[str, Any]:
     rows = local_branches(root, prefix, base)
     rows.sort(key=lambda row: parse_dt(row["committed_at"]), reverse=True)
@@ -332,11 +333,15 @@ def audit(
         + counts["salvage_stale_remote_unique"]
         + counts["salvage_stale_local_unique"]
     )
+    publishable_branch_backlog = (
+        counts["salvage_recent_unique"] + counts["salvage_stale_remote_unique"]
+    )
     return {
         "repo": str(root),
         "base": base,
         "prefix": prefix,
         "recent_hours": recent_hours,
+        "publisher_backlog_limit": publisher_backlog_limit,
         "include_patch_equivalence": include_patch_equivalence,
         "github_health": github_health.to_dict(),
         "open_pr_lookup_skipped": not github_health.ready,
@@ -345,6 +350,11 @@ def audit(
             "safe_cleanup_candidates": safe_cleanup,
             "protected": protected,
             "salvage_candidates": salvage,
+            "publishable_branch_backlog": publishable_branch_backlog,
+            "stale_local_only_salvage_candidates": counts["salvage_stale_local_unique"],
+            "writer_should_pause_for_branch_backlog": (
+                publishable_branch_backlog >= publisher_backlog_limit
+            ),
             "by_category": dict(sorted(counts.items())),
         },
         "records": [asdict(record) for record in records],
@@ -359,6 +369,11 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
     print(f"- Branches audited: `{payload['branch_count']}`")
     print(f"- Safe cleanup candidates: `{summary['safe_cleanup_candidates']}`")
     print(f"- Salvage candidates: `{summary['salvage_candidates']}`")
+    print(f"- Publishable branch backlog: `{summary['publishable_branch_backlog']}`")
+    print(
+        "- Writer should pause for branch backlog: "
+        f"`{summary['writer_should_pause_for_branch_backlog']}`"
+    )
     print(f"- Protected branches: `{summary['protected']}`\n")
     print("## Counts\n")
     for category, count in summary["by_category"].items():
@@ -415,6 +430,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run git cherry per non-merged branch to identify patch-equivalent cleanup candidates.",
     )
+    parser.add_argument(
+        "--publisher-backlog-limit",
+        type=int,
+        default=12,
+        help=(
+            "Threshold for publishable branch backlog. This intentionally excludes "
+            "stale local-only codex/* branches so writer automations do not pause "
+            "on historical local ref cache."
+        ),
+    )
     parser.add_argument("--examples", type=int, default=10, help="Examples per Markdown category")
     return parser
 
@@ -430,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
         recent_hours=args.recent_hours,
         max_branches=args.max_branches,
         include_patch_equivalence=args.include_patch_equivalence,
+        publisher_backlog_limit=args.publisher_backlog_limit,
     )
     if args.markdown:
         print_markdown(payload, examples=args.examples)

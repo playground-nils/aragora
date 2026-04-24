@@ -86,6 +86,7 @@ def test_select_publishable_branches_skips_open_pr_and_old_or_merged_branches() 
             _branch("codex/cherry-picked"),
             _branch("codex/related-resolved"),
             _branch("codex/no-unique", unique_commit_count=0),
+            _branch("codex/empty-diff", unique_commit_count=2),
         ],
         [],
         {"codex/already-open"},
@@ -98,8 +99,10 @@ def test_select_publishable_branches_skips_open_pr_and_old_or_merged_branches() 
             "codex/cherry-picked": False,
             "codex/related-resolved": False,
             "codex/no-unique": False,
+            "codex/empty-diff": False,
         },
         is_patch_equivalent={"codex/cherry-picked": True},
+        has_pr_diff={"codex/empty-diff": False},
         historical_pr_branches=set(),
         resolved_related_branches={"codex/related-resolved"},
     )
@@ -111,6 +114,7 @@ def test_select_publishable_branches_skips_open_pr_and_old_or_merged_branches() 
     assert by_branch["codex/cherry-picked"].reason == "patch_equivalent_to_base"
     assert by_branch["codex/related-resolved"].reason == "related_resolved_work_exists"
     assert by_branch["codex/no-unique"].reason == "no_unique_commits"
+    assert by_branch["codex/empty-diff"].reason == "empty_pr_diff"
 
 
 def test_select_publishable_branches_skips_dirty_and_active_worktrees() -> None:
@@ -190,6 +194,21 @@ def test_github_base_ref_strips_remote_tracking_prefix() -> None:
     assert mod._github_base_ref("main") == "main"
 
 
+def test_branch_has_pr_diff_fails_open_on_git_errors(monkeypatch: Any, tmp_path: Path) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool = False,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=args, returncode=128, stdout="", stderr="bad ref")
+
+    monkeypatch.setattr(mod, "_run", fake_run)
+
+    assert mod._branch_has_pr_diff(tmp_path, "origin/main", "codex/broken-ref") is True
+
+
 def test_open_pr_heads_counts_only_codex_branches(monkeypatch: Any, tmp_path: Path) -> None:
     payload = """
     [
@@ -230,7 +249,9 @@ def test_run_uses_env_overrides_for_git_timeout(monkeypatch: Any, tmp_path: Path
     assert recorded["timeout"] == 90
 
 
-def test_push_branch_skips_only_configured_pre_push_hooks(monkeypatch: Any, tmp_path: Path) -> None:
+def test_push_branch_disables_local_pre_push_hooks_by_default(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     recorded: dict[str, Any] = {}
 
     def fake_run(
@@ -250,8 +271,30 @@ def test_push_branch_skips_only_configured_pre_push_hooks(monkeypatch: Any, tmp_
 
     mod._push_branch(tmp_path, "codex/test-branch", "origin/main")
 
-    assert recorded["args"] == ["git", "push", "origin", "codex/test-branch"]
+    assert recorded["args"] == ["git", "push", "--no-verify", "origin", "codex/test-branch"]
     assert recorded["env_overrides"] == {"SKIP": "gitleaks,mypy-baseline"}
+
+
+def test_push_branch_can_opt_into_git_pre_push_hooks(monkeypatch: Any, tmp_path: Path) -> None:
+    recorded: dict[str, Any] = {}
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool = False,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        recorded["args"] = args
+        recorded["env_overrides"] = env_overrides
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setenv("ARAGORA_AUTOMATION_GIT_PUSH_VERIFY", "true")
+    monkeypatch.setattr(mod, "_run", fake_run)
+
+    mod._push_branch(tmp_path, "codex/test-branch", None)
+
+    assert recorded["args"] == ["git", "push", "-u", "origin", "codex/test-branch"]
 
 
 def test_run_uses_user_auth_for_gh_write_ops(monkeypatch: Any, tmp_path: Path) -> None:
@@ -717,3 +760,54 @@ def test_main_does_not_pause_for_green_review_required_codex_pr(
     out = capsys.readouterr().out
     assert '"publish_paused_reason"' not in out
     assert '"unhealthy_open_pr_count": 0' in out
+
+
+def test_review_required_inflight_pr_does_not_pause_for_pending_or_advisory_cancelled() -> None:
+    assert (
+        mod._open_codex_pr_is_unhealthy(
+            {
+                "headRefName": "codex/inflight",
+                "isDraft": False,
+                "mergeStateStatus": "BLOCKED",
+                "reviewDecision": "REVIEW_REQUIRED",
+                "statusCheckRollup": [
+                    {"conclusion": "CANCELLED", "workflowName": "Metrics Drift"},
+                    {"conclusion": "CANCELLED", "workflowName": "Module Tier Drift"},
+                    {"status": "IN_PROGRESS", "workflowName": "Tests"},
+                    {"status": "QUEUED", "workflowName": "Aragora Code Review"},
+                ],
+            }
+        )
+        is False
+    )
+
+
+def test_review_required_pr_still_pauses_for_hard_failures_or_non_advisory_cancels() -> None:
+    assert (
+        mod._open_codex_pr_is_unhealthy(
+            {
+                "headRefName": "codex/failing",
+                "isDraft": False,
+                "mergeStateStatus": "BLOCKED",
+                "reviewDecision": "REVIEW_REQUIRED",
+                "statusCheckRollup": [
+                    {"conclusion": "FAILURE", "workflowName": "Tests"},
+                ],
+            }
+        )
+        is True
+    )
+    assert (
+        mod._open_codex_pr_is_unhealthy(
+            {
+                "headRefName": "codex/cancelled-required",
+                "isDraft": False,
+                "mergeStateStatus": "BLOCKED",
+                "reviewDecision": "REVIEW_REQUIRED",
+                "statusCheckRollup": [
+                    {"conclusion": "CANCELLED", "workflowName": "Tests"},
+                ],
+            }
+        )
+        is True
+    )

@@ -36,22 +36,18 @@ DEFAULT_SCAN_LIMIT = 12
 CODEX_BRANCH_PREFIX = "codex/"
 DEFAULT_PREFLIGHT_SCRIPT = "scripts/automation_pr_preflight.sh"
 DEFAULT_PRE_PUSH_SKIP_HOOKS = "mypy-baseline"
+VERIFY_AUTOMATION_GIT_PUSH_ENV = "ARAGORA_AUTOMATION_GIT_PUSH_VERIFY"
 UNHEALTHY_OPEN_PR_MERGE_STATES = {"BLOCKED", "DIRTY"}
 UNHEALTHY_CHECK_STATES = {
     "ACTION_REQUIRED",
-    "CANCELLED",
     "ERROR",
     "FAILURE",
     "FAILED",
     "TIMED_OUT",
 }
-PENDING_CHECK_STATES = {
-    "EXPECTED",
-    "IN_PROGRESS",
-    "PENDING",
-    "QUEUED",
-    "REQUESTED",
-    "WAITING",
+CANCELLED_ADVISORY_WORKFLOWS = {
+    "Metrics Drift",
+    "Module Tier Drift",
 }
 STOPWORDS = {
     "and",
@@ -248,6 +244,17 @@ def _branch_patch_equivalent_to_base(repo_root: Path, base: str, branch: str) ->
     return bool(statuses) and all(status == "-" for status in statuses)
 
 
+def _branch_has_pr_diff(repo_root: Path, base: str, branch: str) -> bool:
+    proc = _run(["git", "diff", "--quiet", f"{base}...{branch}", "--"], cwd=repo_root)
+    if proc.returncode == 0:
+        return False
+    if proc.returncode == 1:
+        return True
+    # Fail open on unexpected git errors: a missing ref or transient git
+    # failure should not silently suppress a branch as "empty_pr_diff".
+    return True
+
+
 def _local_codex_branches(repo_root: Path) -> list[BranchSnapshot]:
     proc = _run(
         [
@@ -382,6 +389,17 @@ def _rollup_state(item: dict[str, Any]) -> str:
     return ""
 
 
+def _check_rollup_is_unhealthy(item: dict[str, Any]) -> bool:
+    state = _rollup_state(item)
+    if state in UNHEALTHY_CHECK_STATES:
+        return True
+    if state != "CANCELLED":
+        return False
+
+    workflow_name = str(item.get("workflowName") or "")
+    return workflow_name not in CANCELLED_ADVISORY_WORKFLOWS
+
+
 def _open_codex_pr_is_unhealthy(item: dict[str, Any]) -> bool:
     """Return true only for PR states that should pause more automation publishing.
 
@@ -401,10 +419,9 @@ def _open_codex_pr_is_unhealthy(item: dict[str, Any]) -> bool:
 
     check_rollup = item.get("statusCheckRollup") or []
     if isinstance(check_rollup, list):
-        states = [_rollup_state(check) for check in check_rollup if isinstance(check, dict)]
-        if any(state in UNHEALTHY_CHECK_STATES for state in states):
-            return True
-        if any(state in PENDING_CHECK_STATES for state in states):
+        if any(
+            _check_rollup_is_unhealthy(check) for check in check_rollup if isinstance(check, dict)
+        ):
             return True
 
     review_decision = str(item.get("reviewDecision") or "").upper()
@@ -566,6 +583,7 @@ def select_publishable_branches(
     historical_pr_branches: set[str] | None = None,
     resolved_related_branches: set[str] | None = None,
     remote_head_lookup: dict[str, str | None] | None = None,
+    has_pr_diff: dict[str, bool] | None = None,
 ) -> list[PublishDecision]:
     worktrees_by_branch: dict[str, list[WorktreeSnapshot]] = {}
     for worktree in worktrees:
@@ -577,6 +595,7 @@ def select_publishable_branches(
     historical_lookup = historical_pr_branches or set()
     resolved_related_lookup = resolved_related_branches or set()
     remote_lookup = remote_head_lookup or {}
+    pr_diff_lookup = has_pr_diff or {}
     decisions: list[PublishDecision] = []
 
     for branch in sorted(branches, key=lambda item: item.committed_at, reverse=True):
@@ -591,6 +610,8 @@ def select_publishable_branches(
             reason = "related_resolved_work_exists"
         elif branch.unique_commit_count <= 0:
             reason = "no_unique_commits"
+        elif pr_diff_lookup.get(branch.branch, True) is False:
+            reason = "empty_pr_diff"
         elif branch.committed_at < cutoff:
             reason = "older_than_cutoff"
         elif branch.branch in open_pr_heads:
@@ -642,6 +663,9 @@ def _merge_skip_hooks(existing: str | None, additions: str) -> str:
 
 def _push_branch(repo_root: Path, branch: str, upstream: str | None) -> None:
     args = ["git", "push"]
+    verify_push = os.environ.get(VERIFY_AUTOMATION_GIT_PUSH_ENV, "").strip().lower()
+    if verify_push not in {"1", "true", "yes"}:
+        args.append("--no-verify")
     if upstream:
         args.extend(["origin", branch])
     else:
@@ -922,6 +946,11 @@ def main(argv: list[str] | None = None) -> int:
         for branch in branches
         if not merged_lookup.get(branch.branch, False)
     }
+    pr_diff_lookup = {
+        branch.branch: _branch_has_pr_diff(repo_root, args.base, branch.branch)
+        for branch in branches
+        if not merged_lookup.get(branch.branch, False)
+    }
     hydrated_branches = [
         BranchSnapshot(
             branch=branch.branch,
@@ -979,6 +1008,7 @@ def main(argv: list[str] | None = None) -> int:
             branch.branch: _branch_remote_head(repo_root, branch.branch)
             for branch in hydrated_branches
         },
+        has_pr_diff=pr_diff_lookup,
     )
     merge_state_counts: dict[str, int] = {}
     for item in open_codex_prs:

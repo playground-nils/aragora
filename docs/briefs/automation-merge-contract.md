@@ -62,6 +62,7 @@ The merge decision should use GitHub branch protection as the authoritative hard
 Advisory workflows are still useful evidence, but they should not create a hidden second merge policy. Treat advisory checks as follows:
 
 - Passing advisory checks increase confidence but are not required for low-risk automation PRs.
+- Matrix shards named `test-fast (...)`, including server shards such as `test-fast (server, tests/server, 30)`, are advisory unless they are explicitly configured as required branch-protection checks.
 - Cancelled advisory checks caused by a newer push are queue churn, not a blocker. Re-run them only when the cancelled workflow is directly relevant to the changed files.
 - Failed advisory checks are blockers only when the failure is in-scope for the PR diff or reveals a mainline regression that would be worsened by the PR.
 - Summary-only jobs such as analytics, admission signals, and AI review comments should prefer warnings and PR comments over failing statuses.
@@ -79,6 +80,8 @@ High-churn automation loses throughput when multiple branches compete for the sa
 The bridge intentionally does not use browser fallback. Browser profiles can be locked by other tools, and interactive safety prompts make browser-based GitHub publishing unreliable for unattended automations. If `gh` is unavailable, automations should keep the handoff in memory/inbox and let the next bridge pass retry.
 
 The publisher bridge now has an explicit GitHub health probe at `scripts/github_cli_health.py`. Sandboxed coding automations should treat a failed probe as a hard boundary and switch into handoff-only mode immediately instead of retrying `gh issue create`, `gh pr create`, `gh workflow run`, or merge-watch commands from inside the sandbox.
+
+Do not use a raw local `git branch --list 'codex/*'` count as the unpublished-work backlog gate. Local developer machines can retain thousands of stale historical `codex/*` refs that are already merged, patch-equivalent, or local-only archaeology. Use `python3 scripts/audit_codex_branch_backlog.py --json` and gate on `summary.publishable_branch_backlog` instead. That metric counts recent unique local work and stale unique remote branches, but intentionally excludes stale local-only refs so writer automations keep producing useful local code when GitHub is sandboxed.
 
 For steady local operation, install the publisher bridge as a LaunchAgent from a normal user shell:
 
