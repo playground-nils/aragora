@@ -26,6 +26,7 @@ never needs updating.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -121,18 +122,26 @@ def test_markdown_has_no_timestamp_or_sha(snapshot):
 
 
 def test_loc_count_matches_python_sum():
-    """LOC metric must match a naive Python rglob sum (cross-check F3).
+    """LOC metric must match an independent git-tracked file sum.
 
     Guards against xargs/wc batching bugs: if the script ever
     reintroduces shell-pipe counting, this test catches it by
-    computing the sum a second way.
+    computing the sum a second way. It intentionally uses git-tracked
+    files, not Path.rglob, so ignored local artifacts cannot pollute
+    canonical metrics.
     """
     mod = _load_module()
     snap = {m.key: m for m in mod.gather_metrics().metrics}
     naive_total = 0
-    for p in (REPO_ROOT / "aragora").rglob("*.py"):
-        if "__pycache__" in p.parts:
+    tracked_files = subprocess.check_output(
+        ["git", "ls-files", "--", "aragora"],
+        cwd=REPO_ROOT,
+        text=True,
+    ).splitlines()
+    for rel_path in tracked_files:
+        if not rel_path.endswith(".py"):
             continue
+        p = REPO_ROOT / rel_path
         try:
             with p.open(encoding="utf-8", errors="replace") as f:
                 naive_total += sum(1 for _ in f)
@@ -142,6 +151,33 @@ def test_loc_count_matches_python_sum():
         f"python_loc metric {snap['python_loc'].value} disagrees with "
         f"independent Python sum {naive_total}"
     )
+
+
+def test_counts_are_tracked_content_not_local_filesystem_noise(snapshot):
+    """Canonical counts must ignore ignored/untracked local artifacts.
+
+    Developer machines often have ignored scratch files such as CLAUDE.md,
+    benchmark output, or generated reports under counted directories. The
+    public metrics must describe repository content, not machine state.
+    """
+    tracked_aragora = subprocess.check_output(
+        ["git", "ls-files", "--", "aragora"],
+        cwd=REPO_ROOT,
+        text=True,
+    ).splitlines()
+    tracked_docs = subprocess.check_output(
+        ["git", "ls-files", "--", "docs"],
+        cwd=REPO_ROOT,
+        text=True,
+    ).splitlines()
+
+    expected_top_modules = len(
+        {Path(p).parts[1] for p in tracked_aragora if len(Path(p).parts) > 2}
+    )
+    expected_doc_files = sum(1 for p in tracked_docs if p.endswith(".md"))
+
+    assert snapshot["top_level_modules"].value == expected_top_modules
+    assert snapshot["doc_files"].value == expected_doc_files
 
 
 def test_check_mode_is_idempotent(tmp_path, monkeypatch):

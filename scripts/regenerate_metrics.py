@@ -77,43 +77,44 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
     return result.stdout.strip()
 
 
-def _rg_count(pattern: str, path: str, flags: list[str] | None = None) -> int:
-    """Count ripgrep matches across all files under path."""
-    cmd = ["rg", *(flags or []), "--no-filename", pattern, path]
+def _tracked_files(*pathspecs: str) -> list[Path]:
+    """Return git-tracked files matching pathspecs as repo-relative paths."""
     result = subprocess.run(
-        cmd,
+        ["git", "ls-files", "--", *pathspecs],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
-    # rg exits 1 if no matches; treat as 0
-    if result.returncode not in (0, 1):
-        raise RuntimeError(f"rg failed: {' '.join(cmd)}\n{result.stderr}")
-    return len(result.stdout.splitlines())
+    if result.returncode != 0:
+        raise RuntimeError(f"git ls-files failed for {pathspecs!r}\n{result.stderr}")
+    return [Path(line) for line in result.stdout.splitlines() if line.strip()]
 
 
-def _find_count(args: list[str]) -> int:
-    """Count files matching a find expression."""
-    result = subprocess.run(
-        ["find", *args],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return len([line for line in result.stdout.splitlines() if line.strip()])
+def _count_line_matches(paths: list[Path], pattern: str) -> int:
+    """Count matching lines across tracked paths."""
+    regex = re.compile(pattern)
+    count = 0
+    for rel_path in paths:
+        path = REPO_ROOT / rel_path
+        try:
+            with path.open(encoding="utf-8", errors="replace") as f:
+                count += sum(1 for line in f if regex.search(line))
+        except OSError:
+            pass
+    return count
 
 
-def _wc_lines(paths: list[Path]) -> int:
-    """Sum line counts across paths that exist."""
+def _count_file_lines(paths: list[Path]) -> int:
+    """Sum line counts across tracked paths that exist."""
     total = 0
-    for p in paths:
-        if p.exists():
-            try:
-                total += sum(1 for _ in p.open(encoding="utf-8", errors="replace"))
-            except OSError:
-                pass
+    for rel_path in paths:
+        path = REPO_ROOT / rel_path
+        try:
+            with path.open(encoding="utf-8", errors="replace") as f:
+                total += sum(1 for _ in f)
+        except OSError:
+            pass
     return total
 
 
@@ -124,135 +125,106 @@ def gather_metrics() -> MetricsSnapshot:
     metrics: list[Metric] = []
 
     # ----- Python surface -----
-    py_files = _find_count(
-        [
-            "aragora",
-            "-name",
-            "*.py",
-            "-not",
-            "-path",
-            "*/__pycache__/*",
-            "-type",
-            "f",
-        ]
-    )
+    aragora_files = _tracked_files("aragora")
+    aragora_py_files = [
+        p for p in aragora_files if p.suffix == ".py" and "__pycache__" not in p.parts
+    ]
+    py_files = len(aragora_py_files)
     metrics.append(
         Metric(
             key="python_files",
             label="Python files under aragora/",
             value=py_files,
-            command="find aragora -name '*.py' -not -path '*/__pycache__/*' -type f | wc -l",
+            command="git ls-files aragora | grep -E '\\.py$' | wc -l",
             source="aragora/",
         )
     )
 
-    # LOC via Python-native counting (avoids xargs/wc batching risks:
+    # LOC via git-tracked Python-native counting (avoids xargs/wc batching risks:
     # xargs may split args into multiple `wc` invocations producing
     # multiple 'total' lines where only the last is kept; filenames
-    # with spaces break shell splitting). Use Path.rglob + sum instead.
-    aragora_root = REPO_ROOT / "aragora"
-    loc = 0
-    for p in aragora_root.rglob("*.py"):
-        if "__pycache__" in p.parts:
-            continue
-        try:
-            with p.open(encoding="utf-8", errors="replace") as f:
-                loc += sum(1 for _ in f)
-        except OSError:
-            pass
+    # with spaces break shell splitting, and ignored local files can
+    # otherwise pollute canonical docs).
+    loc = _count_file_lines(aragora_py_files)
     metrics.append(
         Metric(
             key="python_loc",
             label="Python lines of code under aragora/",
             value=loc,
             command=(
-                'python3 -c "from pathlib import Path; '
-                "print(sum(sum(1 for _ in p.open(encoding='utf-8', errors='replace')) "
-                "for p in Path('aragora').rglob('*.py') "
-                "if '__pycache__' not in p.parts))\""
+                'python3 -c "from pathlib import Path; import subprocess; '
+                "files = subprocess.check_output(['git', 'ls-files', 'aragora'], "
+                "text=True).splitlines(); "
+                "print(sum(sum(1 for _ in Path(p).open(encoding='utf-8', "
+                "errors='replace')) for p in files if p.endswith('.py')))\""
             ),
             source="aragora/",
-            notes="Uses Python rglob + direct line count to avoid xargs/wc batching bugs.",
+            notes="Uses git-tracked files + direct line count to avoid xargs/wc batching and ignored-file pollution.",
         )
     )
 
     # Top-level modules
-    top_modules = _find_count(
-        [
-            "aragora",
-            "-maxdepth",
-            "1",
-            "-type",
-            "d",
-            "-not",
-            "-path",
-            "aragora",
-            "-not",
-            "-name",
-            "__pycache__",
-        ]
-    )
+    top_modules = len({p.parts[1] for p in aragora_files if len(p.parts) > 2})
     metrics.append(
         Metric(
             key="top_level_modules",
             label="Top-level modules under aragora/",
             value=top_modules,
-            command="find aragora -maxdepth 1 -type d | wc -l",
+            command="git ls-files aragora | awk -F/ 'NF>2 {print $2}' | sort -u | wc -l",
             source="aragora/",
         )
     )
 
     # ----- Tests -----
-    test_files = _find_count(["tests", "-name", "test_*.py", "-type", "f"])
+    tests_files = _tracked_files("tests")
+    test_py_files = [p for p in tests_files if p.suffix == ".py" and p.name.startswith("test_")]
+    test_files = len(test_py_files)
     metrics.append(
         Metric(
             key="test_files",
             label="Test files (test_*.py under tests/)",
             value=test_files,
-            command="find tests -name 'test_*.py' -type f | wc -l",
+            command="git ls-files tests | grep -E '(^|/)test_[^/]*\\.py$' | wc -l",
             source="tests/",
         )
     )
 
     # All test functions (class-nested + module-level)
-    test_fns = _rg_count(r"^\s*(async )?def test_", "tests/")
+    test_fns = _count_line_matches(tests_files, r"^\s*(async )?def test_")
     metrics.append(
         Metric(
             key="test_functions",
             label="Test functions (class + module level)",
             value=test_fns,
-            command="rg '^\\s*(async )?def test_' tests/ --no-filename | wc -l",
+            command="git grep -E '^[[:space:]]*(async )?def test_' -- tests | wc -l",
             source="tests/",
             notes="Counts both module-level and class-nested test methods.",
         )
     )
 
     # Parametrize decorators (effective cases are a multiple of these)
-    parametrize_count = _rg_count(r"@pytest\.mark\.parametrize", "tests/")
+    parametrize_count = _count_line_matches(tests_files, r"@pytest\.mark\.parametrize")
     metrics.append(
         Metric(
             key="parametrize_decorators",
             label="@pytest.mark.parametrize decorators",
             value=parametrize_count,
-            command="rg '@pytest\\.mark\\.parametrize' tests/ --no-filename | wc -l",
+            command="git grep -E '@pytest\\.mark\\.parametrize' -- tests | wc -l",
             source="tests/",
             notes="Each decorator expands into N test cases during collection.",
         )
     )
 
     # ----- CLI -----
-    cli_command_modules = _find_count(
+    cli_prefix_depth = len(Path("aragora/cli/commands").parts)
+    cli_command_modules = len(
         [
-            "aragora/cli/commands",
-            "-maxdepth",
-            "1",
-            "-name",
-            "*.py",
-            "-not",
-            "-name",
-            "__*",
-            "-type",
-            "f",
+            p
+            for p in aragora_files
+            if p.parent == Path("aragora/cli/commands")
+            and len(p.parts) == cli_prefix_depth + 1
+            and p.suffix == ".py"
+            and not p.name.startswith("__")
         ]
     )
     metrics.append(
@@ -260,7 +232,7 @@ def gather_metrics() -> MetricsSnapshot:
             key="cli_command_modules",
             label="CLI top-level command modules",
             value=cli_command_modules,
-            command="find aragora/cli/commands -maxdepth 1 -name '*.py' -not -name '__*' -type f | wc -l",
+            command="git ls-files aragora/cli/commands | grep -E '/[^/]*\\.py$' | grep -v '/__' | wc -l",
             source="aragora/cli/commands/",
         )
     )
@@ -303,52 +275,47 @@ def gather_metrics() -> MetricsSnapshot:
             )
 
     # ----- RBAC -----
-    permission_calls = _rg_count(r"@require_permission\(", "aragora/")
+    permission_calls = _count_line_matches(aragora_py_files, r"@require_permission\(")
     metrics.append(
         Metric(
             key="rbac_permission_calls",
             label="@require_permission decorator calls",
             value=permission_calls,
-            command="rg '@require_permission\\(' aragora/ | wc -l",
+            command="git grep -E '@require_permission\\(' -- aragora | wc -l",
             source="aragora/",
         )
     )
 
-    unique_permissions_result = subprocess.run(
-        "rg \"@require_permission\\((['\\\"])([^'\\\"]+)['\\\"]\\)\" aragora/ -o --no-line-number -r '$2' --no-filename 2>/dev/null | sort -u | wc -l",
-        shell=True,
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    try:
-        unique_permissions = int(unique_permissions_result.stdout.strip() or 0)
-    except ValueError:
-        unique_permissions = 0
+    permission_pattern = re.compile(r"@require_permission\((['\"])([^'\"]+)['\"]\)")
+    unique_permission_values: set[str] = set()
+    for rel_path in aragora_py_files:
+        try:
+            text = (REPO_ROOT / rel_path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        unique_permission_values.update(
+            match.group(2) for match in permission_pattern.finditer(text)
+        )
+    unique_permissions = len(unique_permission_values)
     metrics.append(
         Metric(
             key="rbac_unique_permissions",
             label="Unique permission strings",
             value=unique_permissions,
-            command="rg \"@require_permission\\(['\\\"]([^'\\\"]+)['\\\"]\\)\" aragora/ -o -r '$1' --no-filename | sort -u | wc -l",
+            command='git grep -h -o -E "@require_permission\\([\'\\"][^\'\\"]+[\'\\"]\\)" -- aragora | sed -E "s/.*[\'\\"]([^\'\\"]+)[\'\\"].*/\\1/" | sort -u | wc -l',
             source="aragora/",
         )
     )
 
     # ----- SDK -----
-    py_sdk_modules = _find_count(
+    py_sdk_prefix = Path("sdk/python/aragora_sdk")
+    py_sdk_modules = len(
         [
-            "sdk/python/aragora_sdk",
-            "-maxdepth",
-            "2",
-            "-name",
-            "*.py",
-            "-not",
-            "-name",
-            "__*",
-            "-type",
-            "f",
+            p
+            for p in _tracked_files(str(py_sdk_prefix))
+            if p.suffix == ".py"
+            and not p.name.startswith("__")
+            and len(p.relative_to(py_sdk_prefix).parts) <= 2
         ]
     )
     metrics.append(
@@ -356,20 +323,17 @@ def gather_metrics() -> MetricsSnapshot:
             key="python_sdk_modules",
             label="Python SDK modules",
             value=py_sdk_modules,
-            command="find sdk/python/aragora_sdk -maxdepth 2 -name '*.py' -not -name '__*' -type f | wc -l",
+            command="git ls-files sdk/python/aragora_sdk | grep -E '\\.py$' | grep -v '/__' | awk -F/ 'NF<=5' | wc -l",
             source="sdk/python/",
         )
     )
 
-    ts_sdk_modules = _find_count(
+    ts_sdk_prefix = Path("sdk/typescript/src")
+    ts_sdk_modules = len(
         [
-            "sdk/typescript/src",
-            "-maxdepth",
-            "2",
-            "-name",
-            "*.ts",
-            "-type",
-            "f",
+            p
+            for p in _tracked_files(str(ts_sdk_prefix))
+            if p.suffix == ".ts" and len(p.relative_to(ts_sdk_prefix).parts) <= 2
         ]
     )
     metrics.append(
@@ -377,7 +341,7 @@ def gather_metrics() -> MetricsSnapshot:
             key="typescript_sdk_modules",
             label="TypeScript SDK modules",
             value=ts_sdk_modules,
-            command="find sdk/typescript/src -maxdepth 2 -name '*.ts' -type f | wc -l",
+            command="git ls-files sdk/typescript/src | grep -E '\\.ts$' | awk -F/ 'NF<=5' | wc -l",
             source="sdk/typescript/",
         )
     )
@@ -408,64 +372,53 @@ def gather_metrics() -> MetricsSnapshot:
     if adapter_factory.exists():
         # Adapters are enumerated as tuples like ("./<name>_adapter", "<Class>", {...})
         # Count unique ".<name>_adapter" module references.
-        adapter_count = _rg_count(
-            r'"\.[a-z_]+_adapter"',
-            str(adapter_factory.relative_to(REPO_ROOT)),
-        )
+        adapter_count = len(re.findall(r'"\.[a-z_]+_adapter"', adapter_factory.read_text()))
         metrics.append(
             Metric(
                 key="knowledge_mound_adapter_specs",
                 label="Knowledge Mound adapter specs",
                 value=adapter_count,
-                command="rg '\"\\.[a-z_]+_adapter\"' aragora/knowledge/mound/adapters/factory.py | wc -l",
+                command="git grep -E '\"\\.[a-z_]+_adapter\"' -- aragora/knowledge/mound/adapters/factory.py | wc -l",
                 source="aragora/knowledge/mound/adapters/factory.py",
                 notes="Counts adapter module entries in the factory spec tuple list.",
             )
         )
 
-    adapter_dir = REPO_ROOT / "aragora" / "knowledge" / "mound" / "adapters"
-    if adapter_dir.exists():
-        adapter_files = _find_count(
-            [
-                str(adapter_dir.relative_to(REPO_ROOT)),
-                "-maxdepth",
-                "1",
-                "-name",
-                "*_adapter.py",
-                "-type",
-                "f",
-            ]
+    adapter_dir = Path("aragora/knowledge/mound/adapters")
+    if (REPO_ROOT / adapter_dir).exists():
+        adapter_files = len(
+            [p for p in aragora_files if p.parent == adapter_dir and p.name.endswith("_adapter.py")]
         )
         metrics.append(
             Metric(
                 key="knowledge_mound_adapter_files",
                 label="Knowledge Mound adapter files",
                 value=adapter_files,
-                command="find aragora/knowledge/mound/adapters -maxdepth 1 -name '*_adapter.py' -type f | wc -l",
+                command="git ls-files aragora/knowledge/mound/adapters | grep -E '/[^/]+_adapter\\.py$' | wc -l",
                 source="aragora/knowledge/mound/adapters/",
             )
         )
 
     # ----- Docs -----
-    doc_files = _find_count(["docs", "-name", "*.md", "-type", "f"])
+    doc_files = len([p for p in _tracked_files("docs") if p.suffix == ".md"])
     metrics.append(
         Metric(
             key="doc_files",
             label="Markdown files under docs/",
             value=doc_files,
-            command="find docs -name '*.md' -type f | wc -l",
+            command="git ls-files docs | grep -E '\\.md$' | wc -l",
             source="docs/",
         )
     )
 
     # ----- CI workflows -----
-    workflows = _find_count([".github/workflows", "-name", "*.yml", "-type", "f"])
+    workflows = len([p for p in _tracked_files(".github/workflows") if p.suffix == ".yml"])
     metrics.append(
         Metric(
             key="ci_workflows",
             label="GitHub Actions workflows",
             value=workflows,
-            command="find .github/workflows -name '*.yml' -type f | wc -l",
+            command="git ls-files .github/workflows | grep -E '\\.yml$' | wc -l",
             source=".github/workflows/",
         )
     )
