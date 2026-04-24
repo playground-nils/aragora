@@ -30,7 +30,7 @@ function getProject(name: string): PlaywrightProject {
 }
 
 describe('playwright config', () => {
-  it('keeps specialty suites out of the default browser matrix', () => {
+  it('keeps production and specialty suites out of the default browser matrix', () => {
     expect(SPECIALTY_PROJECT_TEST_IGNORE).toContain('**/production/**');
 
     for (const projectName of ['chromium', 'firefox', 'webkit', 'Mobile Chrome', 'Mobile Safari']) {

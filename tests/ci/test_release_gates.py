@@ -302,13 +302,19 @@ class TestFrontendE2EWorkflow:
         data = _load_yaml(self.path)
         workflow = data["jobs"]["frontend"]
 
-        assert workflow["timeout-minutes"] == 20
+        assert workflow["timeout-minutes"] == 25
         assert workflow["strategy"]["fail-fast"] is False
-        assert workflow["strategy"]["matrix"]["shard"] == [1, 2, 3]
+        assert workflow["strategy"]["matrix"]["shard"] == [1, 2, 3, 4, 5, 6]
         assert "matrix.shard" in workflow["name"]
 
         run_step = next(step for step in workflow["steps"] if step.get("name") == "Run E2E tests")
-        assert "npx playwright test --shard=${{ matrix.shard }}/3" in run_step["run"]
+        assert "timeout 16m npx playwright test" in run_step["run"]
+        assert "--project=chromium" in run_step["run"]
+        assert "--project=firefox" not in run_step["run"]
+        assert "--project=webkit" not in run_step["run"]
+        assert '--project="Mobile Chrome"' not in run_step["run"]
+        assert '--project="Mobile Safari"' not in run_step["run"]
+        assert "--shard=${{ matrix.shard }}/6" in run_step["run"]
 
         artifact_steps = [
             step for step in workflow["steps"] if step.get("uses") == "actions/upload-artifact@v4"
