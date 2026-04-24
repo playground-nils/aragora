@@ -255,7 +255,9 @@ def _branch_has_pr_diff(repo_root: Path, base: str, branch: str) -> bool:
         return False
     if proc.returncode == 1:
         return True
-    return False
+    # Fail open on unexpected git errors: a missing ref or transient git
+    # failure should not silently suppress a branch as "empty_pr_diff".
+    return True
 
 
 def _local_codex_branches(repo_root: Path) -> list[BranchSnapshot]:

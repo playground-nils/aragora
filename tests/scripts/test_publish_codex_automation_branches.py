@@ -194,6 +194,21 @@ def test_github_base_ref_strips_remote_tracking_prefix() -> None:
     assert mod._github_base_ref("main") == "main"
 
 
+def test_branch_has_pr_diff_fails_open_on_git_errors(monkeypatch: Any, tmp_path: Path) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool = False,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=args, returncode=128, stdout="", stderr="bad ref")
+
+    monkeypatch.setattr(mod, "_run", fake_run)
+
+    assert mod._branch_has_pr_diff(tmp_path, "origin/main", "codex/broken-ref") is True
+
+
 def test_open_pr_heads_counts_only_codex_branches(monkeypatch: Any, tmp_path: Path) -> None:
     payload = """
     [
