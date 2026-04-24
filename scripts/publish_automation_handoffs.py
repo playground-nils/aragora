@@ -37,6 +37,7 @@ DEFAULT_COMMAND_TIMEOUT_SECONDS = 45
 MAX_ISSUE_BODY_CHARS = 60_000
 DEFAULT_OUTBOX_DIR = Path(".aragora/automation-outbox")
 DEFAULT_RECEIPT_DIR = Path(".aragora/automation-receipts")
+DEFAULT_BASE_REF = "origin/main"
 REQUIRED_OUTBOX_KEYS = (
     "task",
     "requires_github",
@@ -451,6 +452,34 @@ def _outbox_branch_fingerprint(payload: dict[str, Any]) -> str | None:
     return "\0".join((requested_action, repo, branch))
 
 
+def _git_is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
+    proc = _run(["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=repo_root)
+    return proc.returncode == 0
+
+
+def _outbox_branch_already_merged(repo_root: Path, payload: dict[str, Any]) -> bool:
+    local_evidence = payload.get("local_evidence")
+    if not isinstance(local_evidence, dict):
+        return False
+    requested_action = str(payload.get("requested_action") or "").strip()
+    if requested_action != "open_pr":
+        return False
+
+    base_ref = str(local_evidence.get("base") or payload.get("base") or DEFAULT_BASE_REF).strip()
+    if not base_ref:
+        return False
+
+    candidates = [
+        str(local_evidence.get("head") or "").strip(),
+        str(local_evidence.get("commit") or "").strip(),
+        str(local_evidence.get("branch") or "").strip(),
+    ]
+    for candidate in dict.fromkeys(item for item in candidates if item):
+        if _git_is_ancestor(repo_root, candidate, base_ref):
+            return True
+    return False
+
+
 def _terminal_outbox_fingerprints(outbox_dir: Path, receipt_dir: Path) -> set[str]:
     terminal_keys = _terminal_receipt_keys(receipt_dir)
     if not terminal_keys:
@@ -565,6 +594,8 @@ def load_outbox_handoffs(
         if idempotency_key in terminal_keys:
             continue
         if branch_fingerprint and branch_fingerprint in terminal_fingerprints:
+            continue
+        if _outbox_branch_already_merged(repo_root, payload):
             continue
         handoff = Handoff(
             source_file=str(source_file),
