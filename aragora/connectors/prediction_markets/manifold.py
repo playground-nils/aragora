@@ -294,8 +294,8 @@ def manifold_to_market_resolution(
 MANIFOLD_WRITE_FLAG = "ARAGORA_MANIFOLD_WRITE_ENABLED"
 
 # Stake caps per the AGT-03 plan.
-DEFAULT_PER_MARKET_CAP_MANA = 50    # mana; rises to 200 after 30d stable behaviour
-DEFAULT_PER_DAY_CAP_MANA = 1000     # mana total across all markets per UTC calendar day
+DEFAULT_PER_MARKET_CAP_MANA = 50  # mana; rises to 200 after 30d stable behaviour
+DEFAULT_PER_DAY_CAP_MANA = 1000  # mana total across all markets per UTC calendar day
 DEFAULT_LIQUIDITY_FRACTION_CAP = 0.05  # never >5% of a market's total liquidity in one bet
 
 
@@ -350,9 +350,7 @@ class ManifoldBetAdapter(ManifoldAdapter):
         except Exception as exc:  # noqa: BLE001
             raise ManifoldError(f"manifold write transport error for {path}: {exc}") from exc
         if status >= 400:
-            raise ManifoldError(
-                f"manifold POST {path} returned HTTP {status}: {response[:200]}"
-            )
+            raise ManifoldError(f"manifold POST {path} returned HTTP {status}: {response[:200]}")
         try:
             return json.loads(response or "null")
         except json.JSONDecodeError as exc:
@@ -420,17 +418,18 @@ class ManifoldBetAdapter(ManifoldAdapter):
             now=now,
         )
 
-        payload = self._post("bet", {
-            "contractId": market_id,
-            "amount": stake_mana,
-            "outcome": outcome,
-        })
+        payload = self._post(
+            "bet",
+            {
+                "contractId": market_id,
+                "amount": stake_mana,
+                "outcome": outcome,
+            },
+        )
 
         bet_id = str(payload.get("id") or payload.get("betId") or "").strip()
         if not bet_id:
-            raise ManifoldError(
-                f"manifold bet response missing 'id' / 'betId': {payload!r}"
-            )
+            raise ManifoldError(f"manifold bet response missing 'id' / 'betId': {payload!r}")
 
         today = (now or datetime.now(tz=UTC)).date().isoformat()
         self._market_stakes[market_id] = self._market_stakes.get(market_id, 0) + stake_mana
