@@ -471,6 +471,7 @@ def _outbox_branch_already_merged(repo_root: Path, payload: dict[str, Any]) -> b
 
     candidates = [
         str(local_evidence.get("head") or "").strip(),
+        str(local_evidence.get("head_sha") or "").strip(),
         str(local_evidence.get("commit") or "").strip(),
         str(local_evidence.get("branch") or "").strip(),
     ]
