@@ -494,6 +494,64 @@ class TestStaleInvalidation:
 
 
 # ---------------------------------------------------------------------------
+# Invoker credential hydration
+# ---------------------------------------------------------------------------
+
+
+class TestInvokerFactoryResolution:
+    def test_default_factory_hydrates_credentials_before_building_invoker(self, monkeypatch):
+        calls: list[tuple[str, tuple[str, ...] | None]] = []
+        invoker = MagicMock()
+
+        def fake_hydrate(keys: list[str]) -> None:
+            calls.append(("hydrate", tuple(keys)))
+
+        def fake_build_default_invoker():
+            calls.append(("build", None))
+            return invoker
+
+        monkeypatch.setattr(
+            "aragora.config.secrets.hydrate_env_from_secrets",
+            fake_hydrate,
+        )
+        monkeypatch.setattr(rqb, "build_default_invoker", fake_build_default_invoker)
+
+        factory = rqb._resolve_invoker_factory()
+
+        assert factory() is invoker
+        assert calls == [
+            ("hydrate", rqb._CREDENTIAL_KEYS_FOR_INVOKER),
+            ("build", None),
+        ]
+
+    def test_default_factory_falls_back_to_ambient_env_when_hydration_fails(
+        self, monkeypatch, caplog
+    ):
+        calls: list[str] = []
+        invoker = MagicMock()
+
+        def fake_hydrate(keys: list[str]) -> None:
+            calls.append("hydrate")
+            raise RuntimeError("secrets manager unavailable")
+
+        def fake_build_default_invoker():
+            calls.append("build")
+            return invoker
+
+        monkeypatch.setattr(
+            "aragora.config.secrets.hydrate_env_from_secrets",
+            fake_hydrate,
+        )
+        monkeypatch.setattr(rqb, "build_default_invoker", fake_build_default_invoker)
+
+        factory = rqb._resolve_invoker_factory()
+
+        assert factory() is invoker
+        assert calls == ["hydrate", "build"]
+        assert "hydrate_env_from_secrets failed" in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # Input loader errors surfacing as HTTP codes
 # ---------------------------------------------------------------------------
 
