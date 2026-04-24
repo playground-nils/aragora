@@ -7,6 +7,14 @@ export const SPECIALTY_PROJECT_TEST_IGNORE = [
   '**/mobile/mobile-audit.spec.ts',
 ] as const;
 
+export const CI_SMOKE_TEST_MATCH = [
+  '**/auth-callback-reliability.spec.ts',
+  '**/config-validation.spec.ts',
+  '**/homepage.spec.ts',
+  '**/landing.spec.ts',
+  '**/navigation.spec.ts',
+] as const;
+
 /**
  * Playwright configuration for Aragora Live Dashboard E2E tests.
  * @see https://playwright.dev/docs/test-configuration
@@ -75,6 +83,15 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: SPECIALTY_PROJECT_TEST_IGNORE,
+    },
+
+    // Bounded PR lane: stable local smoke specs only. The broad Chromium suite
+    // remains available through the chromium project for nightly/manual runs.
+    {
+      name: 'ci-smoke',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: CI_SMOKE_TEST_MATCH,
       testIgnore: SPECIALTY_PROJECT_TEST_IGNORE,
     },
 
