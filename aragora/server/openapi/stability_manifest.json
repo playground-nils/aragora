@@ -1467,6 +1467,8 @@
     "POST /api/v1/debates/export/batch/{param}/status",
     "POST /api/v1/debates/export/batch/{param}/stream",
     "POST /api/v1/debates/graph",
+    "GET /api/v1/debates/hybrid",
+    "GET /api/v1/debates/hybrid/{param}",
     "POST /api/v1/debates/hybrid",
     "POST /api/v1/debates/import",
     "POST /api/v1/debates/matrix",
