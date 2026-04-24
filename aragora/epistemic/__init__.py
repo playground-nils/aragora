@@ -1,6 +1,8 @@
 """Epistemic CI and crux-engine helpers (DIC-13..22 + DIC-25/26 tranche).
 
 Exposes:
+- DIC-13: typed ExecutableClaim manifest model (:class:`ExecutableClaim`,
+  :class:`ClaimManifest`, :func:`load_claims_from_dir`)
 - DIC-14: executable claim verification (:class:`ClaimVerifier`)
 - DIC-16: signed CruxReceipt for crux-finder debate runs
   (:class:`CruxEntry`, :class:`CruxReceipt`, :func:`build_crux_receipt`)
@@ -73,6 +75,19 @@ from .crux_receipt import (
     enable_crux_receipt,
 )
 from .decay_monitor import DecayReason, DecaySignal, evaluate_unit
+from .executable_claim import (
+    ClaimConfidence,
+    ClaimEvidence,
+    ClaimFailurePolicy,
+    ClaimManifest,
+    ClaimReceipt,
+    ClaimVerification,
+    ExecutableClaim,
+    FailureAction,
+    FailureSeverity,
+    VerificationKind,
+    load_claims_from_dir,
+)
 from .followup import (
     DEFAULT_CRUX_LOAD_BEARING_THRESHOLD,
     DEFAULT_DELTA_LOSS_THRESHOLD,
@@ -129,10 +144,21 @@ from .truth_map import (
 __all__ = [
     "ArbitrationSide",
     "BeliefEntry",
+    "ClaimConfidence",
+    "ClaimEvidence",
+    "ClaimFailurePolicy",
+    "ClaimManifest",
+    "ClaimReceipt",
     "ClaimResult",
     "CruxGardeningResult",
     "ClaimStatus",
+    "ClaimVerification",
     "ClaimVerifier",
+    "ExecutableClaim",
+    "FailureAction",
+    "FailureSeverity",
+    "VerificationKind",
+    "load_claims_from_dir",
     "CruxArbitration",
     "CruxArbitrationReversal",
     "DEFAULT_EXPIRY_DAYS",
