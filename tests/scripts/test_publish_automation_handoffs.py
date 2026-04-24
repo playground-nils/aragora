@@ -52,6 +52,68 @@ def test_load_handoffs_parses_structured_memory(tmp_path: Path) -> None:
     assert "Published from automation memory" in handoffs[0].body
 
 
+def test_load_outbox_handoffs_parses_structured_json(tmp_path: Path) -> None:
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    outbox.mkdir(parents=True)
+    source = outbox / "repair-branch.json"
+    source.write_text(
+        json.dumps(
+            {
+                "task": "Publish validated repair branch",
+                "requires_github": True,
+                "requested_action": "open_pr",
+                "repo": str(tmp_path),
+                "local_evidence": {
+                    "branch": "codex/example",
+                    "head": "abc123",
+                },
+                "validation": ["pytest tests/example.py -q"],
+                "idempotency_key": "open-pr-codex-example-abc123",
+                "created_at": "2026-04-24T16:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    handoffs = mod.load_outbox_handoffs(tmp_path)
+
+    assert len(handoffs) == 1
+    assert handoffs[0].task_title == "Publish validated repair branch"
+    assert handoffs[0].source_kind == "outbox"
+    assert handoffs[0].idempotency_key == "open-pr-codex-example-abc123"
+    assert "Requested Action:" in handoffs[0].body
+    assert "Published from automation outbox" in handoffs[0].body
+
+
+def test_load_outbox_handoffs_skips_terminal_receipt(tmp_path: Path) -> None:
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    receipts = tmp_path / ".aragora" / "automation-receipts"
+    outbox.mkdir(parents=True)
+    receipts.mkdir(parents=True)
+    key = "open-pr-codex-example-abc123"
+    (outbox / "repair-branch.json").write_text(
+        json.dumps(
+            {
+                "task": "Publish validated repair branch",
+                "requires_github": True,
+                "requested_action": "open_pr",
+                "repo": str(tmp_path),
+                "local_evidence": {},
+                "validation": [],
+                "idempotency_key": key,
+                "created_at": "2026-04-24T16:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (receipts / f"{key}.json").write_text(
+        json.dumps({"idempotency_key": key, "status": "published"}),
+        encoding="utf-8",
+    )
+
+    assert mod.load_outbox_handoffs(tmp_path) == []
+
+
 def test_load_handoffs_skips_expired_and_none_tasks(tmp_path: Path) -> None:
     expired = _memory(tmp_path, "expired", _handoff("Old task"))
     none = _memory(tmp_path, "none", _handoff("NONE").replace("Priority: MEDIUM", "Priority: NONE"))
@@ -393,6 +455,56 @@ def test_publish_handoffs_creates_issue_with_labels(monkeypatch: Any, tmp_path: 
         "--add-label",
         "boss-ready,autonomous",
     ]
+
+
+def test_publish_handoffs_writes_outbox_receipt(monkeypatch: Any, tmp_path: Path) -> None:
+    source = tmp_path / ".aragora" / "automation-outbox" / "example.json"
+    source.parent.mkdir(parents=True)
+    source.write_text("{}", encoding="utf-8")
+    handoff = Handoff(
+        source_file=str(source),
+        task_title="Publish validated repair branch",
+        priority="MEDIUM",
+        body="body",
+        labels={},
+        expires_at=None,
+        idempotency_key="open-pr-codex-example-abc123",
+        source_kind="outbox",
+    )
+
+    def fake_run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if args[:3] == ["gh", "issue", "create"]:
+            return subprocess.CompletedProcess(
+                args, 0, "https://github.com/synaptent/aragora/issues/7000\n", ""
+            )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(mod, "_run", fake_run)
+
+    published = mod.publish_handoffs(
+        [handoff],
+        [
+            PublishDecision(
+                task_title=handoff.task_title,
+                source_file=handoff.source_file,
+                eligible=True,
+                reason="eligible",
+            )
+        ],
+        repo_root=tmp_path,
+        repo="synaptent/aragora",
+        labels=["boss-ready"],
+        limit=1,
+        receipt_dir=tmp_path / ".aragora" / "automation-receipts",
+    )
+
+    receipt_path = (
+        tmp_path / ".aragora" / "automation-receipts" / "open-pr-codex-example-abc123.json"
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert published[0].reason == "published"
+    assert receipt["status"] == "published"
+    assert receipt["created_issue_url"] == "https://github.com/synaptent/aragora/issues/7000"
 
 
 def test_main_reports_github_health_when_unavailable(
