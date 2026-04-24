@@ -407,6 +407,7 @@ aragora/
 ```
 
 **Scale:** 3,800+ Python modules | 210,000+ tests across 5,000+ test files
+(canonical, auto-regenerated numbers: [`docs/METRICS.md`](docs/METRICS.md))
 
 ### Performance and Costs
 
