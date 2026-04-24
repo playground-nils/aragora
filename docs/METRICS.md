@@ -2,21 +2,22 @@
 
 > **This doc is auto-generated.** Do not edit by hand — edits will be overwritten by the next run of `scripts/regenerate_metrics.py`. If a number here disagrees with another doc, this doc wins. Every metric below is reproducible by running the command in its row.
 
-- **Generated at:** `2026-04-24T15:42:45.226749+00:00`
-- **Git sha:** `ae534702f`
+> **No timestamp or git SHA is embedded in this doc by design.** Embedding either would cause two branches that both regenerated the doc to always conflict on merge, turning an honesty mechanism into a merge-conflict factory. The authoritative timestamp and SHA for any regeneration are available via `--json`.
+
 - **Regenerate:** `python scripts/regenerate_metrics.py`
 - **Verify (drift check):** `python scripts/regenerate_metrics.py --check`
+- **Timestamped JSON snapshot:** `python scripts/regenerate_metrics.py --json`
 
 ## Canonical numbers
 
 | Metric | Value | Source | Command |
 |---|---|---|---|
 | Python files under aragora/ | `4075` | `aragora/` | `find aragora -name '*.py' -not -path '*/__pycache__/*' -type f \| wc -l` |
-| Python lines of code under aragora/ | `1915808` | `aragora/` | `find aragora -name '*.py' -not -path '*/__pycache__/*' \| xargs wc -l \| tail -1` |
+| Python lines of code under aragora/ | `1915808` | `aragora/` | `python3 -c "from pathlib import Path; print(sum(sum(1 for _ in p.open(encoding='utf-8', errors='replace')) for p in Path('aragora').rglob('*.py') if '__pycache__' not in p.parts))"` |
 | Top-level modules under aragora/ | `136` | `aragora/` | `find aragora -maxdepth 1 -type d \| wc -l` |
-| Test files (test_*.py under tests/) | `5074` | `tests/` | `find tests -name 'test_*.py' -type f \| wc -l` |
-| Test functions (class + module level) | `215978` | `tests/` | `rg '^\s*(async )?def test_' tests/ --no-filename \| wc -l` |
-| @pytest.mark.parametrize decorators | `642` | `tests/` | `rg '@pytest\.mark\.parametrize' tests/ --no-filename \| wc -l` |
+| Test files (test_*.py under tests/) | `5075` | `tests/` | `find tests -name 'test_*.py' -type f \| wc -l` |
+| Test functions (class + module level) | `215982` | `tests/` | `rg '^\s*(async )?def test_' tests/ --no-filename \| wc -l` |
+| @pytest.mark.parametrize decorators | `643` | `tests/` | `rg '@pytest\.mark\.parametrize' tests/ --no-filename \| wc -l` |
 | CLI top-level command modules | `60` | `aragora/cli/commands/` | `find aragora/cli/commands -maxdepth 1 -name '*.py' -not -name '__*' -type f \| wc -l` |
 | OpenAPI paths | `2852` | `docs/api/openapi.json` | `python -c "import json; print(len(json.load(open('docs/api/openapi.json'))['paths']))"` |
 | OpenAPI operations (HTTP verbs) | `3271` | `docs/api/openapi.json` | `python -c "import json; spec=json.load(open('docs/api/openapi.json')); print(sum(1 for p in spec['paths'].values() for m in p if m.lower() in {'get','post','put','delete','patch','head','options'}))"` |
@@ -33,6 +34,7 @@
 
 ## Notes on counting methodology
 
+- **Python lines of code under aragora/:** Uses Python rglob + direct line count to avoid xargs/wc batching bugs.
 - **Test functions (class + module level):** Counts both module-level and class-nested test methods.
 - **@pytest.mark.parametrize decorators:** Each decorator expands into N test cases during collection.
 - **Knowledge Mound adapter specs:** Counts adapter module entries in the factory spec tuple list.
@@ -43,8 +45,15 @@ Aragora's thesis (Commitment 4: respect the limits) requires that the product no
 
 All other docs that cite a metric should link here rather than hard-code the number, or explicitly snapshot the number with a date so staleness is visible.
 
+## Drift threshold
+
+The `--check` mode fails if any metric moved by more than 0.5% from the committed doc. This threshold is a trade-off: lower values (e.g. 0.1%) would trigger on small absolute moves in small-denominator metrics (e.g. adapter count changing by one), forcing doc churn on normal development. Higher values (e.g. 5%) would let meaningful drift accumulate silently. 0.5% was picked as the default; it is a constant in `scripts/regenerate_metrics.py` (`DRIFT_THRESHOLD`) and can be tuned if specific metrics prove too noisy.
+
+New metrics (present in the script but not in the committed doc) are reported as `NEW:` in the check output and force a refresh regardless of threshold.
+
 ## Related automation
 
-- `.github/workflows/metrics-drift.yml` runs this script nightly and opens a PR if any metric drifted by more than 0.5% since the last committed version of this doc.
+- `.github/workflows/metrics-drift.yml` runs this script on every PR that touches counted surfaces (`aragora/`, `tests/`, `sdk/`, `docs/api/openapi.json`, `.mypy-baseline`), and on a weekly Monday schedule. It invokes `--check` and fails the job if drift exceeds the threshold. The job does **not** auto-open a refresh PR; it fails loud and a human or follow-up automation decides whether to regenerate.
+- `tests/scripts/test_regenerate_metrics.py` holds external invariants (e.g. test count > 100K, python file count > 1K) so the bootstrap is not fully self-referential: even if the committed doc were wrong, the invariant tests would catch a gross break.
 - `scripts/reconcile_status.py` cross-references feature claims across CAPABILITY_MATRIX, GA_CHECKLIST, STATUS, ROADMAP.
 - `scripts/validate_openapi_routes.py` verifies OpenAPI paths against actual handler implementations.

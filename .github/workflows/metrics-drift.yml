@@ -64,12 +64,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Snapshot the committed doc into a backup BEFORE any regeneration
+          # so the post-check diff is unambiguous: committed-doc vs what-live-
+          # numbers-would-produce. Without this snapshot, a reviewer cannot
+          # tell whether the diff was between two regenerations or between
+          # the committed state and current truth.
+          cp docs/METRICS.md /tmp/metrics-committed.md
+
           if ! python3 scripts/regenerate_metrics.py --check; then
             echo "::error::docs/METRICS.md is stale. Run 'python3 scripts/regenerate_metrics.py' locally and commit the updated doc."
             echo ""
-            echo "=== Diff (what would change) ==="
+            echo "=== DIFF: committed doc vs current ground truth ==="
+            # Regenerate into a temp file without touching the tracked file,
+            # then diff the two explicit artifacts.
+            python3 scripts/regenerate_metrics.py --json > /tmp/metrics-live.json
             python3 scripts/regenerate_metrics.py
-            git --no-pager diff docs/METRICS.md | head -200 || true
+            diff -u /tmp/metrics-committed.md docs/METRICS.md | head -200 || true
+            # Restore the committed doc so downstream steps see the original.
+            cp /tmp/metrics-committed.md docs/METRICS.md
             exit 1
           fi
 

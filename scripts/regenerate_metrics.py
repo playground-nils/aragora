@@ -146,24 +146,33 @@ def gather_metrics() -> MetricsSnapshot:
         )
     )
 
-    # LOC via wc -l summed
-    loc_result = subprocess.run(
-        "find aragora -name '*.py' -not -path '*/__pycache__/*' -type f | xargs wc -l | tail -1",
-        shell=True,
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    loc_match = re.search(r"(\d+)", loc_result.stdout)
-    loc = int(loc_match.group(1)) if loc_match else 0
+    # LOC via Python-native counting (avoids xargs/wc batching risks:
+    # xargs may split args into multiple `wc` invocations producing
+    # multiple 'total' lines where only the last is kept; filenames
+    # with spaces break shell splitting). Use Path.rglob + sum instead.
+    aragora_root = REPO_ROOT / "aragora"
+    loc = 0
+    for p in aragora_root.rglob("*.py"):
+        if "__pycache__" in p.parts:
+            continue
+        try:
+            with p.open(encoding="utf-8", errors="replace") as f:
+                loc += sum(1 for _ in f)
+        except OSError:
+            pass
     metrics.append(
         Metric(
             key="python_loc",
             label="Python lines of code under aragora/",
             value=loc,
-            command="find aragora -name '*.py' -not -path '*/__pycache__/*' | xargs wc -l | tail -1",
+            command=(
+                'python3 -c "from pathlib import Path; '
+                "print(sum(sum(1 for _ in p.open(encoding='utf-8', errors='replace')) "
+                "for p in Path('aragora').rglob('*.py') "
+                "if '__pycache__' not in p.parts))\""
+            ),
             source="aragora/",
+            notes="Uses Python rglob + direct line count to avoid xargs/wc batching bugs.",
         )
     )
 
@@ -493,10 +502,17 @@ def render_markdown(snapshot: MetricsSnapshot) -> str:
         "Every metric below is reproducible by running the command in its row."
     )
     lines.append("")
-    lines.append(f"- **Generated at:** `{snapshot.generated_at}`")
-    lines.append(f"- **Git sha:** `{snapshot.git_sha}`")
+    lines.append(
+        "> **No timestamp or git SHA is embedded in this doc by design.** "
+        "Embedding either would cause two branches that both regenerated "
+        "the doc to always conflict on merge, turning an honesty mechanism "
+        "into a merge-conflict factory. The authoritative timestamp and SHA "
+        "for any regeneration are available via `--json`."
+    )
+    lines.append("")
     lines.append("- **Regenerate:** `python scripts/regenerate_metrics.py`")
     lines.append("- **Verify (drift check):** `python scripts/regenerate_metrics.py --check`")
+    lines.append("- **Timestamped JSON snapshot:** `python scripts/regenerate_metrics.py --json`")
     lines.append("")
     lines.append("## Canonical numbers")
     lines.append("")
@@ -534,12 +550,41 @@ def render_markdown(snapshot: MetricsSnapshot) -> str:
         "date so staleness is visible."
     )
     lines.append("")
+    lines.append("## Drift threshold")
+    lines.append("")
+    lines.append(
+        "The `--check` mode fails if any metric moved by more than 0.5% from "
+        "the committed doc. This threshold is a trade-off: lower values "
+        "(e.g. 0.1%) would trigger on small absolute moves in small-denominator "
+        "metrics (e.g. adapter count changing by one), forcing doc churn on "
+        "normal development. Higher values (e.g. 5%) would let meaningful "
+        "drift accumulate silently. 0.5% was picked as the default; it is a "
+        "constant in `scripts/regenerate_metrics.py` (`DRIFT_THRESHOLD`) and "
+        "can be tuned if specific metrics prove too noisy."
+    )
+    lines.append("")
+    lines.append(
+        "New metrics (present in the script but not in the committed doc) "
+        "are reported as `NEW:` in the check output and force a refresh "
+        "regardless of threshold."
+    )
+    lines.append("")
     lines.append("## Related automation")
     lines.append("")
     lines.append(
-        "- `.github/workflows/metrics-drift.yml` runs this script nightly "
-        "and opens a PR if any metric drifted by more than 0.5% since "
-        "the last committed version of this doc."
+        "- `.github/workflows/metrics-drift.yml` runs this script on every PR "
+        "that touches counted surfaces (`aragora/`, `tests/`, `sdk/`, "
+        "`docs/api/openapi.json`, `.mypy-baseline`), and on a weekly Monday "
+        "schedule. It invokes `--check` and fails the job if drift exceeds "
+        "the threshold. The job does **not** auto-open a refresh PR; it "
+        "fails loud and a human or follow-up automation decides whether "
+        "to regenerate."
+    )
+    lines.append(
+        "- `tests/scripts/test_regenerate_metrics.py` holds external "
+        "invariants (e.g. test count > 100K, python file count > 1K) so the "
+        "bootstrap is not fully self-referential: even if the committed "
+        "doc were wrong, the invariant tests would catch a gross break."
     )
     lines.append(
         "- `scripts/reconcile_status.py` cross-references feature claims "
