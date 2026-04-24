@@ -58,6 +58,7 @@ dev = [
     "mypy>=1.19.0,<2.0",
     "types-PyYAML>=6.0,<7.0",
     "types-croniter>=2.0,<6.0",
+    "bandit>=1.7,<2.0",
 ]
 all = [
     "fastapi>=0.135.3,<1.0",
