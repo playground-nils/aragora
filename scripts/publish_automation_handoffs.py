@@ -245,6 +245,25 @@ def _terminal_receipt_exists(receipt_dir: Path, idempotency_key: str) -> bool:
     return str(payload.get("status") or "") in {"published", "already_satisfied"}
 
 
+def _terminal_receipt_keys(receipt_dir: Path) -> set[str]:
+    if not receipt_dir.exists():
+        return set()
+    terminal: set[str] = set()
+    for receipt_file in sorted(receipt_dir.glob("*.json")):
+        try:
+            payload = json.loads(receipt_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("status") or "") not in {"published", "already_satisfied"}:
+            continue
+        idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        if idempotency_key:
+            terminal.add(idempotency_key)
+    return terminal
+
+
 def _write_receipt(
     receipt_dir: Path,
     handoff: Handoff,
@@ -420,6 +439,39 @@ def _has_required_outbox_contract(payload: dict[str, Any]) -> bool:
     return True
 
 
+def _outbox_branch_fingerprint(payload: dict[str, Any]) -> str | None:
+    local_evidence = payload.get("local_evidence")
+    if not isinstance(local_evidence, dict):
+        return None
+    requested_action = str(payload.get("requested_action") or "").strip()
+    repo = str(payload.get("repo") or "").strip()
+    branch = str(local_evidence.get("branch") or "").strip()
+    if not requested_action or not repo or not branch:
+        return None
+    return "\0".join((requested_action, repo, branch))
+
+
+def _terminal_outbox_fingerprints(outbox_dir: Path, receipt_dir: Path) -> set[str]:
+    terminal_keys = _terminal_receipt_keys(receipt_dir)
+    if not terminal_keys:
+        return set()
+    fingerprints: set[str] = set()
+    for source_file in _outbox_files(outbox_dir):
+        try:
+            payload = json.loads(source_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or not _has_required_outbox_contract(payload):
+            continue
+        idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        if idempotency_key not in terminal_keys:
+            continue
+        fingerprint = _outbox_branch_fingerprint(payload)
+        if fingerprint:
+            fingerprints.add(fingerprint)
+    return fingerprints
+
+
 def _latest_block(parsed_blocks: list[dict[str, str]]) -> dict[str, str]:
     def key(values: dict[str, str]) -> tuple[datetime, int]:
         block_time = _parse_block_datetime(values) or datetime.min.replace(tzinfo=UTC)
@@ -484,7 +536,9 @@ def load_outbox_handoffs(
     outbox_root = (outbox_dir or repo_root / DEFAULT_OUTBOX_DIR).resolve()
     receipt_root = (receipt_dir or repo_root / DEFAULT_RECEIPT_DIR).resolve()
     current_time = now or datetime.now(UTC)
-    handoffs_by_key: dict[str, Handoff] = {}
+    terminal_keys = _terminal_receipt_keys(receipt_root)
+    terminal_fingerprints = _terminal_outbox_fingerprints(outbox_root, receipt_root)
+    handoffs_by_identity: dict[tuple[str, str], Handoff] = {}
     for source_file in _outbox_files(outbox_root):
         try:
             payload = json.loads(source_file.read_text(encoding="utf-8"))
@@ -507,7 +561,10 @@ def load_outbox_handoffs(
         expires_at = str(payload.get("expires_at") or "").strip() or None
         if _is_expired(expires_at, now=current_time):
             continue
-        if _terminal_receipt_exists(receipt_root, idempotency_key):
+        branch_fingerprint = _outbox_branch_fingerprint(payload)
+        if idempotency_key in terminal_keys:
+            continue
+        if branch_fingerprint and branch_fingerprint in terminal_fingerprints:
             continue
         handoff = Handoff(
             source_file=str(source_file),
@@ -519,7 +576,12 @@ def load_outbox_handoffs(
             idempotency_key=idempotency_key,
             source_kind="outbox",
         )
-        existing = handoffs_by_key.get(idempotency_key)
+        identity = (
+            ("branch", branch_fingerprint)
+            if branch_fingerprint
+            else ("idempotency", idempotency_key)
+        )
+        existing = handoffs_by_identity.get(identity)
         if existing is None or (
             _source_mtime(handoff.source_file),
             handoff.source_file,
@@ -527,9 +589,9 @@ def load_outbox_handoffs(
             _source_mtime(existing.source_file),
             existing.source_file,
         ):
-            handoffs_by_key[idempotency_key] = handoff
+            handoffs_by_identity[identity] = handoff
     return sorted(
-        handoffs_by_key.values(),
+        handoffs_by_identity.values(),
         key=lambda item: (_source_mtime(item.source_file), item.priority),
         reverse=True,
     )

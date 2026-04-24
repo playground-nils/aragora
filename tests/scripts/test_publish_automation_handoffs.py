@@ -151,6 +151,78 @@ def test_load_outbox_handoffs_deduplicates_unresolved_idempotency_keys(
     assert handoffs[0].source_file == str(newer)
 
 
+def test_load_outbox_handoffs_deduplicates_unresolved_branch_handoffs(
+    tmp_path: Path,
+) -> None:
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    outbox.mkdir(parents=True)
+    older = outbox / "older.json"
+    newer = outbox / "newer.json"
+    older.write_text(
+        json.dumps(
+            _outbox_payload(
+                task="Publish older branch snapshot",
+                idempotency_key="open-pr-codex-example-old",
+                local_evidence={"branch": "codex/example", "head": "abc123"},
+            )
+        ),
+        encoding="utf-8",
+    )
+    newer.write_text(
+        json.dumps(
+            _outbox_payload(
+                task="Publish newer branch snapshot",
+                idempotency_key="open-pr-codex-example-new",
+                local_evidence={"branch": "codex/example", "head": "def456"},
+            )
+        ),
+        encoding="utf-8",
+    )
+    os.utime(older, (1_000, 1_000))
+    os.utime(newer, (2_000, 2_000))
+
+    handoffs = mod.load_outbox_handoffs(tmp_path)
+
+    assert len(handoffs) == 1
+    assert handoffs[0].task_title == "Publish newer branch snapshot"
+    assert handoffs[0].idempotency_key == "open-pr-codex-example-new"
+    assert handoffs[0].source_file == str(newer)
+
+
+def test_load_outbox_handoffs_skips_terminal_receipt_for_same_branch(
+    tmp_path: Path,
+) -> None:
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    receipts = tmp_path / ".aragora" / "automation-receipts"
+    outbox.mkdir(parents=True)
+    receipts.mkdir(parents=True)
+    old_key = "open-pr-codex-example-old"
+    (outbox / "old.json").write_text(
+        json.dumps(
+            _outbox_payload(
+                idempotency_key=old_key,
+                local_evidence={"branch": "codex/example", "head": "abc123"},
+            )
+        ),
+        encoding="utf-8",
+    )
+    (outbox / "restacked.json").write_text(
+        json.dumps(
+            _outbox_payload(
+                idempotency_key="open-pr-codex-example-new",
+                local_evidence={"branch": "codex/example", "head": "def456"},
+            )
+        ),
+        encoding="utf-8",
+    )
+    (receipts / f"{old_key}.json").write_text(
+        json.dumps({"idempotency_key": old_key, "status": "published"}),
+        encoding="utf-8",
+    )
+
+    assert mod.load_outbox_handoffs(tmp_path) == []
+
+
 def test_load_outbox_handoffs_skips_non_github_and_expired(tmp_path: Path) -> None:
     outbox = tmp_path / ".aragora" / "automation-outbox"
     outbox.mkdir(parents=True)
