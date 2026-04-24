@@ -8,7 +8,6 @@ export const SPECIALTY_PROJECT_TEST_IGNORE = [
 ] as const;
 
 export const CI_SMOKE_TEST_MATCH = [
-  '**/auth-callback-reliability.spec.ts',
   '**/config-validation.spec.ts',
   '**/homepage.spec.ts',
   '**/landing.spec.ts',

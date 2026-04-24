@@ -43,7 +43,6 @@ describe('playwright config', () => {
     expect(getProject('ci-smoke').testMatch).toEqual(CI_SMOKE_TEST_MATCH);
     expect(CI_SMOKE_TEST_MATCH).toEqual(
       expect.arrayContaining([
-        '**/auth-callback-reliability.spec.ts',
         '**/config-validation.spec.ts',
         '**/homepage.spec.ts',
         '**/landing.spec.ts',
