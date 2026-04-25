@@ -46,7 +46,6 @@
   "GET /api/v1/rlm/strategies": "_rlm_context_handler",
   "GET /api/v1/rlm/stream": "_rlm_context_handler",
   "GET /api/v1/rlm/stream/modes": "_rlm_context_handler",
-  "GET /api/v1/templates/recommended": "_onboarding_handler",
   "GET /api/v1/webhooks": "_automation_handler",
   "GET /api/v1/webhooks/events": "_automation_handler",
   "GET /api/v1/webhooks/subscribe": "_automation_handler",

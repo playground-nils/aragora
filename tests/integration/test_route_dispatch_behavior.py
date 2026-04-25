@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -64,7 +65,15 @@ def _build_dispatch_map() -> dict[str, str]:
         if isinstance(handler_ref, _DeferredImport):
             try:
                 handler_class = handler_ref.resolve()
-            except Exception:  # pragma: no cover - resolution failures
+            except (ImportError, AttributeError, TypeError) as exc:
+                # Narrow except: import-time failures and missing attrs are
+                # tolerable (handlers are deferred for a reason). Anything else
+                # is a bug we want to surface.
+                print(
+                    f"WARN: deferred resolution failed for {attr_name}: "
+                    f"{type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
                 continue
         else:
             handler_class = handler_ref
@@ -72,7 +81,12 @@ def _build_dispatch_map() -> dict[str, str]:
         if handler_class is None:
             continue
 
-        routes = getattr(handler_class, "ROUTES", []) or []
+        # Use __dict__ rather than getattr so we only see ROUTES declared on
+        # this class, not inherited from a parent. The dispatcher operates on
+        # the registered class's own surface; counting inherited routes would
+        # double-count parent paths and disagree with the AST-based audit
+        # script that walks per-class ROUTES literals.
+        routes = handler_class.__dict__.get("ROUTES", []) or []
         for route in routes:
             normalized = _normalize_route(route)
             if normalized is None:
@@ -127,13 +141,14 @@ def test_route_dispatch_snapshot() -> None:
     snapshot = _load_snapshot()
 
     if not snapshot:
-        # First-run state. Auto-generate the fixture so the user can commit it,
-        # but fail loudly — running without a committed fixture is not the
-        # intended steady state, and a silent pass here would mask that.
-        _save_snapshot(current)
+        # No committed fixture. Don't auto-write — test-time disk mutation
+        # outside an explicit update mode is a code smell. Fail loudly with
+        # instructions, so the human runs the explicit regenerate command.
         pytest.fail(
-            f"Snapshot fixture was missing; auto-created at {FIXTURE_PATH} "
-            f"with {len(current)} entries. Commit the fixture and re-run the test."
+            f"Snapshot fixture is missing at {FIXTURE_PATH}.\n"
+            "Run: UPDATE_ROUTE_DISPATCH_SNAPSHOT=1 pytest "
+            "tests/integration/test_route_dispatch_behavior.py\n"
+            "Then commit the generated fixture and re-run."
         )
 
     # Compute drift in both directions for a clear failure message.

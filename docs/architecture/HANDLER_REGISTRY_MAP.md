@@ -6,12 +6,20 @@ Read-only inventory of every HTTP handler registered in `aragora.server.handler_
 
 ## Snapshot at audit time
 
-| Metric | Count |
-|---|---|
-| Total handler classes registered | 294 |
-| Total unique HTTP paths | 1,999 |
-| Cross-handler collision paths | 61 |
-| Collision clusters (connected components) | 12 |
+| Metric | Count | Counting basis |
+|---|---|---|
+| Total handler classes registered | 303 | One top-level ClassDef per `class XxxHandler:` |
+| Total unique HTTP paths | 2,039 | (method, path) pairs across all `ROUTES` |
+| Cross-handler collisions, method-aware | 58 | (method, path) pairs claimed by ≥ 2 handlers — *the snapshot fixture's row count* |
+| Cross-handler collisions, path-only | 51 | unique paths with ≥ 2 owners across all methods — *the test ceiling's count* |
+| Collision clusters (connected components) | 12 | groups of handlers that share at least one path |
+
+> **Two collision counts, deliberately.** The 58 method-aware count and the 51 path-only count are both correct — they answer different questions:
+>
+> - **51 path-only** is what `test_route_collision_count_stable` (in `tests/integration/test_handler_registry_imports.py`) ratchets. It treats `(POST /foo, GET /foo)` from two different handlers as one collision because the test cares about path-prefix routing risk.
+> - **58 method-aware** is what `tests/integration/fixtures/route_dispatch_snapshot.json` records. It treats `(POST /foo, handler A)` and `(GET /foo, handler B)` as separate entries because behavior preservation cares about which handler answers each method.
+>
+> The roadmap table below operates on the 51 path-only basis (matching the `max_known_collisions` test ceiling that consolidation PRs ratchet). The snapshot fixture exists separately to lock per-method dispatch identity. Both metrics will trend downward together as Waves 4-6 land.
 
 Source of truth: `aragora/server/handler_registry/__init__.py:98` — `HANDLER_REGISTRY: list[tuple[str, Any]]`. Each tuple is `(attr_name, handler_ref)` where `attr_name` (e.g. `_marketplace_handler`) is the dispatch identifier and `handler_ref` is either a handler class or a `_DeferredImport`.
 
@@ -19,9 +27,9 @@ Source of truth: `aragora/server/handler_registry/__init__.py:98` — `HANDLER_R
 
 Routes are claimed via the handler class's `ROUTES` attribute (and optional `ROUTE_PREFIXES`). When two handlers claim the same `(method, path)` pair, the registration order in `HANDLER_REGISTRY` decides which one is invoked: the first match wins.
 
-`tests/integration/test_handler_registry_imports.py::TestRouteCollisionDetection::test_route_collision_count_stable` enforces a soft ceiling on the collision count (currently `max_known_collisions = 51`, ratcheting down via PR #6579 from a previous 61).
+`tests/integration/test_handler_registry_imports.py::TestRouteCollisionDetection::test_route_collision_count_stable` enforces the path-only ceiling (currently `max_known_collisions = 51`, ratcheting down via PR #6579 from a previous 61).
 
-`tests/integration/test_route_dispatch_behavior.py::test_route_dispatch_snapshot` (added in this PR) locks the current first-match-wins outcome for every colliding path. Any consolidation PR that changes which handler answers a colliding path will fail this test, so behavior preservation must be intentional.
+`tests/integration/test_route_dispatch_behavior.py::test_route_dispatch_snapshot` (added in this PR) locks the method-aware first-match-wins outcome for every colliding (method, path). Any consolidation PR that changes which handler answers a colliding (method, path) will fail this test, so behavior preservation must be intentional.
 
 ## Recommended canonical vs. current dispatch winner
 
@@ -230,15 +238,23 @@ A separate cluster called out in the foundation-hardening plan but not surfaced 
 
 ## Regenerating this audit
 
-The cluster JSON was produced by an Explore subagent walking `aragora/server/handlers/**/*.py` and parsing `ROUTES` literals. Re-running the audit:
+Two paths produce the same fixture deterministically:
 
 ```bash
-# Future: scripts/audit_handler_registry.py (not yet written)
-# For now, run the snapshot test to regenerate the snapshot fixture:
-python -m pytest tests/integration/test_route_dispatch_behavior.py --update-snapshot
+# Live registry (preferred — uses HANDLER_REGISTRY at runtime, sees deferred
+# imports as the dispatcher does, but requires the full transitive dep chain).
+UPDATE_ROUTE_DISPATCH_SNAPSHOT=1 pytest \
+    tests/integration/test_route_dispatch_behavior.py
+
+# Static analyzer (no aragora imports — works in pre-commit hooks where
+# cryptography / pydantic / etc. aren't installed).
+python3 scripts/audit_handler_registry.py
 ```
 
-A future automation task will fold this audit's logic into a CI-friendly regenerator so this doc can be auto-updated on each handler change.
+Both regenerate `tests/integration/fixtures/route_dispatch_snapshot.json`. A
+future hardening task will add a CI gate that runs both and asserts they
+produce byte-identical output, which would catch any drift between the two
+implementations.
 
 ## See also
 

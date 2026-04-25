@@ -77,7 +77,10 @@ def _extract_registry_tuples(source: str, registry_name: str) -> list[tuple[str,
     """
     tree = ast.parse(source)
     target: ast.expr | None = None
-    for node in ast.walk(tree):
+    # Walk only top-level statements (tree.body) rather than ast.walk; the
+    # registry is a module-level constant by convention, and a function-local
+    # assignment to the same name should not match.
+    for node in tree.body:
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and tgt.id == registry_name:
@@ -126,14 +129,18 @@ def _extract_handler_routes(repo_root: Path) -> dict[str, list[str]]:
     handlers_dir = repo_root / "aragora" / "server" / "handlers"
     out: dict[str, list[str]] = {}
 
-    for py_path in handlers_dir.rglob("*.py"):
+    # Sort for deterministic output across filesystems (ext4 vs APFS vs CI
+    # containers all return rglob in different orders).
+    for py_path in sorted(handlers_dir.rglob("*.py")):
         try:
             source = py_path.read_text(encoding="utf-8")
             tree = ast.parse(source)
         except (UnicodeDecodeError, SyntaxError):
             continue
 
-        for node in ast.walk(tree):
+        # Only top-level classes — nested classes inside functions or other
+        # classes are not registered handlers by convention.
+        for node in tree.body:
             if not isinstance(node, ast.ClassDef):
                 continue
             for stmt in node.body:
@@ -180,6 +187,20 @@ def _normalize(route: str) -> str:
 
 def main(repo_root_str: str) -> None:
     repo_root = Path(repo_root_str).resolve()
+
+    # Sentinel check: refuse to operate on a directory that doesn't look like
+    # an aragora checkout. The script writes one fixture file under
+    # tests/integration/fixtures/, so the worst case of being pointed at the
+    # wrong directory is creating that path tree somewhere unexpected. The
+    # sentinel narrows the blast radius of a typo'd or hostile path argument.
+    sentinel = repo_root / "aragora" / "server" / "handler_registry" / "__init__.py"
+    if not sentinel.is_file():
+        print(
+            f"ERROR: {repo_root} does not look like an aragora checkout "
+            f"(missing {sentinel.relative_to(repo_root) if repo_root in sentinel.parents else sentinel}).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     # 1. Build per-class ROUTES.
     class_routes = _extract_handler_routes(repo_root)
