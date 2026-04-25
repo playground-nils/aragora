@@ -58,7 +58,7 @@ class TestGenealogyEntry:
         assert e.to_dict()["metadata"]["repair_kind"] == "pr_candidate"
 
     def test_metadata_defensive_copy_on_construction(self) -> None:
-        caller_dict = {"key": "original"}
+        caller_dict = {"key": "original", "nested": {"inner": "original"}}
         e = GenealogyEntry(
             entry_kind="decay_signal",
             entry_id="e1",
@@ -67,7 +67,9 @@ class TestGenealogyEntry:
             metadata=caller_dict,
         )
         caller_dict["key"] = "mutated"
+        caller_dict["nested"]["inner"] = "mutated"
         assert e.metadata["key"] == "original"
+        assert e.metadata["nested"]["inner"] == "original"
 
     def test_metadata_defensive_copy_on_to_dict(self) -> None:
         e = GenealogyEntry(
@@ -75,11 +77,13 @@ class TestGenealogyEntry:
             entry_id="e1",
             checksum="abc",
             timestamp="2026-04-25T00:00:00Z",
-            metadata={"key": "original"},
+            metadata={"key": "original", "nested": {"inner": "original"}},
         )
         d = e.to_dict()
         d["metadata"]["key"] = "mutated"
+        d["metadata"]["nested"]["inner"] = "mutated"
         assert e.metadata["key"] == "original"
+        assert e.metadata["nested"]["inner"] == "original"
 
     def test_invalid_kind_raises(self) -> None:
         with pytest.raises(ValueError, match="entry_kind"):
@@ -121,6 +125,15 @@ class TestGenealogyEntry:
     def test_timestamp_z_suffix_accepted(self) -> None:
         e = _entry(ts="2026-04-25T00:00:00Z")
         assert e.timestamp == "2026-04-25T00:00:00.000Z"
+
+    def test_naive_timestamp_raises(self) -> None:
+        with pytest.raises(ValueError, match="timezone"):
+            GenealogyEntry(
+                entry_kind="decay_signal",
+                entry_id="e1",
+                checksum="abc",
+                timestamp="2026-04-25T00:00:00",
+            )
 
     def test_all_valid_kinds_accepted(self) -> None:
         for kind in ("decision_receipt", "decay_signal", "crux_receipt", "repair_proposal"):
@@ -167,6 +180,10 @@ class TestChainChecksum:
 
 
 class TestCodeUnitGenealogy:
+    def test_build_empty_code_unit_id_raises(self) -> None:
+        with pytest.raises(ValueError, match="code_unit_id"):
+            CodeUnitGenealogy.build("", [])
+
     def test_build_sorts_by_timestamp(self) -> None:
         e1 = _entry("decay_signal", "e1", "2026-04-25T03:00:00Z")
         e2 = _entry("decision_receipt", "e2", "2026-04-25T01:00:00Z")

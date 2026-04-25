@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, get_args, runtime_checkable
@@ -69,10 +70,12 @@ class GenealogyEntry:
             dt = datetime.fromisoformat(self.timestamp.replace("Z", "+00:00"))
         except (ValueError, AttributeError):
             raise ValueError(f"timestamp must be ISO-8601 UTC: {self.timestamp!r}")
+        if dt.tzinfo is None or dt.utcoffset() is None:
+            raise ValueError(f"timestamp must include timezone: {self.timestamp!r}")
         normalized = dt.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        object.__setattr__(self, "timestamp", normalized)
         # Q10: defensive copy so caller mutations don't reach inside frozen entry.
-        object.__setattr__(self, "metadata", dict(self.metadata))
+        object.__setattr__(self, "timestamp", normalized)
+        object.__setattr__(self, "metadata", deepcopy(self.metadata))
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -82,7 +85,7 @@ class GenealogyEntry:
             "timestamp": self.timestamp,
         }
         if self.metadata:
-            d["metadata"] = dict(self.metadata)  # Q10: copy on serialization
+            d["metadata"] = deepcopy(self.metadata)  # Q10: copy on serialization
         return d
 
 
@@ -114,6 +117,8 @@ class CodeUnitGenealogy:
 
     @classmethod
     def build(cls, code_unit_id: str, entries: list[GenealogyEntry]) -> CodeUnitGenealogy:
+        if not code_unit_id:
+            raise ValueError("code_unit_id must be non-empty")
         sorted_entries = sorted(entries, key=lambda e: (e.timestamp, e.entry_id))
         return cls(
             code_unit_id=code_unit_id,
