@@ -43,7 +43,10 @@ Zero-Downtime Strategy
   (PostgreSQL only updates the catalog, no table rewrite).
 - ADD COLUMN with a default is fast on modern Postgres (11+).
 - DROP COLUMN is metadata-only until next VACUUM.
-- CREATE INDEX uses CONCURRENTLY via ``safe_create_index``.
+- CREATE INDEX intentionally avoids CONCURRENTLY because the current
+  ``PostgreSQLBackend.execute_write`` helper wraps each statement in a
+  transaction, and PostgreSQL rejects ``CREATE INDEX CONCURRENTLY`` inside
+  transaction blocks.
 """
 
 import logging
@@ -157,21 +160,21 @@ def up_fn(backend: DatabaseBackend) -> None:
             "idx_webhook_configs_user",
             "webhook_configs",
             ["user_id"],
-            concurrently=True,
+            concurrently=False,
         )
         safe_create_index(
             backend,
             "idx_webhook_configs_workspace",
             "webhook_configs",
             ["workspace_id"],
-            concurrently=True,
+            concurrently=False,
         )
         safe_create_index(
             backend,
             "idx_webhook_configs_active",
             "webhook_configs",
             ["active"],
-            concurrently=True,
+            concurrently=False,
         )
 
         logger.info("webhook_configs schema aligned with INITIAL_SCHEMA")
