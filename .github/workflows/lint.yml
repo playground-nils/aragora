@@ -735,8 +735,9 @@ jobs:
       # actually-live credentials (no false positives). Local pre-commit
       # still runs gitleaks (the binary) which remains free for individual use.
       - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@v3.95.2
         with:
+          version: v3.95.2
           extra_args: --only-verified
 
   helm-lint:

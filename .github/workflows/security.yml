@@ -423,6 +423,7 @@ jobs:
       # and is free + actively maintained. Local pre-commit still uses
       # gitleaks/gitleaks (the binary, not the action) which is free.
       - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@v3.95.2
         with:
+          version: v3.95.2
           extra_args: --only-verified
