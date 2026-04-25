@@ -90,5 +90,10 @@
     "ts-jest": "^29.4.9",
     "typescript": "^5",
     "typescript-eslint": "^8.54.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.10",
+    "uuid": "^14.0.0",
+    "brace-expansion": "^2.0.3"
   }
 }
