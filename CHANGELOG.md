@@ -3,12 +3,12 @@
 
 ## [Unreleased]
 
-_Changes landing on `main` after the v2.9.0 stable tag will be collected here for v2.9.1 / v2.10._
+_Changes landing on `main` before the v2.9.0 stable tag remain here until the final release-confirmation PR cuts or verifies the tag._
 
 
-## [v2.9.0] - 2026-04-25
+## [v2.9.0 pending stable] - 2026-04-25
 
-_Promoted from `v2.9.0-rc.1` after the chronic-red CI sweep landed and post-merge validation confirmed 0 npm vulnerabilities + clean frontend build. Detailed soak-window record at `docs/status/2026-04-25-rc1-to-stable-receipt.md`._
+_Prepared for promotion from `v2.9.0-rc.1` after the chronic-red CI sweep landed and post-merge validation confirmed 0 npm vulnerabilities + clean frontend build. Stable release still requires the next nightly confirmation and `v2.9.0` tag. Detailed readiness record at `docs/status/2026-04-25-rc1-to-stable-receipt.md`._
 
 ### Added (post-rc.1)
 - **Mode 3 brief severity counts (#6505 / #6506):** `ReviewBrief` now carries `findings_severity_counts` — aggregate `{high, medium, low}` counts derived from each slot's top findings — and surfaces it in the stored brief JSON. Operators can now distinguish "1 high-severity blocker" from "5 low-severity editorial comments" without reading every finding. Legacy callers that omit the new `build_brief` kwarg get an empty map rather than a crash.
@@ -35,7 +35,7 @@ _Promoted from `v2.9.0-rc.1` after the chronic-red CI sweep landed and post-merg
 - **17 npm Dependabot alerts → 0 (#6558):** Combined npm `overrides` sweep across 5 projects (aragora/live, sdk/typescript, examples/sveltekit, ide/vscode-aragora, ide/vscode-aragora/webview-ui, docs-site). Patched packages: lodash, picomatch, postcss, serialize-javascript, uuid, vite, yaml, cookie, brace-expansion, ajv, qs, minimatch. Verified post-merge: every project reports `npm audit: found 0 vulnerabilities`.
 
 ### Documentation
-- **Release prep checklist closed (#6493):** All 10 acceptance criteria addressed; settlement receipt (#docs/status/2026-04-25-rc1-to-stable-receipt.md) captures the rc.1 → stable arc.
+- **Release prep checklist progress (#6493):** 8 of 10 acceptance criteria addressed directly; the 48h/main-nightly evidence criteria remain pending until the next scheduled observation. Readiness receipt (`docs/status/2026-04-25-rc1-to-stable-receipt.md`) captures the rc.1 → stable readiness arc.
 - **Mode 3 calibration sample N≥20:** 20 briefs total ($2.71 + $0.66 = $3.37 cumulative API spend); rubric-replay (#6552) shows 3/17 downgrades on the post-fix path.
 
 

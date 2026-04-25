@@ -5,9 +5,9 @@
 > See [README](../README.md) for the five pillars framework. See [Documentation Index](../INDEX.md) for the curated technical reference map.
 > For roadmap extraction, doc drift, and partial-feature tracking, see [DOCUMENTATION_HYGIENE_AND_GAP_REGISTER.md](DOCUMENTATION_HYGIENE_AND_GAP_REGISTER.md).
 
-## April 25, 2026 — v2.9.0 stable promoted from rc.1
+## April 25, 2026 — v2.9.0 stable readiness after rc.1
 
-The chronic-red CI sweep landed: 10 PRs in 40 minutes (00:37–01:16 UTC) closed every chronic-red workflow with an associated fix. Post-merge audit confirms every npm project reports `0 vulnerabilities` and the Next.js frontend (aragora/live) builds end-to-end.
+The chronic-red CI sweep landed: 10 PRs in 40 minutes (00:37–01:16 UTC) closed every chronic-red workflow with an associated fix. Post-merge audit confirms every npm project reports `0 vulnerabilities` and the Next.js frontend (aragora/live) builds end-to-end. Stable promotion is prepared but remains pending the next nightly confirmation and the `v2.9.0` tag.
 
 Key landings since rc.1 cut (2026-04-24):
 - Mode 3 rubric calibration epic (#6505): severity counts (#6506), APPROVE_WITH_FOLLOWUPS verdict + gate (#6510), advocate-lens slot (#6514). Lane 1b replay (#6552) confirms 3/17 briefs now downgrade — first observed verdict variance from the rubric fix.
@@ -15,7 +15,7 @@ Key landings since rc.1 cut (2026-04-24):
 - 2× CRITICAL trivy CVE-2026-33634 patched (#6557).
 - 6 chronic-red workflows now have associated fixes on main; next nightly is the validation signal.
 
-Settlement receipt: [2026-04-25-rc1-to-stable-receipt.md](2026-04-25-rc1-to-stable-receipt.md).
+Readiness receipt: [2026-04-25-rc1-to-stable-receipt.md](2026-04-25-rc1-to-stable-receipt.md).
 
 ## April 24, 2026 — Auto-Handle Calibration Gate Ready On #6448
 

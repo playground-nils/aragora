@@ -1,14 +1,14 @@
-# v2.9.0-rc.1 → v2.9.0 stable settlement receipt
+# v2.9.0-rc.1 → v2.9.0 stable readiness receipt
 
 **Date:** 2026-04-25
 **Commit:** `7f4ae3ae7` (main HEAD at receipt-write time)
-**Tag candidate:** `v2.9.0`
+**Tag candidate:** `v2.9.0` (not yet cut)
 **Predecessor tag:** `v2.9.0-rc.1` at `40a9784f4` (cut 2026-04-24)
 **Soak window:** ~25 hours wall-clock, ~45 min compressed-evidence collection
 
 ## Process arc
 
-The rc.1 cut on 2026-04-24 was followed by a multi-agent execution window that addressed the two non-doc gates remaining for stable: chronic-red nightly CI workflows and Mode 3 rubric calibration follow-on. This document captures the receipt for the rc.1 → stable transition.
+The rc.1 cut on 2026-04-24 was followed by a multi-agent execution window that addressed the two non-doc gates remaining for stable: chronic-red nightly CI workflows and Mode 3 rubric calibration follow-on. This document captures readiness for the rc.1 → stable transition; final release truth remains gated on nightly confirmation and the stable tag.
 
 ### Soak compression decision
 
@@ -20,7 +20,7 @@ The conventional 48-hour green-main-CI soak was reframed and compressed. The rea
 
 Decision: dispatched 12 scheduled workflows in two waves (initial sweep + flake-confirmation rerun) and triaged each result to either (a) confirm green, (b) classify as chronic-red and ship a repair PR, or (c) escalate as human-gated.
 
-Result: 4 of 12 confirmed-green on first dispatch, 6 of 12 produced concrete repair PRs, 2 of 12 needed human judgment (gitleaks license decision, self-hosted runner Docker decision — both deferred to post-stable).
+Result: 4 of 12 confirmed-green on first dispatch, 6 of 12 produced concrete repair PRs, 2 of 12 needed human judgment (gitleaks license decision, self-hosted runner Docker decision — both deferred to post-tag follow-up).
 
 ### Chronic-red repair sweep
 
@@ -78,14 +78,14 @@ Two parallel agent sessions worked the chronic-red sweep concurrently. Lane disc
 | 4 | Deploy (Secure) stable | Confirmed: last 5 runs all success |
 | 5 | Mode 3 calibration sample ≥ 20 briefs | 20 briefs ($3.37 cumulative API spend); rubric-replay shows 3/17 downgrades |
 | 6 | Gap issues #6371, #6375 status-checked | Open; deferred to v2.10 (non-blocking) |
-| 7 | CHANGELOG finalized [v2.9.0] | This PR |
-| 8 | Settlement ledger + post-rc receipt | This document |
+| 7 | CHANGELOG stable section prepared | Drafted here; final heading/date belongs in the tag-confirmation PR |
+| 8 | Readiness ledger + post-rc receipt | This document |
 | 9 | STATUS.md date advanced | This PR |
 | 10 | Release notes drafted | This PR (skeleton; final pass after nightly confirmation) |
 
-8 of 10 directly closed; items 1 and 3 will be closed by tomorrow's nightly observation.
+8 of 10 directly prepared; items 1 and 3 will be closed by tomorrow's nightly observation, and item 7 becomes final only when the stable tag is cut.
 
-## Known limitations carried into v2.9.0
+## Known limitations expected for v2.9.0
 
 - **Gitleaks license decision pending:** the secret-scanning step in Security: Pentest Findings Gate is `continue-on-error: true`. TruffleHog (next step) and pre-commit hooks provide redundant coverage. Long-term decision: license vs pin-v1 vs migrate. Tracked separately.
 - **Self-hosted runner Docker:** load tests moved to `ubuntu-latest` rather than installing Docker on the self-hosted runner. If load tests need access to private VPC resources later, the runner config needs a follow-up.
