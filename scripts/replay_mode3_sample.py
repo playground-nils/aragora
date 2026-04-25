@@ -322,6 +322,17 @@ def iter_briefs(briefs_dir: Path) -> Iterable[Path]:
     yield from sorted(briefs_dir.glob("pr-*.json"))
 
 
+def _missing_briefs_error(briefs_dir: Path) -> str:
+    message = f"error: briefs directory not found: {briefs_dir}"
+    if briefs_dir == BRIEFS_DIR:
+        message += (
+            "\n"
+            "hint: .aragora/ is intentionally gitignored; rerun with "
+            "--briefs-dir pointing at a local archived brief directory."
+        )
+    return message
+
+
 # --- Reporting ------------------------------------------------------------
 
 
@@ -406,7 +417,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if not args.briefs_dir.exists():
-        print(f"error: briefs directory not found: {args.briefs_dir}", file=sys.stderr)
+        print(_missing_briefs_error(args.briefs_dir), file=sys.stderr)
         return 2
 
     replays = [replay_brief(p) for p in iter_briefs(args.briefs_dir)]

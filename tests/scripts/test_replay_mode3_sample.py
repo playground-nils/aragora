@@ -280,3 +280,24 @@ class TestReplayBrief:
         assert result.notes == "severity=manual"
         assert result.severity_counts == {"high": 3, "medium": 0, "low": 0}
         assert result.new_verdict_sev_gate == "repair_first"
+
+
+class TestMain:
+    def test_missing_default_briefs_dir_explains_local_archive_dependency(
+        self,
+        cli,
+        monkeypatch,
+        tmp_path,
+        capsys,
+    ):
+        missing_repo = tmp_path / "clean-checkout"
+        default_briefs = missing_repo / ".aragora" / "review-queue" / "briefs"
+        monkeypatch.setattr(cli, "BRIEFS_DIR", default_briefs)
+
+        rc = cli.main([])
+
+        captured = capsys.readouterr()
+        assert rc == 2
+        assert "briefs directory not found" in captured.err
+        assert ".aragora/ is intentionally gitignored" in captured.err
+        assert "--briefs-dir" in captured.err

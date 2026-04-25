@@ -37,7 +37,12 @@ not toward them.
 
 ## Replay summary (17 briefs on disk, 15 rc.1-window + 2 METRICS-PR #6511)
 
-Run with: `python3 scripts/replay_mode3_sample.py`
+Run from a checkout that has the local archived brief artifacts:
+`python3 scripts/replay_mode3_sample.py --briefs-dir .aragora/review-queue/briefs`
+
+Note: `.aragora/` is intentionally gitignored runtime state. A clean
+clone will need a copied/exported brief archive passed via `--briefs-dir`
+to reproduce the table below.
 
 ### Aggregate verdict distribution
 
