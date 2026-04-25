@@ -582,7 +582,11 @@ jobs:
             timeout: 30
           - name: debate
             path: tests/debate
-            timeout: 30
+            # The debate shard currently exceeds the generic 30-minute cap on
+            # GitHub-hosted runners: #6579 reached 54% before cancellation.
+            # Keep the suite required, but give it a realistic envelope while
+            # longer-term sharding work splits tests/debate into smaller lanes.
+            timeout: 60
           - name: reasoning
             path: tests/rlm tests/reasoning
             timeout: 30
