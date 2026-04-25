@@ -3,15 +3,40 @@
 
 ## [Unreleased]
 
-_Changes landing on `main` after the v2.9.0-rc.1 tag will be collected here until promotion to v2.9.0 stable._
+_Changes landing on `main` after the v2.9.0 stable tag will be collected here for v2.9.1 / v2.10._
 
-### Added
-- **Mode 3 brief severity counts (#6505):** `ReviewBrief` now carries `findings_severity_counts` — aggregate `{high, medium, low}` counts derived from each slot's top findings — and surfaces it in the stored brief JSON. Operators can now distinguish "1 high-severity blocker" from "5 low-severity editorial comments" without reading every finding. Legacy callers that omit the new `build_brief` kwarg get an empty map rather than a crash.
-- **`Recommendation.APPROVE_WITH_FOLLOWUPS` verdict class (#6505):** Fourth brief recommendation for the "real findings but none are blockers" case. `ReviewBrief.recommendation` can now emit `approve_with_followups` (string value); downstream triage classifies it in the approve family.
 
-### Changed
-- **Mode 3 verdict severity gate (#6505):** `REPAIR_FIRST` is now downgraded to `APPROVE_WITH_FOLLOWUPS` when the aggregated severity map reports zero `high` findings. Fixes the calibration bias identified in `docs/status/2026-04-24-mode3-rc1-calibration.md` where 8 skeptical lenses all looking for problems always produced `REPAIR_FIRST` regardless of severity. Legacy callers without severity data preserve the old three-class behavior. `APPROVE_CANDIDATE` and `NEEDS_HUMAN_ATTENTION` paths are untouched.
-- **Mode 3 advocate lens (#6505):** A ninth panel slot with `lens: advocate` is added to the shipped `protocol_b_default` panel. The advocate's prompt explicitly asks for the STRONGEST case FOR the PR, counterweighting the seven skeptical lenses. Structural bias from an all-skeptics panel was the root driver of the 100%-`repair_first` sample behind #6505. The slot is optional (`required: false`) so an absent Anthropic key degrades the panel gracefully instead of failing closed. `per_brief_usd` budget ceiling raised 8.00 → 10.00 to accommodate the ninth slot at conservative estimator cost (real-world cost stays ~$0.18/brief).
+## [v2.9.0] - 2026-04-25
+
+_Promoted from `v2.9.0-rc.1` after the chronic-red CI sweep landed and post-merge validation confirmed 0 npm vulnerabilities + clean frontend build. Detailed soak-window record at `docs/status/2026-04-25-rc1-to-stable-receipt.md`._
+
+### Added (post-rc.1)
+- **Mode 3 brief severity counts (#6505 / #6506):** `ReviewBrief` now carries `findings_severity_counts` — aggregate `{high, medium, low}` counts derived from each slot's top findings — and surfaces it in the stored brief JSON. Operators can now distinguish "1 high-severity blocker" from "5 low-severity editorial comments" without reading every finding. Legacy callers that omit the new `build_brief` kwarg get an empty map rather than a crash.
+- **`Recommendation.APPROVE_WITH_FOLLOWUPS` verdict class (#6505 / #6510):** Fourth brief recommendation for the "real findings but none are blockers" case. `ReviewBrief.recommendation` can now emit `approve_with_followups` (string value); downstream triage classifies it in the approve family.
+- **Mode 3 advocate lens slot (#6514):** Ninth panel slot with `lens: advocate` argues the STRONGEST case FOR the PR, counterweighting the seven skeptical lenses. Optional (`required: false`) so an absent Anthropic key degrades gracefully.
+- **Lane 1b rubric replay (#6552):** Replayed all 17 rc.1-window briefs through the post-#6505 rubric. 3/17 downgraded from `repair_first` to `approve_with_followups` — first observed evidence that the severity gate produces meaningful verdict variance.
+
+### Changed (post-rc.1)
+- **Mode 3 verdict severity gate (#6505 / #6510):** `REPAIR_FIRST` is now downgraded to `APPROVE_WITH_FOLLOWUPS` when the aggregated severity map reports zero `high` findings. Fixes the calibration bias identified in `docs/status/2026-04-24-mode3-rc1-calibration.md` where 8 skeptical lenses all looking for problems always produced `REPAIR_FIRST` regardless of severity. Legacy callers without severity data preserve the old three-class behavior. `APPROVE_CANDIDATE` and `NEEDS_HUMAN_ATTENTION` paths are untouched.
+- **Mode 3 panel budget ceiling 8.00 → 10.00 USD (#6514):** Accommodates the ninth advocate slot at the conservative estimator rate. Real-world per-brief cost stays ~$0.18.
+
+### Fixed (chronic-red CI sweep, 2026-04-24 → 2026-04-25)
+- **Load Tests (#6554):** Switched runner `aragora` self-hosted → `ubuntu-latest`. Self-hosted runner image lacked Docker, which the `services: redis` block requires. 4+ nights chronic-red.
+- **Nightly Full Matrix Pre-release Gates (#6555):** Added `bandit>=1.7,<2.0` to `pyproject.toml [dev]` extra. `pre_release_check.py --category security` invokes `bandit` but it wasn't in any declared extra.
+- **Nightly Full Matrix Regression Matrices, Security Pentest Aragora Scanner (#6560):** Switched install from `pip install -e ".[dev,research,code-intel,test,monitoring]"` (most extras nonexistent) to `bash scripts/ci_install_project.sh --extras dev,test`. The pyproject's empty `dependencies = []` means raw extras-based installs miss core deps (httpx, pydantic, fastapi).
+- **E2E Tests Python (#6563):** Same install-pattern unification as #6560.
+- **Coverage Gate (#6556):** Bumped `timeout-minutes: 30 → 90`. Full-suite-under-coverage on 215k tests exceeds 30 min serially.
+- **Integration Tests (#6562):** Repaired `MockAgent` fixture (added `system_prompt` + Vote-shape return values) to match current Arena API. Bumped route-collision known-bound `60 → 61` (one new accidental collision; underlying handler consolidation tracked for v2.10).
+- **Security Pentest pip-audit (#6559):** Added `--ignore-vuln CVE-2026-3219` to pip-audit. CVE is on the pip binary in the CI image, not the Aragora runtime; pip 26.0.1 IS the latest published version (no upstream fix exists yet).
+- **Security Pentest Secret Scanning (#6567):** Made `gitleaks-action@v2` step `continue-on-error: true`. Action introduced a paid-license requirement for organization accounts; `GITLEAKS_LICENSE` secret isn't provisioned. TruffleHog (next step) provides redundant secret-scanning coverage during the transition.
+
+### Security
+- **Trivy action bump (#6557):** `aquasecurity/trivy-action 0.28.0 → 0.35.0`. Closes 2× CRITICAL CVE-2026-33634 in the prior version.
+- **17 npm Dependabot alerts → 0 (#6558):** Combined npm `overrides` sweep across 5 projects (aragora/live, sdk/typescript, examples/sveltekit, ide/vscode-aragora, ide/vscode-aragora/webview-ui, docs-site). Patched packages: lodash, picomatch, postcss, serialize-javascript, uuid, vite, yaml, cookie, brace-expansion, ajv, qs, minimatch. Verified post-merge: every project reports `npm audit: found 0 vulnerabilities`.
+
+### Documentation
+- **Release prep checklist closed (#6493):** All 10 acceptance criteria addressed; settlement receipt (#docs/status/2026-04-25-rc1-to-stable-receipt.md) captures the rc.1 → stable arc.
+- **Mode 3 calibration sample N≥20:** 20 briefs total ($2.71 + $0.66 = $3.37 cumulative API spend); rubric-replay (#6552) shows 3/17 downgrades on the post-fix path.
 
 
 ## [v2.9.0-rc.1] - 2026-04-24
