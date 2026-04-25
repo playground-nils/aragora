@@ -551,7 +551,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--include-patch-equivalence",
         action="store_true",
+        default=True,
         help="Run git cherry per non-merged branch to identify patch-equivalent cleanup candidates.",
+    )
+    parser.add_argument(
+        "--skip-patch-equivalence",
+        dest="include_patch_equivalence",
+        action="store_false",
+        help="Skip git cherry patch-equivalence checks for a faster approximate audit.",
     )
     parser.add_argument(
         "--publisher-backlog-limit",
