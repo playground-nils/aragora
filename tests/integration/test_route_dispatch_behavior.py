@@ -14,6 +14,7 @@ the committed expectation. Regenerate by running:
 See docs/architecture/HANDLER_REGISTRY_MAP.md for the cluster catalog and
 recommended consolidation canonicals.
 """
+
 from __future__ import annotations
 
 import json
