@@ -417,21 +417,13 @@ jobs:
             exit 1
           fi
 
-      - name: Run Gitleaks
-        # gitleaks-action@v2 introduced a paid-license requirement for
-        # organization accounts ("missing GITLEAKS_LICENSE secret"). Until
-        # either a license is provisioned, this step is allowed to fail
-        # without blocking the workflow. TruffleHog (next step) provides
-        # redundant secret-scanning coverage during the transition.
-        # Decision tracked separately: license vs pin-to-v1 vs migrate.
-        continue-on-error: true
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_COMMENTS: false
-          GITLEAKS_CONFIG: .gitleaks.toml
-
-      - name: Run TruffleHog (additional scan)
-        uses: trufflesecurity/trufflehog@main
+      # Gitleaks removed: gitleaks-action@v2 requires a paid GITLEAKS_LICENSE
+      # for organization accounts. TruffleHog (below) provides equivalent
+      # secret-scanning coverage with --only-verified (no false positives)
+      # and is free + actively maintained. Local pre-commit still uses
+      # gitleaks/gitleaks (the binary, not the action) which is free.
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@v3.95.2
         with:
+          version: v3.95.2
           extra_args: --only-verified
