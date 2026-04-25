@@ -151,9 +151,7 @@ class TestCodeUnitGenealogy:
         assert len(d["chain_checksum"]) == 64
 
     def test_chain_checksum_stable_regardless_of_input_order(self) -> None:
-        entries = [
-            _entry("decay_signal", f"e{i}", f"2026-04-25T0{i}:00:00Z") for i in range(1, 4)
-        ]
+        entries = [_entry("decay_signal", f"e{i}", f"2026-04-25T0{i}:00:00Z") for i in range(1, 4)]
         g1 = CodeUnitGenealogy.build("unit.foo", entries)
         g2 = CodeUnitGenealogy.build("unit.foo", list(reversed(entries)))
         assert g1.chain_checksum == g2.chain_checksum
