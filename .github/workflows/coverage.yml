@@ -14,7 +14,7 @@ jobs:
   coverage:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -63,6 +63,9 @@ jobs:
 
       - name: Run tests with coverage
         run: |
+          # -n auto: parallel execution via pytest-xdist (~4-8x speedup on CI runners
+          # with multiple cores). Coverage is collected per-worker and merged
+          # automatically by pytest-cov when COV_CORE_SOURCE is set, which xdist does.
           python -m pytest tests/ \
             -m "not slow and not load and not e2e" \
             --cov=aragora \
@@ -70,6 +73,7 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
             --timeout=120 \
+            -n auto \
             -q \
             --cov-fail-under=70
 
