@@ -225,3 +225,76 @@ def test_audit_excludes_terminal_outbox_receipts_from_publishable_backlog(
     receipted = next(record for record in payload["records"] if record["name"] == "codex/receipted")
     assert receipted["handoff_receipt_exists"] is True
     assert receipted["category"] == "protected_handoff_receipt"
+
+
+def test_audit_uses_automation_state_root_for_default_handoff_dirs(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    repo_root = tmp_path / "worktree"
+    state_root = tmp_path / "state-root"
+    repo_root.mkdir()
+    outbox = state_root / ".aragora" / "automation-outbox"
+    receipts = state_root / ".aragora" / "automation-receipts"
+    outbox.mkdir(parents=True)
+    receipts.mkdir(parents=True)
+
+    key = "open-pr-codex-receipted-abc123"
+    (outbox / "receipted.json").write_text(
+        json.dumps(
+            {
+                "task": "Publish receipted branch",
+                "requires_github": True,
+                "requested_action": "open_pr",
+                "repo": "synaptent/aragora",
+                "local_evidence": {"branch": "codex/receipted", "head": "abc123"},
+                "validation": ["pytest tests/example.py -q"],
+                "idempotency_key": key,
+                "created_at": "2026-04-24T16:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (receipts / f"{key}.json").write_text(
+        json.dumps({"idempotency_key": key, "status": "published"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ARAGORA_AUTOMATION_STATE_ROOT", str(state_root))
+    monkeypatch.setattr(
+        mod,
+        "local_branches",
+        lambda _root, _prefix, _base: [_branch_row("codex/receipted")],
+    )
+    monkeypatch.setattr(mod, "remote_branch_names", lambda _root, _prefix: set())
+    monkeypatch.setattr(mod, "merged_branch_names", lambda _root, _base, _prefix: set())
+    monkeypatch.setattr(mod, "worktree_map", lambda _root: {})
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="offline",
+            repo=str(repo_root),
+        ),
+    )
+
+    payload = mod.audit(
+        root=repo_root,
+        base="origin/main",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=False,
+        publisher_backlog_limit=1,
+    )
+
+    assert payload["outbox_dir"] == str(outbox)
+    assert payload["receipt_dir"] == str(receipts)
+    assert payload["summary"]["handoff_receipted_branches"] == 1
+    assert payload["summary"]["publishable_branch_backlog"] == 0
+    assert payload["summary"]["writer_should_pause_for_branch_backlog"] is False
+    assert payload["records"][0]["category"] == "protected_handoff_receipt"

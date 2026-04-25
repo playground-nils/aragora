@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from collections import Counter, defaultdict
@@ -178,6 +179,44 @@ def _repo_relative(root: Path, path: Path) -> Path:
     return root / path
 
 
+def _same_git_origin(left: Path, right: Path) -> bool:
+    left_proc = run_git(["config", "--get", "remote.origin.url"], left)
+    right_proc = run_git(["config", "--get", "remote.origin.url"], right)
+    if left_proc.returncode != 0 or right_proc.returncode != 0:
+        return False
+    return bool(left_proc.stdout.strip()) and left_proc.stdout.strip() == right_proc.stdout.strip()
+
+
+def _automation_state_root(root: Path) -> Path:
+    """Return the repo path whose .aragora state should back automation audits."""
+
+    if (root / ".aragora").is_dir():
+        return root
+
+    configured = os.environ.get("ARAGORA_AUTOMATION_STATE_ROOT")
+    candidates: list[tuple[Path, bool]] = []
+    if configured:
+        candidates.append((Path(configured).expanduser(), True))
+    candidates.append((Path.home() / "Development" / "aragora", False))
+
+    for candidate, explicit in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            resolved = candidate
+        if not (resolved / ".aragora").is_dir():
+            continue
+        if explicit or _same_git_origin(root, resolved):
+            return resolved
+    return root
+
+
+def _automation_state_path(root: Path, path: Path | None, default_relative: Path) -> Path:
+    if path is not None:
+        return _repo_relative(root, path)
+    return _automation_state_root(root) / default_relative
+
+
 def _json_files(path: Path) -> list[Path]:
     if not path.exists():
         return []
@@ -192,8 +231,8 @@ def terminal_receipted_handoff_branches(
 ) -> set[str]:
     """Return branch names that already have terminal automation handoff receipts."""
 
-    outbox_root = _repo_relative(root, outbox_dir or DEFAULT_OUTBOX_DIR)
-    receipt_root = _repo_relative(root, receipt_dir or DEFAULT_RECEIPT_DIR)
+    outbox_root = _automation_state_path(root, outbox_dir, DEFAULT_OUTBOX_DIR)
+    receipt_root = _automation_state_path(root, receipt_dir, DEFAULT_RECEIPT_DIR)
     terminal_keys: set[str] = set()
     for receipt_file in _json_files(receipt_root):
         try:
@@ -342,10 +381,12 @@ def audit(
     worktrees = worktree_map(root)
     github_health = check_github_cli_health(root)
     prs = open_pr_heads(root, repo, prefix) if github_health.ready else {}
+    resolved_outbox_dir = _automation_state_path(root, outbox_dir, DEFAULT_OUTBOX_DIR)
+    resolved_receipt_dir = _automation_state_path(root, receipt_dir, DEFAULT_RECEIPT_DIR)
     handoff_receipted_branches = terminal_receipted_handoff_branches(
         root,
-        outbox_dir=outbox_dir,
-        receipt_dir=receipt_dir,
+        outbox_dir=resolved_outbox_dir,
+        receipt_dir=resolved_receipt_dir,
     )
 
     records: list[BranchRecord] = []
@@ -420,6 +461,8 @@ def audit(
         "recent_hours": recent_hours,
         "publisher_backlog_limit": publisher_backlog_limit,
         "include_patch_equivalence": include_patch_equivalence,
+        "outbox_dir": str(resolved_outbox_dir),
+        "receipt_dir": str(resolved_receipt_dir),
         "github_health": github_health.to_dict(),
         "open_pr_lookup_skipped": not github_health.ready,
         "branch_count": len(records),
@@ -523,19 +566,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--outbox-dir",
         type=Path,
-        default=DEFAULT_OUTBOX_DIR,
+        default=None,
         help=(
             "Automation outbox directory to use for terminal handoff receipt matching. "
-            "Relative paths are resolved from the repo root."
+            "Relative paths are resolved from the repo root. Defaults to the repo "
+            "state root, falling back to ARAGORA_AUTOMATION_STATE_ROOT when this "
+            "worktree has no .aragora directory."
         ),
     )
     parser.add_argument(
         "--receipt-dir",
         type=Path,
-        default=DEFAULT_RECEIPT_DIR,
+        default=None,
         help=(
             "Automation receipt directory to use for terminal handoff receipt matching. "
-            "Relative paths are resolved from the repo root."
+            "Relative paths are resolved from the repo root. Defaults to the repo "
+            "state root, falling back to ARAGORA_AUTOMATION_STATE_ROOT when this "
+            "worktree has no .aragora directory."
         ),
     )
     parser.add_argument("--examples", type=int, default=10, help="Examples per Markdown category")
