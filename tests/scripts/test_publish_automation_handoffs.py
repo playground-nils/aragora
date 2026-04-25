@@ -260,7 +260,7 @@ def test_load_outbox_handoffs_skips_already_merged_branch_head(tmp_path: Path) -
                 idempotency_key="open-pr-codex-example-merged",
                 local_evidence={
                     "branch": "codex/example",
-                    "head": head,
+                    "head_sha": head,
                     "base": "main",
                 },
             )
