@@ -230,8 +230,12 @@ jobs:
           # --strict exits non-zero on any known vulnerability.
           # CVE-2025-14009: nltk Zip Slip in downloader — transitive dep, no fix version,
           # and we never call nltk.download() in production code.
+          # CVE-2026-3219 (GHSA-58qw-9mgm-455v): pip bundle in CI image. Aragora
+          # does not import pip at runtime; this is an image-freshness advisory.
+          # Same carve-out exists in security-gate.yml (#6525).
           pip-audit --strict --vulnerability-service osv \
-            --ignore-vuln CVE-2025-14009
+            --ignore-vuln CVE-2025-14009 \
+            --ignore-vuln CVE-2026-3219
 
       - name: Report Python dependency status
         if: always() && (steps.safety.outcome == 'failure' || steps.pip-audit.outcome == 'failure')
@@ -406,6 +410,12 @@ jobs:
           fi
 
       - name: Run Gitleaks
+        # gitleaks-action@v2 introduced a paid-license requirement
+        # ("missing GITLEAKS_LICENSE secret"). Until either a license is
+        # acquired or this is migrated to gitleaks-action@v1 / a different
+        # OSS scanner, this step is allowed to fail without blocking the job.
+        # TruffleHog (next step) provides redundant secret-scanning coverage.
+        continue-on-error: true
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
