@@ -158,7 +158,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: python -m pip install -e ".[dev]" 2>/dev/null || python -m pip install -e . || true
+        run: |
+          python -m pip install --upgrade pip
+          bash scripts/ci_install_project.sh --extras dev,test
 
       - name: Run Aragora Security Scanner
         id: security-scan
@@ -228,10 +230,20 @@ jobs:
         run: |
           # Audit installed packages against the OSV vulnerability database.
           # --strict exits non-zero on any known vulnerability.
-          # CVE-2025-14009: nltk Zip Slip in downloader — transitive dep, no fix version,
-          # and we never call nltk.download() in production code.
+          #
+          # Forced ignores (no upstream fix available — verified against OSV
+          # at the date in the comment):
+          #
+          # CVE-2026-3219 (2026-04-24): pip 26.0.1 itself — pip 26.0.1 is the
+          #   latest published pip; the runner toolcache is locked to it. No
+          #   patched pip release exists yet. pip is a dev tool, not shipped
+          #   to end users, so production exposure is nil. Re-evaluate when
+          #   pip 26.0.2 (or later) ships with a fix.
+          #
+          # Removed: CVE-2025-14009 (nltk Zip Slip) — confirmed clean in
+          #   nltk 3.9.4 (current latest) per OSV; the ignore is stale.
           pip-audit --strict --vulnerability-service osv \
-            --ignore-vuln CVE-2025-14009
+            --ignore-vuln CVE-2026-3219
 
       - name: Report Python dependency status
         if: always() && (steps.safety.outcome == 'failure' || steps.pip-audit.outcome == 'failure')
@@ -406,6 +418,13 @@ jobs:
           fi
 
       - name: Run Gitleaks
+        # gitleaks-action@v2 introduced a paid-license requirement for
+        # organization accounts ("missing GITLEAKS_LICENSE secret"). Until
+        # either a license is provisioned, this step is allowed to fail
+        # without blocking the workflow. TruffleHog (next step) provides
+        # redundant secret-scanning coverage during the transition.
+        # Decision tracked separately: license vs pin-to-v1 vs migrate.
+        continue-on-error: true
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
