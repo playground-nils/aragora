@@ -57,6 +57,30 @@ class TestGenealogyEntry:
         )
         assert e.to_dict()["metadata"]["repair_kind"] == "pr_candidate"
 
+    def test_metadata_defensive_copy_on_construction(self) -> None:
+        caller_dict = {"key": "original"}
+        e = GenealogyEntry(
+            entry_kind="decay_signal",
+            entry_id="e1",
+            checksum="abc",
+            timestamp="2026-04-25T00:00:00Z",
+            metadata=caller_dict,
+        )
+        caller_dict["key"] = "mutated"
+        assert e.metadata["key"] == "original"
+
+    def test_metadata_defensive_copy_on_to_dict(self) -> None:
+        e = GenealogyEntry(
+            entry_kind="decay_signal",
+            entry_id="e1",
+            checksum="abc",
+            timestamp="2026-04-25T00:00:00Z",
+            metadata={"key": "original"},
+        )
+        d = e.to_dict()
+        d["metadata"]["key"] = "mutated"
+        assert e.metadata["key"] == "original"
+
     def test_invalid_kind_raises(self) -> None:
         with pytest.raises(ValueError, match="entry_kind"):
             GenealogyEntry(
@@ -74,6 +98,29 @@ class TestGenealogyEntry:
                 checksum="",
                 timestamp="2026-04-25T00:00:00Z",
             )
+
+    def test_invalid_timestamp_raises(self) -> None:
+        with pytest.raises(ValueError, match="timestamp"):
+            GenealogyEntry(
+                entry_kind="decay_signal",
+                entry_id="e1",
+                checksum="abc",
+                timestamp="not-a-date",
+            )
+
+    def test_timestamp_normalized_to_canonical_form(self) -> None:
+        # +00:00 offset form → Z suffix; millisecond precision enforced
+        e = GenealogyEntry(
+            entry_kind="decay_signal",
+            entry_id="e1",
+            checksum="abc",
+            timestamp="2026-04-25T12:00:00+00:00",
+        )
+        assert e.timestamp == "2026-04-25T12:00:00.000Z"
+
+    def test_timestamp_z_suffix_accepted(self) -> None:
+        e = _entry(ts="2026-04-25T00:00:00Z")
+        assert e.timestamp == "2026-04-25T00:00:00.000Z"
 
     def test_all_valid_kinds_accepted(self) -> None:
         for kind in ("decision_receipt", "decay_signal", "crux_receipt", "repair_proposal"):
@@ -205,6 +252,11 @@ class TestInMemoryGenealogyStore:
 
 
 class TestGetGenealogy:
+    def test_empty_code_unit_id_raises(self) -> None:
+        store = InMemoryGenealogyStore()
+        with pytest.raises(ValueError, match="code_unit_id"):
+            get_genealogy("", store, require_enabled=False)
+
     def test_flag_off_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("ARAGORA_GENEALOGY_ENABLED", raising=False)
         store = InMemoryGenealogyStore()

@@ -20,13 +20,11 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, get_args, runtime_checkable
 
 EntryKind = Literal["decision_receipt", "decay_signal", "crux_receipt", "repair_proposal"]
 
-_ENTRY_KINDS: frozenset[str] = frozenset(
-    {"decision_receipt", "decay_signal", "crux_receipt", "repair_proposal"}
-)
+_ENTRY_KINDS: frozenset[str] = frozenset(get_args(EntryKind))
 
 
 def _genealogy_enabled() -> bool:
@@ -65,6 +63,16 @@ class GenealogyEntry:
             raise ValueError(f"unknown entry_kind: {self.entry_kind!r}")
         if not self.entry_id:
             raise ValueError("entry_id must be non-empty")
+        # Q2: validate and normalize timestamp to canonical UTC form so that
+        # lex-sort is safe even when producers use mixed ISO-8601 representations.
+        try:
+            dt = datetime.fromisoformat(self.timestamp.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            raise ValueError(f"timestamp must be ISO-8601 UTC: {self.timestamp!r}")
+        normalized = dt.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        object.__setattr__(self, "timestamp", normalized)
+        # Q10: defensive copy so caller mutations don't reach inside frozen entry.
+        object.__setattr__(self, "metadata", dict(self.metadata))
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -74,7 +82,7 @@ class GenealogyEntry:
             "timestamp": self.timestamp,
         }
         if self.metadata:
-            d["metadata"] = self.metadata
+            d["metadata"] = dict(self.metadata)  # Q10: copy on serialization
         return d
 
 
@@ -94,6 +102,9 @@ class CodeUnitGenealogy:
 
     ``entries`` are ordered oldest-first by timestamp then entry_id.
     ``chain_checksum`` is SHA-256 of the canonical-sorted entries JSON.
+    It proves set membership (same entries regardless of insertion order),
+    not historical sequence — two genealogies are equal iff they contain the
+    same set of entries.
     """
 
     code_unit_id: str
@@ -108,7 +119,9 @@ class CodeUnitGenealogy:
             code_unit_id=code_unit_id,
             entries=sorted_entries,
             chain_checksum=_chain_checksum(sorted_entries),
-            generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            generated_at=datetime.now(UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -165,6 +178,8 @@ def get_genealogy(
     ``ARAGORA_GENEALOGY_ENABLED`` is not set.  Tests can pass
     ``require_enabled=False`` or set the env var via ``enable_genealogy()``.
     """
+    if not code_unit_id:
+        raise ValueError("code_unit_id must be non-empty")
     if require_enabled and not _genealogy_enabled():
         raise RuntimeError(
             "ARAGORA_GENEALOGY_ENABLED is not set; "
