@@ -228,10 +228,20 @@ jobs:
         run: |
           # Audit installed packages against the OSV vulnerability database.
           # --strict exits non-zero on any known vulnerability.
-          # CVE-2025-14009: nltk Zip Slip in downloader — transitive dep, no fix version,
-          # and we never call nltk.download() in production code.
+          #
+          # Forced ignores (no upstream fix available — verified against OSV
+          # at the date in the comment):
+          #
+          # CVE-2026-3219 (2026-04-24): pip 26.0.1 itself — pip 26.0.1 is the
+          #   latest published pip; the runner toolcache is locked to it. No
+          #   patched pip release exists yet. pip is a dev tool, not shipped
+          #   to end users, so production exposure is nil. Re-evaluate when
+          #   pip 26.0.2 (or later) ships with a fix.
+          #
+          # Removed: CVE-2025-14009 (nltk Zip Slip) — confirmed clean in
+          #   nltk 3.9.4 (current latest) per OSV; the ignore is stale.
           pip-audit --strict --vulnerability-service osv \
-            --ignore-vuln CVE-2025-14009
+            --ignore-vuln CVE-2026-3219
 
       - name: Report Python dependency status
         if: always() && (steps.safety.outcome == 'failure' || steps.pip-audit.outcome == 'failure')
