@@ -298,3 +298,15 @@ def test_audit_uses_automation_state_root_for_default_handoff_dirs(
     assert payload["summary"]["publishable_branch_backlog"] == 0
     assert payload["summary"]["writer_should_pause_for_branch_backlog"] is False
     assert payload["records"][0]["category"] == "protected_handoff_receipt"
+
+
+def test_parser_checks_patch_equivalence_by_default() -> None:
+    args = mod.build_parser().parse_args([])
+
+    assert args.include_patch_equivalence is True
+
+
+def test_parser_can_skip_patch_equivalence() -> None:
+    args = mod.build_parser().parse_args(["--skip-patch-equivalence"])
+
+    assert args.include_patch_equivalence is False
