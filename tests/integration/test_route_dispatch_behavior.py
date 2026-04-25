@@ -120,20 +120,21 @@ def test_route_dispatch_snapshot() -> None:
     current = _build_dispatch_map()
 
     if os.environ.get(_UPDATE_ENV, "").lower() in ("1", "true", "yes"):
+        # User explicitly asked to regenerate. Write and pass.
         _save_snapshot(current)
-        pytest.skip(f"Snapshot updated: {len(current)} entries written to {FIXTURE_PATH}")
         return
 
     snapshot = _load_snapshot()
 
     if not snapshot:
-        # First run — write the snapshot rather than fail.
+        # First-run state. Auto-generate the fixture so the user can commit it,
+        # but fail loudly — running without a committed fixture is not the
+        # intended steady state, and a silent pass here would mask that.
         _save_snapshot(current)
-        pytest.skip(
-            f"No snapshot existed; created {FIXTURE_PATH} with {len(current)} entries. "
-            "Re-run the test to verify."
+        pytest.fail(
+            f"Snapshot fixture was missing; auto-created at {FIXTURE_PATH} "
+            f"with {len(current)} entries. Commit the fixture and re-run the test."
         )
-        return
 
     # Compute drift in both directions for a clear failure message.
     added = {k: current[k] for k in current.keys() - snapshot.keys()}
@@ -171,9 +172,13 @@ def test_route_dispatch_snapshot() -> None:
 
 
 def test_dispatch_snapshot_fixture_is_sorted() -> None:
-    """The committed fixture should be deterministically ordered for clean diffs."""
+    """The committed fixture should be deterministically ordered for clean diffs.
+
+    If the fixture is missing entirely, ``test_route_dispatch_snapshot`` already
+    reports it; this test passes vacuously rather than double-reporting.
+    """
     if not FIXTURE_PATH.exists():
-        pytest.skip("No snapshot fixture yet; will be created on first run.")
+        return
     with FIXTURE_PATH.open("r", encoding="utf-8") as f:
         raw = f.read()
     parsed = json.loads(raw)
