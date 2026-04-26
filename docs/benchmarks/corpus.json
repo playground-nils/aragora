@@ -1,6 +1,6 @@
 {
   "corpus_id": "tw-01-bounded-execution-v1",
-  "revision": 4,
+  "revision": 5,
   "recorded_on": "2026-04-26",
   "success_contract": "mergeable_pr_or_merged_pr",
   "run_cadence": "weekly_or_better",
@@ -16,6 +16,11 @@
     "in_progress": "Issue is OPEN at corpus authoring time, bounded, and has been dispatched at least once to the autonomous boss loop (a recorded `worker_outcome` in .aragora/overnight/boss_metrics.jsonl). Autonomy is on the hook to resolve it. Excluded from `truth_success_rate_verified` until it graduates."
   },
   "revision_log": [
+    {
+      "revision": 5,
+      "recorded_on": "2026-04-26",
+      "change": "Validation pass: preserve the rev-4 stale-member retirement (#5844, #5903, #5887) and keep the recurring TW-02 freshness map linked to follow-up issue #5839 while publication verifies corpus_freshness.status=fresh for the current one-issue corpus."
+    },
     {
       "revision": 4,
       "recorded_on": "2026-04-26",
