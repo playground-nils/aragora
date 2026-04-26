@@ -1,7 +1,7 @@
 {
   "corpus_id": "tw-01-bounded-execution-v1",
-  "revision": 3,
-  "recorded_on": "2026-04-17",
+  "revision": 4,
+  "recorded_on": "2026-04-26",
   "success_contract": "mergeable_pr_or_merged_pr",
   "run_cadence": "weekly_or_better",
   "change_control": "Issue membership stays fixed until an explicit corpus revision edits this file.",
@@ -16,6 +16,11 @@
     "in_progress": "Issue is OPEN at corpus authoring time, bounded, and has been dispatched at least once to the autonomous boss loop (a recorded `worker_outcome` in .aragora/overnight/boss_metrics.jsonl). Autonomy is on the hook to resolve it. Excluded from `truth_success_rate_verified` until it graduates."
   },
   "revision_log": [
+    {
+      "revision": 4,
+      "recorded_on": "2026-04-26",
+      "change": "TW-02 restock: retire the rev-3 in-progress entries (#5844, #5903, #5887) from the fixed corpus after they went stale/closed, and keep the benchmark status surface linked to the follow-up restock issue #5839 until fresh replacement members are explicitly added."
+    },
     {
       "revision": 3,
       "recorded_on": "2026-04-17",
@@ -49,78 +54,43 @@
       "reason": "Closed by founder PR #5766 (Claude Code session, @an0mium). Sole autonomous attempt terminated as `blocked_auth_failure`; added to rev-2 as a replacement for #1733 the same day the founder closed it."
     }
   ],
-  "issues": [
+  "retired_in_revision_4": [
     {
       "issue_id": 5844,
-      "title": "[CS-01..03] Reconcile docs/status surfaces to current proof",
-      "execution_class": "docs_reconciliation",
-      "expected_status": "in_progress",
-      "scope_hint": [
-        "docs/status/NEXT_STEPS_CANONICAL.md",
-        "docs/status/ACTIVE_EXECUTION_ISSUES.md",
-        "docs/status/B0_BENCHMARK_TRUTH_STATUS.md",
-        "docs/status/TW03_RESCUE_PRODUCTIZATION_STATUS.md"
-      ],
-      "known_constraints": [
-        "docs-only surface reconciliation",
-        "scripts/reconcile_status_docs.py must report no critical findings"
-      ],
-      "source_reference": "github.com/synaptent/aragora/issues/5844",
-      "added_in_revision": 3,
-      "github_labels": ["autonomous", "boss-stuck"],
-      "dispatch_provenance": {
-        "boss_metrics_file": ".aragora/overnight/boss_metrics.jsonl",
-        "tick_count": 5,
-        "terminal_classes": ["blocked_not_dispatch_bounded", "blocked_auth_failure"]
-      },
-      "honesty_note": "OPEN and bounded; labeled `boss-stuck` — the autonomy loop has provably attempted this 5 times and hit retry ceiling. Ideal benchmark member per the audit's Short-term recommendation."
+      "reason": "Retired during TW-02 restock after the rev-3 in-progress member went stale/closed; tracked by follow-up issue #5839."
     },
     {
       "issue_id": 5903,
-      "title": "[CS-01] Add roadmap priority policy classification tests",
-      "execution_class": "test_authoring",
-      "expected_status": "in_progress",
-      "scope_hint": [
-        "aragora/swarm/roadmap_priority.py",
-        "tests/swarm/test_roadmap_priority.py"
-      ],
-      "known_constraints": [
-        "single test file deliverable",
-        "pytest tests/swarm/test_roadmap_priority.py -v must pass",
-        "coverage for extract_roadmap_codes, priority_for_text, blocks_boss_ready"
-      ],
-      "source_reference": "github.com/synaptent/aragora/issues/5903",
-      "added_in_revision": 3,
-      "github_labels": ["autonomous", "boss-stuck"],
-      "dispatch_provenance": {
-        "boss_metrics_file": ".aragora/overnight/boss_metrics.jsonl",
-        "tick_count": 3,
-        "terminal_classes": ["blocked_not_dispatch_bounded"]
-      },
-      "honesty_note": "OPEN and bounded; labeled `boss-stuck`. Three autonomous dispatch attempts in boss_metrics, all blocked. The benchmark exists precisely to measure whether substrate improvements move this from blocked to merged."
+      "reason": "Retired during TW-02 restock after the rev-3 in-progress member went stale/closed; tracked by follow-up issue #5839."
     },
     {
       "issue_id": 5887,
-      "title": "Add explicit B2 guard expansion criteria to NEXT_STEPS_CANONICAL.md",
-      "execution_class": "docs_hardening",
+      "reason": "Retired during TW-02 restock after the rev-3 in-progress member went stale/closed; tracked by follow-up issue #5839."
+    }
+  ],
+  "issues": [
+    {
+      "issue_id": 5839,
+      "title": "[TW-02] Restock stale issues in tw-01-bounded-execution-v1 rev-1",
+      "execution_class": "benchmark_corpus_maintenance",
       "expected_status": "in_progress",
       "scope_hint": [
-        "docs/status/NEXT_STEPS_CANONICAL.md"
+        "docs/benchmarks/corpus.json"
       ],
       "known_constraints": [
-        "docs-only single-file deliverable",
-        "scripts/reconcile_status_docs.py --json must pass",
-        "claims must stay narrower than measured proof"
+        "retire or replace each stale closed corpus issue",
+        "rerun the recurring benchmark truth publication until corpus_freshness.status is fresh",
+        "keep the recurring TW-02 status surface linked to this follow-up issue until the stale set is cleared"
       ],
-      "source_reference": "github.com/synaptent/aragora/issues/5887",
-      "added_in_revision": 3,
-      "github_labels": [],
+      "source_reference": "github.com/synaptent/aragora/issues/5839",
+      "added_in_revision": 4,
+      "github_labels": ["autonomous"],
       "dispatch_provenance": {
-        "boss_metrics_file": ".aragora/overnight/boss_metrics.jsonl",
+        "lease_id": "feb5e30b-3d0",
         "tick_count": 1,
-        "terminal_classes": ["blocked_not_dispatch_bounded"]
+        "terminal_classes": ["dispatch"]
       },
-      "honesty_note": "OPEN and bounded to a single docs file. One autonomous dispatch tick recorded (blocked). Included to give the rev-3 corpus at least one non-boss-stuck open attempt so the benchmark surface isn't exclusively retry-ceiling entries."
+      "honesty_note": "TW-02 follow-up issue keeps the status surface linked while the stale rev-3 members are cleared and fresh replacement members are selected."
     }
   ]
 }
