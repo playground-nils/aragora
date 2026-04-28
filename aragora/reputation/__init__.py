@@ -53,6 +53,7 @@ from aragora.reputation.types import (
     DOMAIN_KM_CONTRIBUTION,
     DOMAIN_PREDICTION_MARKET,
     ReputationDelta,
+    ReputationDeltaReversed,
     ResolvedClaim,
     StakeableClaim,
 )
@@ -66,6 +67,7 @@ __all__ = [
     "AnchorError",
     "AnchorReceipt",
     "ReputationDelta",
+    "ReputationDeltaReversed",
     "ResolvedClaim",
     "StakeableClaim",
     "anchor_delta",
