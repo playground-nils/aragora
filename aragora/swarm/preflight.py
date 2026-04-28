@@ -1460,27 +1460,64 @@ def _preflight_launch_config(
 ) -> LaunchConfig:
     """Build the preflight-owned ``LaunchConfig``.
 
-    Threads ``expected_contract.profile`` (when non-default, for claude
-    workers) into ``LaunchConfig.claude_profile`` so that the launcher's
-    rebuilt worker-contract matches the preview-persisted contract.
+    Threads ``expected_contract`` fields (profile, permissions) into the
+    launcher's ``LaunchConfig`` so that the launcher's rebuilt worker
+    contract matches the preview-persisted contract exactly. Without this
+    threading, ``_enforce_expected_contract()`` rejects the preflight
+    worker on field drift.
 
-    Pre-v1.2 this inheritance was missing, which caused two drift sources
-    that together tripped ``_enforce_expected_contract()``:
+    Drift sources we explicitly compensate for:
 
-    * ``profile`` field: preview "max-07" vs launcher "default"
-    * ``env_checksum`` field: preview env has ``ARAGORA_CLAUDE_PROFILE``,
+    * ``profile`` (claude only): preview "max-07" vs launcher "default".
+      Pre-v1.2 inheritance was missing.
+    * ``env_checksum``: preview env has ``ARAGORA_CLAUDE_PROFILE``,
       launcher env did not.
+    * ``permissions.allow_full_auto`` (codex) and
+      ``permissions.allow_dangerous_permissions`` (claude): preview built
+      via ``loop.config.allow_codex_full_auto`` /
+      ``loop.config.allow_claude_dangerously_skip_permissions``, which can
+      be ``False``; the launcher historically hardcoded both to ``True``.
+      With ``loop.config.allow_codex_full_auto=False`` (the safer default),
+      preview produces ``permissions={"allow_full_auto": false}`` while
+      the launcher produced ``{"allow_full_auto": true}`` → drift on
+      ``permissions``, blocking dispatch with
+      ``contract_preflight: drifted fields ['permissions']``.
+
+    The launcher's contract is rebuilt by ``WorkerLauncher`` via
+    ``build_worker_contract(config=...)``. The fix is to read the
+    permission booleans off the expected contract and feed them into the
+    ``LaunchConfig``, so both sides derive from the same source of truth.
+    Falls back to ``True`` (the historical default) only when the expected
+    contract did not specify a permission, preserving existing behaviour
+    for callers that pass ``contract=None``.
 
     See ``docs/plans/2026-04-17-worker-drift-diagnosis.md``.
     """
     launcher_profile: str | None = None
-    if contract is not None and str(agent or "").strip().lower() == "claude":
+    normalized_agent = str(agent or "").strip().lower()
+    if contract is not None and normalized_agent == "claude":
         raw_profile = str(contract.profile or "").strip()
         if raw_profile and raw_profile.lower() != "default":
             launcher_profile = raw_profile
+
+    # Mirror permission booleans from the expected contract so the launcher's
+    # rebuilt contract permissions match the preview's exactly. Without this,
+    # _enforce_expected_contract trips on permissions drift whenever
+    # loop.config disabled either flag.
+    contract_permissions: dict[str, Any] = {}
+    if contract is not None and isinstance(contract.permissions, dict):
+        contract_permissions = contract.permissions
+
+    # Default True preserves legacy behaviour for callers that pass
+    # contract=None or omit the relevant permission key. When the expected
+    # contract was built from loop.config with the field set to False, that
+    # value flows through here unchanged.
+    allow_dangerous = bool(contract_permissions.get("allow_dangerous_permissions", True))
+    allow_full_auto = bool(contract_permissions.get("allow_full_auto", True))
+
     return LaunchConfig(
-        allow_claude_dangerously_skip_permissions=True,
-        allow_codex_full_auto=True,
+        allow_claude_dangerously_skip_permissions=allow_dangerous,
+        allow_codex_full_auto=allow_full_auto,
         # Preflight already provisions and owns the disposable worktree.
         # Wrapping the worker in codex_session.sh tries to create another
         # managed worktree on top of it and fails before any commit happens.

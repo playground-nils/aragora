@@ -306,6 +306,140 @@ def test_preflight_run_worker_ignores_profile_for_non_claude_agents() -> None:
     assert cfg.claude_profile is None
 
 
+def test_preflight_run_worker_inherits_codex_allow_full_auto_false() -> None:
+    """Regression: when the expected contract has
+    ``permissions={"allow_full_auto": false}`` (because
+    ``loop.config.allow_codex_full_auto`` was False), the preflight
+    launcher must build its ``LaunchConfig`` with
+    ``allow_codex_full_auto=False`` so the rebuilt worker contract's
+    permissions match the preview-persisted contract's permissions
+    exactly. Pre-fix this was hardcoded to True, producing
+    ``contract_preflight: drifted fields ['permissions']`` and blocking
+    every dispatch on a config with full-auto disabled.
+
+    Evidence: ``.aragora/overnight/contract_drift_diagnostics.jsonl``
+    entries 2026-04-28T02:23:21Z and 02:24:48Z show
+    ``expected={"allow_full_auto": false}`` vs
+    ``actual={"allow_full_auto": true}`` for the codex agent.
+    """
+    expected = WorkerContract(
+        runner_type="codex-cli",
+        agent="codex",
+        model="default",
+        profile="default",
+        permissions={"allow_full_auto": False},
+        execution_mode="autonomous",
+        git_auth_mode="https",
+        gh_api_auth_mode="none",
+        budget={"max_wall_time_seconds": 2400.0, "no_progress_timeout_seconds": 3600.0},
+        env_checksum="abc",
+        mission_context_policy={"role": "worker", "required_sources": []},
+    )
+    cfg = preflight_mod._preflight_launch_config(
+        agent="codex",
+        contract=expected,
+    )
+    assert cfg.allow_codex_full_auto is False, (
+        "preflight launcher must mirror expected contract's "
+        "allow_full_auto=False, not hardcode True"
+    )
+
+    # Round-trip: rebuild the worker contract from the launcher's config and
+    # confirm permissions match what the preview produced. This is the exact
+    # comparison _enforce_expected_contract performs.
+    from aragora.swarm.worker_contract import build_worker_contract
+
+    rebuilt = build_worker_contract(
+        agent="codex",
+        config=cfg,
+        worktree_path="/tmp",
+        env={},
+    )
+    assert rebuilt.permissions == {"allow_full_auto": False}
+
+
+def test_preflight_run_worker_inherits_codex_allow_full_auto_true() -> None:
+    """Symmetric: when the expected contract permits full-auto, the
+    launcher must also permit it. Pinning the historical default
+    behaviour for the True case so this stays a real bidirectional
+    contract.
+    """
+    expected = WorkerContract(
+        runner_type="codex-cli",
+        agent="codex",
+        model="default",
+        profile="default",
+        permissions={"allow_full_auto": True},
+        execution_mode="autonomous",
+        git_auth_mode="https",
+        gh_api_auth_mode="none",
+        budget={"max_wall_time_seconds": 2400.0, "no_progress_timeout_seconds": 3600.0},
+        env_checksum="abc",
+        mission_context_policy={"role": "worker", "required_sources": []},
+    )
+    cfg = preflight_mod._preflight_launch_config(
+        agent="codex",
+        contract=expected,
+    )
+    assert cfg.allow_codex_full_auto is True
+
+
+def test_preflight_run_worker_inherits_claude_dangerous_permissions_false() -> None:
+    """Regression: same drift symmetry for claude's
+    ``allow_dangerous_permissions``. When loop.config disables it the
+    preview produces ``permissions={"allow_dangerous_permissions": false}``;
+    the launcher must mirror that so the rebuilt contract matches.
+    """
+    expected = WorkerContract(
+        runner_type="claude-cli",
+        agent="claude",
+        model="default",
+        profile="default",
+        permissions={"allow_dangerous_permissions": False},
+        execution_mode="autonomous",
+        git_auth_mode="https",
+        gh_api_auth_mode="none",
+        budget={"max_wall_time_seconds": 2400.0, "no_progress_timeout_seconds": 3600.0},
+        env_checksum="abc",
+        mission_context_policy={"role": "worker", "required_sources": []},
+    )
+    cfg = preflight_mod._preflight_launch_config(
+        agent="claude",
+        contract=expected,
+    )
+    assert cfg.allow_claude_dangerously_skip_permissions is False
+
+
+def test_preflight_run_worker_falls_back_to_true_when_contract_omits_permission() -> None:
+    """When the expected contract is None (legacy callers) or its
+    ``permissions`` dict omits the relevant key, the launcher must fall
+    back to the historical default of True so behaviour is preserved
+    for callers that haven't updated to thread the contract through.
+    """
+    cfg_none = preflight_mod._preflight_launch_config(agent="codex", contract=None)
+    assert cfg_none.allow_codex_full_auto is True
+    assert cfg_none.allow_claude_dangerously_skip_permissions is True
+
+    expected_no_permissions = WorkerContract(
+        runner_type="codex-cli",
+        agent="codex",
+        model="default",
+        profile="default",
+        permissions={},  # empty
+        execution_mode="autonomous",
+        git_auth_mode="https",
+        gh_api_auth_mode="none",
+        budget={"max_wall_time_seconds": 2400.0, "no_progress_timeout_seconds": 3600.0},
+        env_checksum="abc",
+        mission_context_policy={"role": "worker", "required_sources": []},
+    )
+    cfg_empty = preflight_mod._preflight_launch_config(
+        agent="codex",
+        contract=expected_no_permissions,
+    )
+    assert cfg_empty.allow_codex_full_auto is True
+
+
 # --- Production dispatch-gate call must pass admin_approved=True ------------
 
 
