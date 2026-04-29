@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Launch a Codex or Claude session inside a named tmux pane.
+# Launch a Codex, Claude, or Droid session inside a named tmux pane.
 #
 # Usage:
 #   ./scripts/tmux_session_launcher.sh --name codex-conductor --agent codex --prompt-file /tmp/prompt.md
 #   ./scripts/tmux_session_launcher.sh --name claude-worker --agent claude --autonomous --prompt "Fix tests"
+#   ./scripts/tmux_session_launcher.sh --name factory-review --agent droid --prompt "Review PR #6811"
 #   ./scripts/tmux_session_launcher.sh --name codex-qa --agent codex --autonomous --prompt "Fix the tests"
 #   ./scripts/tmux_session_launcher.sh --list
 #   ./scripts/tmux_session_launcher.sh --kill codex-conductor
@@ -42,6 +43,7 @@ send_prompt_to_target() {
     if [[ "${line_count}" -gt 1 ]]; then
         printf '%s' "${prompt}" | tmux load-buffer -
         tmux paste-buffer -d -t "${target}"
+        sleep "${ARAGORA_TMUX_PASTE_SETTLE_SECONDS:-0.2}"
         tmux send-keys -t "${target}" Enter
         method="paste-buffer"
     else
@@ -91,10 +93,13 @@ wait_for_agent_ready() {
 
     case "${agent}" in
         codex)
-            pattern='OpenAI Codex|Use /skills to list available skills|Improve documentation in @filename|Find and fix a bug in @filename|Explain this codebase|Use /rename to rename your threads'
+            pattern='Use /skills to list available skills|Improve documentation in @filename|Find and fix a bug in @filename|Explain this codebase|Use /rename to rename your threads'
             ;;
         claude)
             pattern='Claude Code|ctrl\+g to edit in VS Code|don'"'"'t ask on'
+            ;;
+        droid|factory)
+            pattern='Droid|Factory|AI coding agent|Type your message'
             ;;
     esac
 
@@ -120,6 +125,9 @@ default_init_wait_seconds() {
             echo "60"
             ;;
         claude)
+            echo "30"
+            ;;
+        droid|factory)
             echo "30"
             ;;
         *)
@@ -224,8 +232,13 @@ elif [[ "${AGENT}" == "claude" ]]; then
     else
         LAUNCH_CMD="cd '${REPO_ROOT}' && ./scripts/claude-wt"
     fi
+elif [[ "${AGENT}" == "droid" || "${AGENT}" == "factory" ]]; then
+    # Droid interactive sessions do their own permission gating. Mission/exec
+    # mode is intentionally not used here so the pane remains interactive for
+    # later agent_bridge.py send/read cycles.
+    LAUNCH_CMD="cd '${REPO_ROOT}' && droid --cwd '${REPO_ROOT}'"
 else
-    echo "Unknown agent: ${AGENT}. Use 'codex' or 'claude'." >&2
+    echo "Unknown agent: ${AGENT}. Use 'codex', 'claude', or 'droid'." >&2
     exit 1
 fi
 

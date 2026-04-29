@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,6 +25,67 @@ def _patch_bridge_paths(mod, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(mod, "AGENT_BRIDGE_DIR", bridge_dir)
     monkeypatch.setattr(mod, "SESSION_SNAPSHOT_FILE", bridge_dir / "sessions.json")
     monkeypatch.setattr(mod, "LANE_REGISTRY_FILE", bridge_dir / "lanes.json")
+
+
+def test_send_tmux_multiline_uses_delete_on_paste_buffer_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_bridge as mod
+
+    calls: list[tuple[list[str], str | None]] = []
+    sleeps: list[float] = []
+
+    def _fake_run(
+        args: list[str],
+        *,
+        input: str | None = None,
+        text: bool | None = None,
+        check: bool | None = None,
+        timeout: int | None = None,
+        **_kwargs,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((args, input))
+        assert check is True
+        assert timeout == 5
+        if args == ["tmux", "load-buffer", "-"]:
+            assert text is True
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+    monkeypatch.setenv("ARAGORA_TMUX_PASTE_SETTLE_SECONDS", "0.01")
+    monkeypatch.setattr(mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    assert mod._send_tmux("aragora:codex-review", "line one\nline two") is True
+    assert sleeps == [0.01]
+    assert calls == [
+        (["tmux", "load-buffer", "-"], "line one\nline two"),
+        (["tmux", "paste-buffer", "-d", "-t", "aragora:codex-review"], None),
+        (["tmux", "send-keys", "-t", "aragora:codex-review", "Enter"], None),
+    ]
+
+
+def test_cmd_approve_droid_uses_enter_menu_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agent_bridge as mod
+
+    session = mod.Session(
+        name="factory-review",
+        agent="droid",
+        status="alive",
+        tmux_target="aragora:factory-review",
+    )
+    calls: list[list[str]] = []
+
+    def _fake_run(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(mod, "discover", lambda: [session])
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+
+    rc = mod.cmd_approve(argparse.Namespace(name="factory-review", json=False))
+
+    assert rc == 0
+    assert calls == [["tmux", "send-keys", "-t", "aragora:factory-review", "Enter"]]
 
 
 def test_cmd_send_persists_lane_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -263,6 +325,67 @@ def test_main_accepts_json_after_subcommand(
 
     assert mod.main() == 0
     assert json.loads(capsys.readouterr().out) == []
+
+
+def test_cmd_launch_invokes_tmux_launcher_for_droid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    repo_root = tmp_path / "repo"
+    scripts_dir = repo_root / "scripts"
+    scripts_dir.mkdir(parents=True)
+    launcher = scripts_dir / "tmux_session_launcher.sh"
+    launcher.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("review only\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "CANONICAL_REPO_ROOT", repo_root)
+
+    calls = []
+
+    def _fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return argparse.Namespace(returncode=0, stdout="launched\n", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+
+    rc = mod.cmd_launch(
+        argparse.Namespace(
+            name="factory-review",
+            agent="droid",
+            prompt=[],
+            file=str(prompt_file),
+            autonomous=False,
+            timeout_seconds=10,
+            json=False,
+        )
+    )
+
+    assert rc == 0
+    assert capsys.readouterr().out == "launched\n"
+    assert calls == [
+        (
+            [
+                "bash",
+                str(launcher),
+                "--name",
+                "factory-review",
+                "--agent",
+                "droid",
+                "--prompt-file",
+                str(prompt_file),
+            ],
+            {
+                "cwd": str(repo_root),
+                "capture_output": False,
+                "text": True,
+                "timeout": 30,
+                "check": False,
+            },
+        )
+    ]
 
 
 def test_write_session_snapshot_falls_back_to_state_root(
