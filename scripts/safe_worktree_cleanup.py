@@ -103,6 +103,8 @@ def _lookup_open_prs(repo_root: Path, branch: str | None) -> tuple[list[dict[str
 def _worktree_is_dirty(path: Path) -> bool:
     if not path.exists():
         return False
+    if not (path / ".git").exists():
+        return False
     proc = subprocess.run(
         ["git", "status", "--short"],
         cwd=path,
@@ -111,7 +113,7 @@ def _worktree_is_dirty(path: Path) -> bool:
         check=False,
     )
     if proc.returncode != 0:
-        return False
+        return True
     return bool(proc.stdout.strip())
 
 

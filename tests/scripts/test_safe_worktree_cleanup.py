@@ -146,6 +146,28 @@ def test_branch_detection_requires_local_git_metadata(tmp_path: Path) -> None:
     assert mod._branch_for_path(orphan_path, None) is None
 
 
+def test_dirty_check_treats_git_status_failure_as_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import safe_worktree_cleanup as mod
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (worktree / ".git").write_text("gitdir: broken\n", encoding="utf-8")
+
+    def fake_run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=["git", "status", "--short"],
+            returncode=128,
+            stdout="",
+            stderr="fatal: bad gitdir\n",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    assert mod._worktree_is_dirty(worktree) is True
+
+
 def test_remove_purges_residual_path_after_failed_git_remove(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
