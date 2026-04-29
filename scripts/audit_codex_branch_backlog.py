@@ -197,7 +197,9 @@ def dirty_worktree(path: Path) -> bool:
         return False
     except OSError:
         return True
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+    if proc.returncode != 0:
+        return True
+    return bool(proc.stdout.strip())
 
 
 def active_worktree(path: Path) -> bool:

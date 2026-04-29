@@ -167,6 +167,64 @@ def test_audit_ignores_missing_worktree_paths(tmp_path: Path, monkeypatch: Any) 
     assert payload["records"][0]["category"] == "salvage_recent_unique"
 
 
+def test_audit_protects_worktree_when_status_fails(tmp_path: Path, monkeypatch: Any) -> None:
+    row = _branch_row("codex/status-failed")
+    worktree = tmp_path / "status-failed-worktree"
+    worktree.mkdir()
+    (tmp_path / ".aragora" / "automation-outbox").mkdir(parents=True)
+    (tmp_path / ".aragora" / "automation-receipts").mkdir(parents=True)
+    monkeypatch.setattr(mod, "local_branches", lambda _root, _prefix, _base: [row])
+    monkeypatch.setattr(mod, "remote_branch_names", lambda _root, _prefix: set())
+    monkeypatch.setattr(mod, "merged_branch_names", lambda _root, _base, _prefix: set())
+    monkeypatch.setattr(mod, "worktree_map", lambda _root: {"codex/status-failed": [worktree]})
+    monkeypatch.setattr(mod, "has_empty_branch_diff", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="offline",
+            repo=str(tmp_path),
+        ),
+    )
+
+    def fake_run_git(
+        args: list[str],
+        cwd: Path,
+        *,
+        timeout: int = 60,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["status", "--porcelain"]
+        return subprocess.CompletedProcess(
+            ["git", *args],
+            returncode=128,
+            stdout="",
+            stderr="fatal: index file corrupt",
+        )
+
+    monkeypatch.setattr(mod, "run_git", fake_run_git)
+
+    payload = mod.audit(
+        root=tmp_path,
+        base="origin/main",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=False,
+        publisher_backlog_limit=1,
+    )
+
+    record = payload["records"][0]
+    assert record["worktree_paths"] == [str(worktree)]
+    assert record["dirty_worktree_paths"] == [str(worktree)]
+    assert record["category"] == "protected_dirty_worktree"
+    assert payload["summary"]["publishable_branch_backlog"] == 0
+
+
 def test_audit_publishable_backlog_excludes_stale_local_only_branches(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
