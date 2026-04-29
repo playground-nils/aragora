@@ -99,3 +99,41 @@ def test_audit_warns_duplicate_writer_minutes(tmp_path: Path) -> None:
 
     assert any(issue["code"] == "duplicate_writer_minute" for issue in payload["issues"])
     assert any(issue["code"] == "writer_not_staggered" for issue in payload["issues"])
+
+
+def test_build_payload_reports_invalid_automation_toml_and_continues(
+    tmp_path: Path,
+) -> None:
+    import check_codex_desktop_automations as mod
+
+    prompt = "Read memory, repair one branch, validate locally, then refresh outbox."
+    for automation_id, minute in mod.CORE_WRITERS.items():
+        _write_automation(
+            tmp_path,
+            automation_id,
+            name=f"{automation_id} Writer",
+            prompt=prompt,
+            byminute=minute,
+        )
+    broken = tmp_path / "broken-writer"
+    broken.mkdir()
+    (broken / "automation.toml").write_text(
+        'id = "broken-writer"\nprompt = "unterminated\n',
+        encoding="utf-8",
+    )
+
+    payload = mod.build_payload(tmp_path)
+
+    assert payload["summary"] == {"active_count": 4, "error_count": 1, "warning_count": 0}
+    assert payload["automation_count"] == 4
+    assert payload["issues"] == [
+        {
+            "automation_id": "broken-writer",
+            "severity": "error",
+            "code": "invalid_automation_definition",
+            "message": (
+                f"failed to load {broken / 'automation.toml'}: "
+                "Illegal character '\\n' (at line 2, column 23)"
+            ),
+        }
+    ]

@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import tomllib
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -87,11 +88,30 @@ def _load_record(path: Path) -> AutomationRecord:
 
 
 def load_automations(root: Path) -> list[AutomationRecord]:
-    return [_load_record(path) for path in sorted(root.glob("*/automation.toml"))]
+    return _load_automations_with_issues(root)[0]
 
 
-def audit(records: list[AutomationRecord]) -> list[AuditIssue]:
+def _load_automations_with_issues(root: Path) -> tuple[list[AutomationRecord], list[AuditIssue]]:
+    records: list[AutomationRecord] = []
     issues: list[AuditIssue] = []
+    for path in sorted(root.glob("*/automation.toml")):
+        try:
+            records.append(_load_record(path))
+        except (OSError, tomllib.TOMLDecodeError, ValueError) as exc:
+            issues.append(
+                AuditIssue(
+                    path.parent.name,
+                    "error",
+                    "invalid_automation_definition",
+                    f"failed to load {path}: {exc}",
+                )
+            )
+    return records, issues
+
+
+def audit(records: Iterable[AutomationRecord]) -> list[AuditIssue]:
+    issues: list[AuditIssue] = []
+    records = list(records)
     by_id = {record.id: record for record in records}
 
     for writer_id, expected_minute in CORE_WRITERS.items():
@@ -160,8 +180,8 @@ def audit(records: list[AutomationRecord]) -> list[AuditIssue]:
 
 
 def build_payload(root: Path) -> dict[str, Any]:
-    records = load_automations(root)
-    issues = audit(records)
+    records, load_issues = _load_automations_with_issues(root)
+    issues = load_issues + audit(records)
     return {
         "root": str(root),
         "automation_count": len(records),
