@@ -69,8 +69,17 @@ def _parse_iso(raw: str) -> datetime:
 
 
 def _is_dirty(path: Path) -> bool:
-    proc = run_git(["status", "--porcelain"], path, timeout=15)
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+    if not path.is_dir():
+        return False
+    try:
+        proc = run_git(["status", "--porcelain"], path, timeout=15)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    if proc.returncode != 0:
+        return True
+    return bool(proc.stdout.strip())
 
 
 def _has_active_session(path: Path) -> bool:
