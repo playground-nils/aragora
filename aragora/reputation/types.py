@@ -23,6 +23,7 @@ DOMAIN_DEBATE_POSITION = "debate_position"
 DOMAIN_CODE_PR = "code_pr"
 DOMAIN_KM_CONTRIBUTION = "km_contribution"
 DOMAIN_CRUX_RESOLUTION = "crux_resolution"
+DOMAIN_EPISTEMIC_CLAIM = "epistemic_claim"  # DIC-14 claim verifier → AGT-05 bridge
 
 KNOWN_DOMAINS = frozenset(
     {
@@ -31,6 +32,7 @@ KNOWN_DOMAINS = frozenset(
         DOMAIN_CODE_PR,
         DOMAIN_KM_CONTRIBUTION,
         DOMAIN_CRUX_RESOLUTION,
+        DOMAIN_EPISTEMIC_CLAIM,
     }
 )
 
