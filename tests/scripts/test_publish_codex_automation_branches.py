@@ -435,6 +435,30 @@ def test_worktree_is_dirty_ignores_untracked_files(tmp_path: Path) -> None:
     assert _worktree_is_dirty(repo) is True
 
 
+def test_worktree_is_dirty_treats_status_failure_as_dirty(monkeypatch: Any, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool = False,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=128,
+            stdout="",
+            stderr="fatal: not a git repository",
+        )
+
+    monkeypatch.setattr(mod, "_run", fake_run)
+
+    assert _worktree_is_dirty(repo) is True
+    assert _worktree_is_dirty(tmp_path / "missing") is False
+
+
 def test_list_worktrees_filters_before_dirty_checks(monkeypatch: Any, tmp_path: Path) -> None:
     payload = """
 worktree /tmp/codex-a
