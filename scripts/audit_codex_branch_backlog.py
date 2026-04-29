@@ -523,6 +523,10 @@ def is_patch_equivalent(
     *,
     timeout: int = 60,
 ) -> bool:
+    tree_proc = run_git(["diff", "--quiet", base, branch], root, timeout=timeout)
+    if tree_proc.returncode == 0:
+        return True
+
     diff_proc = run_git(["diff", "--quiet", f"{base}...{branch}"], root, timeout=timeout)
     if diff_proc.returncode == 0:
         return True

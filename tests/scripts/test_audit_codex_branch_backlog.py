@@ -1257,12 +1257,30 @@ def test_patch_equivalence_treats_empty_branch_diff_as_cleanup(
 
     def fake_run_git(args: list[str], _cwd: Path, **_kwargs: Any) -> SimpleNamespace:
         calls.append(args)
+        if args == ["diff", "--quiet", "origin/main", "codex/cancels-out"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(mod, "run_git", fake_run_git)
 
     assert mod.is_patch_equivalent(tmp_path, "origin/main", "codex/cancels-out") is True
-    assert calls == [["diff", "--quiet", "origin/main...codex/cancels-out"]]
+    assert calls == [
+        ["diff", "--quiet", "origin/main", "codex/cancels-out"],
+        ["diff", "--quiet", "origin/main...codex/cancels-out"],
+    ]
+
+
+def test_patch_equivalence_treats_same_tree_as_cleanup(tmp_path: Path, monkeypatch: Any) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_git(args: list[str], _cwd: Path, **_kwargs: Any) -> SimpleNamespace:
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod, "run_git", fake_run_git)
+
+    assert mod.is_patch_equivalent(tmp_path, "origin/main", "codex/squash-merged") is True
+    assert calls == [["diff", "--quiet", "origin/main", "codex/squash-merged"]]
 
 
 def test_patch_equivalence_falls_back_to_cherry_when_branch_has_diff(
@@ -1272,7 +1290,9 @@ def test_patch_equivalence_falls_back_to_cherry_when_branch_has_diff(
 
     def fake_run_git(args: list[str], _cwd: Path, **_kwargs: Any) -> SimpleNamespace:
         calls.append(args)
-        if args[:2] == ["diff", "--quiet"]:
+        if args == ["diff", "--quiet", "origin/main", "codex/replayed"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
+        if args == ["diff", "--quiet", "origin/main...codex/replayed"]:
             return SimpleNamespace(returncode=1, stdout="", stderr="")
         return SimpleNamespace(returncode=0, stdout="- abc123 already applied\n", stderr="")
 
@@ -1280,6 +1300,7 @@ def test_patch_equivalence_falls_back_to_cherry_when_branch_has_diff(
 
     assert mod.is_patch_equivalent(tmp_path, "origin/main", "codex/replayed") is True
     assert calls == [
+        ["diff", "--quiet", "origin/main", "codex/replayed"],
         ["diff", "--quiet", "origin/main...codex/replayed"],
         ["cherry", "origin/main", "codex/replayed"],
     ]
