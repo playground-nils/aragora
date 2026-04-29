@@ -29,6 +29,7 @@ from aragora.reputation.anchor import (
     enable_anchoring,
 )
 from aragora.reputation.bridge import bridge_from_market_position
+from aragora.reputation.claim_verifier_bridge import bridge_from_claim_result
 from aragora.reputation.crux_bridge import (
     CruxPositionRecord,
     CruxResolutionEvent,
@@ -50,6 +51,7 @@ from aragora.reputation.types import (
     DOMAIN_CODE_PR,
     DOMAIN_CRUX_RESOLUTION,
     DOMAIN_DEBATE_POSITION,
+    DOMAIN_EPISTEMIC_CLAIM,
     DOMAIN_KM_CONTRIBUTION,
     DOMAIN_PREDICTION_MARKET,
     ReputationDelta,
@@ -62,6 +64,7 @@ __all__ = [
     "DOMAIN_CODE_PR",
     "DOMAIN_CRUX_RESOLUTION",
     "DOMAIN_DEBATE_POSITION",
+    "DOMAIN_EPISTEMIC_CLAIM",
     "DOMAIN_KM_CONTRIBUTION",
     "DOMAIN_PREDICTION_MARKET",
     "AnchorError",
@@ -72,6 +75,7 @@ __all__ = [
     "StakeableClaim",
     "anchor_delta",
     "anchoring_enabled",
+    "bridge_from_claim_result",
     "bridge_from_market_position",
     "CruxPositionRecord",
     "CruxResolutionEvent",
