@@ -22,6 +22,7 @@ from aragora.markets.types import Market, ResolutionEvent
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_market(tmp_path, *, number: int = 42) -> Market:
     store = MarketStore(tmp_path)
     market = Market.create(
@@ -59,6 +60,7 @@ def _args(
 # ---------------------------------------------------------------------------
 # Happy-path tests
 # ---------------------------------------------------------------------------
+
 
 class TestPredictHappyPath:
     def test_records_position_in_store(self, tmp_path) -> None:
@@ -116,6 +118,7 @@ class TestPredictHappyPath:
 # ---------------------------------------------------------------------------
 # Error-path tests
 # ---------------------------------------------------------------------------
+
 
 class TestPredictErrorPath:
     def test_unknown_market_returns_nonzero(self, tmp_path) -> None:
