@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 _STATUS_TO_OUTCOME: dict[str, ClaimOutcome] = {
     "pass": "yes",
     "fail": "no",
-    "stale": "no",           # stale evidence → treat as verification failure
+    "stale": "no",  # stale evidence → treat as verification failure
     "unsupported": "inconclusive",
     "error": "inconclusive",
 }

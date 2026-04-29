@@ -46,7 +46,7 @@ class TestBridgeOutcomeMapping:
         [
             (ClaimStatus.PASS, "yes"),
             (ClaimStatus.FAIL, "no"),
-            (ClaimStatus.STALE, "no"),          # stale → failure
+            (ClaimStatus.STALE, "no"),  # stale → failure
             (ClaimStatus.UNSUPPORTED, "inconclusive"),
             (ClaimStatus.ERROR, "inconclusive"),
         ],
@@ -59,7 +59,9 @@ class TestBridgeOutcomeMapping:
     def test_stale_is_no_not_inconclusive(self) -> None:
         result = _make_result("stale.claim", ClaimStatus.STALE)
         _, resolved = bridge_from_claim_result(result, agent_id="agent-b")
-        assert resolved.outcome == "no", "stale evidence must be treated as failure, not inconclusive"
+        assert resolved.outcome == "no", (
+            "stale evidence must be treated as failure, not inconclusive"
+        )
 
 
 class TestBridgeTypes:
