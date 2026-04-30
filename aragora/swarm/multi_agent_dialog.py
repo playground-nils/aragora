@@ -132,6 +132,129 @@ class AgentSpec:
             stdin_mode="stdin",
         )
 
+    # ----------------------------------------------------------------- #
+    # Heterogeneous model factories (round 30e)                         #
+    # ----------------------------------------------------------------- #
+    #
+    # The base ``claude()`` / ``codex()`` / ``droid()`` factories above
+    # use the CLI's *default* model, which means a 3-CLI panel is in
+    # practice "same-family-three-times". The maximalist vision wants
+    # **heterogeneous-model consensus**: independent perspectives from
+    # different model families catch what one family misses.
+    #
+    # These factories pin a specific model on a specific CLI surface
+    # so a single round can dispatch e.g. claude-opus, claude-sonnet,
+    # gpt-5.4, gemini-3.1-pro, kimi-k2.5 in parallel.
+
+    @classmethod
+    def with_model(
+        cls,
+        cli: str,
+        model: str,
+        *,
+        name: str | None = None,
+        timeout_seconds: int = 90,
+    ) -> "AgentSpec":
+        """Build an AgentSpec pinned to a specific model on a specific CLI.
+
+        Args:
+            cli: One of ``"claude"``, ``"codex"``, ``"droid"``.
+            model: Model identifier accepted by the chosen CLI.
+            name: Optional display name; defaults to ``f"{cli}:{model}"``.
+            timeout_seconds: Hard cap on dispatch.
+
+        ``codex`` does not currently expose a stable per-invocation
+        model flag in its public CLI; passing ``cli="codex"`` will
+        raise ``ValueError`` to make the limitation explicit.
+        """
+        cli_norm = (cli or "").strip().lower()
+        display = name or f"{cli_norm}:{model}"
+        if cli_norm == "claude":
+            return cls(
+                name=display,
+                binary="claude",
+                base_flags=(*CLAUDE_FLAGS, "--model", model),
+                timeout_seconds=timeout_seconds,
+                stdin_mode="stdin",
+            )
+        if cli_norm == "droid":
+            return cls(
+                name=display,
+                binary="droid",
+                base_flags=(*DROID_FLAGS, "-m", model),
+                timeout_seconds=timeout_seconds,
+                stdin_mode="stdin",
+            )
+        if cli_norm == "codex":
+            raise ValueError(
+                "codex CLI does not currently expose a stable per-invocation "
+                "model flag; use the codex() factory which inherits the "
+                "user's ~/.codex/config.toml model setting."
+            )
+        raise ValueError(f"unknown cli {cli!r}; expected claude / codex / droid")
+
+    # Concrete heterogeneous factories — known-good model IDs verified
+    # in round 30e Phase A.
+    @classmethod
+    def claude_opus(cls, timeout_seconds: int = 90) -> "AgentSpec":
+        """Claude Opus via the ``claude`` CLI."""
+        return cls.with_model("claude", "opus", name="claude-opus", timeout_seconds=timeout_seconds)
+
+    @classmethod
+    def claude_sonnet(cls, timeout_seconds: int = 60) -> "AgentSpec":
+        """Claude Sonnet via the ``claude`` CLI."""
+        return cls.with_model(
+            "claude", "sonnet", name="claude-sonnet", timeout_seconds=timeout_seconds
+        )
+
+    @classmethod
+    def droid_gpt5(cls, timeout_seconds: int = 90) -> "AgentSpec":
+        """GPT-5.4 via the ``droid`` CLI."""
+        return cls.with_model(
+            "droid", "gpt-5.4", name="droid-gpt5", timeout_seconds=timeout_seconds
+        )
+
+    @classmethod
+    def droid_gemini(cls, timeout_seconds: int = 90) -> "AgentSpec":
+        """Gemini 3.1 Pro via the ``droid`` CLI."""
+        return cls.with_model(
+            "droid",
+            "gemini-3.1-pro-preview",
+            name="droid-gemini",
+            timeout_seconds=timeout_seconds,
+        )
+
+    @classmethod
+    def droid_kimi(cls, timeout_seconds: int = 90) -> "AgentSpec":
+        """Kimi K2.5 (Chinese frontier) via the ``droid`` CLI."""
+        return cls.with_model(
+            "droid", "kimi-k2.5", name="droid-kimi", timeout_seconds=timeout_seconds
+        )
+
+    @classmethod
+    def droid_glm(cls, timeout_seconds: int = 90) -> "AgentSpec":
+        """GLM 5.1 (Chinese frontier) via the ``droid`` CLI."""
+        return cls.with_model("droid", "glm-5.1", name="droid-glm", timeout_seconds=timeout_seconds)
+
+    @classmethod
+    def heterogeneous_panel(
+        cls, *, codex_timeout: int = 120, model_timeout: int = 90
+    ) -> "tuple[AgentSpec, ...]":
+        """Return the canonical heterogeneous review panel.
+
+        Six independent model surfaces spanning Anthropic, OpenAI,
+        Google, and Chinese frontier families. Used by the
+        ``--agents-spec heterogeneous`` shorthand in the CLI.
+        """
+        return (
+            cls.claude_opus(timeout_seconds=model_timeout),
+            cls.claude_sonnet(timeout_seconds=model_timeout),
+            cls.codex(timeout_seconds=codex_timeout),
+            cls.droid_gpt5(timeout_seconds=model_timeout),
+            cls.droid_gemini(timeout_seconds=model_timeout),
+            cls.droid_kimi(timeout_seconds=model_timeout),
+        )
+
 
 @dataclass
 class DialogTurn:

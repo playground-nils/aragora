@@ -299,3 +299,120 @@ def test_constants_match_round_30d_verification() -> None:
     assert "sandbox_mode=read-only" in CODEX_FLAGS
     assert "--skip-git-repo-check" in CODEX_FLAGS
     assert DROID_FLAGS == ("exec", "--auto", "low")
+
+
+# --------------------------------------------------------------------- #
+# Heterogeneous model factories (round 30e Phase B)                     #
+# --------------------------------------------------------------------- #
+
+
+class TestWithModel:
+    def test_with_model_claude_appends_model_flag(self) -> None:
+        spec = AgentSpec.with_model("claude", "opus")
+        assert spec.binary == "claude"
+        # Model flag must be appended *after* the base CLAUDE_FLAGS so
+        # the CLI's positional parser still sees ``--print`` first.
+        assert spec.base_flags == (*CLAUDE_FLAGS, "--model", "opus")
+        assert spec.name == "claude:opus"
+        assert spec.stdin_mode == "stdin"
+
+    def test_with_model_droid_appends_short_m_flag(self) -> None:
+        spec = AgentSpec.with_model("droid", "gpt-5.4")
+        assert spec.binary == "droid"
+        assert spec.base_flags == (*DROID_FLAGS, "-m", "gpt-5.4")
+        assert spec.name == "droid:gpt-5.4"
+
+    def test_with_model_custom_name_overrides_default(self) -> None:
+        spec = AgentSpec.with_model("droid", "kimi-k2.5", name="bear-kimi")
+        assert spec.name == "bear-kimi"
+
+    def test_with_model_codex_raises_value_error(self) -> None:
+        # codex CLI doesn't expose a per-invocation model flag yet;
+        # the harness must explicitly fail rather than silently use
+        # the default model.
+        with pytest.raises(ValueError, match="codex"):
+            AgentSpec.with_model("codex", "gpt-5.4")
+
+    def test_with_model_unknown_cli_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="unknown cli"):
+            AgentSpec.with_model("gpt", "gpt-5.4")
+
+    def test_with_model_case_insensitive_cli(self) -> None:
+        spec = AgentSpec.with_model("DROID", "kimi-k2.5")
+        assert spec.binary == "droid"
+
+    def test_with_model_custom_timeout_propagates(self) -> None:
+        spec = AgentSpec.with_model("droid", "kimi-k2.5", timeout_seconds=200)
+        assert spec.timeout_seconds == 200
+
+
+class TestNamedHeterogeneousFactories:
+    def test_claude_opus(self) -> None:
+        spec = AgentSpec.claude_opus()
+        assert spec.binary == "claude"
+        assert "opus" in spec.base_flags
+        assert spec.name == "claude-opus"
+
+    def test_claude_sonnet(self) -> None:
+        spec = AgentSpec.claude_sonnet()
+        assert spec.binary == "claude"
+        assert "sonnet" in spec.base_flags
+        assert spec.name == "claude-sonnet"
+
+    def test_droid_gpt5(self) -> None:
+        spec = AgentSpec.droid_gpt5()
+        assert spec.binary == "droid"
+        assert "gpt-5.4" in spec.base_flags
+        assert spec.name == "droid-gpt5"
+
+    def test_droid_gemini(self) -> None:
+        spec = AgentSpec.droid_gemini()
+        assert spec.binary == "droid"
+        assert "gemini-3.1-pro-preview" in spec.base_flags
+        assert spec.name == "droid-gemini"
+
+    def test_droid_kimi(self) -> None:
+        spec = AgentSpec.droid_kimi()
+        assert spec.binary == "droid"
+        assert "kimi-k2.5" in spec.base_flags
+
+    def test_droid_glm(self) -> None:
+        spec = AgentSpec.droid_glm()
+        assert spec.binary == "droid"
+        assert "glm-5.1" in spec.base_flags
+
+
+class TestHeterogeneousPanel:
+    def test_panel_has_six_distinct_models(self) -> None:
+        panel = AgentSpec.heterogeneous_panel()
+        assert len(panel) == 6
+        # Names must be unique so per-agent transcript files don't collide.
+        assert len({s.name for s in panel}) == 6
+
+    def test_panel_spans_at_least_three_families(self) -> None:
+        panel = AgentSpec.heterogeneous_panel()
+        # Heuristic: family inferred from the model substring in flags.
+        families: set[str] = set()
+        for spec in panel:
+            joined = " ".join(spec.base_flags).lower()
+            if "opus" in joined or "sonnet" in joined:
+                families.add("anthropic")
+            elif "gpt-" in joined:
+                families.add("openai-gpt")
+            elif "gemini" in joined:
+                families.add("google")
+            elif "kimi" in joined or "glm" in joined:
+                families.add("chinese")
+            elif spec.binary == "codex":
+                # codex CLI talks to OpenAI; counts as openai-codex.
+                families.add("openai-codex")
+        assert len(families) >= 3, families
+
+    def test_panel_codex_timeout_is_higher(self) -> None:
+        panel = AgentSpec.heterogeneous_panel(codex_timeout=200, model_timeout=90)
+        codex_spec = next(s for s in panel if s.binary == "codex")
+        assert codex_spec.timeout_seconds == 200
+        # All other specs share model_timeout.
+        for spec in panel:
+            if spec.binary != "codex":
+                assert spec.timeout_seconds == 90

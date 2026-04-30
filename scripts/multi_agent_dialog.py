@@ -54,6 +54,29 @@ AGENT_FACTORIES: dict[str, Callable[..., AgentSpec]] = {
     "claude": AgentSpec.claude,
     "codex": AgentSpec.codex,
     "droid": AgentSpec.droid,
+    # Heterogeneous model factories (round 30e Phase B):
+    "claude-opus": AgentSpec.claude_opus,
+    "claude-sonnet": AgentSpec.claude_sonnet,
+    "droid-gpt5": AgentSpec.droid_gpt5,
+    "droid-gemini": AgentSpec.droid_gemini,
+    "droid-kimi": AgentSpec.droid_kimi,
+    "droid-glm": AgentSpec.droid_glm,
+}
+
+# Agent groups for the ``--agents-spec`` shorthand. Keys are validated
+# at parse time; values are tuples of factory keys above.
+AGENT_GROUPS: dict[str, tuple[str, ...]] = {
+    "default": ("claude", "codex", "droid"),
+    "heterogeneous": (
+        "claude-opus",
+        "claude-sonnet",
+        "codex",
+        "droid-gpt5",
+        "droid-gemini",
+        "droid-kimi",
+    ),
+    "anthropic-only": ("claude-opus", "claude-sonnet"),
+    "frontier-chinese": ("droid-kimi", "droid-glm"),
 }
 
 
@@ -88,19 +111,43 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--agents",
-        default="claude,codex,droid",
+        default=None,
         help="Comma-separated agent names. Available: " + ",".join(sorted(AGENT_FACTORIES)),
+    )
+    parser.add_argument(
+        "--agents-spec",
+        default=None,
+        choices=sorted(AGENT_GROUPS),
+        help=(
+            "Pre-built agent group: "
+            + ", ".join(f"{k}=({','.join(v)})" for k, v in AGENT_GROUPS.items())
+        ),
     )
     parser.add_argument("--claude-timeout", type=int, default=60, help="Per-agent timeout (s)")
     parser.add_argument("--codex-timeout", type=int, default=90, help="Per-agent timeout (s)")
     parser.add_argument("--droid-timeout", type=int, default=60, help="Per-agent timeout (s)")
+    parser.add_argument(
+        "--model-timeout",
+        type=int,
+        default=90,
+        help="Per-agent timeout (s) for heterogeneous-model factories.",
+    )
     return parser.parse_args(argv)
 
 
 def _build_agents(spec: argparse.Namespace) -> list[AgentSpec]:
-    names = [name.strip() for name in spec.agents.split(",") if name.strip()]
+    # Resolve agent name list. Precedence:
+    #  1. Explicit --agents wins.
+    #  2. --agents-spec resolves to its group.
+    #  3. Default to the legacy 3-CLI panel.
+    if spec.agents:
+        names = [name.strip() for name in spec.agents.split(",") if name.strip()]
+    elif spec.agents_spec:
+        names = list(AGENT_GROUPS[spec.agents_spec])
+    else:
+        names = list(AGENT_GROUPS["default"])
     out: list[AgentSpec] = []
-    timeouts = {
+    legacy_timeouts = {
         "claude": spec.claude_timeout,
         "codex": spec.codex_timeout,
         "droid": spec.droid_timeout,
@@ -111,7 +158,10 @@ def _build_agents(spec: argparse.Namespace) -> list[AgentSpec]:
             raise SystemExit(
                 f"unknown agent: {name!r}. Available: " + ",".join(sorted(AGENT_FACTORIES))
             )
-        out.append(factory(timeout_seconds=timeouts.get(name, 60)))
+        # Legacy 3-CLI factories have explicit per-name timeouts; the
+        # heterogeneous factories share ``--model-timeout``.
+        timeout = legacy_timeouts.get(name, spec.model_timeout)
+        out.append(factory(timeout_seconds=timeout))
     return out
 
 
