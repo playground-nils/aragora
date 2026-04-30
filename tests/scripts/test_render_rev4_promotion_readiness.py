@@ -146,28 +146,35 @@ def test_main_json_mode_emits_readiness(tmp_path: Path, capsys) -> None:
     assert payload["dispatch"]["dispatched_issue_count"] == 1
 
 
-def test_fetch_boss_harvest_pr_records_uses_targeted_branch_search(monkeypatch) -> None:
+def test_fetch_boss_harvest_pr_records_uses_single_boss_harvest_search(monkeypatch) -> None:
     calls: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
         calls.append(list(cmd))
-        search = cmd[cmd.index("--search") + 1]
-        stdout = "[]"
-        if search.endswith("issue-1002"):
-            stdout = json.dumps(
-                [
-                    {
-                        "number": 4242,
-                        "state": "MERGED",
-                        "headRefName": "aragora/boss-harvest/issue-1002-boss-abcd",
-                    }
-                ]
-            )
+        stdout = json.dumps(
+            [
+                {
+                    "number": 4242,
+                    "state": "MERGED",
+                    "headRefName": "aragora/boss-harvest/issue-1002-boss-abcd",
+                },
+                {
+                    "number": 4242,
+                    "state": "MERGED",
+                    "headRefName": "aragora/boss-harvest/issue-1002-boss-abcd",
+                },
+                {
+                    "number": 4243,
+                    "state": "MERGED",
+                    "headRefName": "aragora/boss-harvest/issue-9999-boss-abcd",
+                },
+            ]
+        )
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
 
-    records = mod.fetch_boss_harvest_pr_records([1002, 1001, 1002], repo="owner/repo")
+    records = mod.fetch_boss_harvest_pr_records([1002, 1001, 1002, "bad"], repo="owner/repo")
 
     assert records == [
         {
@@ -176,11 +183,18 @@ def test_fetch_boss_harvest_pr_records_uses_targeted_branch_search(monkeypatch) 
             "headRefName": "aragora/boss-harvest/issue-1002-boss-abcd",
         }
     ]
-    assert [cmd[cmd.index("--search") + 1] for cmd in calls] == [
-        "head:aragora/boss-harvest/issue-1001",
-        "head:aragora/boss-harvest/issue-1002",
-    ]
-    assert all(cmd[-2:] == ["--repo", "owner/repo"] for cmd in calls)
+    assert len(calls) == 1
+    assert calls[0][calls[0].index("--search") + 1] == "head:aragora/boss-harvest/"
+    assert calls[0][-2:] == ["--repo", "owner/repo"]
+
+
+def test_fetch_boss_harvest_pr_records_degrades_on_gh_failure(monkeypatch) -> None:
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="network unavailable")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    assert mod.fetch_boss_harvest_pr_records([1002]) == []
 
 
 def test_main_json_mode_auto_loads_gh_pr_evidence(tmp_path: Path, capsys, monkeypatch) -> None:

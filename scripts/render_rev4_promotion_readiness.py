@@ -16,7 +16,10 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from aragora.swarm.dispatch_evidence import issues_dispatched_via_pr  # noqa: E402
+from aragora.swarm.dispatch_evidence import (  # noqa: E402
+    extract_issue_number_from_branch,
+    issues_dispatched_via_pr,
+)
 from aragora.utils.git_paths import git_common_repo_root, resolve_repo_fallback_path  # noqa: E402
 
 DEFAULT_CORPUS_PATH = REPO_ROOT / "tests" / "benchmarks" / "corpus_rev4.json"
@@ -303,64 +306,83 @@ def fetch_boss_harvest_pr_records(
     issue_ids: Iterable[int],
     *,
     repo: str | None = None,
-    per_issue_limit: int = 10,
+    limit: int = 200,
     timeout_seconds: int = 15,
 ) -> list[dict[str, Any]]:
+    targets = _coerce_issue_ids(issue_ids)
+    if not targets:
+        return []
+
+    cmd = [
+        "gh",
+        "pr",
+        "list",
+        "--state",
+        "all",
+        "--limit",
+        str(max(int(limit), 1)),
+        "--search",
+        "head:aragora/boss-harvest/",
+        "--json",
+        "number,state,headRefName",
+    ]
+    if repo:
+        cmd.extend(["--repo", repo])
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if proc.returncode != 0:
+        return []
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    target_set = set(targets)
     records: list[dict[str, Any]] = []
     seen_prs: set[int] = set()
-    for issue_id in sorted({int(issue_id) for issue_id in issue_ids if int(issue_id) > 0}):
-        cmd = [
-            "gh",
-            "pr",
-            "list",
-            "--state",
-            "all",
-            "--limit",
-            str(max(int(per_issue_limit), 1)),
-            "--search",
-            f"head:aragora/boss-harvest/issue-{issue_id}",
-            "--json",
-            "number,state,headRefName",
-        ]
-        if repo:
-            cmd.extend(["--repo", repo])
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=REPO_ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
-        except (OSError, subprocess.TimeoutExpired):
+    for item in payload:
+        if not isinstance(item, dict):
             continue
-        if proc.returncode != 0:
+        branch = item.get("headRefName")
+        issue_id = extract_issue_number_from_branch(branch if isinstance(branch, str) else None)
+        if issue_id not in target_set:
             continue
-        try:
-            payload = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, list):
-            continue
-        for item in payload:
-            if not isinstance(item, dict):
+        number = item.get("number")
+        if isinstance(number, int):
+            if number in seen_prs:
                 continue
-            number = item.get("number")
-            if isinstance(number, int):
-                if number in seen_prs:
-                    continue
-                seen_prs.add(number)
-            records.append(item)
+            seen_prs.add(number)
+        records.append(item)
     return records
 
 
+def _coerce_issue_ids(issue_ids: Iterable[int]) -> list[int]:
+    coerced: set[int] = set()
+    for raw_issue_id in issue_ids or []:
+        try:
+            issue_id = int(raw_issue_id)
+        except (TypeError, ValueError):
+            continue
+        if issue_id > 0:
+            coerced.add(issue_id)
+    return sorted(coerced)
+
+
 def _corpus_issue_ids(corpus: dict[str, Any]) -> list[int]:
-    return [
-        _issue_id(issue)
-        for issue in corpus.get("issues", [])
-        if isinstance(issue, dict) and _issue_id(issue) > 0
-    ]
+    return _coerce_issue_ids(
+        _issue_id(issue) for issue in corpus.get("issues", []) if isinstance(issue, dict)
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -395,10 +417,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional owner/repo passed to gh when auto-loading boss-harvest PR evidence.",
     )
     parser.add_argument(
+        "--gh-pr-limit",
         "--gh-per-issue-limit",
+        dest="gh_pr_limit",
         type=int,
-        default=10,
-        help="Maximum PR records to fetch per staged issue during the default gh lookup.",
+        default=200,
+        help="Maximum PR records to fetch during the default boss-harvest PR lookup.",
     )
     parser.add_argument(
         "--json", action="store_true", help="Emit readiness JSON instead of Markdown"
@@ -421,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
         pr_records = fetch_boss_harvest_pr_records(
             _corpus_issue_ids(corpus),
             repo=args.gh_repo,
-            per_issue_limit=args.gh_per_issue_limit,
+            limit=args.gh_pr_limit,
         )
     readiness = build_readiness(
         corpus=corpus,
