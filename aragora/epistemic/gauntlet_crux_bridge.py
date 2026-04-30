@@ -190,7 +190,83 @@ def from_gauntlet_receipt(
     )
 
 
+async def ingest_gauntlet_receipt(
+    gauntlet: "GauntletCruxReceipt",
+    adapter: Any,
+    *,
+    require_enabled: bool = True,
+    preserve_receipt_id: bool = False,
+) -> Any:
+    """End-to-end: convert a gauntlet ``CruxReceipt`` and ingest into the Knowledge Mound.
+
+    The bridge converter (:func:`from_gauntlet_receipt`) is always safe to call;
+    this thin wrapper adds the **side-effecting** Knowledge Mound ingestion step
+    via the provided :class:`~aragora.knowledge.mound.adapters.crux_receipt_adapter.CruxReceiptAdapter`.
+
+    Default off: ``require_enabled=True`` forces a check of
+    ``ARAGORA_KM_CRUX_INGESTION_ENABLED``.  When the flag is off, returns the
+    same skipped-ingestion result the adapter would produce, without invoking
+    the conversion at all (so a malformed gauntlet receipt is also a no-op
+    when the flag is off — defense-in-depth).
+
+    Round 2026-04-30d follow-up to #6849: gives downstream callers a single-
+    function path ``gauntlet receipt -> KM ingestion`` so the caller does not
+    have to compose the converter + adapter explicitly.  The bridge converter
+    remains the supported lower-level API for callers that need the
+    intermediate epistemic receipt for other purposes.
+
+    Parameters
+    ----------
+    gauntlet:
+        Gauntlet :class:`~aragora.gauntlet.receipt_models.CruxReceipt` to
+        convert and ingest.
+    adapter:
+        A :class:`CruxReceiptAdapter` instance (typed loosely as ``Any`` to
+        avoid a circular import; the adapter exposes
+        ``async ingest_crux_receipt(receipt, *, require_enabled)``).
+    require_enabled:
+        When ``True`` (default), check ``ARAGORA_KM_CRUX_INGESTION_ENABLED``
+        before performing the conversion or invoking the adapter.  When
+        ``False``, always run the conversion and pass ``require_enabled=False``
+        to the adapter (test-only escape hatch).
+    preserve_receipt_id:
+        Forwarded to :func:`from_gauntlet_receipt`.
+
+    Returns
+    -------
+    Whatever the adapter's ``ingest_crux_receipt`` returns — typically a
+    :class:`~aragora.knowledge.mound.adapters.crux_receipt_adapter.CruxIngestionResult`.
+    When the flag is off, returns the adapter's "skipped" shape (zero
+    items ingested, same receipt_id surfaced).
+    """
+    if require_enabled and not km_crux_ingestion_enabled():
+        # Fast-skip without invoking conversion: produces an adapter-shape
+        # result that downstream consumers can introspect identically to a
+        # real "skipped because flag off" path.
+        from aragora.knowledge.mound.adapters.crux_receipt_adapter import (
+            CruxIngestionResult,
+        )
+
+        return CruxIngestionResult(
+            receipt_id=gauntlet.receipt_id,
+            cruxes_ingested=0,
+            knowledge_item_ids=[],
+            skipped=len(gauntlet.cruxes or []),
+        )
+
+    epistemic_receipt = from_gauntlet_receipt(gauntlet, preserve_receipt_id=preserve_receipt_id)
+    return await adapter.ingest_crux_receipt(
+        epistemic_receipt,
+        # If require_enabled was True at our level and the flag is on, we
+        # already verified enablement; pass require_enabled=False so the
+        # adapter doesn't double-check.  If our caller passed
+        # require_enabled=False, we forward that intent.
+        require_enabled=False,
+    )
+
+
 __all__ = [
     "from_gauntlet_receipt",
+    "ingest_gauntlet_receipt",
     "km_crux_ingestion_enabled",
 ]
