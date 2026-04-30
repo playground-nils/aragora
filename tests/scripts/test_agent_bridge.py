@@ -365,11 +365,11 @@ def test_operator_snapshot_summary_only_json_omits_records(
     assert payload["records_omitted"] is True
     assert payload["summary"]["total_sessions"] == 1
     assert payload["summary"]["alive_sessions"] == 1
-    assert payload["summary"]["health_issue_types"] == {}
-    assert payload["health"] == {"ok": True, "issues": []}
+    assert payload["summary"]["health_issue_counts"] == {}
+    assert payload["health"] == {"ok": True, "issues": [], "issues_omitted": 0}
 
 
-def test_operator_snapshot_summary_includes_health_issue_type_counts(
+def test_operator_snapshot_summary_includes_health_issue_counts_without_details(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -415,10 +415,12 @@ def test_operator_snapshot_summary_includes_health_issue_type_counts(
     payload = json.loads(capsys.readouterr().out)
     assert payload["records_omitted"] is True
     assert payload["summary"]["health_issues"] == 2
-    assert payload["summary"]["health_issue_types"] == {
+    assert payload["summary"]["health_issue_counts"] == {
         "lane_conflict": 1,
         "stale_worktree": 1,
     }
+    assert payload["health"]["issues"] == []
+    assert payload["health"]["issues_omitted"] == 2
 
 
 def test_cmd_launch_invokes_tmux_launcher_for_droid(

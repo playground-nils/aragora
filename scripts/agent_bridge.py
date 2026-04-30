@@ -343,12 +343,16 @@ def _collect_health_issues(
     return issues
 
 
-def _issue_type_counts(issues: list[dict[str, str]]) -> dict[str, int]:
+def _count_issue_types(issues: list[dict[str, str]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for issue in issues:
         issue_type = issue.get("type") or "unknown"
         counts[issue_type] = counts.get(issue_type, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _format_issue_type_counts(counts: dict[str, int]) -> str:
+    return ", ".join(f"{issue_type}={count}" for issue_type, count in counts.items())
 
 
 def _lane_conflict(
@@ -835,7 +839,7 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
     records = _sync_lane_records(_load_lane_registry(), sessions)
 
     issues = _collect_health_issues(sessions, records)
-    issue_type_counts = _issue_type_counts(issues)
+    health_issue_counts = _count_issue_types(issues)
 
     snapshot: dict[str, Any] = {
         "timestamp": _now_iso(),
@@ -849,12 +853,14 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
             "active_lanes": sum(1 for r in records if r.status in ACTIVE_LANE_STATUSES),
             "conflict_lanes": sum(1 for r in records if r.status == "conflict"),
             "health_issues": len(issues),
-            "health_issue_types": issue_type_counts,
+            "health_issue_counts": health_issue_counts,
         },
     }
     if summary_only:
         snapshot.pop("sessions")
         snapshot.pop("lanes")
+        snapshot["health"]["issues"] = []
+        snapshot["health"]["issues_omitted"] = len(issues)
         snapshot["records_omitted"] = True
 
     if args.json:
@@ -869,6 +875,8 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
     )
     print(f"Lanes:    {summary['active_lanes']} active / {summary['conflict_lanes']} conflict")
     health_status = "OK" if snapshot["health"]["ok"] else f"{summary['health_issues']} issue(s)"
+    if health_issue_counts:
+        health_status = f"{health_status} ({_format_issue_type_counts(health_issue_counts)})"
     print(f"Health:   {health_status}")
 
     if sessions and not summary_only:
