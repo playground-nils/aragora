@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 TAIL_BYTES = 256 * 1024
+TMUX_COMMAND_TIMEOUT_SECONDS = 5
 ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[@-_]",
 )
@@ -296,33 +297,45 @@ def _extract_recent_claude_turns(path: Path) -> dict[str, Any] | None:
 
 
 def _tmux_alive(name: str, *, session_name: str = "aragora") -> str:
-    has_session = subprocess.run(
-        ["tmux", "has-session", "-t", session_name],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        has_session = subprocess.run(
+            ["tmux", "has-session", "-t", session_name],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=TMUX_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return "unknown"
     if has_session.returncode != 0:
         return "dead"
 
-    windows = subprocess.run(
-        ["tmux", "list-windows", "-t", session_name, "-F", "#{window_name}"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        windows = subprocess.run(
+            ["tmux", "list-windows", "-t", session_name, "-F", "#{window_name}"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=TMUX_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return "unknown"
     if windows.returncode != 0:
         return "unknown"
     return "alive" if name in windows.stdout.splitlines() else "dead"
 
 
 def _capture_tmux_summary(name: str, *, session_name: str = "aragora") -> str:
-    captured = subprocess.run(
-        ["tmux", "capture-pane", "-t", f"{session_name}:{name}", "-p", "-S", "-120"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        captured = subprocess.run(
+            ["tmux", "capture-pane", "-t", f"{session_name}:{name}", "-p", "-S", "-120"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=TMUX_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return ""
     if captured.returncode != 0 or not captured.stdout.strip():
         return ""
     return _select_summary(captured.stdout.splitlines())

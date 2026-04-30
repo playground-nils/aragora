@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -240,6 +241,45 @@ def test_select_summary_prefers_meaningful_recent_line() -> None:
         summary
         == "I’m refreshing #5297 onto current main locally before I report the updated CI state."
     )
+
+
+def test_tmux_alive_returns_unknown_when_tmux_probe_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_bridge_sessions as mod
+
+    calls: list[tuple[list[str], int | None]] = []
+
+    def _timeout(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs.get("timeout")))
+        raise subprocess.TimeoutExpired(cmd=args, timeout=5)
+
+    monkeypatch.setattr(mod.subprocess, "run", _timeout)
+
+    assert mod._tmux_alive("codex-strategic") == "unknown"
+    assert calls == [(["tmux", "has-session", "-t", "aragora"], mod.TMUX_COMMAND_TIMEOUT_SECONDS)]
+
+
+def test_tmux_summary_returns_empty_when_capture_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_bridge_sessions as mod
+
+    calls: list[tuple[list[str], int | None]] = []
+
+    def _timeout(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs.get("timeout")))
+        raise subprocess.TimeoutExpired(cmd=args, timeout=5)
+
+    monkeypatch.setattr(mod.subprocess, "run", _timeout)
+
+    assert mod._capture_tmux_summary("codex-strategic") == ""
+    assert calls == [
+        (
+            ["tmux", "capture-pane", "-t", "aragora:codex-strategic", "-p", "-S", "-120"],
+            mod.TMUX_COMMAND_TIMEOUT_SECONDS,
+        )
+    ]
 
 
 def test_load_tmux_sessions_prefers_live_capture_over_log(
