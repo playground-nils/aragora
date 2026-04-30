@@ -365,7 +365,60 @@ def test_operator_snapshot_summary_only_json_omits_records(
     assert payload["records_omitted"] is True
     assert payload["summary"]["total_sessions"] == 1
     assert payload["summary"]["alive_sessions"] == 1
+    assert payload["summary"]["health_issue_types"] == {}
     assert payload["health"] == {"ok": True, "issues": []}
+
+
+def test_operator_snapshot_summary_includes_health_issue_type_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    root = tmp_path / "repo"
+    stale_worktree = tmp_path / "old-worktree"
+    root.mkdir()
+    stale_worktree.mkdir()
+    monkeypatch.setattr(mod, "REPO_ROOT", root)
+    monkeypatch.setattr(mod, "CANONICAL_REPO_ROOT", root)
+    monkeypatch.setattr(
+        mod,
+        "discover",
+        lambda: [
+            mod.Session(
+                name="codex-old-lane",
+                agent="codex",
+                status="dead",
+                worktree=str(stale_worktree),
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
+        "_load_lane_registry",
+        lambda: [
+            mod.LaneRecord(
+                lane_id="review-123",
+                owner_session="codex-a",
+                status="conflict",
+                conflict_session="codex-b",
+                conflict_reason="duplicate owner",
+            )
+        ],
+    )
+
+    rc = mod.cmd_operator_snapshot(argparse.Namespace(json=True, summary_only=True))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["records_omitted"] is True
+    assert payload["summary"]["health_issues"] == 2
+    assert payload["summary"]["health_issue_types"] == {
+        "lane_conflict": 1,
+        "stale_worktree": 1,
+    }
 
 
 def test_cmd_launch_invokes_tmux_launcher_for_droid(
