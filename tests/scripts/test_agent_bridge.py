@@ -454,7 +454,11 @@ def test_health_ignores_dead_root_checkout_session(
     )
 
     assert mod.cmd_health(argparse.Namespace(json=True)) == 0
-    assert json.loads(capsys.readouterr().out) == {"ok": True, "issues": []}
+    assert json.loads(capsys.readouterr().out) == {
+        "ok": True,
+        "issues": [],
+        "issue_counts": {},
+    }
 
 
 def test_health_reports_dead_non_root_worktree(
@@ -500,3 +504,57 @@ def test_health_reports_dead_non_root_worktree(
             "detail": f"dead session with lingering worktree: {worktree}",
         }
     ]
+    assert payload["issue_counts"] == {"stale_worktree": 1}
+
+
+def test_operator_snapshot_reports_health_issue_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    root = tmp_path / "repo"
+    worktree = tmp_path / "old-worktree"
+    root.mkdir()
+    worktree.mkdir()
+    monkeypatch.setattr(mod, "REPO_ROOT", root)
+    monkeypatch.setattr(mod, "CANONICAL_REPO_ROOT", root)
+    monkeypatch.setattr(
+        mod,
+        "discover",
+        lambda: [
+            mod.Session(
+                name="codex-old-lane",
+                agent="codex",
+                status="dead",
+                worktree=str(worktree),
+            )
+        ],
+    )
+    monkeypatch.setattr(mod, "_enrich_prs", lambda _sessions: None)
+    monkeypatch.setattr(
+        mod,
+        "_load_lane_registry",
+        lambda: [
+            mod.LaneRecord(lane_id="shared", owner_session="codex-a", status="active"),
+            mod.LaneRecord(lane_id="shared", owner_session="codex-b", status="active"),
+            mod.LaneRecord(
+                lane_id="blocked",
+                owner_session="codex-c",
+                status="conflict",
+                conflict_session="codex-d",
+                conflict_reason="same lane",
+            ),
+        ],
+    )
+
+    assert mod.cmd_operator_snapshot(argparse.Namespace(json=True)) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["health_issues"] == 3
+    assert payload["health"]["issue_counts"] == {
+        "ambiguous_lane": 1,
+        "lane_conflict": 1,
+        "stale_worktree": 1,
+    }

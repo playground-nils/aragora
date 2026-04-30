@@ -343,6 +343,14 @@ def _collect_health_issues(
     return issues
 
 
+def _summarize_health_issues(issues: list[dict[str, str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for issue in issues:
+        issue_type = issue.get("type") or "unknown"
+        counts[issue_type] = counts.get(issue_type, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _lane_conflict(
     records: list[LaneRecord],
     lane_id: str,
@@ -801,8 +809,14 @@ def cmd_health(args: argparse.Namespace) -> int:
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
 
+    issue_counts = _summarize_health_issues(issues)
     if args.json:
-        print(json.dumps({"ok": len(issues) == 0, "issues": issues}, indent=2))
+        print(
+            json.dumps(
+                {"ok": len(issues) == 0, "issues": issues, "issue_counts": issue_counts},
+                indent=2,
+            )
+        )
         return 0 if not issues else 1
 
     if not issues:
@@ -810,6 +824,9 @@ def cmd_health(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Found {len(issues)} issue(s):\n")
+    if issue_counts:
+        print("Issue counts: " + ", ".join(f"{k}={v}" for k, v in issue_counts.items()))
+        print()
     print(f"{'TYPE':<22} {'SESSION':<26} DETAIL")
     print("-" * 100)
     for issue in issues:
@@ -825,12 +842,13 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
     records = _sync_lane_records(_load_lane_registry(), sessions)
 
     issues = _collect_health_issues(sessions, records)
+    issue_counts = _summarize_health_issues(issues)
 
     snapshot: dict[str, Any] = {
         "timestamp": _now_iso(),
         "sessions": [s.to_dict() for s in sessions],
         "lanes": [r.to_dict() for r in records],
-        "health": {"ok": len(issues) == 0, "issues": issues},
+        "health": {"ok": len(issues) == 0, "issues": issues, "issue_counts": issue_counts},
         "summary": {
             "total_sessions": len(sessions),
             "alive_sessions": sum(1 for s in sessions if s.status == "alive"),
@@ -854,6 +872,8 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
     print(f"Lanes:    {summary['active_lanes']} active / {summary['conflict_lanes']} conflict")
     health_status = "OK" if snapshot["health"]["ok"] else f"{summary['health_issues']} issue(s)"
     print(f"Health:   {health_status}")
+    if issue_counts:
+        print("Health issue counts: " + ", ".join(f"{k}={v}" for k, v in issue_counts.items()))
 
     if sessions:
         print(f"\n{'NAME':<24} {'AGENT':<8} {'STATUS':<8} {'BRANCH':<28} SUMMARY")
