@@ -330,3 +330,107 @@ def test_run_crux_debate_imports_resolve_without_error() -> None:
             )
         )
     assert result is not None  # the mock returns a SimpleNamespace
+
+
+# ---------------------------------------------------------------------------
+# Round 2026-04-30d Phase E: improved diagnostic when consensus_proof is None
+# Found via Phase C dogfood — `aragora crux --agents demo` produced a confusing
+# "no consensus_proof" error after running the entire debate. The actual cause
+# (crux-finder fell back to majority because no belief network) was buried in
+# WARNING logs.
+# ---------------------------------------------------------------------------
+
+
+def test_diagnose_missing_proof_no_metadata() -> None:
+    """When result has no metadata, fall back to the original generic error."""
+    result = SimpleNamespace(consensus_proof=None)
+    msg = crux_cmd._diagnose_missing_proof(result)
+    assert "no consensus_proof" in msg
+    assert "Inspect debate logs" in msg
+
+
+def test_diagnose_missing_proof_no_belief_network_with_remedy() -> None:
+    """``no_belief_network`` skip surfaces the agent-config remedy."""
+    result = SimpleNamespace(
+        consensus_proof=None,
+        metadata={
+            "crux_finder_skipped_reason": "no_belief_network",
+            "crux_finder_fallback_consensus": "majority",
+        },
+    )
+    msg = crux_cmd._diagnose_missing_proof(result)
+    assert "no_belief_network" in msg
+    assert "fell_back_to=majority" in msg
+    # Remedy mentions the actionable fix path.
+    assert "real LLM agents" in msg
+    assert "--agents claude,codex" in msg
+    assert "ANTHROPIC_API_KEY" in msg
+
+
+def test_diagnose_missing_proof_other_skip_reason_no_remedy() -> None:
+    """Skip reasons other than ``no_belief_network`` get a generic hint, no remedy."""
+    result = SimpleNamespace(
+        consensus_proof=None,
+        metadata={
+            "crux_finder_skipped_reason": "some_other_reason",
+            "crux_finder_fallback_consensus": "majority",
+        },
+    )
+    msg = crux_cmd._diagnose_missing_proof(result)
+    assert "reason=some_other_reason" in msg
+    assert "fell_back_to=majority" in msg
+    assert "real LLM agents" not in msg  # remedy is no_belief_network-specific
+
+
+def test_diagnose_missing_proof_only_fallback_no_reason() -> None:
+    """When fallback is set but reason isn't, both surface but no remedy fires."""
+    result = SimpleNamespace(
+        consensus_proof=None,
+        metadata={"crux_finder_fallback_consensus": "majority"},
+    )
+    msg = crux_cmd._diagnose_missing_proof(result)
+    assert "fell_back_to=majority" in msg
+    # No reason string, so no specific remedy.
+
+
+def test_diagnose_missing_proof_handles_non_dict_metadata() -> None:
+    """Defensive: metadata that isn't a dict (e.g., None) doesn't crash."""
+    result_none = SimpleNamespace(consensus_proof=None, metadata=None)
+    result_str = SimpleNamespace(consensus_proof=None, metadata="not a dict")
+    for r in (result_none, result_str):
+        msg = crux_cmd._diagnose_missing_proof(r)
+        assert "no consensus_proof" in msg
+
+
+def test_cmd_crux_no_belief_network_error_surfaces_remedy(capsys) -> None:
+    """End-to-end: cmd_crux exits 1 with the remedy message when crux-finder is skipped."""
+    args = argparse.Namespace(
+        question="Q",
+        agents="demo",
+        rounds=1,
+        top_k=5,
+        min_score=0.3,
+        no_counterfactuals=False,
+        format="markdown",
+        receipt=None,
+        output=None,
+        dry_run=False,
+    )
+
+    async def _fake_run(*_a, **_k):
+        return SimpleNamespace(
+            consensus_proof=None,
+            proposals={},
+            metadata={
+                "crux_finder_skipped_reason": "no_belief_network",
+                "crux_finder_fallback_consensus": "majority",
+            },
+        )
+
+    with patch.object(crux_cmd, "_run_crux_debate", side_effect=_fake_run):
+        with pytest.raises(SystemExit) as exc_info:
+            crux_cmd.cmd_crux(args)
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "no_belief_network" in err
+    assert "real LLM agents" in err  # operator-actionable remedy
