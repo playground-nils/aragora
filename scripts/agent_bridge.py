@@ -469,9 +469,10 @@ def _resolve_tmux_target(session: Session) -> str | None:
 
 
 def _enrich_prs(sessions: list[Session]) -> None:
-    branches = [s.branch for s in sessions if s.branch]
+    branches = sorted({s.branch for s in sessions if s.branch})
     if not branches:
         return
+    pr_limit = min(max(30, len(branches)), 200)
     try:
         result = subprocess.run(
             [
@@ -481,7 +482,7 @@ def _enrich_prs(sessions: list[Session]) -> None:
                 "--state",
                 "open",
                 "--limit",
-                "30",
+                str(pr_limit),
                 "--json",
                 "number,headRefName",
             ],

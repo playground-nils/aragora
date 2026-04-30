@@ -88,6 +88,36 @@ def test_cmd_approve_droid_uses_enter_menu_selection(monkeypatch: pytest.MonkeyP
     assert calls == [["tmux", "send-keys", "-t", "aragora:factory-review", "Enter"]]
 
 
+def test_enrich_prs_scales_gh_limit_to_unique_session_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_bridge as mod
+
+    sessions = [
+        mod.Session(name=f"codex-{i}", agent="codex", branch=f"codex/branch-{i}") for i in range(45)
+    ]
+    sessions.append(mod.Session(name="codex-duplicate", agent="codex", branch="codex/branch-44"))
+    calls: list[list[str]] = []
+
+    def _fake_run(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout=json.dumps([{"number": 6899, "headRefName": "codex/branch-44"}]),
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+
+    mod._enrich_prs(sessions)
+
+    assert len(calls) == 1
+    limit_index = calls[0].index("--limit") + 1
+    assert calls[0][limit_index] == "45"
+    assert sessions[44].pr_number == 6899
+    assert sessions[-1].pr_number == 6899
+
+
 def test_cmd_send_persists_lane_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import agent_bridge as mod
 
