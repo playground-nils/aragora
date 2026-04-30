@@ -324,3 +324,122 @@ class TestKmAdapterCompatibility:
         d = e.to_dict()
         assert d["debate_id"] == "debate.42"
         assert len(d["cruxes"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# ingest_gauntlet_receipt — end-to-end wrapper (Round 2026-04-30d follow-up to #6849)
+# ---------------------------------------------------------------------------
+
+
+class _StubAdapter:
+    """Minimal CruxReceiptAdapter stand-in for testing.
+
+    Records what was passed to ingest_crux_receipt + the require_enabled flag.
+    """
+
+    def __init__(self, *, raise_on_call: bool = False):
+        self.calls: list[tuple] = []
+        self.raise_on_call = raise_on_call
+
+    async def ingest_crux_receipt(self, receipt, *, require_enabled: bool = True):
+        self.calls.append((receipt, require_enabled))
+        if self.raise_on_call:
+            raise RuntimeError("adapter forced failure")
+        from aragora.knowledge.mound.adapters.crux_receipt_adapter import (
+            CruxIngestionResult,
+        )
+
+        return CruxIngestionResult(
+            receipt_id=receipt.receipt_id,
+            cruxes_ingested=len(receipt.cruxes),
+            knowledge_item_ids=[f"item_{i}" for i in range(len(receipt.cruxes))],
+        )
+
+
+class TestIngestGauntletReceipt:
+    """End-to-end: gauntlet receipt -> conversion -> KM adapter."""
+
+    @pytest.mark.asyncio
+    async def test_flag_off_returns_skipped_without_calling_adapter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from aragora.epistemic.gauntlet_crux_bridge import ingest_gauntlet_receipt
+
+        monkeypatch.delenv("ARAGORA_KM_CRUX_INGESTION_ENABLED", raising=False)
+        adapter = _StubAdapter()
+        g = _gauntlet_receipt()
+        result = await ingest_gauntlet_receipt(g, adapter)
+
+        assert adapter.calls == []
+        assert result.cruxes_ingested == 0
+        assert result.skipped == 1
+        assert result.knowledge_item_ids == []
+        # receipt_id is the gauntlet's verbatim (no conversion ran).
+        assert result.receipt_id == "crux-deadbeef"
+
+    @pytest.mark.asyncio
+    async def test_flag_on_runs_full_conversion_and_adapter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from aragora.epistemic.gauntlet_crux_bridge import ingest_gauntlet_receipt
+
+        monkeypatch.setenv("ARAGORA_KM_CRUX_INGESTION_ENABLED", "1")
+        adapter = _StubAdapter()
+        g = _gauntlet_receipt()
+        result = await ingest_gauntlet_receipt(g, adapter)
+
+        assert len(adapter.calls) == 1
+        passed_receipt, passed_require = adapter.calls[0]
+        # Adapter is called with require_enabled=False (we already checked
+        # at the wrapper level; adapter doesn't need to double-check).
+        assert passed_require is False
+        from aragora.epistemic.crux_receipt import CruxReceipt as Target
+
+        assert isinstance(passed_receipt, Target)
+        assert passed_receipt.debate_id == "debate.42"
+        assert result.cruxes_ingested == 1
+        assert len(result.knowledge_item_ids) == 1
+
+    @pytest.mark.asyncio
+    async def test_require_enabled_false_bypasses_flag_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``require_enabled=False`` is the test-harness escape hatch."""
+        from aragora.epistemic.gauntlet_crux_bridge import ingest_gauntlet_receipt
+
+        monkeypatch.delenv("ARAGORA_KM_CRUX_INGESTION_ENABLED", raising=False)
+        adapter = _StubAdapter()
+        g = _gauntlet_receipt()
+        result = await ingest_gauntlet_receipt(g, adapter, require_enabled=False)
+
+        assert len(adapter.calls) == 1
+        assert result.cruxes_ingested == 1
+
+    @pytest.mark.asyncio
+    async def test_preserve_receipt_id_forwarded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from aragora.epistemic.gauntlet_crux_bridge import ingest_gauntlet_receipt
+
+        monkeypatch.setenv("ARAGORA_KM_CRUX_INGESTION_ENABLED", "1")
+        adapter = _StubAdapter()
+        g = _gauntlet_receipt()
+        await ingest_gauntlet_receipt(g, adapter, preserve_receipt_id=True)
+
+        passed_receipt, _ = adapter.calls[0]
+        assert passed_receipt.receipt_id == "crux-deadbeef"
+
+    @pytest.mark.asyncio
+    async def test_adapter_failure_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Adapter failures are not silently swallowed."""
+        from aragora.epistemic.gauntlet_crux_bridge import ingest_gauntlet_receipt
+
+        monkeypatch.setenv("ARAGORA_KM_CRUX_INGESTION_ENABLED", "1")
+        adapter = _StubAdapter(raise_on_call=True)
+        g = _gauntlet_receipt()
+        with pytest.raises(RuntimeError, match="adapter forced failure"):
+            await ingest_gauntlet_receipt(g, adapter)
+
+    def test_exported_from_aragora_epistemic(self) -> None:
+        import aragora.epistemic as ep
+
+        assert hasattr(ep, "ingest_gauntlet_receipt")
+        assert "ingest_gauntlet_receipt" in ep.__all__
