@@ -115,7 +115,7 @@ def local_branches(root: Path, prefix: str, base: str) -> list[dict[str, str]]:
     proc = run_git(
         [
             "for-each-ref",
-            f"--format=%(refname:short)|%(upstream:short)|%(objectname:short)|%(committerdate:iso8601)|%(ahead-behind:{base})|%(subject)",
+            "--format=%(refname:short)|%(upstream:short)|%(objectname:short)|%(committerdate:iso8601)|%(subject)",
             ref_prefix,
         ],
         root,
@@ -127,16 +127,15 @@ def local_branches(root: Path, prefix: str, base: str) -> list[dict[str, str]]:
     for line in proc.stdout.splitlines():
         if not line.strip():
             continue
-        name, upstream, head_sha, committed_at, ahead_behind, subject = line.split("|", 5)
-        ahead_count, _, behind_count = ahead_behind.partition(" ")
+        name, upstream, head_sha, committed_at, subject = line.split("|", 4)
         rows.append(
             {
                 "name": name,
                 "upstream": upstream,
                 "head_sha": head_sha,
                 "committed_at": committed_at,
-                "ahead_count": ahead_count or "0",
-                "behind_count": behind_count or "0",
+                "ahead_count": "",
+                "behind_count": "",
                 "subject": subject,
             }
         )
@@ -480,13 +479,19 @@ def open_pr_heads(root: Path, repo: str, prefix: str) -> dict[str, int]:
 
 
 def count_ahead(root: Path, base: str, branch: str) -> int:
-    proc = run_git(["rev-list", "--count", f"{base}..{branch}"], root)
+    ahead_count, _behind_count = branch_divergence(root, base, branch)
+    return ahead_count
+
+
+def branch_divergence(root: Path, base: str, branch: str) -> tuple[int, int]:
+    proc = run_git(["rev-list", "--left-right", "--count", f"{base}...{branch}"], root)
     if proc.returncode != 0:
-        return 0
+        return (0, 0)
     try:
-        return int(proc.stdout.strip() or "0")
+        behind_count, ahead_count = (int(part) for part in proc.stdout.split())
+        return (ahead_count, behind_count)
     except ValueError:
-        return 0
+        return (0, 0)
 
 
 def is_merged(root: Path, base: str, branch: str) -> bool:
@@ -522,6 +527,29 @@ def has_empty_branch_diff(
     return run_git(["diff", "--quiet", f"{base}...{branch}"], root, timeout=timeout).returncode == 0
 
 
+def has_empty_changed_file_diff(
+    root: Path,
+    base: str,
+    branch: str,
+    *,
+    timeout: int = 60,
+) -> bool:
+    """Return true when the branch-touched files already match base."""
+
+    paths_proc = run_git(["diff", "--name-only", "-z", f"{base}...{branch}"], root, timeout=timeout)
+    if paths_proc.returncode != 0:
+        return False
+    paths = [path for path in paths_proc.stdout.split("\0") if path]
+    if not paths:
+        return True
+    diff_proc = run_git(
+        ["diff", "--quiet", f"{base}..{branch}", "--", *paths],
+        root,
+        timeout=timeout,
+    )
+    return diff_proc.returncode == 0
+
+
 def is_patch_equivalent(
     root: Path,
     base: str,
@@ -534,6 +562,9 @@ def is_patch_equivalent(
         return True
     if diff_proc.returncode != 1:
         return False
+
+    if has_empty_changed_file_diff(root, base, branch, timeout=timeout):
+        return True
 
     proc = run_git(["cherry", base, branch], root, timeout=timeout)
     if proc.returncode != 0:
@@ -708,11 +739,12 @@ def audit(
         try:
             ahead_count = int(row["ahead_count"])
         except ValueError:
-            ahead_count = count_ahead(root, base, branch)
-        try:
-            behind_count = int(row.get("behind_count", "0"))
-        except ValueError:
-            behind_count = 0
+            ahead_count, behind_count = branch_divergence(root, base, branch)
+        else:
+            try:
+                behind_count = int(row.get("behind_count", "0"))
+            except ValueError:
+                _ahead_count, behind_count = branch_divergence(root, base, branch)
         merged_to_base = branch in merged_branches
         patch_equivalent = False
         patch_id = None

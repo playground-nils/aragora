@@ -38,6 +38,45 @@ def _stub_git_inventory(monkeypatch: Any, row: dict[str, str]) -> None:
     monkeypatch.setattr(mod, "worktree_map", lambda _root: {})
 
 
+def test_local_branches_defers_expensive_divergence_lookup(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_git(
+        args: list[str], cwd: Path, *, timeout: int = 60
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="codex/example||abc1234|2026-04-30 00:00:00 +0000|test branch\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(mod, "run_git", fake_run_git)
+
+    rows = mod.local_branches(tmp_path, "codex/", "origin/main")
+
+    assert "%(ahead-behind:" not in calls[0][1]
+    assert rows[0]["ahead_count"] == ""
+    assert rows[0]["behind_count"] == ""
+
+
+def test_branch_divergence_parses_rev_list_left_right_counts(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    def fake_run_git(
+        args: list[str], cwd: Path, *, timeout: int = 60
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["rev-list", "--left-right", "--count", "origin/main...codex/example"]
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="3\t7\n", stderr="")
+
+    monkeypatch.setattr(mod, "run_git", fake_run_git)
+
+    assert mod.branch_divergence(tmp_path, "origin/main", "codex/example") == (7, 3)
+
+
 def test_summary_only_payload_omits_records_without_mutating_source() -> None:
     payload = {
         "branch_count": 2,
@@ -1334,6 +1373,49 @@ def test_patch_equivalence_treats_empty_branch_diff_as_cleanup(
     assert calls == [["diff", "--quiet", "origin/main...codex/cancels-out"]]
 
 
+def test_patch_equivalence_treats_identical_touched_files_as_cleanup(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_git(args: list[str], _cwd: Path, **_kwargs: Any) -> SimpleNamespace:
+        calls.append(args)
+        if args == ["diff", "--quiet", "origin/main...codex/squashed"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
+        if args == ["diff", "--name-only", "-z", "origin/main...codex/squashed"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout="scripts/agent_bridge.py\0scripts/tmux_send_prompt.sh\0",
+                stderr="",
+            )
+        if args == [
+            "diff",
+            "--quiet",
+            "origin/main..codex/squashed",
+            "--",
+            "scripts/agent_bridge.py",
+            "scripts/tmux_send_prompt.sh",
+        ]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(f"unexpected git call: {args}")
+
+    monkeypatch.setattr(mod, "run_git", fake_run_git)
+
+    assert mod.is_patch_equivalent(tmp_path, "origin/main", "codex/squashed") is True
+    assert calls == [
+        ["diff", "--quiet", "origin/main...codex/squashed"],
+        ["diff", "--name-only", "-z", "origin/main...codex/squashed"],
+        [
+            "diff",
+            "--quiet",
+            "origin/main..codex/squashed",
+            "--",
+            "scripts/agent_bridge.py",
+            "scripts/tmux_send_prompt.sh",
+        ],
+    ]
+
+
 def test_patch_equivalence_falls_back_to_cherry_when_branch_has_diff(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
@@ -1341,7 +1423,17 @@ def test_patch_equivalence_falls_back_to_cherry_when_branch_has_diff(
 
     def fake_run_git(args: list[str], _cwd: Path, **_kwargs: Any) -> SimpleNamespace:
         calls.append(args)
-        if args[:2] == ["diff", "--quiet"]:
+        if args == ["diff", "--quiet", "origin/main...codex/replayed"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
+        if args == ["diff", "--name-only", "-z", "origin/main...codex/replayed"]:
+            return SimpleNamespace(returncode=0, stdout="scripts/example.py\0", stderr="")
+        if args == [
+            "diff",
+            "--quiet",
+            "origin/main..codex/replayed",
+            "--",
+            "scripts/example.py",
+        ]:
             return SimpleNamespace(returncode=1, stdout="", stderr="")
         return SimpleNamespace(returncode=0, stdout="- abc123 already applied\n", stderr="")
 
@@ -1350,5 +1442,13 @@ def test_patch_equivalence_falls_back_to_cherry_when_branch_has_diff(
     assert mod.is_patch_equivalent(tmp_path, "origin/main", "codex/replayed") is True
     assert calls == [
         ["diff", "--quiet", "origin/main...codex/replayed"],
+        ["diff", "--name-only", "-z", "origin/main...codex/replayed"],
+        [
+            "diff",
+            "--quiet",
+            "origin/main..codex/replayed",
+            "--",
+            "scripts/example.py",
+        ],
         ["cherry", "origin/main", "codex/replayed"],
     ]
