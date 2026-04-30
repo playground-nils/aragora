@@ -1288,6 +1288,10 @@ class ConsensusPhase:
 
         if belief_network is None:
             logger.warning("crux_finder_skipped reason=no_belief_network falling_back=majority")
+            if not isinstance(getattr(result, "metadata", None), dict):
+                result.metadata = {}
+            result.metadata["crux_finder_skipped_reason"] = "no_belief_network"
+            result.metadata["crux_finder_fallback_consensus"] = "majority"
             await self._handle_majority_consensus(ctx)
             return
 
@@ -1312,6 +1316,11 @@ class ConsensusPhase:
             proof = build_proof_from_crux_finder(crux_result)
         except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
             logger.error("crux_finder_error: %s", exc, exc_info=True)
+            if not isinstance(getattr(result, "metadata", None), dict):
+                result.metadata = {}
+            result.metadata["crux_finder_skipped_reason"] = "crux_finder_error"
+            result.metadata["crux_finder_error"] = str(exc)
+            result.metadata["crux_finder_fallback_consensus"] = "majority"
             await self._handle_majority_consensus(ctx)
             return
 

@@ -317,6 +317,46 @@ async def test_consensus_phase_dispatches_to_crux_finder(
 
 
 @pytest.mark.asyncio
+async def test_consensus_phase_records_crux_skip_metadata_without_belief_network() -> None:
+    """The CLI needs a machine-readable skip reason for operator-facing errors."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from aragora.debate.phases.consensus_phase import ConsensusPhase
+
+    protocol = DebateProtocol(consensus="crux_finder")
+    result = SimpleNamespace(
+        debate_id="d-no-network",
+        rounds_used=0,
+        consensus_proof=None,
+        consensus_reached=None,
+        final_answer=None,
+        consensus_strength=None,
+        formal_verification=None,
+        metadata={},
+    )
+    ctx = SimpleNamespace(
+        env=SimpleNamespace(task="Should demo agents produce cruxes?"),
+        agents=[SimpleNamespace(name="demo")],
+        result=result,
+        debate_id="d-no-network",
+        belief_network=None,
+    )
+
+    phase = ConsensusPhase.__new__(ConsensusPhase)
+    phase.protocol = protocol
+    phase._notify_spectator = None
+    phase.hooks = {}
+    phase._handle_majority_consensus = AsyncMock()
+
+    await phase._execute_consensus(ctx, "crux_finder")
+
+    assert result.metadata["crux_finder_skipped_reason"] == "no_belief_network"
+    assert result.metadata["crux_finder_fallback_consensus"] == "majority"
+    phase._handle_majority_consensus.assert_awaited_once_with(ctx)
+
+
+@pytest.mark.asyncio
 async def test_consensus_phase_seeds_current_debate_claims_for_crux_finder() -> None:
     """A real contested debate must not sign an empty crux map."""
     from types import SimpleNamespace

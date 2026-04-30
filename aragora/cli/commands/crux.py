@@ -64,6 +64,49 @@ async def _run_crux_debate(
     return await arena.run()
 
 
+def _diagnose_missing_proof(result: Any) -> str:
+    """Build a specific operator-actionable error message when ``consensus_proof`` is None.
+
+    The crux-finder debate path can silently fall back to ``majority`` consensus
+    when prerequisites aren't met (e.g., no belief network, no real LLM agents,
+    crux-finder phase skipped).  Surfaces the specific cause from the debate
+    metadata when available.
+
+    Round 2026-04-30d Phase C dogfood found this: ``aragora crux --agents demo``
+    produced a confusing "no consensus_proof" error after running the entire
+    debate.  This helper extracts the actual cause from
+    ``result.metadata`` so the operator sees the real fix path.
+    """
+    metadata = getattr(result, "metadata", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    # The consensus_phase logs ``crux_finder_skipped reason=<X> falling_back=<Y>``
+    # and stores that in the debate metadata.  Surface it directly.
+    skip_reason = metadata.get("crux_finder_skipped_reason")
+    fallback = metadata.get("crux_finder_fallback_consensus")
+
+    base = "Debate returned no consensus_proof — crux-finder mode did not run to completion."
+    if skip_reason or fallback:
+        hint_parts = []
+        if skip_reason:
+            hint_parts.append(f"reason={skip_reason}")
+        if fallback:
+            hint_parts.append(f"fell_back_to={fallback}")
+        hint = "; ".join(hint_parts)
+        if skip_reason == "no_belief_network":
+            remedy = (
+                "The crux-finder mode requires real LLM agents that can produce "
+                "claim-bearing proposals.  ``--agents demo`` does not produce a "
+                "belief network.  Re-run with at least one real provider, e.g. "
+                "``--agents claude,codex`` (with ANTHROPIC_API_KEY / OPENAI_API_KEY set)."
+            )
+            return f"{base} ({hint}). {remedy}"
+        return f"{base} ({hint}). Inspect debate logs for the underlying failure."
+
+    return f"{base} Inspect debate logs for the underlying failure."
+
+
 def _receipt_from_debate_result(
     result: Any,
     *,
@@ -81,10 +124,7 @@ def _receipt_from_debate_result(
 
     proof = getattr(result, "consensus_proof", None)
     if proof is None:
-        raise RuntimeError(
-            "Debate returned no consensus_proof — crux-finder mode did not run "
-            "to completion. Inspect debate logs for the underlying failure."
-        )
+        raise RuntimeError(_diagnose_missing_proof(result))
 
     raw_claims = list(getattr(result, "proposals", {}).values()) if result else []
     # Wrap raw text proposals as dicts so the provenance hash is stable.
