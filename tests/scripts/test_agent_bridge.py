@@ -365,7 +365,54 @@ def test_operator_snapshot_summary_only_json_omits_records(
     assert payload["records_omitted"] is True
     assert payload["summary"]["total_sessions"] == 1
     assert payload["summary"]["alive_sessions"] == 1
+    assert payload["summary"]["health_issue_counts"] == {}
     assert payload["health"] == {"ok": True, "issues": []}
+
+
+def test_operator_snapshot_json_counts_health_issue_types(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    mod.AGENT_BRIDGE_DIR.mkdir(parents=True, exist_ok=True)
+    old_worktree = tmp_path / "old-worktree"
+    old_worktree.mkdir()
+    mod.LANE_REGISTRY_FILE.write_text(
+        json.dumps(
+            [
+                {"lane_id": "bridge-hardening", "owner_session": "codex-a", "status": "active"},
+                {"lane_id": "bridge-hardening", "owner_session": "codex-b", "status": "active"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        mod,
+        "discover",
+        lambda: [
+            mod.Session(
+                name="codex-old-lane",
+                agent="codex",
+                status="dead",
+                worktree=str(old_worktree),
+            ),
+            mod.Session(name="codex-a", agent="codex", status="alive"),
+            mod.Session(name="codex-b", agent="codex", status="alive"),
+        ],
+    )
+
+    rc = mod.cmd_operator_snapshot(argparse.Namespace(json=True, summary_only=True))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["health_issues"] == 2
+    assert payload["summary"]["health_issue_counts"] == {
+        "ambiguous_lane": 1,
+        "stale_worktree": 1,
+    }
 
 
 def test_cmd_launch_invokes_tmux_launcher_for_droid(
