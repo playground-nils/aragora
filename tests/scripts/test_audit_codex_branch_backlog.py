@@ -1250,6 +1250,8 @@ def test_audit_skips_patch_equivalence_after_time_budget(tmp_path: Path, monkeyp
 
     assert payload["patch_equivalence_budget_exhausted"] is True
     assert payload["patch_equivalence_skipped_branches"] == 2
+    assert payload["summary"]["patch_equivalence_budget_exhausted"] is True
+    assert payload["summary"]["patch_equivalence_skipped_branches"] == 2
     assert [record["category"] for record in payload["records"]] == [
         "salvage_recent_unique",
         "salvage_recent_unique",

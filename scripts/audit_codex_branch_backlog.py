@@ -905,6 +905,8 @@ def audit(
             "stale_local_only_salvage_candidates": counts["salvage_stale_local_unique"],
             "handoff_receipted_branches": counts["protected_handoff_receipt"],
             "handoff_outbox_branches": counts["protected_handoff_outbox"],
+            "patch_equivalence_budget_exhausted": _patch_budget_exhausted(patch_deadline),
+            "patch_equivalence_skipped_branches": patch_equivalence_skipped_branches,
             "writer_should_pause_for_branch_backlog": (
                 publishable_branch_backlog >= publisher_backlog_limit
             ),
@@ -933,6 +935,12 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
     print(f"- Diverged salvage candidates: `{summary['diverged_salvage_candidates']}`")
     print(f"- Handoff-receipted branches: `{summary['handoff_receipted_branches']}`")
     print(f"- Handoff-outbox branches: `{summary['handoff_outbox_branches']}`")
+    print(
+        f"- Patch-equivalence budget exhausted: `{summary['patch_equivalence_budget_exhausted']}`"
+    )
+    print(
+        f"- Patch-equivalence skipped branches: `{summary['patch_equivalence_skipped_branches']}`"
+    )
     print(
         "- Writer should pause for branch backlog: "
         f"`{summary['writer_should_pause_for_branch_backlog']}`"
