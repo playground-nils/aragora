@@ -343,6 +343,14 @@ def _collect_health_issues(
     return issues
 
 
+def _summarize_session_statuses(sessions: list[Session]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for session in sessions:
+        status = session.status or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _lane_conflict(
     records: list[LaneRecord],
     lane_id: str,
@@ -827,6 +835,7 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
     records = _sync_lane_records(_load_lane_registry(), sessions)
 
     issues = _collect_health_issues(sessions, records)
+    status_counts = _summarize_session_statuses(sessions)
 
     snapshot: dict[str, Any] = {
         "timestamp": _now_iso(),
@@ -837,6 +846,8 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
             "total_sessions": len(sessions),
             "alive_sessions": sum(1 for s in sessions if s.status == "alive"),
             "dead_sessions": sum(1 for s in sessions if s.status == "dead"),
+            "unknown_sessions": status_counts.get("unknown", 0),
+            "status_counts": status_counts,
             "active_lanes": sum(1 for r in records if r.status in ACTIVE_LANE_STATUSES),
             "conflict_lanes": sum(1 for r in records if r.status == "conflict"),
             "health_issues": len(issues),
@@ -855,7 +866,8 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
     print(f"Operator Snapshot @ {snapshot['timestamp']}")
     print("=" * 80)
     print(
-        f"Sessions: {summary['alive_sessions']} alive / {summary['dead_sessions']} dead / {summary['total_sessions']} total"
+        f"Sessions: {summary['alive_sessions']} alive / {summary['dead_sessions']} dead / "
+        f"{summary['unknown_sessions']} unknown / {summary['total_sessions']} total"
     )
     print(f"Lanes:    {summary['active_lanes']} active / {summary['conflict_lanes']} conflict")
     health_status = "OK" if snapshot["health"]["ok"] else f"{summary['health_issues']} issue(s)"
