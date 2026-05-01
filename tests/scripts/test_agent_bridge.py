@@ -345,7 +345,9 @@ def test_operator_snapshot_summary_only_json_omits_records(
                 status="alive",
                 branch="codex/example",
                 worktree=str(tmp_path),
-            )
+            ),
+            mod.Session(name="claude-dead", agent="claude", status="dead"),
+            mod.Session(name="factory-unknown", agent="factory"),
         ],
     )
     monkeypatch.setattr(
@@ -363,8 +365,11 @@ def test_operator_snapshot_summary_only_json_omits_records(
     assert "sessions" not in payload
     assert "lanes" not in payload
     assert payload["records_omitted"] is True
-    assert payload["summary"]["total_sessions"] == 1
+    assert payload["summary"]["total_sessions"] == 3
     assert payload["summary"]["alive_sessions"] == 1
+    assert payload["summary"]["dead_sessions"] == 1
+    assert payload["summary"]["unknown_sessions"] == 1
+    assert payload["summary"]["status_counts"] == {"alive": 1, "dead": 1, "unknown": 1}
     assert payload["health"] == {"ok": True, "issues": []}
 
 
