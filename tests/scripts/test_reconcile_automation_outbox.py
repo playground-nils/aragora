@@ -91,6 +91,18 @@ def test_branch_from_payload_tolerates_list_local_evidence() -> None:
     assert mod._branch_from_payload(payload) == "codex/openrouter-kimi-fallback-haiku"
 
 
+def test_branch_from_payload_extracts_list_mapping_local_evidence() -> None:
+    payload = {
+        "branch": "codex/stale-top-level",
+        "local_evidence": [
+            "older handoffs sometimes stored local evidence as bullet text",
+            {"branch": "codex/list-evidence"},
+        ],
+    }
+
+    assert mod._branch_from_payload(payload) == "codex/list-evidence"
+
+
 def test_branch_from_payload_prefers_structured_local_evidence() -> None:
     payload = {
         "branch": "codex/stale-top-level",
@@ -140,6 +152,48 @@ def test_reconcile_existing_receipt_uses_structured_requested_action_branch(
     assert payload["counts"]["satisfied_by_existing_receipt"] == 1
     assert payload["counts"]["skipped_unparseable"] == 0
     assert payload["actions"][0]["branch"] == "codex/structured-action"
+
+
+def test_reconcile_existing_receipt_uses_list_local_evidence_branch(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    outbox_dir = tmp_path / ".aragora" / "automation-outbox"
+    receipt_dir = tmp_path / ".aragora" / "automation-receipts"
+    outbox_dir.mkdir(parents=True)
+    receipt_dir.mkdir(parents=True)
+    key = "open-pr-codex-list-evidence-abc123"
+    (outbox_dir / "list-evidence.json").write_text(
+        json.dumps(
+            {
+                "task": "Publish list-evidence branch",
+                "requires_github": True,
+                "requested_action": "open_pr",
+                "repo": "synaptent/aragora",
+                "local_evidence": [
+                    "legacy bullet evidence",
+                    {"branch": "codex/list-evidence", "head_sha": "abc123"},
+                ],
+                "validation": ["pytest tests/example.py -q"],
+                "idempotency_key": key,
+                "created_at": "2026-05-01T08:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (receipt_dir / f"{key}.json").write_text(
+        json.dumps({"idempotency_key": key, "status": "published"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "open_pr_heads", lambda *_args: {})
+
+    assert mod.main(["--repo", str(tmp_path), "--write-report"]) == 0
+
+    reports = sorted((tmp_path / ".aragora" / "cleanup-state").glob("*.json"))
+    payload = json.loads(reports[-1].read_text(encoding="utf-8"))
+    assert payload["counts"]["satisfied_by_existing_receipt"] == 1
+    assert payload["counts"]["skipped_unparseable"] == 0
+    assert payload["actions"][0]["branch"] == "codex/list-evidence"
 
 
 def test_apply_preserves_missing_branch_when_open_pr_state_unavailable(

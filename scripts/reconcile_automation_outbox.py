@@ -26,7 +26,7 @@ import ast
 import json
 import shutil
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -117,6 +117,12 @@ def _branch_from_payload(payload: dict[str, Any]) -> str:
         branch = str(local_evidence.get("branch") or "").strip()
         if branch:
             return branch
+    if isinstance(local_evidence, Sequence) and not isinstance(local_evidence, (str, bytes)):
+        for item in local_evidence:
+            if isinstance(item, Mapping):
+                branch = str(item.get("branch") or "").strip()
+                if branch:
+                    return branch
 
     branch = str(payload.get("branch") or "").strip()
     if branch:
