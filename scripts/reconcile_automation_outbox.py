@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import shutil
 import sys
 from collections.abc import Mapping, Sequence
@@ -41,6 +42,10 @@ from audit_codex_branch_backlog import (  # noqa: E402
 from github_cli_health import check_github_cli_health  # noqa: E402
 
 UTC = timezone.utc
+DEFAULT_OUTBOX_DIR = Path(".aragora/automation-outbox")
+DEFAULT_RECEIPT_DIR = Path(".aragora/automation-receipts")
+DEFAULT_ARCHIVE_DIR = Path(".aragora/automation-outbox-archive")
+DEFAULT_CLEANUP_STATE_DIR = Path(".aragora/cleanup-state")
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -54,6 +59,20 @@ def _list_json(path: Path) -> list[Path]:
     if not path.exists():
         return []
     return sorted(p for p in path.iterdir() if p.is_file() and p.suffix == ".json")
+
+
+def _automation_state_default_path(state_root: Path, default_relative: Path) -> Path:
+    expanded = state_root.expanduser()
+    if default_relative.parts[:1] == (".aragora",) and expanded.name == ".aragora":
+        return expanded.joinpath(*default_relative.parts[1:])
+    return expanded / default_relative
+
+
+def _automation_state_root(repo_root: Path, explicit_state_root: Path | None) -> Path:
+    configured = explicit_state_root or os.environ.get("ARAGORA_AUTOMATION_STATE_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return repo_root
 
 
 def _branch_has_landed_on_main(root: Path, base: str, branch: str) -> bool:
@@ -196,12 +215,23 @@ def main(argv: list[str] | None = None) -> int:
         "--repo",
         required=True,
         help=(
-            "Main repository root (NOT a worktree). Outbox/receipt state "
-            "is read from this path's .aragora/ subdirectory."
+            "Main repository root used for git checks. Outbox/receipt state "
+            "defaults to this path's .aragora/ subdirectory unless --state-root "
+            "or ARAGORA_AUTOMATION_STATE_ROOT is set."
         ),
     )
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--repo-name", default="synaptent/aragora")
+    parser.add_argument(
+        "--state-root",
+        type=Path,
+        default=None,
+        help=(
+            "Shared automation state root used to derive outbox, receipt, archive, "
+            "and cleanup-state dirs. Accepts either a repo root containing .aragora "
+            "or the .aragora directory itself."
+        ),
+    )
     parser.add_argument(
         "--apply",
         action="store_true",
@@ -218,9 +248,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.repo).resolve()
-    outbox_dir = root / ".aragora" / "automation-outbox"
-    receipt_dir = root / ".aragora" / "automation-receipts"
-    archive_dir = root / ".aragora" / "automation-outbox-archive"
+    state_root = _automation_state_root(root, args.state_root)
+    outbox_dir = _automation_state_default_path(state_root, DEFAULT_OUTBOX_DIR)
+    receipt_dir = _automation_state_default_path(state_root, DEFAULT_RECEIPT_DIR)
+    archive_dir = _automation_state_default_path(state_root, DEFAULT_ARCHIVE_DIR)
 
     print(f"outbox_dir: {outbox_dir}")
     print(f"receipt_dir: {receipt_dir}")
@@ -403,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
 
     should_write_report = args.apply or args.write_report
     if should_write_report:
-        state_dir = root / ".aragora" / "cleanup-state"
+        state_dir = _automation_state_default_path(state_root, DEFAULT_CLEANUP_STATE_DIR)
         state_dir.mkdir(parents=True, exist_ok=True)
         out = (
             state_dir / f"outbox-reconciliation-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.json"

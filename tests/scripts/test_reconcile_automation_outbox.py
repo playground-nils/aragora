@@ -80,6 +80,68 @@ def test_dry_run_can_write_report_when_requested(
     assert payload["applied"] is False
 
 
+def test_default_paths_use_direct_aragora_state_root_env(
+    tmp_path: Path, monkeypatch: Any, capsys: Any
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".aragora" / "automation-outbox").mkdir(parents=True)
+    state_root = tmp_path / "shared" / ".aragora"
+    outbox_dir = state_root / "automation-outbox"
+    receipt_dir = state_root / "automation-receipts"
+    key = "open-pr-codex-shared-state-abc123"
+    _write_outbox_handoff(outbox_dir, branch="codex/shared-state", key=key)
+    receipt_dir.mkdir(parents=True)
+    (receipt_dir / f"{key}.json").write_text(
+        json.dumps({"idempotency_key": key, "status": "published"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ARAGORA_AUTOMATION_STATE_ROOT", str(state_root))
+
+    assert mod.main(["--repo", str(repo), "--write-report"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"outbox_dir: {outbox_dir}" in out
+    reports = sorted((state_root / "cleanup-state").glob("*.json"))
+    assert len(reports) == 1
+    assert not (repo / ".aragora" / "cleanup-state").exists()
+    payload = json.loads(reports[0].read_text(encoding="utf-8"))
+    assert payload["counts"]["satisfied_by_existing_receipt"] == 1
+
+
+def test_state_root_argument_accepts_repo_root(tmp_path: Path, capsys: Any) -> None:
+    repo = tmp_path / "repo"
+    state_root = tmp_path / "shared-state"
+    repo.mkdir()
+    outbox_dir = state_root / ".aragora" / "automation-outbox"
+    receipt_dir = state_root / ".aragora" / "automation-receipts"
+    key = "open-pr-codex-state-root-arg-abc123"
+    _write_outbox_handoff(outbox_dir, branch="codex/state-root-arg", key=key)
+    receipt_dir.mkdir(parents=True)
+    (receipt_dir / f"{key}.json").write_text(
+        json.dumps({"idempotency_key": key, "status": "published"}),
+        encoding="utf-8",
+    )
+
+    assert (
+        mod.main(
+            [
+                "--repo",
+                str(repo),
+                "--state-root",
+                str(state_root),
+                "--write-report",
+            ]
+        )
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    assert f"outbox_dir: {outbox_dir}" in out
+    reports = sorted((state_root / ".aragora" / "cleanup-state").glob("*.json"))
+    assert len(reports) == 1
+
+
 def test_branch_from_payload_tolerates_list_local_evidence() -> None:
     payload = {
         "branch": "codex/openrouter-kimi-fallback-haiku",
