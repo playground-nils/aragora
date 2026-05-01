@@ -86,7 +86,9 @@ def _failing_provider(
 
 
 class TestEmptyStore:
-    def test_no_receipts_emits_insufficiency_receipt(self, tmp_path: Path) -> None:
+    def test_dry_run_no_receipts_proposes_insufficiency_receipt_without_writing(
+        self, tmp_path: Path
+    ) -> None:
         repo_root = tmp_path
         summary = run_observe_outcomes(
             store_root=tmp_path,
@@ -102,8 +104,28 @@ class TestEmptyStore:
         assert summary["receipts_examined"] == 0
         assert summary["insufficiency_receipt_path"] is not None
         path = Path(summary["insufficiency_receipt_path"])
+        assert not path.exists()
+        body = summary["insufficiency_receipt"]
+        assert body["kind"] == "phase-a-observe-outcomes-insufficiency-receipt"
+        assert "no_receipts_in_window" in " ".join(body["remaining_blockers"])
+
+    def test_write_mode_no_receipts_writes_insufficiency_receipt(self, tmp_path: Path) -> None:
+        summary = run_observe_outcomes(
+            store_root=tmp_path,
+            repo_root=tmp_path,
+            window_end=datetime(2026, 4, 30, 12, tzinfo=UTC),
+            window_days=DEFAULT_WINDOW_DAYS,
+            max_receipts=20,
+            per_receipt_event_cap=DEFAULT_PER_RECEIPT_EVENT_CAP,
+            write=True,
+            timeline_provider=_silent_provider,
+        )
+        assert summary["mode"] == "write"
+        assert summary["receipts_examined"] == 0
+        path = Path(summary["insufficiency_receipt_path"])
         assert path.exists()
         body = json.loads(path.read_text())
+        assert body == summary["insufficiency_receipt"]
         assert body["kind"] == "phase-a-observe-outcomes-insufficiency-receipt"
         assert "no_receipts_in_window" in " ".join(body["remaining_blockers"])
 
@@ -134,6 +156,30 @@ class TestDryRunDoesNotMutate:
         result = summary["results"][0]
         assert result["signals_after"]["outcome_revert_within_window"] is True
         assert result["written"] is False
+
+    def test_dry_run_no_signals_proposes_insufficiency_without_writing(
+        self, tmp_path: Path
+    ) -> None:
+        receipts_dir = tmp_path / RECEIPTS_SUBDIR
+        _write_receipt(receipts_dir, "r1", _base_payload())
+        summary = run_observe_outcomes(
+            store_root=tmp_path,
+            repo_root=tmp_path,
+            window_end=datetime(2026, 4, 30, 12, tzinfo=UTC),
+            window_days=DEFAULT_WINDOW_DAYS,
+            max_receipts=20,
+            per_receipt_event_cap=DEFAULT_PER_RECEIPT_EVENT_CAP,
+            write=False,
+            timeline_provider=_silent_provider,
+        )
+        assert summary["mode"] == "dry-run"
+        assert summary["receipts_examined"] == 1
+        assert summary["receipts_written"] == 0
+        assert summary["insufficiency_receipt"] is not None
+        path = Path(summary["insufficiency_receipt_path"])
+        assert not path.exists()
+        joined = " ".join(summary["insufficiency_receipt"]["remaining_blockers"])
+        assert "no_signals_fired" in joined
 
 
 class TestWriteModeMutates:

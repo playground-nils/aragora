@@ -29,10 +29,11 @@ Safety contract
     payload with the new ``outcome_*`` fields.
   - **Sharper insufficiency receipt.** When the post-observation
     baseline still lacks data, a structured insufficiency receipt is
-    written under ``.aragora/evolve-round/<round-id>/`` describing
-    *what* would unblock the next measurement (sample-size shortfall,
-    no v2-eligible receipts, GitHub-fetch errors, etc.). This is
-    additive to the dry-run preview output.
+    proposed in dry-run mode and written under
+    ``.aragora/evolve-round/<round-id>/`` only when ``--write`` is
+    passed. It describes *what* would unblock the next measurement
+    (sample-size shortfall, no v2-eligible receipts, GitHub-fetch
+    errors, etc.).
 
 Out of scope
 ------------
@@ -463,8 +464,8 @@ def run_observe_outcomes(
     Returns a structured summary dict that the CLI prints. The
     summary includes a ``"results"`` list (one per receipt examined),
     aggregate counters, the ``v2_outcome_fields_now_present`` boolean,
-    and (when applicable) the path to the insufficiency receipt that
-    was written.
+    and (when applicable) the proposed or written insufficiency
+    receipt payload and path.
     """
     if window_days <= 0:
         raise ValueError("window_days must be positive")
@@ -515,6 +516,7 @@ def run_observe_outcomes(
         v2_now_present = False
 
     insufficiency_path: Path | None = None
+    insufficiency_payload: dict[str, Any] | None = None
     if len(results) == 0 or receipts_with_signals == 0 or fetch_errors > 0:
         insufficiency_payload = _build_insufficiency_receipt(
             window_end=window_end,
@@ -529,10 +531,15 @@ def run_observe_outcomes(
         insufficiency_path = insufficiency_receipt_path or _resolve_insufficiency_receipt_path(
             repo_root=repo_root, round_id=round_id
         )
-        try:
-            _atomic_write_json(insufficiency_path, insufficiency_payload)
-        except OSError as exc:
-            logger.warning("could not write insufficiency receipt %s: %s", insufficiency_path, exc)
+        if write:
+            try:
+                _atomic_write_json(insufficiency_path, insufficiency_payload)
+            except OSError as exc:
+                logger.warning(
+                    "could not write insufficiency receipt %s: %s",
+                    insufficiency_path,
+                    exc,
+                )
 
     return {
         "mode": "write" if write else "dry-run",
@@ -546,6 +553,7 @@ def run_observe_outcomes(
         "github_fetch_errors": fetch_errors,
         "v2_outcome_fields_now_present_in_window": v2_now_present,
         "insufficiency_receipt_path": (str(insufficiency_path) if insufficiency_path else None),
+        "insufficiency_receipt": insufficiency_payload,
         "results": [
             {
                 "receipt_path": str(r.receipt_path),
