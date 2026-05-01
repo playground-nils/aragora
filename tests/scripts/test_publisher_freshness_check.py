@@ -82,7 +82,7 @@ def test_default_paths_use_shared_state_root_env(
     cache = _write_cache(state_root, outbox_count=2)
     _write_outbox_files(state_root, 2)
     monkeypatch.setenv("ARAGORA_AUTOMATION_STATE_ROOT", str(state_root))
-    monkeypatch.setattr(mod, "_launchd_loaded", lambda label: (True, "loaded"))
+    monkeypatch.setattr(mod, "_launchd_loaded", lambda label: (True, "loaded", 0))
     now = cache.stat().st_mtime + 60
 
     report = mod.evaluate(repo_root, now=now)
