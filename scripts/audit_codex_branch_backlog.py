@@ -47,6 +47,7 @@ SALVAGE_CATEGORIES = {
     "salvage_diverged_remote",
     "salvage_diverged_local",
 }
+UNKNOWN_DIVERGENCE_COUNT = -1
 
 
 @dataclass(frozen=True)
@@ -486,12 +487,12 @@ def count_ahead(root: Path, base: str, branch: str) -> int:
 def branch_divergence(root: Path, base: str, branch: str) -> tuple[int, int]:
     proc = run_git(["rev-list", "--left-right", "--count", f"{base}...{branch}"], root)
     if proc.returncode != 0:
-        return (0, 0)
+        return (UNKNOWN_DIVERGENCE_COUNT, UNKNOWN_DIVERGENCE_COUNT)
     try:
         behind_count, ahead_count = (int(part) for part in proc.stdout.split())
         return (ahead_count, behind_count)
     except ValueError:
-        return (0, 0)
+        return (UNKNOWN_DIVERGENCE_COUNT, UNKNOWN_DIVERGENCE_COUNT)
 
 
 def is_merged(root: Path, base: str, branch: str) -> bool:
@@ -646,6 +647,12 @@ def classify(
         return "protected_active_worktree"
     if dirty_paths:
         return "protected_dirty_worktree"
+    if ahead_count < 0 or behind_count < 0:
+        if handoff_receipt_exists:
+            return "protected_handoff_receipt"
+        if handoff_outbox_exists:
+            return "protected_handoff_outbox"
+        return "protected_unknown_divergence"
     if merged_to_base or ahead_count == 0:
         return "cleanup_local_merged"
     if patch_equivalent_to_base:
@@ -855,6 +862,7 @@ def audit(
         counts["protected_open_pr"]
         + counts["protected_active_worktree"]
         + counts["protected_dirty_worktree"]
+        + counts["protected_unknown_divergence"]
         + counts["protected_handoff_receipt"]
         + counts["protected_handoff_outbox"]
     )
@@ -948,6 +956,7 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
         "protected_open_pr",
         "protected_active_worktree",
         "protected_dirty_worktree",
+        "protected_unknown_divergence",
         "protected_handoff_receipt",
         "protected_handoff_outbox",
     ):

@@ -77,6 +77,61 @@ def test_branch_divergence_parses_rev_list_left_right_counts(
     assert mod.branch_divergence(tmp_path, "origin/main", "codex/example") == (7, 3)
 
 
+def test_branch_divergence_is_unknown_when_rev_list_fails(tmp_path: Path, monkeypatch: Any) -> None:
+    def fake_run_git(
+        args: list[str], cwd: Path, *, timeout: int = 60
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["rev-list", "--left-right", "--count", "missing-base...codex/example"]
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=128,
+            stdout="",
+            stderr="fatal: ambiguous argument 'missing-base...codex/example'",
+        )
+
+    monkeypatch.setattr(mod, "run_git", fake_run_git)
+
+    assert mod.branch_divergence(tmp_path, "missing-base", "codex/example") == (-1, -1)
+
+
+def test_audit_protects_unknown_divergence_from_cleanup(tmp_path: Path, monkeypatch: Any) -> None:
+    row = _branch_row("codex/unknown-divergence", ahead_count="", behind_count="")
+    _stub_git_inventory(monkeypatch, row)
+    monkeypatch.setattr(mod, "branch_divergence", lambda _root, _base, _branch: (-1, -1))
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="offline",
+            repo=str(tmp_path),
+        ),
+    )
+
+    payload = mod.audit(
+        root=tmp_path,
+        base="missing-base",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=False,
+        publisher_backlog_limit=1,
+    )
+
+    record = payload["records"][0]
+    assert record["ahead_count"] == -1
+    assert record["behind_count"] == -1
+    assert record["category"] == "protected_unknown_divergence"
+    assert payload["summary"]["safe_cleanup_candidates"] == 0
+    assert payload["summary"]["protected"] == 1
+    assert payload["summary"]["publishable_branch_backlog"] == 0
+    assert payload["summary"]["by_category"]["protected_unknown_divergence"] == 1
+
+
 def test_summary_only_payload_omits_records_without_mutating_source() -> None:
     payload = {
         "branch_count": 2,
