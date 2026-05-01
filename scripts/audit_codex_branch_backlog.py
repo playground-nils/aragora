@@ -279,6 +279,28 @@ def terminal_handoff_keys(receipt_root: Path) -> set[str]:
     return terminal_keys
 
 
+def outbox_file_counts(outbox_root: Path, terminal_keys: set[str]) -> dict[str, int]:
+    """Return queue-file counts independent of the branch scan window."""
+
+    counts = Counter({"outbox_files": 0, "unresolved_outbox_files": 0})
+    for outbox_file in _json_files(outbox_root):
+        counts["outbox_files"] += 1
+        try:
+            payload = json.loads(outbox_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            counts["unresolved_outbox_files"] += 1
+            continue
+        if not isinstance(payload, dict):
+            counts["unresolved_outbox_files"] += 1
+            continue
+        idempotency_key = str(payload.get("idempotency_key") or "").strip()
+        if idempotency_key and idempotency_key in terminal_keys:
+            counts["terminal_receipted_outbox_files"] += 1
+        else:
+            counts["unresolved_outbox_files"] += 1
+    return dict(counts)
+
+
 def terminal_key_matches_branch_head(idempotency_key: str, branch: str, head_sha: str) -> bool:
     """Return whether a terminal idempotency key names this branch head."""
 
@@ -700,6 +722,7 @@ def audit(
         receipt_dir=resolved_receipt_dir,
     )
     terminal_keys = terminal_handoff_keys(resolved_receipt_dir)
+    queue_counts = outbox_file_counts(resolved_outbox_dir, terminal_keys)
     handoff_receipted_branches.update(
         row["name"]
         for row in rows
@@ -898,6 +921,13 @@ def audit(
             "stale_local_only_salvage_candidates": counts["salvage_stale_local_unique"],
             "handoff_receipted_branches": counts["protected_handoff_receipt"],
             "handoff_outbox_branches": counts["protected_handoff_outbox"],
+            "outbox_files": queue_counts.get("outbox_files", 0),
+            "unresolved_outbox_files": queue_counts.get("unresolved_outbox_files", 0),
+            "terminal_receipted_outbox_files": queue_counts.get(
+                "terminal_receipted_outbox_files", 0
+            ),
+            "receipt_files": len(_json_files(resolved_receipt_dir)),
+            "terminal_receipt_keys": len(terminal_keys),
             "writer_should_pause_for_branch_backlog": (
                 publishable_branch_backlog >= publisher_backlog_limit
             ),
@@ -926,6 +956,8 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
     print(f"- Diverged salvage candidates: `{summary['diverged_salvage_candidates']}`")
     print(f"- Handoff-receipted branches: `{summary['handoff_receipted_branches']}`")
     print(f"- Handoff-outbox branches: `{summary['handoff_outbox_branches']}`")
+    print(f"- Outbox files: `{summary['outbox_files']}`")
+    print(f"- Unresolved outbox files: `{summary['unresolved_outbox_files']}`")
     print(
         "- Writer should pause for branch backlog: "
         f"`{summary['writer_should_pause_for_branch_backlog']}`"

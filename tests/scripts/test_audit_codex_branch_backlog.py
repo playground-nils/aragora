@@ -573,6 +573,64 @@ def test_audit_excludes_unresolved_outbox_handoffs_from_publishable_backlog(
     assert handed_off["category"] == "protected_handoff_outbox"
 
 
+def test_audit_reports_outbox_file_counts_outside_branch_scan(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    now = datetime.now(timezone.utc)
+    rows = [_branch_row("codex/scanned-work", committed_at=now)]
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    outbox.mkdir(parents=True)
+    (outbox / "unscanned.json").write_text(
+        json.dumps(
+            {
+                "task": "Publish unscanned branch",
+                "requires_github": True,
+                "requested_action": "open_pr",
+                "repo": "synaptent/aragora",
+                "local_evidence": {"branch": "codex/unscanned-handoff"},
+                "validation": ["pytest tests/example.py -q"],
+                "idempotency_key": "open-pr-codex-unscanned-handoff-abc123",
+                "created_at": "2026-05-01T04:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "local_branches", lambda _root, _prefix, _base: rows)
+    monkeypatch.setattr(mod, "remote_branch_names", lambda _root, _prefix: set())
+    monkeypatch.setattr(mod, "merged_branch_names", lambda _root, _base, _prefix: set())
+    monkeypatch.setattr(mod, "worktree_map", lambda _root: {})
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="offline",
+            repo=str(tmp_path),
+        ),
+    )
+
+    payload = mod.audit(
+        root=tmp_path,
+        base="origin/main",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=False,
+        publisher_backlog_limit=2,
+    )
+
+    assert payload["summary"]["handoff_outbox_branches"] == 0
+    assert payload["summary"]["outbox_files"] == 1
+    assert payload["summary"]["unresolved_outbox_files"] == 1
+    assert payload["summary"]["terminal_receipted_outbox_files"] == 0
+    assert payload["summary"]["receipt_files"] == 0
+    assert payload["summary"]["terminal_receipt_keys"] == 0
+
+
 def test_audit_protects_structured_action_branch_handoffs(tmp_path: Path, monkeypatch: Any) -> None:
     now = datetime.now(timezone.utc)
     rows = [
