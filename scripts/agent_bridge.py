@@ -343,6 +343,37 @@ def _collect_health_issues(
     return issues
 
 
+def _collect_git_worktree_issues() -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            cwd=str(CANONICAL_REPO_ROOT),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return issues
+
+    if result.returncode != 0:
+        return issues
+
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            wt_path = line.split(" ", 1)[1]
+            if not Path(wt_path).is_dir():
+                issues.append(
+                    {
+                        "type": "prunable_worktree",
+                        "session": "-",
+                        "detail": f"git worktree missing on disk: {wt_path}",
+                    }
+                )
+    return issues
+
+
 def _lane_conflict(
     records: list[LaneRecord],
     lane_id: str,
@@ -775,31 +806,7 @@ def cmd_health(args: argparse.Namespace) -> int:
     records = _sync_lane_records(_load_lane_registry(), sessions)
 
     issues = _collect_health_issues(sessions, records)
-
-    # Check git worktree list for prunable entries
-    try:
-        result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            cwd=str(CANONICAL_REPO_ROOT),
-        )
-        if result.returncode == 0:
-            for line in result.stdout.splitlines():
-                if line.startswith("worktree "):
-                    wt_path = line.split(" ", 1)[1]
-                    if not Path(wt_path).is_dir():
-                        issues.append(
-                            {
-                                "type": "prunable_worktree",
-                                "session": "-",
-                                "detail": f"git worktree missing on disk: {wt_path}",
-                            }
-                        )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
+    issues.extend(_collect_git_worktree_issues())
 
     if args.json:
         print(json.dumps({"ok": len(issues) == 0, "issues": issues}, indent=2))
@@ -827,6 +834,7 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
     records = _sync_lane_records(_load_lane_registry(), sessions)
 
     issues = _collect_health_issues(sessions, records)
+    issues.extend(_collect_git_worktree_issues())
 
     snapshot: dict[str, Any] = {
         "timestamp": _now_iso(),

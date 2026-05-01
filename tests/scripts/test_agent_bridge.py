@@ -541,3 +541,45 @@ def test_health_reports_dead_non_root_worktree(
             "detail": f"dead session with lingering worktree: {worktree}",
         }
     ]
+
+
+def test_operator_snapshot_reports_prunable_git_worktrees(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    missing_worktree = tmp_path / "missing-worktree"
+    monkeypatch.setattr(mod, "CANONICAL_REPO_ROOT", repo_root)
+    monkeypatch.setattr(mod, "discover", lambda: [])
+    monkeypatch.setattr(mod, "_load_lane_registry", lambda: [])
+
+    def _fake_run(args, **kwargs):
+        assert args == ["git", "worktree", "list", "--porcelain"]
+        assert kwargs["cwd"] == str(repo_root)
+        return argparse.Namespace(
+            returncode=0,
+            stdout=f"worktree {repo_root}\n\nworktree {missing_worktree}\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+
+    assert mod.cmd_operator_snapshot(argparse.Namespace(json=True, summary_only=True)) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["health"] == {
+        "ok": False,
+        "issues": [
+            {
+                "type": "prunable_worktree",
+                "session": "-",
+                "detail": f"git worktree missing on disk: {missing_worktree}",
+            }
+        ],
+    }
+    assert payload["summary"]["health_issues"] == 1
