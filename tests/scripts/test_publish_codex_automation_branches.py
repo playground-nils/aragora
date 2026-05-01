@@ -160,6 +160,34 @@ def test_outbox_superseded_branches_reads_local_supersession_metadata(
     }
 
 
+def test_outbox_superseded_branches_reads_list_local_evidence(
+    tmp_path: Path,
+) -> None:
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    outbox.mkdir(parents=True)
+    (outbox / "repair.json").write_text(
+        json.dumps(
+            {
+                "task": "Open PR for stronger repair branch",
+                "local_evidence": [
+                    "older handoffs sometimes stored local evidence as bullet text",
+                    {
+                        "branch": "codex/stronger",
+                        "supersedes_branch": "codex/stale-local",
+                        "supersedes": ["codex/stale-sibling"],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert mod.outbox_superseded_branches(tmp_path, outbox_dir=outbox) == {
+        "codex/stale-local",
+        "codex/stale-sibling",
+    }
+
+
 def test_outbox_superseded_branches_uses_automation_state_root_default(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
