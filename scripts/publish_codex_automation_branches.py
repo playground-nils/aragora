@@ -314,7 +314,7 @@ def _add_branch_reference(branches: set[str], value: Any) -> None:
 def _superseded_branches_from_payload(payload: dict[str, Any]) -> set[str]:
     branches: set[str] = set()
 
-    def collect(container: dict[str, Any]) -> None:
+    def collect(container: Mapping[str, Any]) -> None:
         _add_branch_reference(branches, container.get("supersedes_branch"))
         supersedes_branches = container.get("supersedes_branches")
         if isinstance(supersedes_branches, list):
@@ -329,8 +329,12 @@ def _superseded_branches_from_payload(payload: dict[str, Any]) -> set[str]:
 
     collect(payload)
     local_evidence = payload.get("local_evidence")
-    if isinstance(local_evidence, dict):
+    if isinstance(local_evidence, Mapping):
         collect(local_evidence)
+    elif isinstance(local_evidence, list):
+        for item in local_evidence:
+            if isinstance(item, Mapping):
+                collect(item)
     return branches
 
 
