@@ -278,7 +278,30 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_insufficiency_receipt_path(*, repo_root: Path, round_id: str) -> Path:
+def _resolve_insufficiency_receipt_path(
+    *,
+    repo_root: Path,
+    round_id: str,
+    dry_run: bool = False,
+    observed_at: datetime | None = None,
+) -> Path:
+    """Resolve the insufficiency-receipt destination.
+
+    Non-dry-run (write=True) routes to the round's canonical evolve
+    directory. Dry-run isolates the proposed artifact under an
+    observe-outcomes/<utc-iso> subtree so dry-run runs cannot pollute
+    a round's receipts and cannot ever land under docs/ or tests/.
+    """
+    if dry_run:
+        ts = (observed_at or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
+        return (
+            repo_root
+            / ".aragora"
+            / "evolve-round"
+            / "observe-outcomes"
+            / ts
+            / "insufficiency-receipt.json"
+        )
     return (
         repo_root
         / ".aragora"
@@ -529,7 +552,10 @@ def run_observe_outcomes(
             v2_now_present=v2_now_present,
         )
         insufficiency_path = insufficiency_receipt_path or _resolve_insufficiency_receipt_path(
-            repo_root=repo_root, round_id=round_id
+            repo_root=repo_root,
+            round_id=round_id,
+            dry_run=not write,
+            observed_at=observed_at,
         )
         if write:
             try:
