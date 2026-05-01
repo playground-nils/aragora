@@ -127,6 +127,59 @@ def test_main_summary_only_json_omits_prompts(
     assert all("prompt" not in record for record in payload["core_writers"].values())
 
 
+def test_build_payload_reports_invalid_toml_without_crashing(tmp_path: Path) -> None:
+    import check_codex_desktop_automations as mod
+
+    prompt = "Read memory, repair one branch, validate locally, then refresh outbox."
+    for automation_id, minute in mod.CORE_WRITERS.items():
+        _write_automation(
+            tmp_path,
+            automation_id,
+            name=f"{automation_id} Writer",
+            prompt=prompt,
+            byminute=minute,
+        )
+    bad_path = tmp_path / "bad-automation"
+    bad_path.mkdir()
+    (bad_path / "automation.toml").write_text(
+        'version = 1\nid = "bad-automation"\nprompt = [\n',
+        encoding="utf-8",
+    )
+
+    payload = mod.build_payload(tmp_path)
+
+    assert payload["automation_count"] == 5
+    assert payload["summary"]["error_count"] == 1
+    issue = next(issue for issue in payload["issues"] if issue["code"] == "invalid_automation_toml")
+    assert issue["automation_id"] == "bad-automation"
+    assert "automation.toml" in issue["message"]
+
+
+def test_main_invalid_toml_json_returns_structured_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import check_codex_desktop_automations as mod
+
+    prompt = "Read memory, repair one branch, validate locally, then refresh outbox."
+    for automation_id, minute in mod.CORE_WRITERS.items():
+        _write_automation(
+            tmp_path,
+            automation_id,
+            name=f"{automation_id} Writer",
+            prompt=prompt,
+            byminute=minute,
+        )
+    bad_path = tmp_path / "bad-automation"
+    bad_path.mkdir()
+    (bad_path / "automation.toml").write_text("version = [\n", encoding="utf-8")
+
+    assert mod.main(["--root", str(tmp_path), "--json", "--summary-only"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["error_count"] == 1
+    assert payload["issues"][0]["code"] == "invalid_automation_toml"
+    assert payload["prompt_details_omitted"] is True
+
+
 def test_audit_warns_duplicate_writer_minutes(tmp_path: Path) -> None:
     import check_codex_desktop_automations as mod
 
