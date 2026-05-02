@@ -220,6 +220,20 @@ def test_decide_lane_followup_when_worktree_dirty_even_if_checks_pass() -> None:
     assert decision.pr_number == 5402
 
 
+def test_synthetic_lane_records_only_include_live_sessions() -> None:
+    import agent_bridge_supervise as mod
+
+    sessions = [
+        mod.agent_bridge.Session(name="codex-live", agent="codex", status="alive"),
+        mod.agent_bridge.Session(name="claude-history", agent="claude", status="unknown"),
+        mod.agent_bridge.Session(name="factory-old", agent="factory", status="dead"),
+    ]
+
+    records = mod._synthetic_lane_records(sessions)
+
+    assert [record.owner_session for record in records] == ["codex-live"]
+
+
 def test_inspect_worktree_treats_git_status_failure_as_dirty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

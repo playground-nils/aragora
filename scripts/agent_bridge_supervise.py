@@ -340,6 +340,8 @@ def _load_pr_truth(
 def _synthetic_lane_records(sessions: list[agent_bridge.Session]) -> list[agent_bridge.LaneRecord]:
     records: list[agent_bridge.LaneRecord] = []
     for session in sessions:
+        if session.status != "alive":
+            continue
         records.append(
             agent_bridge.LaneRecord(
                 lane_id=session.name,
