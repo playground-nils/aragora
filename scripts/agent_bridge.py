@@ -289,10 +289,11 @@ def _collect_health_issues(
 ) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
 
-    # Missing paths are actionable stale-session residue. Dead historical
-    # sessions that merely remember the root checkout are not cleanup blockers.
+    # Missing live/unknown paths are actionable stale-session residue. Dead
+    # historical sessions with already-removed worktrees are not coordination
+    # blockers; lingering non-root worktree directories are.
     for s in sessions:
-        if s.worktree and not Path(s.worktree).is_dir():
+        if s.status != "dead" and s.worktree and not Path(s.worktree).is_dir():
             issues.append(
                 {
                     "type": "stale_worktree",

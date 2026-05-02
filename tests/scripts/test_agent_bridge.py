@@ -498,6 +498,39 @@ def test_health_ignores_dead_root_checkout_session(
     assert json.loads(capsys.readouterr().out) == {"ok": True, "issues": []}
 
 
+def test_health_ignores_dead_missing_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    missing_worktree = tmp_path / "missing-worktree"
+    monkeypatch.setattr(
+        mod,
+        "discover",
+        lambda: [
+            mod.Session(
+                name="factory-old-lane",
+                agent="factory",
+                status="dead",
+                worktree=str(missing_worktree),
+            )
+        ],
+    )
+    monkeypatch.setattr(mod, "_enrich_prs", lambda _sessions: None)
+    monkeypatch.setattr(mod, "_load_lane_registry", lambda: [])
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda *args, **kwargs: argparse.Namespace(returncode=1, stdout="", stderr=""),
+    )
+
+    assert mod.cmd_health(argparse.Namespace(json=True)) == 0
+    assert json.loads(capsys.readouterr().out) == {"ok": True, "issues": []}
+
+
 def test_health_reports_dead_non_root_worktree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
