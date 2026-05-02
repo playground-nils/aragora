@@ -76,18 +76,35 @@ class _EnvMutationVisitor(ast.NodeVisitor):
     def __init__(self, path: Path) -> None:
         self.path = path
         self.findings: list[tuple[int, str]] = []
+        self.os_names: set[str] = {"os"}
+        self.environ_names: set[str] = set()
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self._collect_environ_aliases(node)
+        self.generic_visit(node)
+
+    def _collect_environ_aliases(self, node: ast.AST) -> None:
+        for child in ast.walk(node):
+            if isinstance(child, ast.Import):
+                for alias in child.names:
+                    if alias.name == "os":
+                        self.os_names.add(alias.asname or alias.name)
+            elif isinstance(child, ast.ImportFrom) and child.module == "os":
+                for alias in child.names:
+                    if alias.name == _ENVIRON_ATTR:
+                        self.environ_names.add(alias.asname or alias.name)
 
     # os.environ[key] = value
     def visit_Assign(self, node: ast.Assign) -> None:
         for target in node.targets:
-            if _is_environ_subscript(target):
+            if _is_environ_subscript(target, self.os_names, self.environ_names):
                 self.findings.append((node.lineno, "os.environ[...] = ..."))
         self.generic_visit(node)
 
     # del os.environ[key]
     def visit_Delete(self, node: ast.Delete) -> None:
         for target in node.targets:
-            if _is_environ_subscript(target):
+            if _is_environ_subscript(target, self.os_names, self.environ_names):
                 self.findings.append((node.lineno, "del os.environ[...]"))
         self.generic_visit(node)
 
@@ -97,25 +114,33 @@ class _EnvMutationVisitor(ast.NodeVisitor):
         if (
             isinstance(func, ast.Attribute)
             and func.attr in _ENVIRON_MUTATING_METHODS
-            and _is_environ_ref(func.value)
+            and _is_environ_ref(func.value, self.os_names, self.environ_names)
         ):
             self.findings.append((node.lineno, f"os.environ.{func.attr}(...)"))
         self.generic_visit(node)
 
 
-def _is_environ_ref(node: ast.AST) -> bool:
+def _is_environ_ref(
+    node: ast.AST,
+    os_names: set[str] | frozenset[str] = frozenset({"os"}),
+    environ_names: set[str] | frozenset[str] = frozenset(),
+) -> bool:
     """True if the node refers to ``os.environ`` (attribute access)."""
     return (
         isinstance(node, ast.Attribute)
         and node.attr == _ENVIRON_ATTR
         and isinstance(node.value, ast.Name)
-        and node.value.id == "os"
-    )
+        and node.value.id in os_names
+    ) or (isinstance(node, ast.Name) and node.id in environ_names)
 
 
-def _is_environ_subscript(node: ast.AST) -> bool:
+def _is_environ_subscript(
+    node: ast.AST,
+    os_names: set[str] | frozenset[str] = frozenset({"os"}),
+    environ_names: set[str] | frozenset[str] = frozenset(),
+) -> bool:
     """True if the node is a subscript of ``os.environ``."""
-    return isinstance(node, ast.Subscript) and _is_environ_ref(node.value)
+    return isinstance(node, ast.Subscript) and _is_environ_ref(node.value, os_names, environ_names)
 
 
 def scan_file(path: Path) -> list[tuple[int, str]]:

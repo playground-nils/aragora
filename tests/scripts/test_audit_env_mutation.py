@@ -21,6 +21,22 @@ def test_detects_mutating_environ_methods(tmp_path: Path) -> None:
     ]
 
 
+def test_detects_os_and_environ_import_aliases(tmp_path: Path) -> None:
+    path = tmp_path / "module.py"
+    path.write_text(
+        "import os as _os\n"
+        "_os.environ['FLAG'] = '1'\n"
+        "from os import environ as env\n"
+        "env.update({'OTHER_FLAG': '1'})\n",
+        encoding="utf-8",
+    )
+
+    assert audit.scan_file(path) == [
+        (2, "os.environ[...] = ..."),
+        (4, "os.environ.update(...)"),
+    ]
+
+
 def test_default_targets_are_clean_after_allowlist() -> None:
     findings: list[tuple[str, int, str]] = []
 
