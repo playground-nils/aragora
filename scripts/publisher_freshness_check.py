@@ -54,6 +54,7 @@ class FreshnessReport:
     outbox_dir: str
     outbox_real_count: int
     outbox_cache_count: int | None
+    active_outbox_cache_count: int | None
     outbox_drift: bool
     drift_detail: str
     blockers: list[str] = field(default_factory=list)
@@ -206,17 +207,21 @@ def _automation_state_default_path(state_root: Path, default_relative: Path) -> 
     return expanded / default_relative
 
 
-def _read_cache_outbox_count(cache_path: Path) -> int | None:
+def _read_cache_local_queue_counts(cache_path: Path) -> tuple[int | None, int | None]:
     try:
         with cache_path.open(encoding="utf-8") as fh:
             payload = json.load(fh)
     except (OSError, json.JSONDecodeError):
-        return None
+        return None, None
     local_queue = payload.get("local_queue")
     if not isinstance(local_queue, dict):
-        return None
-    raw = local_queue.get("outbox_count")
-    return int(raw) if isinstance(raw, int) else None
+        return None, None
+    outbox = local_queue.get("outbox_count")
+    active = local_queue.get("unreceipted_outbox_count")
+    return (
+        int(outbox) if isinstance(outbox, int) else None,
+        int(active) if isinstance(active, int) else None,
+    )
 
 
 def evaluate(
@@ -254,7 +259,10 @@ def evaluate(
     cache_stale = (cache_age is None) or (cache_age > stale_threshold_seconds)
 
     outbox_real = _count_outbox_files(outbox_dir)
-    outbox_cache = _read_cache_outbox_count(cache_path) if cache_present else None
+    outbox_cache: int | None = None
+    active_outbox_cache: int | None = None
+    if cache_present:
+        outbox_cache, active_outbox_cache = _read_cache_local_queue_counts(cache_path)
     # A stale cache will *necessarily* disagree with the live outbox (the
     # outbox has changed since the snapshot was taken). Reporting drift in
     # that case is double-flagging: ``cache: Nh stale`` already explains the
@@ -265,10 +273,10 @@ def evaluate(
     drift = outbox_cache is not None and outbox_cache != outbox_real
     if outbox_cache is None:
         drift_detail = f"outbox={outbox_real} cache=missing"
-    elif drift:
-        drift_detail = f"outbox={outbox_real} cache={outbox_cache}"
     else:
         drift_detail = f"outbox={outbox_real} cache={outbox_cache}"
+    if active_outbox_cache is not None:
+        drift_detail = f"{drift_detail} active={active_outbox_cache}"
 
     blockers: list[str] = []
     if not loaded:
@@ -321,6 +329,7 @@ def evaluate(
         outbox_dir=str(outbox_dir),
         outbox_real_count=outbox_real,
         outbox_cache_count=outbox_cache,
+        active_outbox_cache_count=active_outbox_cache,
         outbox_drift=drift,
         drift_detail=drift_detail,
         blockers=blockers,
