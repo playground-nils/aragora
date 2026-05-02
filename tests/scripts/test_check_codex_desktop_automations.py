@@ -144,3 +144,44 @@ def test_audit_warns_duplicate_writer_minutes(tmp_path: Path) -> None:
 
     assert any(issue["code"] == "duplicate_writer_minute" for issue in payload["issues"])
     assert any(issue["code"] == "writer_not_staggered" for issue in payload["issues"])
+
+
+def test_audit_errors_on_duplicate_automation_ids(tmp_path: Path) -> None:
+    import check_codex_desktop_automations as mod
+
+    for directory_name in ("support-one", "support-two"):
+        path = tmp_path / directory_name
+        path.mkdir()
+        (path / "automation.toml").write_text(
+            "\n".join(
+                [
+                    "version = 1",
+                    'id = "support-autonomy"',
+                    'kind = "cron"',
+                    'name = "Support Autonomy"',
+                    'prompt = "Read local worktree status."',
+                    'status = "ACTIVE"',
+                    'rrule = "FREQ=HOURLY;INTERVAL=1;BYMINUTE=17"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    payload = mod.build_payload(tmp_path)
+
+    duplicate_issues = [
+        issue for issue in payload["issues"] if issue["code"] == "duplicate_automation_id"
+    ]
+    assert duplicate_issues == [
+        {
+            "automation_id": "support-autonomy",
+            "severity": "error",
+            "code": "duplicate_automation_id",
+            "message": (
+                "automation id appears in multiple definitions: "
+                f"{tmp_path / 'support-one' / 'automation.toml'}, "
+                f"{tmp_path / 'support-two' / 'automation.toml'}"
+            ),
+        }
+    ]

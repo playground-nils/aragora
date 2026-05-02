@@ -92,30 +92,46 @@ def load_automations(root: Path) -> list[AutomationRecord]:
 
 def audit(records: list[AutomationRecord]) -> list[AuditIssue]:
     issues: list[AuditIssue] = []
-    by_id = {record.id: record for record in records}
+    records_by_id: dict[str, list[AutomationRecord]] = {}
+    for record in records:
+        records_by_id.setdefault(record.id, []).append(record)
+    by_id = {record_id: matches[0] for record_id, matches in records_by_id.items()}
+
+    for record_id, matches in sorted(records_by_id.items()):
+        if len(matches) <= 1:
+            continue
+        paths = ", ".join(record.path for record in matches)
+        issues.append(
+            AuditIssue(
+                record_id,
+                "error",
+                "duplicate_automation_id",
+                f"automation id appears in multiple definitions: {paths}",
+            )
+        )
 
     for writer_id, expected_minute in CORE_WRITERS.items():
-        record = by_id.get(writer_id)
-        if record is None:
+        writer_record = by_id.get(writer_id)
+        if writer_record is None:
             issues.append(
                 AuditIssue(writer_id, "error", "missing_core_writer", "core writer is absent")
             )
             continue
-        if record.status != "ACTIVE":
+        if writer_record.status != "ACTIVE":
             issues.append(
                 AuditIssue(writer_id, "error", "core_writer_inactive", "core writer is not active")
             )
-        if record.kind != "cron":
+        if writer_record.kind != "cron":
             issues.append(
                 AuditIssue(writer_id, "error", "core_writer_not_cron", "core writer is not cron")
             )
-        if record.byminute != expected_minute:
+        if writer_record.byminute != expected_minute:
             issues.append(
                 AuditIssue(
                     writer_id,
                     "warning",
                     "writer_not_staggered",
-                    f"expected BYMINUTE={expected_minute}, found {record.byminute}",
+                    f"expected BYMINUTE={expected_minute}, found {writer_record.byminute}",
                 )
             )
 
