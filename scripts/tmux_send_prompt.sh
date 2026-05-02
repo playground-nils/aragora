@@ -131,22 +131,17 @@ fi
 # --- Dry-run: print what would be sent, do not touch anything ---
 if [[ "${DRY_RUN}" -eq 1 ]]; then
     if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
-        python3 - "${NAME}" "${TARGET}" "${PROMPT_ID}" "${TIMESTAMP}" "${CHAR_COUNT}" "${LINE_COUNT}" "${SOURCE_TAG}" "${PROMPT_SOURCE_KIND}" "${PROMPT_FILE}" <<'PYEOF'
-import json, sys
-name, target, prompt_id, timestamp, chars, lines, source_tag, source_kind, prompt_file = sys.argv[1:10]
-print(json.dumps({
-    "dispatch": "dry-run",
-    "name": name,
-    "target": target,
-    "prompt_id": prompt_id,
-    "timestamp": timestamp,
-    "chars": int(chars),
-    "lines": int(lines),
-    "source": source_tag or None,
-    "source_kind": source_kind,
-    "prompt_file": prompt_file or None,
-}, indent=2))
-PYEOF
+        python3 "$(dirname "$0")/tmux_prompt_receipt.py" \
+            --dispatch "dry-run" \
+            --name "${NAME}" \
+            --target "${TARGET}" \
+            --prompt-id "${PROMPT_ID}" \
+            --timestamp "${TIMESTAMP}" \
+            --chars "${CHAR_COUNT}" \
+            --lines "${LINE_COUNT}" \
+            --source "${SOURCE_TAG}" \
+            --source-kind "${PROMPT_SOURCE_KIND}" \
+            --prompt-file "${PROMPT_FILE}"
     else
         echo "=== DRY RUN — nothing sent, no audit log written ==="
         echo "name:        ${NAME}"
@@ -193,46 +188,35 @@ fi
 # --- Append to prompt audit log (one JSON record per line — jsonl) ---
 mkdir -p "${LOG_DIR}"
 PREVIEW="$(printf '%s' "${PROMPT}" | head -c 200 | tr '\n' ' ')"
-python3 - "${PROMPT_AUDIT_LOG}" "${NAME}" "${PROMPT_ID}" "${TIMESTAMP}" "${CHAR_COUNT}" "${LINE_COUNT}" "${SOURCE_TAG}" "${PROMPT_SOURCE_KIND}" "${PROMPT_FILE}" "${DISPATCH_METHOD}" "${TARGET}" "${PREVIEW}" <<'PYEOF'
-import json, sys
-audit_log, name, prompt_id, timestamp, chars, lines, source_tag, source_kind, prompt_file, method, target, preview = sys.argv[1:13]
-record = {
-    "prompt_id": prompt_id,
-    "timestamp": timestamp,
-    "name": name,
-    "target": target,
-    "chars": int(chars),
-    "lines": int(lines),
-    "source": source_tag or None,
-    "source_kind": source_kind,
-    "prompt_file": prompt_file or None,
-    "dispatch_method": method,
-    "preview": preview,
-}
-with open(audit_log, "a", encoding="utf-8") as f:
-    f.write(json.dumps(record) + "\n")
-PYEOF
+python3 "$(dirname "$0")/tmux_prompt_audit.py" \
+    --audit-log "${PROMPT_AUDIT_LOG}" \
+    --name "${NAME}" \
+    --prompt-id "${PROMPT_ID}" \
+    --timestamp "${TIMESTAMP}" \
+    --chars "${CHAR_COUNT}" \
+    --lines "${LINE_COUNT}" \
+    --source "${SOURCE_TAG}" \
+    --source-kind "${PROMPT_SOURCE_KIND}" \
+    --prompt-file "${PROMPT_FILE}" \
+    --dispatch-method "${DISPATCH_METHOD}" \
+    --target "${TARGET}" \
+    --preview "${PREVIEW}"
 
 # --- Emit receipt ---
 if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
-    python3 - "${NAME}" "${TARGET}" "${PROMPT_ID}" "${TIMESTAMP}" "${CHAR_COUNT}" "${LINE_COUNT}" "${SOURCE_TAG}" "${PROMPT_SOURCE_KIND}" "${PROMPT_FILE}" "${DISPATCH_METHOD}" "${PROMPT_AUDIT_LOG}" <<'PYEOF'
-import json, sys
-name, target, prompt_id, timestamp, chars, lines, source_tag, source_kind, prompt_file, method, audit_log = sys.argv[1:12]
-print(json.dumps({
-    "dispatch": "ok",
-    "name": name,
-    "target": target,
-    "prompt_id": prompt_id,
-    "timestamp": timestamp,
-    "chars": int(chars),
-    "lines": int(lines),
-    "source": source_tag or None,
-    "source_kind": source_kind,
-    "prompt_file": prompt_file or None,
-    "dispatch_method": method,
-    "audit_log": audit_log,
-}, indent=2))
-PYEOF
+    python3 "$(dirname "$0")/tmux_prompt_receipt.py" \
+        --dispatch "ok" \
+        --name "${NAME}" \
+        --target "${TARGET}" \
+        --prompt-id "${PROMPT_ID}" \
+        --timestamp "${TIMESTAMP}" \
+        --chars "${CHAR_COUNT}" \
+        --lines "${LINE_COUNT}" \
+        --source "${SOURCE_TAG}" \
+        --source-kind "${PROMPT_SOURCE_KIND}" \
+        --prompt-file "${PROMPT_FILE}" \
+        --dispatch-method "${DISPATCH_METHOD}" \
+        --audit-log "${PROMPT_AUDIT_LOG}"
 else
     echo "Prompt sent to '${NAME}' (${CHAR_COUNT} chars, ${LINE_COUNT} lines, prompt_id=${PROMPT_ID})"
 fi
