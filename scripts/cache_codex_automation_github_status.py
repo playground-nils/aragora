@@ -246,7 +246,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Cache GitHub queue status for local-only Codex automations."
     )
-    parser.add_argument("--repo", default=".", help="Path inside the target repository")
+    parser.add_argument(
+        "--repo",
+        "--repo-root",
+        dest="repo",
+        default=".",
+        help="Path inside the target repository",
+    )
     parser.add_argument("--github-repo", default=DEFAULT_REPO)
     parser.add_argument("--label", action="append", dest="labels", default=list(DEFAULT_LABELS))
     parser.add_argument("--max-open-prs", type=int, default=DEFAULT_MAX_OPEN_PRS)

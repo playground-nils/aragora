@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +50,50 @@ def test_build_status_uses_local_queue_when_github_unavailable(
     assert payload["local_queue"]["nonterminal_receipt_count"] == 0
     assert payload["local_queue"]["nonterminal_receipts"] == []
     assert payload["local_queue"]["unreceipted_outbox_count"] == 1
+
+
+def test_main_accepts_repo_root_alias(
+    monkeypatch: Any,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    outbox = tmp_path / ".aragora" / "automation-outbox"
+    receipts = tmp_path / ".aragora" / "automation-receipts"
+    outbox.mkdir(parents=True)
+    receipts.mkdir(parents=True)
+    (outbox / "open-pr-example.json").write_text("{}", encoding="utf-8")
+    output = tmp_path / "status.json"
+
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda repo_root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="sandboxed",
+            repo=str(repo_root),
+        ),
+    )
+
+    result = mod.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--json",
+        ]
+    )
+
+    assert result == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    printed = json.loads(capsys.readouterr().out)
+    assert payload["repo_root"] == str(tmp_path.resolve())
+    assert printed["repo_root"] == str(tmp_path.resolve())
+    assert payload["local_queue"]["outbox_count"] == 1
 
 
 def test_local_queue_state_matches_receipts_by_idempotency_key(tmp_path: Path) -> None:
