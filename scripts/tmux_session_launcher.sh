@@ -62,25 +62,19 @@ send_prompt_to_target() {
     if [[ -n "${PROMPT_FILE:-}" ]]; then
         source_kind="file"
     fi
-    python3 - "${audit_log}" "${NAME}" "${prompt_id}" "${timestamp}" "${#prompt}" "${line_count}" "launcher" "${source_kind}" "${PROMPT_FILE:-}" "${method}" "${target}" "${preview}" <<'PYEOF'
-import json, sys
-audit_log, name, prompt_id, timestamp, chars, lines, source_tag, source_kind, prompt_file, method, target, preview = sys.argv[1:13]
-record = {
-    "prompt_id": prompt_id,
-    "timestamp": timestamp,
-    "name": name,
-    "target": target,
-    "chars": int(chars),
-    "lines": int(lines),
-    "source": source_tag or None,
-    "source_kind": source_kind,
-    "prompt_file": prompt_file or None,
-    "dispatch_method": method,
-    "preview": preview,
-}
-with open(audit_log, "a", encoding="utf-8") as f:
-    f.write(json.dumps(record) + "\n")
-PYEOF
+    python3 "${SCRIPT_DIR}/tmux_prompt_audit.py" \
+        --audit-log "${audit_log}" \
+        --name "${NAME}" \
+        --prompt-id "${prompt_id}" \
+        --timestamp "${timestamp}" \
+        --chars "${#prompt}" \
+        --lines "${line_count}" \
+        --source "launcher" \
+        --source-kind "${source_kind}" \
+        --prompt-file "${PROMPT_FILE:-}" \
+        --dispatch-method "${method}" \
+        --target "${target}" \
+        --preview "${preview}"
 
     echo "Prompt sent to '${NAME}' (${#prompt} chars, prompt_id=${prompt_id})"
 }
@@ -268,55 +262,22 @@ tmux pipe-pane -t "${WINDOW_TARGET}" -o "cat >> '${LOG_FILE}'"
 # Send the launch command
 tmux send-keys -t "${WINDOW_TARGET}" "${LAUNCH_CMD}" Enter
 
-# Write metadata (avoid embedding prompt content in Python literal)
-python3 - "${NAME}" "${AGENT}" "${LOG_FILE}" "${REPO_ROOT}" "${WORKDIR}" "${PROMPT_FILE}" "${META_FILE}" "${PROMPT:+yes}" "${WINDOW_TARGET}" "${TMUX_SESSION}" "${PANE_INDEX}" "${LAUNCH_CMD}" "${REGISTRY_REPO_ROOT}" <<'PYEOF'
-import datetime
-import importlib.util
-import json
-from pathlib import Path
-import sys
-
-name, agent, log_file, repo_root, workdir, prompt_file, meta_file, has_prompt, window_target, tmux_session, pane_index, launch_cmd, registry_repo_root = sys.argv[1:14]
-started_at = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-meta = {
-    "name": name,
-    "agent": agent,
-    "started": started_at,
-    "log_file": log_file,
-    "repo_root": repo_root,
-    "cwd": workdir,
-    "worktree": workdir,
-    "tmux_session": tmux_session,
-    "tmux_window_target": window_target,
-    "tmux_pane_index": pane_index,
-    "prompt_file": prompt_file or None,
-    "has_prompt": bool(has_prompt),
-}
-Path(meta_file).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
-
-try:
-    module_path = Path(repo_root) / "aragora" / "swarm" / "session_mux.py"
-    spec = importlib.util.spec_from_file_location("aragora_swarm_session_mux", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"unable to load session_mux module from {module_path}")
-    session_mux = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = session_mux
-    spec.loader.exec_module(session_mux)
-
-    record = session_mux.SessionRecord(
-        name=name,
-        tmux_session=tmux_session,
-        tmux_window=window_target,
-        tmux_pane=pane_index or "0",
-        launcher_command=launch_cmd,
-        started_at=started_at,
-        log_path=log_file,
-        meta_path=meta_file,
-    )
-    session_mux.SessionMuxRegistry(Path(registry_repo_root)).upsert(record)
-except Exception as exc:  # pragma: no cover - launcher should still succeed if registry sync fails
-    print(f"warning: failed to register launcher session: {exc}", file=sys.stderr)
-PYEOF
+# Write metadata without consuming launcher stdin. Several automation tests run
+# this script from subprocess pipes, where inline `python3 - <<...` can block.
+python3 "${SCRIPT_DIR}/tmux_session_metadata.py" \
+    --name "${NAME}" \
+    --agent "${AGENT}" \
+    --log-file "${LOG_FILE}" \
+    --repo-root "${REPO_ROOT}" \
+    --workdir "${WORKDIR}" \
+    --prompt-file "${PROMPT_FILE}" \
+    --meta-file "${META_FILE}" \
+    --has-prompt "${PROMPT:+yes}" \
+    --window-target "${WINDOW_TARGET}" \
+    --tmux-session "${TMUX_SESSION}" \
+    --pane-index "${PANE_INDEX}" \
+    --launch-command "${LAUNCH_CMD}" \
+    --registry-repo-root "${REGISTRY_REPO_ROOT}"
 
 echo "Launched '${NAME}' (${AGENT}) in tmux session '${TMUX_SESSION}'"
 echo "  Cwd: ${WORKDIR}"
