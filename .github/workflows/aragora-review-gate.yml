@@ -178,13 +178,12 @@ jobs:
 
           review_json="$review_output_dir/review.json"
           if [[ ! -f "$review_json" ]]; then
-            echo "::warning::Aragora advisory review did not produce $review_json"
+            echo "::error::Aragora advisory review did not produce $review_json"
             if [[ -s /tmp/review.stderr ]]; then
               cat /tmp/review.stderr
             fi
-            echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "review_failed=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            exit 1
           fi
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
