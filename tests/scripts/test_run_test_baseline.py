@@ -27,6 +27,7 @@ def test_build_pytest_command_includes_default_ignores_and_collect_only() -> Non
         maxfail=1,
         run=False,
         verbose=False,
+        ignored_paths=[],
     )
 
     command = module._build_pytest_command(args)
@@ -37,3 +38,23 @@ def test_build_pytest_command_includes_default_ignores_and_collect_only() -> Non
         ]
     assert "--collect-only" in command
     assert "-q" in command
+
+
+def test_build_pytest_command_appends_extra_ignores() -> None:
+    module = _load_script_module()
+    args = argparse.Namespace(
+        paths=["tests/scripts"],
+        markers=module.DEFAULT_MARKERS,
+        timeout=120,
+        maxfail=1,
+        run=False,
+        verbose=False,
+        ignored_paths=["tests/scripts/test_verify_claims.py"],
+    )
+
+    command = module._build_pytest_command(args)
+
+    ignore_pairs = [command[index : index + 2] for index in range(len(command) - 1)]
+    assert ["--ignore", "tests/scripts/test_verify_claims.py"] in ignore_pairs
+    for ignored_path in module.DEFAULT_IGNORE_PATHS:
+        assert ["--ignore", ignored_path] in ignore_pairs

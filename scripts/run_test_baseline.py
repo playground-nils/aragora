@@ -41,7 +41,8 @@ def _build_pytest_command(args: argparse.Namespace) -> list[str]:
         "--maxfail",
         str(args.maxfail),
     ]
-    for ignored_path in DEFAULT_IGNORE_PATHS:
+    ignored_paths = [*DEFAULT_IGNORE_PATHS, *getattr(args, "ignored_paths", ())]
+    for ignored_path in ignored_paths:
         pytest_cmd.extend(["--ignore", ignored_path])
     if not args.run:
         pytest_cmd.append("--collect-only")
@@ -83,6 +84,13 @@ def main() -> int:
         "--verbose",
         action="store_true",
         help="Use verbose pytest output",
+    )
+    parser.add_argument(
+        "--ignore",
+        action="append",
+        dest="ignored_paths",
+        default=[],
+        help="Additional pytest path to ignore, appended after baseline default ignores",
     )
     parser.add_argument(
         "paths",
