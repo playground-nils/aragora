@@ -35,13 +35,21 @@ def stub_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _write_cache(tmp_path: Path, outbox_count: int) -> Path:
+def _write_cache(
+    tmp_path: Path,
+    outbox_count: int,
+    *,
+    unreceipted_outbox_count: int | None = None,
+) -> Path:
     cache_path = tmp_path / ".aragora" / "automation-github-status" / "latest.json"
+    local_queue = {"outbox_count": outbox_count}
+    if unreceipted_outbox_count is not None:
+        local_queue["unreceipted_outbox_count"] = unreceipted_outbox_count
     cache_path.write_text(
         json.dumps(
             {
                 "generated_at": "2026-04-29T17:00:00Z",
-                "local_queue": {"outbox_count": outbox_count},
+                "local_queue": local_queue,
             }
         ),
         encoding="utf-8",
@@ -68,7 +76,26 @@ def test_ready_when_loaded_fresh_no_drift(monkeypatch: pytest.MonkeyPatch, stub_
     assert report.outbox_drift is False
     assert report.outbox_real_count == 3
     assert report.outbox_cache_count == 3
+    assert report.active_outbox_cache_count is None
     assert report.blockers == []
+
+
+def test_summary_reports_active_outbox_count_when_cache_has_it(
+    monkeypatch: pytest.MonkeyPatch, stub_repo: Path
+) -> None:
+    cache = _write_cache(stub_repo, outbox_count=1, unreceipted_outbox_count=0)
+    _write_outbox_files(stub_repo, 1)
+    monkeypatch.setattr(mod, "_launchd_loaded", lambda label: (True, "loaded", None))
+    now = cache.stat().st_mtime + 60
+
+    report = mod.evaluate(stub_repo, now=now)
+
+    assert report.verdict == "ready"
+    assert report.outbox_real_count == 1
+    assert report.outbox_cache_count == 1
+    assert report.active_outbox_cache_count == 0
+    assert report.drift_detail == "outbox=1 cache=1 active=0"
+    assert "active=0" in report.summary
 
 
 def test_default_paths_use_shared_state_root_env(
