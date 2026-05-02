@@ -23,6 +23,15 @@ PROMPT_WORDS_BY_ROLE = {
     "hygiene": ("local", "dirty", "worktree"),
     "steward": ("memory", "outbox", "receipts"),
 }
+PROMPT_CONTRACTS_BY_ROLE = {
+    "writer": (
+        (
+            "agent_bridge_operator_snapshot",
+            ("agent_bridge.py", "operator-snapshot"),
+            "active writer prompt does not require agent_bridge.py operator-snapshot",
+        ),
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -142,6 +151,17 @@ def audit(records: list[AutomationRecord]) -> list[AuditIssue]:
                         "warning",
                         f"missing_prompt_word_{word}",
                         f"active {record.role} prompt does not mention {word}",
+                    )
+                )
+        required_contracts = PROMPT_CONTRACTS_BY_ROLE.get(record.role, ())
+        for code_suffix, phrases, message in required_contracts:
+            if record.status == "ACTIVE" and not all(phrase in prompt_lower for phrase in phrases):
+                issues.append(
+                    AuditIssue(
+                        record.id,
+                        "warning",
+                        f"missing_prompt_contract_{code_suffix}",
+                        message,
                     )
                 )
 
