@@ -44,6 +44,12 @@ UI_CHROME_RE = re.compile(
     r"|\?\s+for\s+help\b.*\bide\b",
     re.I,
 )
+PERMISSION_CHROME_RE = re.compile(
+    r"\bauto\s*\((?:low|medium|high)\)\s*-\s*.+\bcommands\b"
+    r"|\balways\s+allow\s+(?:low|medium|high)\s+impact\s+commands\b"
+    r"|\bpermissions?\s*dialog\s*dismissed\b",
+    re.I,
+)
 
 
 @dataclass(slots=True)
@@ -151,7 +157,7 @@ def _clean_display_line(text: str, *, max_chars: int = 220) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"^[•›■]+\s*", "", text)
     text = re.sub(r"\s*·\s*(?:gpt|claude|openai|gemini|codex)-.*$", "", text, flags=re.I)
-    if UI_CHROME_RE.search(text):
+    if UI_CHROME_RE.search(text) or PERMISSION_CHROME_RE.search(text):
         return ""
     if MODEL_STATUS_RE.match(text):
         return ""

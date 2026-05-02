@@ -257,6 +257,23 @@ def test_select_summary_skips_terminal_ui_chrome() -> None:
     assert summary == "PR #5297 opened"
 
 
+def test_select_summary_skips_permission_ui_chrome() -> None:
+    import agent_bridge_sessions as mod
+
+    summary = mod._select_summary(
+        [
+            "Working on the validation handoff now.",
+            "Auto (Low) - edits and read-only commands Opus 4.7 (High)",
+            "⏿Permissionsdialogdismissed",
+            "│ Yes, and always allow medium impact commands (all commands that are reversible) │",
+        ]
+    )
+
+    assert summary == "Working on the validation handoff now."
+    assert mod._select_summary(["Auto (Low) - edits and read-only commands"]) == ""
+    assert mod._select_summary(["⏿Permissionsdialogdismissed"]) == ""
+
+
 def test_load_tmux_sessions_prefers_live_capture_over_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
