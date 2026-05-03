@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -131,6 +132,131 @@ def test_load_open_prs_uses_bulk_lookup_when_github_health_is_ready(
     assert open_prs == {"codex/has-pr": 6500}
     assert skipped is False
     assert health["mode"] == "ready"
+
+
+def _patch_main_branch_inputs(monkeypatch: Any) -> None:
+    monkeypatch.setattr(mod, "local_branches", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(mod, "remote_branch_names", lambda *_args, **_kwargs: set())
+    monkeypatch.setattr(mod, "merged_branch_names", lambda *_args, **_kwargs: set())
+    monkeypatch.setattr(mod, "worktree_map", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        mod,
+        "_load_open_prs",
+        lambda *_args, **_kwargs: (
+            {},
+            {
+                "ready": False,
+                "auth_ok": False,
+                "api_ok": False,
+                "mode": "connectivity_failed",
+                "error": "offline",
+                "repo": "",
+            },
+            True,
+        ),
+    )
+
+
+def test_main_uses_explicit_outbox_and_receipt_dirs(tmp_path: Path, monkeypatch: Any) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    receipt_dir = tmp_path / "receipts"
+    captured: dict[str, Path] = {}
+    _patch_main_branch_inputs(monkeypatch)
+
+    def fake_receipted(
+        root: Path, *, outbox_dir: Path | None = None, receipt_dir: Path | None = None
+    ) -> set[str]:
+        captured["receipted_root"] = root
+        captured["receipted_outbox_dir"] = outbox_dir
+        captured["receipted_receipt_dir"] = receipt_dir
+        return set()
+
+    def fake_outbox(
+        root: Path, *, outbox_dir: Path | None = None, receipt_dir: Path | None = None
+    ) -> set[str]:
+        captured["outbox_root"] = root
+        captured["outbox_outbox_dir"] = outbox_dir
+        captured["outbox_receipt_dir"] = receipt_dir
+        return set()
+
+    monkeypatch.setattr(mod, "terminal_receipted_handoff_branches", fake_receipted)
+    monkeypatch.setattr(mod, "unresolved_outbox_handoff_branches", fake_outbox)
+    monkeypatch.setattr(
+        mod, "terminal_handoff_keys", lambda path: captured.setdefault("keys_path", path) and set()
+    )
+
+    out_path = tmp_path / "classification.json"
+    rc = mod.main(
+        [
+            "--repo",
+            str(repo),
+            "--out",
+            str(out_path),
+            "--outbox-dir",
+            "relative-outbox",
+            "--receipt-dir",
+            str(receipt_dir),
+        ]
+    )
+
+    assert rc == 0
+    assert captured["receipted_root"] == repo.resolve()
+    assert captured["outbox_root"] == repo.resolve()
+    assert captured["receipted_outbox_dir"] == repo.resolve() / "relative-outbox"
+    assert captured["outbox_outbox_dir"] == repo.resolve() / "relative-outbox"
+    assert captured["receipted_receipt_dir"] == receipt_dir
+    assert captured["outbox_receipt_dir"] == receipt_dir
+    assert captured["keys_path"] == receipt_dir
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["outbox_dir"] == str(repo.resolve() / "relative-outbox")
+    assert payload["receipt_dir"] == str(receipt_dir)
+
+
+def test_main_derives_dirs_from_direct_aragora_state_root(tmp_path: Path, monkeypatch: Any) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state_root = tmp_path / "shared" / ".aragora"
+    state_root.mkdir(parents=True)
+    captured: dict[str, Path] = {}
+    _patch_main_branch_inputs(monkeypatch)
+
+    monkeypatch.setattr(
+        mod,
+        "terminal_receipted_handoff_branches",
+        lambda _root, *, outbox_dir=None, receipt_dir=None: captured.update(
+            {"outbox_dir": outbox_dir, "receipt_dir": receipt_dir}
+        )
+        or set(),
+    )
+    monkeypatch.setattr(
+        mod,
+        "unresolved_outbox_handoff_branches",
+        lambda _root, *, outbox_dir=None, receipt_dir=None: set(),
+    )
+    monkeypatch.setattr(
+        mod, "terminal_handoff_keys", lambda path: captured.setdefault("keys_path", path) and set()
+    )
+
+    out_path = tmp_path / "classification.json"
+    rc = mod.main(
+        [
+            "--repo",
+            str(repo),
+            "--out",
+            str(out_path),
+            "--state-root",
+            str(state_root),
+        ]
+    )
+
+    assert rc == 0
+    assert captured["outbox_dir"] == state_root / "automation-outbox"
+    assert captured["receipt_dir"] == state_root / "automation-receipts"
+    assert captured["keys_path"] == state_root / "automation-receipts"
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["outbox_dir"] == str(state_root / "automation-outbox")
+    assert payload["receipt_dir"] == str(state_root / "automation-receipts")
 
 
 def test_classify_one_protects_status_failed_worktree(tmp_path: Path, monkeypatch: Any) -> None:
