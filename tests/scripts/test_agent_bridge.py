@@ -368,6 +368,56 @@ def test_operator_snapshot_summary_only_json_omits_records(
     assert payload["health"] == {"ok": True, "issues": []}
 
 
+def test_operator_snapshot_omits_permission_chrome_summaries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        mod,
+        "discover",
+        lambda: [
+            mod.Session(
+                name="factory-review",
+                agent="factory",
+                status="dead",
+                summary="│ Yes, and always allow low impact commands (file edits and read-only commands) │",
+            ),
+            mod.Session(
+                name="claude-review",
+                agent="claude",
+                status="dead",
+                summary="⏿Permissionsdialogdismissed",
+            ),
+            mod.Session(
+                name="codex-review",
+                agent="codex",
+                status="dead",
+                summary="Review posted: https://github.com/synaptent/aragora/pull/6979",
+            ),
+        ],
+    )
+    monkeypatch.setattr(mod, "_enrich_prs", lambda _sessions: None)
+
+    rc = mod.cmd_operator_snapshot(argparse.Namespace(json=True, summary_only=False))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    by_name = {session["name"]: session for session in payload["sessions"]}
+    assert "summary" not in by_name["factory-review"]
+    assert "summary" not in by_name["claude-review"]
+    assert by_name["codex-review"]["summary"].startswith("Review posted:")
+
+    snapshot = json.loads(mod.SESSION_SNAPSHOT_FILE.read_text(encoding="utf-8"))
+    stored = {session["name"]: session for session in snapshot}
+    assert "summary" not in stored["factory-review"]
+    assert "summary" not in stored["claude-review"]
+    assert stored["codex-review"]["summary"].startswith("Review posted:")
+
+
 def test_cmd_launch_invokes_tmux_launcher_for_droid(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -61,6 +61,23 @@ if agent_bridge_sessions is not None:
     except (OSError, RuntimeError, ValueError):
         CANONICAL_REPO_ROOT = REPO_ROOT
 ACTIVE_LANE_STATUSES = {"active", "running", "pending", "queued", "claimed"}
+SUMMARY_PERMISSION_CHROME_RE = re.compile(
+    r"^yes,\s+and\s+always\s+allow\b.*\bcommands\b"
+    r"|^auto\s*\((?:low|medium|high)\)\s*-\s*.*\bcommands\b.*"
+    r"|^permissionsdialogdismissed$",
+    re.I,
+)
+
+
+def _summary_is_terminal_chrome(summary: str) -> bool:
+    normalized = summary.strip(" \t\r\n|│┃║")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if not normalized:
+        return False
+    compact = re.sub(r"[^a-z0-9]+", "", normalized.lower())
+    return SUMMARY_PERMISSION_CHROME_RE.search(normalized) is not None or (
+        compact == "permissionsdialogdismissed"
+    )
 
 
 def _state_root_bridge_dir() -> Path:
@@ -113,7 +130,10 @@ class Session:
     pr_number: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in asdict(self).items() if v}
+        payload = asdict(self)
+        if _summary_is_terminal_chrome(str(payload.get("summary", ""))):
+            payload["summary"] = ""
+        return {k: v for k, v in payload.items() if v}
 
 
 @dataclass
