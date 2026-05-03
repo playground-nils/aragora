@@ -97,6 +97,42 @@ def test_default_paths_use_shared_state_root_env(
     assert report.launchd_last_exit_code is None
 
 
+def test_default_paths_accept_direct_dot_aragora_state_root_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "disposable-worktree"
+    local_cache_dir = repo_root / ".aragora" / "automation-github-status"
+    local_outbox = repo_root / ".aragora" / "automation-outbox"
+    local_cache_dir.mkdir(parents=True)
+    local_outbox.mkdir(parents=True)
+    (local_cache_dir / "latest.json").write_text(
+        json.dumps({"local_queue": {"outbox_count": 0}}),
+        encoding="utf-8",
+    )
+    state_root = tmp_path / "shared-root" / ".aragora"
+    cache_dir = state_root / "automation-github-status"
+    outbox = state_root / "automation-outbox"
+    cache_dir.mkdir(parents=True)
+    outbox.mkdir(parents=True)
+    cache = cache_dir / "latest.json"
+    cache.write_text(
+        json.dumps({"local_queue": {"outbox_count": 1}}),
+        encoding="utf-8",
+    )
+    (outbox / "open-pr-codex-demo.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("ARAGORA_AUTOMATION_STATE_ROOT", str(state_root))
+    monkeypatch.setattr(mod, "_launchd_loaded", lambda label: (True, "loaded", None))
+    now = cache.stat().st_mtime + 60
+
+    report = mod.evaluate(repo_root, now=now)
+
+    assert report.verdict == "ready"
+    assert report.cache_path == str(state_root / "automation-github-status" / "latest.json")
+    assert report.outbox_dir == str(state_root / "automation-outbox")
+    assert report.outbox_real_count == 1
+    assert report.outbox_cache_count == 1
+
+
 def test_degraded_when_launchd_not_loaded(monkeypatch: pytest.MonkeyPatch, stub_repo: Path) -> None:
     cache = _write_cache(stub_repo, outbox_count=2)
     _write_outbox_files(stub_repo, 2)

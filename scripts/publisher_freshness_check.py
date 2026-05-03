@@ -178,24 +178,28 @@ def _same_git_origin(left: Path, right: Path) -> bool:
 def _automation_state_root(repo_root: Path) -> Path:
     """Return the checkout whose shared .aragora state should back publisher checks."""
 
+    configured = os.environ.get("ARAGORA_AUTOMATION_STATE_ROOT")
+    if configured:
+        configured_path = Path(configured).expanduser()
+        try:
+            resolved = configured_path.resolve()
+        except OSError:
+            resolved = configured_path
+        if resolved.name == ".aragora" and resolved.is_dir():
+            return resolved
+        if (resolved / ".aragora").is_dir():
+            return resolved
+
     if (repo_root / ".aragora").is_dir():
         return repo_root
 
-    configured = os.environ.get("ARAGORA_AUTOMATION_STATE_ROOT")
-    candidates: list[tuple[Path, bool]] = []
-    if configured:
-        candidates.append((Path(configured).expanduser(), True))
-    candidates.append((Path.home() / "Development" / "aragora", False))
-
-    for candidate, explicit in candidates:
-        try:
-            resolved = candidate.resolve()
-        except OSError:
-            resolved = candidate
-        if not (resolved / ".aragora").is_dir():
-            continue
-        if explicit or _same_git_origin(repo_root, resolved):
-            return resolved
+    fallback = Path.home() / "Development" / "aragora"
+    try:
+        resolved = fallback.resolve()
+    except OSError:
+        resolved = fallback
+    if (resolved / ".aragora").is_dir() and _same_git_origin(repo_root, resolved):
+        return resolved
     return repo_root
 
 
