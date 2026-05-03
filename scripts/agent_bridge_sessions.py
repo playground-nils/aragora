@@ -41,7 +41,10 @@ MODEL_STATUS_RE = re.compile(
 UI_CHROME_RE = re.compile(
     r"\bnavigate\s+enter\s+select\s+esc\s+cancel\b"
     r"|\bshift\+tab\s+to\s+cycle\b"
-    r"|\?\s+for\s+help\b.*\bide\b",
+    r"|\?\s+for\s+help\b.*\bide\b"
+    r"|\byes,\s+and\s+always\s+allow\b.*\bcommands\b"
+    r"|\bauto\s*\((?:low|medium|high)\)\s*-\s*.*\bcommands\b"
+    r"|permissions?\s*dialog\s*dismissed",
     re.I,
 )
 
