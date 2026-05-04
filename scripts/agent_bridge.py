@@ -288,6 +288,7 @@ def _collect_health_issues(
     sessions: list[Session], records: list[LaneRecord]
 ) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
+    active_lane_owners = {r.owner_session for r in records if r.status in ACTIVE_LANE_STATUSES}
 
     # Missing paths are actionable for active/unknown sessions. A dead session
     # whose worktree is already gone has no remaining worktree cleanup action.
@@ -308,6 +309,8 @@ def _collect_health_issues(
                 )
             continue
         if not worktree_exists:
+            if s.status == "unknown" and s.name not in active_lane_owners:
+                continue
             issues.append(
                 {
                     "type": "stale_worktree",

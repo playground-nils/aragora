@@ -578,3 +578,57 @@ def test_health_ignores_dead_session_with_removed_worktree(
 
     assert mod.cmd_health(argparse.Namespace(json=True)) == 0
     assert json.loads(capsys.readouterr().out) == {"ok": True, "issues": []}
+
+
+def test_health_ignores_unknown_session_with_removed_worktree_without_active_lane(
+    tmp_path: Path,
+) -> None:
+    import agent_bridge as mod
+
+    removed_worktree = tmp_path / "already-removed"
+    issues = mod._collect_health_issues(
+        [
+            mod.Session(
+                name="claude-old-review",
+                agent="claude",
+                status="unknown",
+                worktree=str(removed_worktree),
+            )
+        ],
+        [],
+    )
+
+    assert issues == []
+
+
+def test_health_reports_unknown_active_lane_owner_with_removed_worktree(
+    tmp_path: Path,
+) -> None:
+    import agent_bridge as mod
+
+    removed_worktree = tmp_path / "missing-active-lane"
+    issues = mod._collect_health_issues(
+        [
+            mod.Session(
+                name="claude-active-review",
+                agent="claude",
+                status="unknown",
+                worktree=str(removed_worktree),
+            )
+        ],
+        [
+            mod.LaneRecord(
+                lane_id="review-lane",
+                owner_session="claude-active-review",
+                status="active",
+            )
+        ],
+    )
+
+    assert issues == [
+        {
+            "type": "stale_worktree",
+            "session": "claude-active-review",
+            "detail": f"worktree path missing: {removed_worktree}",
+        }
+    ]
