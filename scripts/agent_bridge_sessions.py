@@ -41,7 +41,10 @@ MODEL_STATUS_RE = re.compile(
 UI_CHROME_RE = re.compile(
     r"\bnavigate\s+enter\s+select\s+esc\s+cancel\b"
     r"|\bshift\+tab\s+to\s+cycle\b"
-    r"|\?\s+for\s+help\b.*\bide\b",
+    r"|\?\s+for\s+help\b.*\bide\b"
+    r"|\balways\s+allow\s+(?:low|medium|high)\s+impact\s+commands\b"
+    r"|\bauto\s+\((?:low|medium|high)\)\s*-\s+edits\b"
+    r"|\bpermissions?\s*dialog\s*dismissed\b",
     re.I,
 )
 
@@ -149,7 +152,7 @@ def _clean_display_line(text: str, *, max_chars: int = 220) -> str:
     text = text.replace("…", "...")
     text = "".join(ch if ch >= " " or ch in "\t" else " " for ch in text)
     text = re.sub(r"\s+", " ", text).strip()
-    text = re.sub(r"^[•›■]+\s*", "", text)
+    text = re.sub(r"^[•›■⎿]+\s*", "", text)
     text = re.sub(r"\s*·\s*(?:gpt|claude|openai|gemini|codex)-.*$", "", text, flags=re.I)
     if not text or SEPARATOR_RE.fullmatch(text):
         return ""
