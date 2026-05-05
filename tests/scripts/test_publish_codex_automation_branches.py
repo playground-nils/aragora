@@ -1002,6 +1002,24 @@ def test_review_required_inflight_pr_does_not_pause_for_pending_or_advisory_canc
     )
 
 
+def test_review_required_pr_accepts_gh_pr_checks_workflow_alias() -> None:
+    assert (
+        mod._open_codex_pr_is_unhealthy(
+            {
+                "headRefName": "codex/inflight",
+                "isDraft": False,
+                "mergeStateStatus": "BLOCKED",
+                "reviewDecision": "REVIEW_REQUIRED",
+                "statusCheckRollup": [
+                    {"state": "CANCELLED", "workflow": "Metrics Drift", "name": "check"},
+                    {"state": "CANCELLED", "workflow": "Module Tier Drift", "name": "check"},
+                ],
+            }
+        )
+        is False
+    )
+
+
 def test_review_required_pr_ignores_superseded_cancelled_check() -> None:
     assert (
         mod._open_codex_pr_is_unhealthy(

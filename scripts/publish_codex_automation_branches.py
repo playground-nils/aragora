@@ -496,12 +496,13 @@ def _check_rollup_is_unhealthy(item: dict[str, Any]) -> bool:
     if state != "CANCELLED":
         return False
 
-    workflow_name = str(item.get("workflowName") or "")
+    workflow_name, _check_name = _check_rollup_identity(item)
     return workflow_name not in CANCELLED_ADVISORY_WORKFLOWS
 
 
 def _check_rollup_identity(item: dict[str, Any]) -> tuple[str, str]:
-    return (str(item.get("workflowName") or ""), str(item.get("name") or ""))
+    workflow_name = item.get("workflowName") or item.get("workflow") or ""
+    return (str(workflow_name), str(item.get("name") or ""))
 
 
 def _check_rollup_label(item: dict[str, Any]) -> str:
