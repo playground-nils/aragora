@@ -52,6 +52,20 @@ def test_automation_pr_preflight_rejects_worker_artifacts(tmp_path: Path) -> Non
     assert "automation/session artifacts" in proc.stderr
 
 
+def test_automation_pr_preflight_rejects_codex_session_log(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    _run(["git", "switch", "-c", "codex/bad-session-log"], cwd=repo)
+    (repo / ".codex_session.log").write_text("session log\n", encoding="utf-8")
+    _run(["git", "add", ".codex_session.log"], cwd=repo)
+    _run(["git", "commit", "-m", "bad: commit session log"], cwd=repo)
+
+    proc = _run(["bash", str(SCRIPT), "origin/main", "HEAD"], cwd=repo)
+
+    assert proc.returncode == 1
+    assert "automation/session artifacts" in proc.stderr
+    assert ".codex_session.log" in proc.stderr
+
+
 def test_automation_pr_preflight_rejects_synthetic_preflight_commit_subject(
     tmp_path: Path,
 ) -> None:
