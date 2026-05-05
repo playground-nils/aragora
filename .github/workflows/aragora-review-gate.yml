@@ -62,6 +62,8 @@ jobs:
     if: needs.changes.outputs.should_review == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      review_failed: ${{ steps.review.outputs.review_failed }}
     permissions:
       contents: read
       pull-requests: write
@@ -336,6 +338,7 @@ jobs:
           IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft || 'false' }}
           SHOULD_REVIEW: ${{ needs.changes.outputs.should_review }}
           REVIEW_RESULT: ${{ needs.review.result }}
+          REVIEW_FAILED: ${{ needs.review.outputs.review_failed }}
         run: |
           if [[ "$IS_DRAFT" == "true" ]]; then
             echo "Draft PR - review deferred"
@@ -347,6 +350,10 @@ jobs:
           fi
           if [[ "$REVIEW_RESULT" != "success" ]]; then
             echo "::warning::Advisory review job concluded with $REVIEW_RESULT; not blocking merge."
+            exit 0
+          fi
+          if [[ "$REVIEW_FAILED" == "true" ]]; then
+            echo "::warning::Advisory review command failed or produced no artifact; check review job logs."
             exit 0
           fi
           echo "Review gate passed"

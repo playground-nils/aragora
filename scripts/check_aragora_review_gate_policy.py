@@ -72,6 +72,7 @@ def find_review_gate_policy_violations(
 
     review_job = jobs.get("review", {})
     review_steps = review_job.get("steps", []) if isinstance(review_job, dict) else []
+    review_outputs = review_job.get("outputs", {}) if isinstance(review_job, dict) else {}
     install_step = next(
         (step for step in review_steps if step.get("name") == "Install Aragora"),
         None,
@@ -106,8 +107,16 @@ def find_review_gate_policy_violations(
             )
     if "python -m pip install -e ." not in install_run:
         violations.append("review job install step must install the repo in editable mode")
-    if 'if [[ ! -f "$review_json" ]]; then' not in review_run or "exit 1" not in review_run:
-        violations.append("review gate must fail if review.json is missing")
+    if review_outputs.get("review_failed") != "${{ steps.review.outputs.review_failed }}":
+        violations.append("review job must expose review_failed output to terminal gate")
+    if 'if [[ ! -f "$review_json" ]]; then' not in review_run:
+        violations.append("review gate must handle missing review.json explicitly")
+    if review_run.count('echo "review_failed=true" >> "$GITHUB_OUTPUT"') < 2:
+        violations.append("review execution must mark command/artifact failures in outputs")
+    if "Aragora advisory review command failed" not in review_run:
+        violations.append("review execution must surface review command failures as warnings")
+    if "Aragora advisory review did not produce" not in review_run:
+        violations.append("review execution must surface missing review artifacts as warnings")
     if "python -m aragora.cli.review review" not in review_run:
         violations.append("review execution must invoke the review subcommand")
     if "--output-format json" not in review_run:
@@ -117,7 +126,7 @@ def find_review_gate_policy_violations(
     if "review_exit=$?" not in review_run:
         violations.append("review execution must capture the review command exit code explicitly")
     if 'if [[ "$review_exit" -ne 0 ]]; then' not in review_run:
-        violations.append("review execution must fail closed after surfacing review command stderr")
+        violations.append("review execution must handle nonzero review command explicitly")
     if "critical_issues" not in review_run or "high_issues" not in review_run:
         violations.append("review gate must parse the current json artifact schema")
     if "python -m aragora.cli.review" in review_run and "|| true" in review_run:
@@ -127,7 +136,9 @@ def find_review_gate_policy_violations(
     ):
         violations.append("review findings must stay advisory and must not fail on critical-count")
     if 'if [[ "$REVIEW_RESULT" != "success" ]]' not in gate_text:
-        violations.append("gate result must fail unless review job concluded with success")
+        violations.append("gate result must surface unsuccessful review jobs")
+    if 'if [[ "$REVIEW_FAILED" == "true" ]]' not in gate_text:
+        violations.append("gate result must surface advisory review command failures")
     if 'if [[ "$SHOULD_REVIEW" != "true" ]]' not in gate_text:
         violations.append("gate result must pass truthful no-op PRs without running review")
 
