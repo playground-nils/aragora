@@ -51,6 +51,11 @@ PERMISSION_CHROME_RE = re.compile(
     r"|^auto\s+\((?:low|medium|high)\)\s*-\s+.*\bcommands?\b",
     re.I,
 )
+SESSION_CONTROL_CHROME_RE = re.compile(
+    r"\bpermissions?\s*dialog\s*dismissed\b"
+    r"|\bn(?:ew|w)task\?.*(?:clear?to|cler\s*to)\s*save",
+    re.I,
+)
 
 
 @dataclass(slots=True)
@@ -161,6 +166,8 @@ def _clean_display_line(text: str, *, max_chars: int = 220) -> str:
     if PERMISSION_CHROME_RE.search(text) and (
         BOX_DRAWING_RE.search(text) or text.lower().startswith("auto (")
     ):
+        return ""
+    if SESSION_CONTROL_CHROME_RE.search(text):
         return ""
     if not text or SEPARATOR_RE.fullmatch(text):
         return ""
