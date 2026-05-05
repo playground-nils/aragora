@@ -519,6 +519,43 @@ def branch_divergence(root: Path, base: str, branch: str) -> tuple[int, int]:
         return (0, 0)
 
 
+def branch_divergence_map(
+    root: Path,
+    base: str,
+    branches: Sequence[str],
+) -> dict[str, tuple[int, int]]:
+    """Resolve ahead/behind counts for many branches in one Git call."""
+
+    wanted = {branch for branch in branches if branch}
+    if not wanted:
+        return {}
+
+    proc = run_git(
+        [
+            "for-each-ref",
+            f"--format=%(refname:short)|%(ahead-behind:{base})",
+            "refs/heads/codex/",
+        ],
+        root,
+    )
+    if proc.returncode != 0:
+        return {}
+
+    counts: dict[str, tuple[int, int]] = {}
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            continue
+        name, _, divergence = line.partition("|")
+        if name not in wanted:
+            continue
+        try:
+            ahead_text, behind_text = divergence.split()
+            counts[name] = (int(ahead_text), int(behind_text))
+        except ValueError:
+            continue
+    return counts
+
+
 def is_merged(root: Path, base: str, branch: str) -> bool:
     return run_git(["merge-base", "--is-ancestor", branch, base], root).returncode == 0
 
@@ -710,6 +747,7 @@ def audit(
     rows.sort(key=lambda row: parse_dt(row["committed_at"]), reverse=True)
     if max_branches is not None:
         rows = rows[:max_branches]
+    divergence_by_branch = branch_divergence_map(root, base, [row["name"] for row in rows])
 
     recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=recent_hours)
     remotes = remote_branch_names(root, prefix)
@@ -764,12 +802,18 @@ def audit(
         try:
             ahead_count = int(row["ahead_count"])
         except ValueError:
-            ahead_count, behind_count = branch_divergence(root, base, branch)
+            divergence = divergence_by_branch.get(branch)
+            if divergence is None:
+                divergence = branch_divergence(root, base, branch)
+            ahead_count, behind_count = divergence
         else:
             try:
                 behind_count = int(row.get("behind_count", "0"))
             except ValueError:
-                _ahead_count, behind_count = branch_divergence(root, base, branch)
+                divergence = divergence_by_branch.get(branch)
+                if divergence is None:
+                    divergence = branch_divergence(root, base, branch)
+                _ahead_count, behind_count = divergence
         merged_to_base = branch in merged_branches
         patch_equivalent = False
         patch_id = None
@@ -1062,7 +1106,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--patch-equivalence-time-budget-seconds",
         type=float,
-        default=90.0,
+        default=15.0,
         help=(
             "Wall-clock budget for patch-equivalence and patch-id checks. "
             "Use 0 to skip them immediately or a negative value for no budget."
