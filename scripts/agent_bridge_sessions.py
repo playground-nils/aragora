@@ -44,6 +44,11 @@ UI_CHROME_RE = re.compile(
     r"|\?\s+for\s+help\b.*\bide\b",
     re.I,
 )
+APPROVAL_MENU_RE = re.compile(
+    r"\byes,\s+and\s+always allow\s+\w+\s+impact commands\b"
+    r"|\bno,\s+ask every time\b",
+    re.I,
+)
 
 
 @dataclass(slots=True)
@@ -153,7 +158,7 @@ def _clean_display_line(text: str, *, max_chars: int = 220) -> str:
     text = re.sub(r"\s*·\s*(?:gpt|claude|openai|gemini|codex)-.*$", "", text, flags=re.I)
     if not text or SEPARATOR_RE.fullmatch(text):
         return ""
-    if UI_CHROME_RE.search(text):
+    if UI_CHROME_RE.search(text) or APPROVAL_MENU_RE.search(text):
         return ""
     if MODEL_STATUS_RE.match(text):
         return ""

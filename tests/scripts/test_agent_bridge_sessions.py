@@ -270,6 +270,30 @@ def test_select_summary_skips_terminal_border_residue() -> None:
     assert summary == ""
 
 
+def test_select_summary_skips_approval_menu_chrome() -> None:
+    import agent_bridge_sessions as mod
+
+    summary = mod._select_summary(
+        [
+            "PR #5297 opened",
+            "│ Yes, and always allow low impact commands (file edits and read-only commands) │",
+            "│ Yes, and always allow medium impact commands (all commands that are reversible) │",
+            "│ No, ask every time │",
+        ]
+    )
+
+    assert summary == "PR #5297 opened"
+    assert (
+        mod._select_summary(
+            [
+                "│ Yes, and always allow low impact commands (file edits and read-only commands) │",
+                "│ No, ask every time │",
+            ]
+        )
+        == ""
+    )
+
+
 def test_load_tmux_sessions_prefers_live_capture_over_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
