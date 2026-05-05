@@ -270,6 +270,22 @@ def test_select_summary_skips_terminal_border_residue() -> None:
     assert summary == ""
 
 
+def test_select_summary_skips_permission_dialog_chrome() -> None:
+    import agent_bridge_sessions as mod
+
+    summary = mod._select_summary(
+        [
+            "PR #5297 opened",
+            "│ Yes, and always allow low impact commands (file edits and read-only commands) │",
+            "⏿Permissionsdialogdismissed",
+            "newtask?/cleartosave102.8ktokens",
+            "nwtask? /cler to save132.4k token",
+        ]
+    )
+
+    assert summary == "PR #5297 opened"
+
+
 def test_load_tmux_sessions_prefers_live_capture_over_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
