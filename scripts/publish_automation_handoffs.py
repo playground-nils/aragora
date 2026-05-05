@@ -1264,7 +1264,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable loading JSON automation outbox handoffs.",
     )
-    parser.add_argument("--apply", action="store_true", help="Create eligible GitHub issues")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true", help="Create eligible GitHub issues")
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview eligible handoffs without creating GitHub issues (default)",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output")
     return parser
 

@@ -1442,6 +1442,74 @@ def test_main_reports_github_health_when_unavailable(
     assert '"reason": "github_unavailable"' in out
 
 
+def test_main_accepts_explicit_dry_run_without_receipts(
+    monkeypatch: Any, tmp_path: Path, capsys: Any
+) -> None:
+    handoff = Handoff(
+        source_file=str(tmp_path / "memory.md"),
+        task_title="Fix tmux readiness detection for named Claude lanes",
+        priority="MEDIUM",
+        body="body",
+        labels={},
+        expires_at=None,
+    )
+    receipts = tmp_path / "receipts"
+    monkeypatch.setattr(mod, "_repo_root", lambda path: tmp_path)
+    monkeypatch.setattr(mod, "load_handoffs", lambda codex_home, automation_ids=None: [handoff])
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda repo_root: GitHubCLIHealth(
+            ready=True,
+            auth_ok=True,
+            api_ok=True,
+            mode="ok",
+            error=None,
+            repo=str(tmp_path),
+        ),
+    )
+    monkeypatch.setattr(
+        mod,
+        "decide_handoffs",
+        lambda *args, **kwargs: [
+            PublishDecision(
+                task_title=handoff.task_title,
+                source_file=handoff.source_file,
+                eligible=True,
+                reason="eligible",
+            )
+        ],
+    )
+
+    exit_code = mod.main(
+        [
+            "--repo",
+            str(tmp_path),
+            "--codex-home",
+            str(tmp_path),
+            "--receipt-dir",
+            str(receipts),
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    assert not receipts.exists()
+    assert '"reason": "eligible"' in capsys.readouterr().out
+
+
+def test_cli_rejects_apply_and_dry_run_together() -> None:
+    parser = mod._build_parser()
+
+    try:
+        parser.parse_args(["--apply", "--dry-run"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:  # pragma: no cover - argparse should reject the mutually exclusive flags
+        raise AssertionError("--apply and --dry-run should be mutually exclusive")
+
+
 def test_create_issue_truncates_oversized_body(monkeypatch: Any, tmp_path: Path) -> None:
     bodies: list[str] = []
 
