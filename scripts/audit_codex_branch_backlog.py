@@ -27,6 +27,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from scripts import codex_worktree_autopilot as worktree_autopilot
 from scripts.github_cli_health import check_github_cli_health
 
 ACTIVE_SESSION_FILES = (
@@ -200,7 +201,11 @@ def dirty_worktree(path: Path) -> bool:
 
 
 def active_worktree(path: Path) -> bool:
-    return any((path / marker).exists() for marker in ACTIVE_SESSION_FILES)
+    if not path.exists():
+        return False
+    if any((path / marker).exists() for marker in ACTIVE_SESSION_FILES):
+        return True
+    return worktree_autopilot._has_active_session(path)
 
 
 def _repo_relative(root: Path, path: Path) -> Path:

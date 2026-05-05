@@ -206,6 +206,55 @@ def test_audit_ignores_missing_worktree_paths(tmp_path: Path, monkeypatch: Any) 
     assert payload["records"][0]["category"] == "salvage_recent_unique"
 
 
+def test_audit_protects_autopilot_active_session_worktrees(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    row = _branch_row("codex/live-session", ahead_count="0", behind_count="38")
+    worktree = tmp_path / "live-worktree"
+    worktree.mkdir()
+
+    monkeypatch.setattr(mod, "local_branches", lambda _root, _prefix, _base: [row])
+    monkeypatch.setattr(mod, "remote_branch_names", lambda _root, _prefix: set())
+    monkeypatch.setattr(
+        mod, "merged_branch_names", lambda _root, _base, _prefix: {"codex/live-session"}
+    )
+    monkeypatch.setattr(mod, "worktree_map", lambda _root: {"codex/live-session": [worktree]})
+    monkeypatch.setattr(
+        mod.worktree_autopilot,
+        "_has_active_session",
+        lambda path: path == worktree,
+    )
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="offline",
+            repo=str(tmp_path),
+        ),
+    )
+
+    payload = mod.audit(
+        root=tmp_path,
+        base="origin/main",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=False,
+        publisher_backlog_limit=1,
+    )
+
+    record = payload["records"][0]
+    assert record["active_worktree_paths"] == [str(worktree)]
+    assert record["category"] == "protected_active_worktree"
+    assert payload["summary"]["by_category"]["protected_active_worktree"] == 1
+    assert payload["summary"]["safe_cleanup_candidates"] == 0
+
+
 def test_audit_publishable_backlog_excludes_stale_local_only_branches(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
