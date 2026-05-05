@@ -47,6 +47,9 @@ SALVAGE_CATEGORIES = {
     "salvage_diverged_remote",
     "salvage_diverged_local",
 }
+DEFAULT_PATCH_EQUIVALENCE_TIME_BUDGET_SECONDS = 90.0
+SUMMARY_ONLY_PATCH_EQUIVALENCE_TIME_BUDGET_SECONDS = 5.0
+PATCH_EQUIVALENCE_BUDGET_OPTION = "--patch-equivalence-time-budget-seconds"
 
 
 @dataclass(frozen=True)
@@ -1018,9 +1021,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--patch-equivalence-time-budget-seconds",
+        PATCH_EQUIVALENCE_BUDGET_OPTION,
         type=float,
-        default=90.0,
+        default=DEFAULT_PATCH_EQUIVALENCE_TIME_BUDGET_SECONDS,
         help=(
             "Wall-clock budget for patch-equivalence and patch-id checks. "
             "Use 0 to skip them immediately or a negative value for no budget."
@@ -1072,14 +1075,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    root = repo_root(Path(args.repo))
-    patch_budget = (
-        None
-        if args.patch_equivalence_time_budget_seconds < 0
-        else args.patch_equivalence_time_budget_seconds
+def _has_explicit_patch_budget(argv: list[str]) -> bool:
+    return any(
+        arg == PATCH_EQUIVALENCE_BUDGET_OPTION
+        or arg.startswith(f"{PATCH_EQUIVALENCE_BUDGET_OPTION}=")
+        for arg in argv
     )
+
+
+def _effective_patch_budget(args: argparse.Namespace, argv: list[str]) -> float | None:
+    if args.patch_equivalence_time_budget_seconds < 0:
+        return None
+    if args.summary_only and not _has_explicit_patch_budget(argv):
+        return min(
+            args.patch_equivalence_time_budget_seconds,
+            SUMMARY_ONLY_PATCH_EQUIVALENCE_TIME_BUDGET_SECONDS,
+        )
+    return args.patch_equivalence_time_budget_seconds
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = sys.argv[1:] if argv is None else argv
+    args = build_parser().parse_args(raw_argv)
+    root = repo_root(Path(args.repo))
+    patch_budget = _effective_patch_budget(args, raw_argv)
     state_root = args.state_root.expanduser() if args.state_root else None
     outbox_dir = args.outbox_dir
     receipt_dir = args.receipt_dir

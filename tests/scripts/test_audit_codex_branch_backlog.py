@@ -1264,7 +1264,10 @@ def test_parser_checks_patch_equivalence_by_default() -> None:
     args = mod.build_parser().parse_args([])
 
     assert args.include_patch_equivalence is True
-    assert args.patch_equivalence_time_budget_seconds == 90.0
+    assert (
+        args.patch_equivalence_time_budget_seconds
+        == mod.DEFAULT_PATCH_EQUIVALENCE_TIME_BUDGET_SECONDS
+    )
 
 
 def test_parser_can_skip_patch_equivalence() -> None:
@@ -1277,6 +1280,47 @@ def test_parser_can_disable_patch_equivalence_time_budget() -> None:
     args = mod.build_parser().parse_args(["--patch-equivalence-time-budget-seconds", "-1"])
 
     assert args.patch_equivalence_time_budget_seconds == -1
+
+
+def test_summary_only_uses_compact_patch_budget_by_default(
+    tmp_path: Path, monkeypatch: Any, capsys: Any
+) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(mod, "repo_root", lambda _path: tmp_path)
+
+    def fake_audit(**kwargs: Any) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"records": [], "summary": {}}
+
+    monkeypatch.setattr(mod, "audit", fake_audit)
+
+    exit_code = mod.main(["--repo", str(tmp_path), "--summary-only", "--json"])
+
+    assert exit_code == 0
+    assert (
+        captured["patch_equivalence_time_budget_seconds"]
+        == mod.SUMMARY_ONLY_PATCH_EQUIVALENCE_TIME_BUDGET_SECONDS
+    )
+    assert '"records_omitted": true' in capsys.readouterr().out
+
+
+def test_summary_only_respects_explicit_patch_budget(tmp_path: Path, monkeypatch: Any) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(mod, "repo_root", lambda _path: tmp_path)
+    monkeypatch.setattr(mod, "audit", lambda **kwargs: captured.update(kwargs) or {"ok": True})
+
+    exit_code = mod.main(
+        [
+            "--repo",
+            str(tmp_path),
+            "--summary-only",
+            "--patch-equivalence-time-budget-seconds",
+            "42",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["patch_equivalence_time_budget_seconds"] == 42
 
 
 def test_run_git_returns_completed_process_on_timeout(tmp_path: Path, monkeypatch: Any) -> None:

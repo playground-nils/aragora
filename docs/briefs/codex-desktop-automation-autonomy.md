@@ -21,6 +21,7 @@ Every automation should start from live repo evidence, not prior narration:
    - `python3 scripts/check_codex_desktop_automations.py --json --summary-only`
    - `python3 scripts/audit_codex_branch_backlog.py --max-branches 200 --json --summary-only --outbox-dir /Users/armand/Development/aragora/.aragora/automation-outbox --receipt-dir /Users/armand/Development/aragora/.aragora/automation-receipts`
    - `python3 scripts/agent_bridge.py operator-snapshot --json --summary-only` for gating, or omit `--summary-only` when detailed session context is needed.
+   - `audit_codex_branch_backlog.py --summary-only` automatically caps patch-equivalence work for startup gating; pass an explicit `--patch-equivalence-time-budget-seconds` when a fuller audit needs more time.
 4. Treat sandboxed GitHub failure as expected. Use local git, shared outbox files, and receipts as the primary automation substrate.
 
 ## Writer Lanes
