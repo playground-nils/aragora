@@ -47,6 +47,22 @@ SALVAGE_CATEGORIES = {
     "salvage_diverged_remote",
     "salvage_diverged_local",
 }
+COMPACT_RECORD_EXAMPLE_FIELDS = (
+    "name",
+    "category",
+    "head_sha",
+    "committed_at",
+    "subject",
+    "ahead_count",
+    "behind_count",
+    "open_pr",
+    "worktree_paths",
+    "active_worktree_paths",
+    "dirty_worktree_paths",
+    "handoff_receipt_exists",
+    "handoff_outbox_exists",
+)
+DEFAULT_SUMMARY_EXAMPLES_PER_CATEGORY = 3
 
 
 @dataclass(frozen=True)
@@ -916,8 +932,34 @@ def audit(
     }
 
 
+def compact_record_examples(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    limit_per_category: int = DEFAULT_SUMMARY_EXAMPLES_PER_CATEGORY,
+) -> dict[str, list[dict[str, Any]]]:
+    """Return small per-category record examples for compact automation output."""
+
+    if limit_per_category <= 0:
+        return {}
+
+    examples: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        category = str(record.get("category") or "").strip()
+        if not category or len(examples[category]) >= limit_per_category:
+            continue
+        examples[category].append(
+            {field: record[field] for field in COMPACT_RECORD_EXAMPLE_FIELDS if field in record}
+        )
+    return dict(sorted(examples.items()))
+
+
 def summary_only_payload(payload: dict[str, Any]) -> dict[str, Any]:
     compact = dict(payload)
+    records = payload.get("records")
+    compact["record_examples"] = compact_record_examples(
+        records if isinstance(records, Sequence) and not isinstance(records, (str, bytes)) else []
+    )
+    compact["record_examples_limit"] = DEFAULT_SUMMARY_EXAMPLES_PER_CATEGORY
     compact["records"] = []
     compact["records_omitted"] = True
     return compact
