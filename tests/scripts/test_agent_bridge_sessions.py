@@ -264,6 +264,7 @@ def test_select_summary_skips_permission_mode_chrome() -> None:
         [
             "PR #5297 opened",
             "│ Yes, and always allow low impact commands (file edits and read-only commands) │",
+            "│ No, cancel 38;2;135;1",
             "Auto (Low) - edits and read-only commands Opus 4.7 (High)",
             "⏿Permissionsdialogdismissed",
         ]
