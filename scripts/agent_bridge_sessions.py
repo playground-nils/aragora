@@ -44,6 +44,13 @@ UI_CHROME_RE = re.compile(
     r"|\?\s+for\s+help\b.*\bide\b",
     re.I,
 )
+PERMISSION_DIALOG_RE = re.compile(
+    r"\byes,\s+and\s+always\s+allow\b"
+    r"|\bno,\s+cancel\b"
+    r"|\bpermissions?\s+dialog\s+dismissed\b"
+    r"|^auto\s+\((?:low|medium|high)\)\s+-\s+.*\bcommands\b",
+    re.I,
+)
 
 
 @dataclass(slots=True)
@@ -154,6 +161,8 @@ def _clean_display_line(text: str, *, max_chars: int = 220) -> str:
     if not text or SEPARATOR_RE.fullmatch(text):
         return ""
     if UI_CHROME_RE.search(text):
+        return ""
+    if PERMISSION_DIALOG_RE.search(text):
         return ""
     if MODEL_STATUS_RE.match(text):
         return ""
