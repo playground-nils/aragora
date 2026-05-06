@@ -62,6 +62,16 @@ if agent_bridge_sessions is not None:
     except (OSError, RuntimeError, ValueError):
         CANONICAL_REPO_ROOT = REPO_ROOT
 ACTIVE_LANE_STATUSES = {"active", "running", "pending", "queued", "claimed"}
+SUMMARY_CHROME_RE = re.compile(
+    r"\bnavigate\s+enter\s+select\s+esc\s+cancel\b"
+    r"|\bshift\+tab\s+to\s+cycle\b"
+    r"|\?\s+for\s+help\b.*\bide\b"
+    r"|\byes,\s+and\s+always\s+allow\s+(?:low|medium|high)\s+impact\s+commands\b"
+    r"|\bpermissions?\s*dialog\s*dismissed\b"
+    r"|\bauto\s*\((?:low|medium|high)\)\s*-\s*.*\bcommands?\b"
+    r"|\bn(?:ew|w)task\?.*(?:clear?to|cler\s*to)\s*save",
+    re.I,
+)
 
 
 def _state_root_bridge_dir() -> Path:
@@ -368,6 +378,15 @@ def _collect_health_issues(
             )
 
     return issues
+
+
+def _summary_chrome_session_count(sessions: list[Session]) -> int:
+    count = 0
+    for session in sessions:
+        summary = re.sub(r"\s+", " ", session.summary).strip()
+        if summary and SUMMARY_CHROME_RE.search(summary):
+            count += 1
+    return count
 
 
 def _lane_conflict(
@@ -867,6 +886,7 @@ def cmd_operator_snapshot(args: argparse.Namespace) -> int:
             "active_lanes": sum(1 for r in records if r.status in ACTIVE_LANE_STATUSES),
             "conflict_lanes": sum(1 for r in records if r.status == "conflict"),
             "health_issues": len(issues),
+            "summary_chrome_sessions": _summary_chrome_session_count(sessions),
         },
     }
     if summary_only:

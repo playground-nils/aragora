@@ -368,6 +368,48 @@ def test_operator_snapshot_summary_only_json_omits_records(
     assert payload["health"] == {"ok": True, "issues": []}
 
 
+def test_operator_snapshot_summary_only_counts_summary_chrome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        mod,
+        "discover",
+        lambda: [
+            mod.Session(
+                name="factory-review",
+                agent="factory",
+                status="dead",
+                summary="Yes, and always allow low impact commands (file edits and read-only commands)",
+            ),
+            mod.Session(
+                name="codex-main",
+                agent="codex",
+                status="alive",
+                summary="PR #5297 opened",
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
+        "_enrich_prs",
+        lambda _sessions: (_ for _ in ()).throw(
+            AssertionError("summary-only should not call GitHub PR enrichment")
+        ),
+    )
+
+    rc = mod.cmd_operator_snapshot(argparse.Namespace(json=True, summary_only=True))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["summary_chrome_sessions"] == 1
+    assert payload["health"] == {"ok": True, "issues": []}
+
+
 def test_cmd_launch_invokes_tmux_launcher_for_droid(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
