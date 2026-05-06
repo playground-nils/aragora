@@ -1337,6 +1337,36 @@ def test_audit_skips_patch_equivalence_after_time_budget(tmp_path: Path, monkeyp
     ]
 
 
+def test_markdown_surfaces_patch_equivalence_budget_caveat(tmp_path: Path, capsys: Any) -> None:
+    payload = {
+        "repo": str(tmp_path),
+        "base": "origin/main",
+        "branch_count": 2,
+        "include_patch_equivalence": True,
+        "patch_equivalence_budget_exhausted": True,
+        "patch_equivalence_skipped_branches": 2,
+        "summary": {
+            "safe_cleanup_candidates": 0,
+            "salvage_candidates": 2,
+            "publishable_branch_backlog": 2,
+            "diverged_salvage_candidates": 0,
+            "handoff_receipted_branches": 0,
+            "handoff_outbox_branches": 0,
+            "writer_should_pause_for_branch_backlog": False,
+            "protected": 0,
+            "by_category": {"salvage_recent_unique": 2},
+        },
+        "records": [],
+    }
+
+    mod.print_markdown(payload, examples=1)
+
+    output = capsys.readouterr().out
+    assert "- Patch-equivalence checks: `enabled`" in output
+    assert "- Patch-equivalence budget exhausted: `True`" in output
+    assert "- Patch-equivalence skipped branches: `2`" in output
+
+
 def test_audit_skip_patch_equivalence_still_cleans_empty_branch_diff(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

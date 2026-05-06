@@ -929,6 +929,18 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
     print(f"- Repo: `{payload['repo']}`")
     print(f"- Base: `{payload['base']}`")
     print(f"- Branches audited: `{payload['branch_count']}`")
+    print(
+        "- Patch-equivalence checks: "
+        f"`{'enabled' if payload.get('include_patch_equivalence') else 'disabled'}`"
+    )
+    print(
+        "- Patch-equivalence budget exhausted: "
+        f"`{payload.get('patch_equivalence_budget_exhausted', False)}`"
+    )
+    print(
+        "- Patch-equivalence skipped branches: "
+        f"`{payload.get('patch_equivalence_skipped_branches', 0)}`"
+    )
     print(f"- Safe cleanup candidates: `{summary['safe_cleanup_candidates']}`")
     print(f"- Salvage candidates: `{summary['salvage_candidates']}`")
     print(f"- Publishable branch backlog: `{summary['publishable_branch_backlog']}`")
