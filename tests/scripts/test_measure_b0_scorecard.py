@@ -415,6 +415,58 @@ def test_main_json_with_corpus_filters_metrics_and_reports_coverage(tmp_path: Pa
     assert payload["coverage"]["status"] == "incomplete"
 
 
+def test_main_publish_fail_incomplete_honors_complete_truth_artifact(
+    tmp_path: Path, capsys
+) -> None:
+    metrics_path = _write_metrics(
+        tmp_path / "boss_metrics.jsonl",
+        [{"issue_number": 1001, "terminal_class": "deliverable_pr_created"}],
+    )
+    truth_artifact_path = _write_json(
+        tmp_path / "truth-artifact.json",
+        {
+            "generated_at": "2026-04-14T14:00:00Z",
+            "corpus": {
+                "path": "docs/benchmarks/corpus.json",
+                "corpus_id": "tw-01-bounded-execution-v1",
+                "revision": 4,
+                "recorded_on": "2026-04-14",
+                "success_contract": "mergeable_pr_or_merged_pr",
+                "manifest_sha256": "abc123",
+                "membership_sha256": "def456",
+                "membership_issue_numbers": [1001, 1002],
+                "issue_count": 2,
+            },
+            "issues": [{"issue_number": 1001}, {"issue_number": 1002}],
+            "primary_metrics": {"truth_success_rate": 0.5},
+            "coverage": {"is_complete": True, "missing_issue_numbers": [], "status": "complete"},
+            "failure_class_distribution": {},
+            "rescue_counts_by_type": {},
+        },
+    )
+
+    exit_code = mod.main(
+        [
+            "--metrics",
+            str(metrics_path),
+            "--publish-dir",
+            str(tmp_path / "published"),
+            "--truth-artifact",
+            str(truth_artifact_path),
+            "--json",
+            "--fail-incomplete",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["coverage"]["is_complete"] is True
+    assert payload["proxy_metrics"]["coverage"]["is_complete"] is False
+    assert payload["proxy_metrics"]["coverage"]["missing_issue_numbers"] == [1002]
+    assert (tmp_path / "published" / "tw-01-bounded-execution-v1" / "rev-4").exists()
+
+
 def test_main_publish_mode_uses_default_corpus_to_build_truth_artifact(
     tmp_path: Path,
     capsys,

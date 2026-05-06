@@ -51,8 +51,16 @@ def test_build_readiness_reports_gap_to_promotion_floor() -> None:
     readiness = mod.build_readiness(
         corpus=_corpus(list(range(1001, 1031))),
         metrics_rows=[
-            {"issue_number": 1001, "terminal_class": "blocked_not_dispatch_bounded"},
-            {"issue_number": 1003, "terminal_class": "deliverable_pr_created"},
+            {
+                "issue_number": 1001,
+                "terminal_class": "blocked_not_dispatch_bounded",
+                "worker_outcome": "blocked",
+            },
+            {
+                "issue_number": 1003,
+                "terminal_class": "deliverable_pr_created",
+                "worker_outcome": "pr_adopted",
+            },
         ],
         min_dispatched=3,
     )
@@ -78,8 +86,16 @@ def test_build_readiness_reports_promotion_ready_at_floor() -> None:
     readiness = mod.build_readiness(
         corpus=_corpus(list(range(1001, 1031))),
         metrics_rows=[
-            {"issue_number": 1001, "terminal_class": "blocked_not_dispatch_bounded"},
-            {"issue_number": 1002, "terminal_class": "deliverable_pr_created"},
+            {
+                "issue_number": 1001,
+                "terminal_class": "blocked_not_dispatch_bounded",
+                "worker_outcome": "blocked",
+            },
+            {
+                "issue_number": 1002,
+                "terminal_class": "deliverable_pr_created",
+                "worker_outcome": "pr_adopted",
+            },
         ],
         min_dispatched=2,
     )
@@ -88,11 +104,45 @@ def test_build_readiness_reports_promotion_ready_at_floor() -> None:
     assert readiness["needed_for_minimum"] == 0
 
 
+def test_build_readiness_requires_worker_outcome_for_canonical_promotion() -> None:
+    readiness = mod.build_readiness(
+        corpus=_corpus(list(range(1001, 1031))),
+        metrics_rows=[
+            {"issue_number": 1001, "terminal_class": "deliverable_pr_created"},
+            {
+                "issue_number": 1002,
+                "terminal_class": "deliverable_pr_created",
+                "worker_outcome": "pr_adopted",
+            },
+        ],
+        pr_records=[
+            {
+                "number": 4242,
+                "state": "MERGED",
+                "headRefName": "aragora/boss-harvest/issue-1001-boss-abcd",
+            }
+        ],
+        min_dispatched=2,
+    )
+
+    assert readiness["status"] == "needs_more_dispatch_evidence"
+    assert readiness["needed_for_minimum"] == 1
+    assert readiness["dispatch"]["dispatched_issue_ids"] == [1002]
+    assert readiness["dispatch"]["advisory_any_source_dispatched_issue_ids"] == [1001, 1002]
+    assert readiness["dispatch"]["dispatch_source_by_issue"][1001] == "pr"
+
+
 def test_main_writes_markdown_readiness(tmp_path: Path) -> None:
     corpus_path = _write_json(tmp_path / "corpus.json", _corpus([1001, 1002, 1003, 1004]))
     metrics_path = _write_metrics(
         tmp_path / "boss_metrics.jsonl",
-        [{"issue_number": 1001, "terminal_class": "deliverable_pr_created"}],
+        [
+            {
+                "issue_number": 1001,
+                "terminal_class": "deliverable_pr_created",
+                "worker_outcome": "pr_adopted",
+            }
+        ],
     )
     output_path = tmp_path / "readiness.md"
 
@@ -116,7 +166,7 @@ def test_main_writes_markdown_readiness(tmp_path: Path) -> None:
     assert exit_code == 0
     assert "Last updated: 2026-04-25T00:00:00Z" in markdown
     assert "Status: `manifest_below_h1_floor`" in markdown
-    assert "| Staged issues with dispatch evidence (any source) | 1 |" in markdown
+    assert "| Metrics-backed staged issues eligible for canonical promotion | 1 |" in markdown
     assert "`#1002`" in markdown
 
 
@@ -124,7 +174,13 @@ def test_main_json_mode_emits_readiness(tmp_path: Path, capsys) -> None:
     corpus_path = _write_json(tmp_path / "corpus.json", _corpus(list(range(1001, 1031))))
     metrics_path = _write_metrics(
         tmp_path / "boss_metrics.jsonl",
-        [{"issue_number": 1001, "terminal_class": "deliverable_pr_created"}],
+        [
+            {
+                "issue_number": 1001,
+                "terminal_class": "deliverable_pr_created",
+                "worker_outcome": "pr_adopted",
+            }
+        ],
     )
 
     exit_code = mod.main(
@@ -187,7 +243,13 @@ def test_main_json_mode_auto_loads_gh_pr_evidence(tmp_path: Path, capsys, monkey
     corpus_path = _write_json(tmp_path / "corpus.json", _corpus(list(range(1001, 1031))))
     metrics_path = _write_metrics(
         tmp_path / "boss_metrics.jsonl",
-        [{"issue_number": 1001, "terminal_class": "deliverable_pr_created"}],
+        [
+            {
+                "issue_number": 1001,
+                "terminal_class": "deliverable_pr_created",
+                "worker_outcome": "pr_adopted",
+            }
+        ],
     )
 
     def fake_fetch(issue_ids, **kwargs):
@@ -216,6 +278,7 @@ def test_main_json_mode_auto_loads_gh_pr_evidence(tmp_path: Path, capsys, monkey
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
-    assert payload["status"] == "promotion_ready"
-    assert payload["dispatch"]["dispatched_issue_count"] == 2
+    assert payload["status"] == "needs_more_dispatch_evidence"
+    assert payload["dispatch"]["dispatched_issue_count"] == 1
+    assert payload["dispatch"]["advisory_any_source_dispatched_issue_count"] == 2
     assert payload["dispatch"]["dispatch_source_by_issue"]["1002"] == "pr"

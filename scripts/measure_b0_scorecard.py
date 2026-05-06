@@ -649,6 +649,7 @@ def main(argv: list[str] | None = None) -> int:
     corpus_issue_numbers: set[int] | None = None
     corpus_metadata_payload: dict[str, Any] | None = None
     corpus_metadata_source_path: Path | None = None
+    truth_payload: dict[str, Any] | None = None
     if corpus_path is not None:
         if not corpus_path.exists():
             raise SystemExit(f"corpus file not found: {corpus_path}")
@@ -687,7 +688,17 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
 
-    incomplete_corpus = (scorecard.get("coverage") or {}).get("is_complete") is False
+    truth_artifact_coverage = (
+        dict(truth_payload.get("coverage") or {})
+        if truth_artifact_path is not None and truth_payload is not None
+        else {}
+    )
+    if "is_complete" in truth_artifact_coverage:
+        incomplete_corpus = truth_artifact_coverage.get("is_complete") is False
+        incomplete_coverage = truth_artifact_coverage
+    else:
+        incomplete_corpus = (scorecard.get("coverage") or {}).get("is_complete") is False
+        incomplete_coverage = dict(scorecard.get("coverage") or {})
 
     published_scorecard: dict[str, Any] | None = None
     published_path: Path | None = None
@@ -738,7 +749,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(published_scorecard or scorecard, indent=2, sort_keys=True))
     elif args.ci:
         print(render_ci_summary(scorecard, threshold=args.threshold))
-        is_complete = bool((scorecard.get("coverage") or {}).get("is_complete", True))
+        is_complete = not incomplete_corpus
         return (
             0
             if scorecard.get("status") != "no_data"
@@ -750,9 +761,7 @@ def main(argv: list[str] | None = None) -> int:
         print_scorecard(scorecard)
 
     if args.fail_incomplete and incomplete_corpus:
-        missing_issue_numbers = list(
-            (scorecard.get("coverage") or {}).get("missing_issue_numbers") or []
-        )
+        missing_issue_numbers = list(incomplete_coverage.get("missing_issue_numbers") or [])
         missing_suffix = ", ".join(str(item) for item in missing_issue_numbers) or "unknown"
         print(
             f"incomplete corpus coverage: missing issue numbers {missing_suffix}",
