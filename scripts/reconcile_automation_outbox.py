@@ -215,6 +215,11 @@ def main(argv: list[str] | None = None) -> int:
             "the report."
         ),
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a machine-readable reconciliation report to stdout.",
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.repo).resolve()
@@ -222,21 +227,25 @@ def main(argv: list[str] | None = None) -> int:
     receipt_dir = root / ".aragora" / "automation-receipts"
     archive_dir = root / ".aragora" / "automation-outbox-archive"
 
-    print(f"outbox_dir: {outbox_dir}")
-    print(f"receipt_dir: {receipt_dir}")
-    print(f"archive_dir: {archive_dir} {'(will create)' if not archive_dir.exists() else ''}")
-    print(f"mode: {'APPLY' if args.apply else 'DRY-RUN'}\n")
+    def log(message: str = "") -> None:
+        if not args.json:
+            print(message)
+
+    log(f"outbox_dir: {outbox_dir}")
+    log(f"receipt_dir: {receipt_dir}")
+    log(f"archive_dir: {archive_dir} {'(will create)' if not archive_dir.exists() else ''}")
+    log(f"mode: {'APPLY' if args.apply else 'DRY-RUN'}\n")
 
     if args.apply:
         archive_dir.mkdir(parents=True, exist_ok=True)
 
-    print("loading existing terminal receipt keys...")
+    log("loading existing terminal receipt keys...")
     receipt_keys = _terminal_receipt_keys(receipt_dir)
-    print(f"  {len(receipt_keys)} terminal receipt keys")
+    log(f"  {len(receipt_keys)} terminal receipt keys")
 
-    print("loading outbox files...")
+    log("loading outbox files...")
     outbox_files = _list_json(outbox_dir)
-    print(f"  {len(outbox_files)} outbox files\n")
+    log(f"  {len(outbox_files)} outbox files\n")
 
     open_prs_cache: dict[str, int] | None = None
     open_pr_state_available = False
@@ -244,14 +253,14 @@ def main(argv: list[str] | None = None) -> int:
     def load_open_pr_state() -> tuple[dict[str, int], bool]:
         nonlocal open_prs_cache, open_pr_state_available
         if open_prs_cache is None:
-            print("loading open PR state from GitHub (one bulk call)...")
+            log("loading open PR state from GitHub (one bulk call)...")
             open_prs_cache, open_pr_state_available, message = _github_open_pr_state(
                 root, args.repo_name
             )
             if open_pr_state_available:
-                print(f"  {message}\n")
+                log(f"  {message}\n")
             else:
-                print(f"  WARN: {message}; preserving ambiguous handoffs without open-PR truth\n")
+                log(f"  WARN: {message}; preserving ambiguous handoffs without open-PR truth\n")
         return open_prs_cache, open_pr_state_available
 
     counts = {
@@ -394,28 +403,46 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
 
-    print("\n--- summary ---")
-    for k, v in counts.items():
-        print(f"  {k:>40}: {v}")
     archived = sum(1 for a in actions if a["decision"] == "archive")
     kept = sum(1 for a in actions if a["decision"] == "keep")
-    print(f"\n  total: {archived} archived, {kept} kept")
 
     should_write_report = args.apply or args.write_report
+    report_path: Path | None = None
+    report_payload = {
+        "actions": actions,
+        "applied": args.apply,
+        "archive_dir": str(archive_dir),
+        "counts": counts,
+        "mode": "apply" if args.apply else "dry_run",
+        "outbox_dir": str(outbox_dir),
+        "receipt_dir": str(receipt_dir),
+        "report_path": None,
+        "totals": {
+            "archived": archived,
+            "kept": kept,
+            "outbox_files": len(outbox_files),
+            "terminal_receipt_keys": len(receipt_keys),
+        },
+    }
     if should_write_report:
         state_dir = root / ".aragora" / "cleanup-state"
         state_dir.mkdir(parents=True, exist_ok=True)
-        out = (
+        report_path = (
             state_dir / f"outbox-reconciliation-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.json"
         )
-        out.write_text(
-            json.dumps(
-                {"counts": counts, "actions": actions, "applied": args.apply},
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        print(f"\n  report: {out}")
+        report_payload["report_path"] = str(report_path)
+        report_path.write_text(json.dumps(report_payload, indent=2, sort_keys=True))
+
+    if args.json:
+        print(json.dumps(report_payload, indent=2, sort_keys=True))
+        return 0
+
+    print("\n--- summary ---")
+    for k, v in counts.items():
+        print(f"  {k:>40}: {v}")
+    print(f"\n  total: {archived} archived, {kept} kept")
+    if report_path is not None:
+        print(f"\n  report: {report_path}")
     else:
         print("\n  report: not written in dry-run; pass --write-report to persist one.")
     if not args.apply:

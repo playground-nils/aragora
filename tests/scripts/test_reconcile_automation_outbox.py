@@ -80,6 +80,30 @@ def test_dry_run_can_write_report_when_requested(
     assert payload["applied"] is False
 
 
+def test_dry_run_json_outputs_machine_readable_payload_without_report(
+    tmp_path: Path, monkeypatch: Any, capsys: Any
+) -> None:
+    monkeypatch.setattr(mod, "open_pr_heads", lambda *_args: {})
+
+    rc = mod.main(["--repo", str(tmp_path), "--base", "origin/main", "--json"])
+
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert rc == 0
+    assert payload["mode"] == "dry_run"
+    assert payload["applied"] is False
+    assert payload["counts"]["satisfied_by_existing_receipt"] == 0
+    assert payload["totals"] == {
+        "archived": 0,
+        "kept": 0,
+        "outbox_files": 0,
+        "terminal_receipt_keys": 0,
+    }
+    assert payload["report_path"] is None
+    assert "DRY-RUN" not in out
+    assert not (tmp_path / ".aragora" / "cleanup-state").exists()
+
+
 def test_branch_from_payload_tolerates_list_local_evidence() -> None:
     payload = {
         "branch": "codex/openrouter-kimi-fallback-haiku",
