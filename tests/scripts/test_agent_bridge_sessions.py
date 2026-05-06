@@ -257,6 +257,29 @@ def test_select_summary_skips_terminal_ui_chrome() -> None:
     assert summary == "PR #5297 opened"
 
 
+def test_select_summary_skips_permission_menu_chrome() -> None:
+    import agent_bridge_sessions as mod
+
+    summary = mod._select_summary(
+        [
+            "PR #5297 opened",
+            "\u2502 Yes, and always allow low impact commands (file edits and read-only commands) \u2502",
+            "Auto (Low) - edits and read-only commands Opus 4.7 (High)",
+            "\u23bfPermissionsdialogdismissed",
+        ]
+    )
+
+    assert summary == "PR #5297 opened"
+    assert (
+        mod._select_summary(
+            [
+                "\u2502 Yes, and always allow medium impact commands (all commands that are reversible) \u2502"
+            ]
+        )
+        == ""
+    )
+
+
 def test_select_summary_skips_terminal_border_residue() -> None:
     import agent_bridge_sessions as mod
 
