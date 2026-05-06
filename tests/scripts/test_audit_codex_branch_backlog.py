@@ -90,7 +90,98 @@ def test_summary_only_payload_omits_records_without_mutating_source() -> None:
     assert compact["summary"] == {"publishable_branch_backlog": 0}
     assert compact["records"] == []
     assert compact["records_omitted"] is True
+    assert compact["record_examples"] == {}
+    assert compact["record_examples_limit"] == 3
     assert payload["records"] == [{"name": "codex/one"}, {"name": "codex/two"}]
+
+
+def test_summary_only_payload_keeps_compact_category_examples() -> None:
+    payload = {
+        "branch_count": 4,
+        "summary": {
+            "by_category": {
+                "cleanup_patch_equivalent": 3,
+                "salvage_diverged_local": 1,
+            }
+        },
+        "records": [
+            {
+                "name": "codex/cleanup-one",
+                "category": "cleanup_patch_equivalent",
+                "head_sha": "1111111",
+                "committed_at": "2026-05-06T00:00:00+00:00",
+                "subject": "first cleanup",
+                "ahead_count": 1,
+                "behind_count": 0,
+                "huge_field": "not copied",
+            },
+            {
+                "name": "codex/cleanup-two",
+                "category": "cleanup_patch_equivalent",
+                "head_sha": "2222222",
+                "committed_at": "2026-05-06T00:01:00+00:00",
+                "subject": "second cleanup",
+                "ahead_count": 1,
+                "behind_count": 0,
+            },
+            {
+                "name": "codex/cleanup-three",
+                "category": "cleanup_patch_equivalent",
+                "head_sha": "3333333",
+                "committed_at": "2026-05-06T00:02:00+00:00",
+                "subject": "third cleanup",
+                "ahead_count": 1,
+                "behind_count": 0,
+            },
+            {
+                "name": "codex/cleanup-four",
+                "category": "cleanup_patch_equivalent",
+                "head_sha": "4444444",
+                "committed_at": "2026-05-06T00:03:00+00:00",
+                "subject": "fourth cleanup",
+                "ahead_count": 1,
+                "behind_count": 0,
+            },
+            {
+                "name": "codex/salvage-one",
+                "category": "salvage_diverged_local",
+                "head_sha": "5555555",
+                "committed_at": "2026-05-06T00:04:00+00:00",
+                "subject": "needs salvage",
+                "ahead_count": 2,
+                "behind_count": 4,
+                "worktree_paths": ["/tmp/worktree"],
+                "active_worktree_paths": [],
+                "dirty_worktree_paths": [],
+            },
+        ],
+    }
+
+    compact = mod.summary_only_payload(payload)
+
+    cleanup_examples = compact["record_examples"]["cleanup_patch_equivalent"]
+    assert [item["name"] for item in cleanup_examples] == [
+        "codex/cleanup-one",
+        "codex/cleanup-two",
+        "codex/cleanup-three",
+    ]
+    assert "huge_field" not in cleanup_examples[0]
+    assert compact["record_examples"]["salvage_diverged_local"] == [
+        {
+            "name": "codex/salvage-one",
+            "category": "salvage_diverged_local",
+            "head_sha": "5555555",
+            "committed_at": "2026-05-06T00:04:00+00:00",
+            "subject": "needs salvage",
+            "ahead_count": 2,
+            "behind_count": 4,
+            "worktree_paths": ["/tmp/worktree"],
+            "active_worktree_paths": [],
+            "dirty_worktree_paths": [],
+        }
+    ]
+    assert compact["records"] == []
+    assert len(payload["records"]) == 5
 
 
 def test_audit_skips_open_pr_lookup_when_github_health_degraded(
