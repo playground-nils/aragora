@@ -343,6 +343,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--outbox-dir", default=None)
     parser.add_argument(
+        "--receipt-dir",
+        default=None,
+        help=(
+            "Accepted for compatibility with adjacent automation queue commands; "
+            "publisher freshness only compares the live outbox count to the status cache."
+        ),
+    )
+    parser.add_argument(
         "--state-root",
         default=None,
         help=(
