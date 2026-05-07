@@ -1,14 +1,14 @@
 # The Aragora Thesis
 
 > Canonical source of authority. Every other strategic doc links up to this.
-> Last updated: 2026-04-20. Status: v4 draft. v1 → v2 applied codex's
+> Last updated: 2026-05-06. Status: v4 canonical. v1 → v2 applied codex's
 > 5 required changes. v2 → v3 added premise 6 (Triage) and reframed
 > commitments around Pareto-efficient attention allocation after
 > founder arbitration. v3 → v4 applied codex round-3 findings with
 > founder's normative-vs-descriptive reframe: the thesis describes
 > the target shape of the product; category-B findings (where code
 > does not meet thesis) are named as Implementation gaps rather than
-> thesis errors. Awaiting fourth review before merge.
+> thesis errors.
 
 ---
 

@@ -96,10 +96,13 @@ def build_readiness(
     issues.sort(key=_issue_id)
     issue_ids = {_issue_id(issue) for issue in issues}
     rows_by_issue: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    dispatch_rows_by_issue: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in metrics_rows:
         issue_number = row.get("issue_number")
         if isinstance(issue_number, int) and issue_number in issue_ids:
             rows_by_issue[issue_number].append(row)
+            if str(row.get("worker_outcome") or "").strip():
+                dispatch_rows_by_issue[issue_number].append(row)
 
     # Cross-reference GitHub PR state. A merged or open PR on the
     # boss-loop's deterministic branch pattern is dispatch evidence
@@ -109,15 +112,17 @@ def build_readiness(
         issues_dispatched_via_pr(list(issue_ids), pr_records=pr_records or []) if pr_records else {}
     )
 
-    metrics_dispatched_set = set(rows_by_issue)
+    metrics_dispatched_set = set(dispatch_rows_by_issue)
     pr_dispatched_set = {n for n, verdict in pr_evidence.items() if bool(verdict.get("dispatched"))}
-    dispatched_ids = sorted(metrics_dispatched_set | pr_dispatched_set)
-    missing_ids = sorted(issue_ids - set(dispatched_ids))
+    advisory_dispatched_ids = sorted(metrics_dispatched_set | pr_dispatched_set)
+    dispatched_ids = sorted(metrics_dispatched_set)
+    missing_ids = sorted(issue_ids - metrics_dispatched_set)
+    advisory_missing_ids = sorted(issue_ids - set(advisory_dispatched_ids))
     needed_for_minimum = max(int(min_dispatched) - len(dispatched_ids), 0)
     recommended_ids = missing_ids[: needed_for_minimum or min(10, len(missing_ids))]
 
     dispatch_source_by_issue: dict[int, str] = {}
-    for issue_id in dispatched_ids:
+    for issue_id in advisory_dispatched_ids:
         in_metrics = issue_id in metrics_dispatched_set
         in_pr = issue_id in pr_dispatched_set
         if in_metrics and in_pr:
@@ -135,7 +140,7 @@ def build_readiness(
     for issue in issues:
         issue_number = _issue_id(issue)
         execution_class = str(issue.get("execution_class") or "unknown")
-        if issue_number in metrics_dispatched_set or issue_number in pr_dispatched_set:
+        if issue_number in metrics_dispatched_set:
             class_dispatched[execution_class] += 1
         rows = rows_by_issue.get(issue_number, [])
         latest_terminal = ""
@@ -175,6 +180,10 @@ def build_readiness(
             "dispatched_issue_ids": dispatched_ids,
             "missing_issue_ids": missing_ids,
             "recommended_next_issue_ids": recommended_ids,
+            "advisory_any_source_dispatched_issue_count": len(advisory_dispatched_ids),
+            "advisory_any_source_missing_issue_count": len(advisory_missing_ids),
+            "advisory_any_source_dispatched_issue_ids": advisory_dispatched_ids,
+            "advisory_any_source_missing_issue_ids": advisory_missing_ids,
             "latest_terminal_by_issue": latest_terminal_by_issue,
             "dispatch_source_by_issue": dispatch_source_by_issue,
             "pr_dispatched_only_ids": pr_dispatched_only_ids,
@@ -214,7 +223,7 @@ def render_markdown(
     verdict = (
         "Ready to promote the first canonical rev-4 slice."
         if status == "promotion_ready"
-        else f"Not ready: needs {needed} more dispatched issue(s) to reach the {min_dispatched}-issue promotion floor."
+        else f"Not ready: needs {needed} more metrics-backed dispatched issue(s) to reach the {min_dispatched}-issue promotion floor."
     )
 
     lines = [
@@ -245,11 +254,12 @@ def render_markdown(
         "| Metric | Value |",
         "| --- | --- |",
         f"| Dispatch floor for first canonical slice | {min_dispatched} |",
-        f"| Staged issues with dispatch evidence (any source) | {dispatch.get('dispatched_issue_count') or 0} |",
-        f"| Staged issues still missing dispatch evidence | {dispatch.get('missing_issue_count') or 0} |",
-        f"| Additional dispatches needed | {needed} |",
+        f"| Metrics-backed staged issues eligible for canonical promotion | {dispatch.get('dispatched_issue_count') or 0} |",
+        f"| Staged issues still missing metrics-backed evidence | {dispatch.get('missing_issue_count') or 0} |",
+        f"| Additional metrics-backed dispatches needed | {needed} |",
+        f"| Advisory dispatch evidence from any source | {dispatch.get('advisory_any_source_dispatched_issue_count') or 0} |",
         f"| ...via metrics ledger only | {len(list(dispatch.get('metrics_dispatched_only_ids') or []))} |",
-        f"| ...via merged/open boss-harvest PR only | {len(list(dispatch.get('pr_dispatched_only_ids') or []))} |",
+        f"| ...via merged/open boss-harvest PR only (advisory) | {len(list(dispatch.get('pr_dispatched_only_ids') or []))} |",
         "",
         "## Next Dispatch Targets",
         "",
@@ -280,7 +290,7 @@ def render_markdown(
             "",
             "## Promotion Rule",
             "",
-            "Promote only a first canonical rev-4 slice after at least 15 staged entries have dispatch evidence. Dispatch evidence is satisfied by either (a) at least one row in `boss_metrics.jsonl` for the issue or (b) a merged or open pull request on the boss-loop's deterministic branch pattern `aragora/boss-harvest/issue-N-*`. Keep undispatched entries staged until they also accumulate evidence.",
+            "Promote only a first canonical rev-4 slice after at least 15 staged entries have metrics-backed dispatch evidence: at least one `boss_metrics.jsonl` row for the issue with a recorded `worker_outcome`. Merged or open boss-harvest PRs are useful advisory evidence, but they are not sufficient for canonical corpus promotion because `tests/benchmarks/test_corpus_freshness.py` requires metrics-backed dispatch history for every `in_progress` entry.",
             "",
         ]
     )
