@@ -1308,6 +1308,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     github_health = check_github_cli_health(repo_root)
     if not github_health.ready:
+        exit_code = 1 if handoffs else 0
         decision_handoffs = handoffs[: max(args.limit, 0)]
         payload = {
             "repo": str(repo_root),
@@ -1335,9 +1336,11 @@ def main(argv: list[str] | None = None) -> int:
         }
         if args.json:
             print(json.dumps(payload, indent=2))
+        elif not handoffs:
+            print("no_handoffs: no automation handoffs queued")
         else:
             print(f"github_unavailable: {github_health.mode} {github_health.error}".strip())
-        return 1
+        return exit_code
 
     decisions = decide_handoffs(
         handoffs,
