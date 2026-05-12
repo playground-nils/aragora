@@ -868,6 +868,10 @@ def audit(
         paths = worktrees.get(branch, [])
         dirty_paths = [str(path) for path in paths if dirty_worktree(path)]
         active_paths = [str(path) for path in paths if active_worktree(path)]
+        open_pr = prs.get(branch) if prs is not None else None
+        protected_before_patch_check = (
+            open_pr is not None or bool(active_paths) or bool(dirty_paths)
+        )
         try:
             ahead_count = int(row["ahead_count"])
         except ValueError:
@@ -887,7 +891,7 @@ def audit(
         patch_equivalent = False
         patch_equivalence_skipped = False
         patch_id = None
-        if ahead_count > 0 and not merged_to_base:
+        if ahead_count > 0 and not merged_to_base and not protected_before_patch_check:
             if _patch_budget_exhausted(patch_deadline):
                 patch_equivalence_skipped_branches += 1
                 patch_equivalence_skipped = True
@@ -951,7 +955,6 @@ def audit(
                     deadline=patch_deadline,
                 )
             handoff_outbox = patch_id in handoff_outbox_patch_ids
-        open_pr = prs.get(branch) if prs is not None else None
         category = classify(
             open_pr=open_pr,
             active_paths=active_paths,
