@@ -235,13 +235,14 @@ def _run_gh_json(
             )
         except (subprocess.SubprocessError, OSError) as exc:
             return None, f"{args[:3]} raised {type(exc).__name__}: {exc}"
-        if throttle > 0:
-            sleeper(throttle)
         if proc.returncode == 0:
             try:
-                return json.loads(proc.stdout or "null"), None
+                payload = json.loads(proc.stdout or "null")
             except json.JSONDecodeError as exc:
                 return None, f"{args[:3]} JSON parse error: {exc}"
+            if throttle > 0:
+                sleeper(throttle)
+            return payload, None
 
         error_text = " ".join(
             part.strip() for part in (proc.stderr, proc.stdout) if part and part.strip()
@@ -249,7 +250,7 @@ def _run_gh_json(
         error = f"{args[:3]} returned {proc.returncode}: {error_text[:300]}"
         if attempt >= max_attempts or not _looks_like_github_rate_limit_error(error):
             return None, error
-        backoff = min(throttle * (2**attempt), DEFAULT_GH_API_BACKOFF_MAX_SECONDS)
+        backoff = min(throttle * (2 ** (attempt - 1)), DEFAULT_GH_API_BACKOFF_MAX_SECONDS)
         if backoff > 0:
             sleeper(backoff)
     return None, f"{args[:3]} failed after {max_attempts} attempts"

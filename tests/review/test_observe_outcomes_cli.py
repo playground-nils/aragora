@@ -660,7 +660,7 @@ class TestGhJsonRateLimitHandling:
         assert error is None
         assert payload == {"ok": True}
         assert len(calls) == 2
-        assert sleeps == [0.1, 0.2, 0.1]
+        assert sleeps == [0.1, 0.1]
 
     def test_non_rate_limit_errors_do_not_retry(self, monkeypatch) -> None:
         calls = []
@@ -683,7 +683,7 @@ class TestGhJsonRateLimitHandling:
         assert error is not None
         assert "returned 1" in error
         assert len(calls) == 1
-        assert sleeps == [0.1]
+        assert sleeps == []
 
 
 class TestInsufficiencyReceiptShape:
