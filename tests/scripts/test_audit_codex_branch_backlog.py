@@ -488,6 +488,52 @@ def test_audit_ignores_missing_worktree_paths(tmp_path: Path, monkeypatch: Any) 
     assert payload["records"][0]["category"] == "salvage_recent_unique"
 
 
+def test_audit_skips_patch_equivalence_for_dirty_worktrees(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    dirty_path = tmp_path / "dirty-worktree"
+    dirty_path.mkdir()
+    row = _branch_row("codex/dirty-worktree")
+    monkeypatch.setattr(mod, "local_branches", lambda _root, _prefix, _base: [row])
+    monkeypatch.setattr(mod, "remote_branch_names", lambda _root, _prefix: set())
+    monkeypatch.setattr(mod, "merged_branch_names", lambda _root, _base, _prefix: set())
+    monkeypatch.setattr(mod, "worktree_map", lambda _root: {"codex/dirty-worktree": [dirty_path]})
+    monkeypatch.setattr(mod, "dirty_worktree", lambda _path: True)
+
+    def fail_patch_equivalence(*_args: Any, **_kwargs: Any) -> bool:
+        raise AssertionError("dirty worktrees are protected before patch-equivalence checks")
+
+    monkeypatch.setattr(mod, "is_patch_equivalent", fail_patch_equivalence)
+    monkeypatch.setattr(
+        mod,
+        "check_github_cli_health",
+        lambda _root: GitHubCLIHealth(
+            ready=False,
+            auth_ok=False,
+            api_ok=False,
+            mode="connectivity_failed",
+            error="offline",
+            repo=str(tmp_path),
+        ),
+    )
+
+    payload = mod.audit(
+        root=tmp_path,
+        base="origin/main",
+        repo="synaptent/aragora",
+        prefix="codex/",
+        recent_hours=72,
+        max_branches=None,
+        include_patch_equivalence=True,
+        publisher_backlog_limit=1,
+    )
+
+    record = payload["records"][0]
+    assert record["category"] == "protected_dirty_worktree"
+    assert record["patch_equivalence_skipped"] is False
+    assert payload["patch_equivalence_skipped_branches"] == 0
+
+
 def test_audit_publishable_backlog_excludes_stale_local_only_branches(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
