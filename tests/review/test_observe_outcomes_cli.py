@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
@@ -611,6 +612,78 @@ class TestLiveProviderNormalization:
 
         assert events == []
         assert error == "search/issues returned 502"
+
+
+class TestGhJsonRateLimitHandling:
+    def test_search_api_uses_slower_default_throttle(self) -> None:
+        assert (
+            observe_module._gh_throttle_seconds_for(["gh", "api", "-X", "GET", "search/issues"])
+            == observe_module.DEFAULT_GH_SEARCH_API_THROTTLE_SECONDS
+        )
+        assert (
+            observe_module._gh_throttle_seconds_for(
+                [
+                    "gh",
+                    "api",
+                    "-H",
+                    "Accept: application/vnd.github+json",
+                    "/repos/:owner/:repo/issues/123/timeline",
+                ]
+            )
+            == observe_module.DEFAULT_GH_API_THROTTLE_SECONDS
+        )
+
+    def test_rate_limit_errors_retry_with_backoff(self, monkeypatch) -> None:
+        calls = []
+        sleeps: list[float] = []
+        responses = [
+            SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="API rate limit exceeded for user ID 33477136",
+            ),
+            SimpleNamespace(returncode=0, stdout='{"ok": true}', stderr=""),
+        ]
+
+        def fake_run(*args, **kwargs):
+            calls.append((args, kwargs))
+            return responses.pop(0)
+
+        monkeypatch.setattr(observe_module.subprocess, "run", fake_run)
+
+        payload, error = observe_module._run_gh_json(
+            ["gh", "api", "search/issues"],
+            throttle_seconds=0.1,
+            sleep=sleeps.append,
+        )
+
+        assert error is None
+        assert payload == {"ok": True}
+        assert len(calls) == 2
+        assert sleeps == [0.1, 0.2, 0.1]
+
+    def test_non_rate_limit_errors_do_not_retry(self, monkeypatch) -> None:
+        calls = []
+        sleeps: list[float] = []
+
+        def fake_run(*args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(returncode=1, stdout="", stderr="Not Found")
+
+        monkeypatch.setattr(observe_module.subprocess, "run", fake_run)
+
+        payload, error = observe_module._run_gh_json(
+            ["gh", "api", "search/issues"],
+            attempts=3,
+            throttle_seconds=0.1,
+            sleep=sleeps.append,
+        )
+
+        assert payload is None
+        assert error is not None
+        assert "returned 1" in error
+        assert len(calls) == 1
+        assert sleeps == [0.1]
 
 
 class TestInsufficiencyReceiptShape:
