@@ -10,6 +10,7 @@ from aragora.cli.commands.swarm import cmd_swarm
 from aragora.cli.commands.swarm_status import (
     _optional_float,
     _optional_int,
+    _resolve_terminal_class,
     load_operator_status,
     render_operator_status,
 )
@@ -98,6 +99,23 @@ def test_numeric_coercion_helpers_accept_common_object_inputs() -> None:
     assert _optional_float(7) == 7.0
     assert _optional_float("9.5") == 9.5
     assert _optional_float(object()) is None
+
+
+def test_resolve_terminal_class_falls_back_for_malformed_metrics() -> None:
+    assert _resolve_terminal_class({"files_changed": object()}) == "rescue_no_deliverable"
+
+
+def test_resolve_terminal_class_does_not_swallow_unexpected_errors() -> None:
+    with patch(
+        "aragora.cli.commands.swarm_status.classify_from_metrics",
+        side_effect=RuntimeError("unexpected classifier failure"),
+    ):
+        try:
+            _resolve_terminal_class({"worker_status": "needs_human"})
+        except RuntimeError as exc:
+            assert str(exc) == "unexpected classifier failure"
+        else:  # pragma: no cover - keeps the assertion readable without pytest.raises
+            raise AssertionError("unexpected classifier errors should propagate")
 
 
 def test_load_operator_status_reports_unknown_queue_depth_when_probe_unavailable(
