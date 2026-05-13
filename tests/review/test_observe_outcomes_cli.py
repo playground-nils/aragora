@@ -615,6 +615,9 @@ class TestLiveProviderNormalization:
 
 
 class TestGhJsonRateLimitHandling:
+    def setup_method(self) -> None:
+        observe_module._GH_LAST_CALL_AT_BY_BUCKET.clear()
+
     def test_search_api_uses_slower_default_throttle(self) -> None:
         assert (
             observe_module._gh_throttle_seconds_for(["gh", "api", "-X", "GET", "search/issues"])
@@ -655,6 +658,7 @@ class TestGhJsonRateLimitHandling:
             ["gh", "api", "search/issues"],
             throttle_seconds=0.1,
             sleep=sleeps.append,
+            clock=lambda: 0.0,
         )
 
         assert error is None
@@ -677,6 +681,7 @@ class TestGhJsonRateLimitHandling:
             attempts=3,
             throttle_seconds=0.1,
             sleep=sleeps.append,
+            clock=lambda: 0.0,
         )
 
         assert payload is None
@@ -684,6 +689,45 @@ class TestGhJsonRateLimitHandling:
         assert "returned 1" in error
         assert len(calls) == 1
         assert sleeps == []
+
+    def test_successful_first_call_does_not_pay_throttle_delay(self, monkeypatch) -> None:
+        sleeps: list[float] = []
+
+        def fake_run(*args, **kwargs):
+            return SimpleNamespace(returncode=0, stdout='{"ok": true}', stderr="")
+
+        monkeypatch.setattr(observe_module.subprocess, "run", fake_run)
+
+        payload, error = observe_module._run_gh_json(
+            ["gh", "api", "search/issues"],
+            throttle_seconds=0.1,
+            sleep=sleeps.append,
+            clock=lambda: 10.0,
+        )
+
+        assert error is None
+        assert payload == {"ok": True}
+        assert sleeps == []
+
+    def test_consecutive_calls_are_spaced_by_throttle_delay(self, monkeypatch) -> None:
+        sleeps: list[float] = []
+
+        def fake_run(*args, **kwargs):
+            return SimpleNamespace(returncode=0, stdout='{"ok": true}', stderr="")
+
+        monkeypatch.setattr(observe_module.subprocess, "run", fake_run)
+
+        for _ in range(2):
+            payload, error = observe_module._run_gh_json(
+                ["gh", "api", "search/issues"],
+                throttle_seconds=0.1,
+                sleep=sleeps.append,
+                clock=lambda: 10.0,
+            )
+            assert error is None
+            assert payload == {"ok": True}
+
+        assert sleeps == [0.1]
 
 
 class TestInsufficiencyReceiptShape:

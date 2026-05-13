@@ -102,6 +102,7 @@ _GH_RATE_LIMIT_NEEDLES = (
     "rate limited",
     "abuse detection",
 )
+_GH_LAST_CALL_AT_BY_BUCKET: dict[str, float] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,11 +200,37 @@ def _looks_like_github_rate_limit_error(message: str) -> bool:
 
 
 def _gh_throttle_seconds_for(args: list[str]) -> float:
-    if "search/issues" in args or "search/commits" in args:
+    if _gh_throttle_bucket(args) == "search":
         # GitHub search endpoints are more aggressively limited than
         # ordinary API reads; 2.1s keeps sustained runs below 30/minute.
         return DEFAULT_GH_SEARCH_API_THROTTLE_SECONDS
     return DEFAULT_GH_API_THROTTLE_SECONDS
+
+
+def _gh_throttle_bucket(args: list[str]) -> str:
+    if "search/issues" in args or "search/commits" in args:
+        return "search"
+    return "default"
+
+
+def _pace_gh_call(
+    args: list[str],
+    *,
+    throttle_seconds: float,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> None:
+    if throttle_seconds <= 0:
+        return
+    bucket = _gh_throttle_bucket(args)
+    now = clock()
+    last = _GH_LAST_CALL_AT_BY_BUCKET.get(bucket)
+    if last is not None:
+        delay = throttle_seconds - (now - last)
+        if delay > 0:
+            sleep(delay)
+            now += delay
+    _GH_LAST_CALL_AT_BY_BUCKET[bucket] = now
 
 
 def _run_gh_json(
@@ -213,6 +240,7 @@ def _run_gh_json(
     attempts: int = DEFAULT_GH_API_MAX_ATTEMPTS,
     throttle_seconds: float | None = None,
     sleep: Callable[[float], None] | None = None,
+    clock: Callable[[], float] | None = None,
 ) -> tuple[Any, str | None]:
     """Run a bounded ``gh`` command and parse JSON, returning (payload, error).
 
@@ -224,7 +252,14 @@ def _run_gh_json(
     max_attempts = max(1, attempts)
     throttle = _gh_throttle_seconds_for(args) if throttle_seconds is None else throttle_seconds
     sleeper = sleep or time.sleep
+    monotonic = clock or time.monotonic
     for attempt in range(1, max_attempts + 1):
+        _pace_gh_call(
+            args,
+            throttle_seconds=throttle,
+            sleep=sleeper,
+            clock=monotonic,
+        )
         try:
             proc = subprocess.run(
                 args,
@@ -237,12 +272,9 @@ def _run_gh_json(
             return None, f"{args[:3]} raised {type(exc).__name__}: {exc}"
         if proc.returncode == 0:
             try:
-                payload = json.loads(proc.stdout or "null")
+                return json.loads(proc.stdout or "null"), None
             except json.JSONDecodeError as exc:
                 return None, f"{args[:3]} JSON parse error: {exc}"
-            if throttle > 0:
-                sleeper(throttle)
-            return payload, None
 
         error_text = " ".join(
             part.strip() for part in (proc.stderr, proc.stdout) if part and part.strip()
