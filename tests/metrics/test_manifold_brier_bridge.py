@@ -73,7 +73,9 @@ class TestPendingPrediction:
 
     def test_boundary_probabilities_ok(self) -> None:
         for prob in (0.0, 1.0):
-            p = PendingPrediction(market_id="m", agent_id="a", predicted_probability=prob, predicted_at=_NOW)
+            p = PendingPrediction(
+                market_id="m", agent_id="a", predicted_probability=prob, predicted_at=_NOW
+            )
             assert p.predicted_probability == prob
 
 
@@ -152,8 +154,12 @@ class TestBatchRecordResolutions:
         scorer = ManifoldBrierScorer()
         resolutions = {"m_a": _res("yes", "m_a"), "m_b": _res("no", "m_b")}
         pending = [
-            PendingPrediction(market_id="m_a", agent_id="ag", predicted_probability=1.0, predicted_at=_NOW),
-            PendingPrediction(market_id="m_b", agent_id="ag", predicted_probability=0.9, predicted_at=_NOW),
+            PendingPrediction(
+                market_id="m_a", agent_id="ag", predicted_probability=1.0, predicted_at=_NOW
+            ),
+            PendingPrediction(
+                market_id="m_b", agent_id="ag", predicted_probability=0.9, predicted_at=_NOW
+            ),
         ]
         batch_record_resolutions(scorer, resolutions, pending)
         summary = scorer.rolling_score_for_agent("ag", window_days=30, reference_time=_NOW)

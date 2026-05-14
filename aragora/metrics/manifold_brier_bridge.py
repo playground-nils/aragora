@@ -24,8 +24,7 @@ if TYPE_CHECKING:
     from aragora.connectors.prediction_markets.manifold import ManifoldResolution  # noqa: F401
 
 _DISABLED_MSG = (
-    "ManifoldBrierScorer bridge is disabled. "
-    "Set ARAGORA_MANIFOLD_BRIER_ENABLED=1 to enable."
+    "ManifoldBrierScorer bridge is disabled. Set ARAGORA_MANIFOLD_BRIER_ENABLED=1 to enable."
 )
 
 
