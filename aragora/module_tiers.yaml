@@ -58,7 +58,7 @@ modules:
   - name: connectors
     tier: core
     py_files: 266
-    importer_count: 141
+    importer_count: 142
     test_file_count: 256
   - name: core
     tier: core
@@ -387,9 +387,9 @@ modules:
     test_file_count: 35
   - name: metrics
     tier: integrated
-    py_files: 5
+    py_files: 6
     importer_count: 1
-    test_file_count: 6
+    test_file_count: 7
   - name: migrations
     tier: integrated
     py_files: 21
