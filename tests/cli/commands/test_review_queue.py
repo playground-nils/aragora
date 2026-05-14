@@ -1319,6 +1319,10 @@ class TestCommandDispatch:
         assert ns_run.review_queue_command == "run"
         assert ns_run.limit == 3
         assert ns_run.ready_only is True
+        # health invocation parses through the standalone command parser
+        ns_health = root.parse_args(["review-queue", "health", "--json"])
+        assert ns_health.review_queue_command == "health"
+        assert ns_health.json_output is True
         # act invocation parses
         ns_act = root.parse_args(
             ["review-queue", "act", "6280", "--request-changes", "--reason", "needs a test"]

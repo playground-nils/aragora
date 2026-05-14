@@ -519,6 +519,44 @@ def add_review_queue_parser(subparsers: argparse._SubParsersAction) -> None:
 
     add_observe_outcomes_subparser(sub)
 
+    health_p = sub.add_parser(
+        "health",
+        help="Report freshness across review-queue + proof-loop write surfaces",
+        description=(
+            "Read-only, network-free check of the write-side daemons that close the "
+            "proof loop: settlement receipts, briefs, boss-metrics ledger, automation "
+            "receipts, boss-loop log, watchdog log, B0 publication, and TW-03 rescue "
+            "ledger. Exits 1 if any surface is stale or missing. Designed to surface "
+            "silent failures within seconds, not 13 days."
+        ),
+    )
+    health_p.add_argument(
+        "--repo-root",
+        default=None,
+        help="Override repo root used for status doc + overnight lookups.",
+    )
+    health_p.add_argument(
+        "--review-queue-root",
+        default=None,
+        help="Override the review-queue store root.",
+    )
+    health_p.add_argument(
+        "--overnight-root",
+        default=None,
+        help="Override the .aragora/overnight directory.",
+    )
+    health_p.add_argument(
+        "--automation-receipts-root",
+        default=None,
+        help="Override the .aragora/automation-receipts directory.",
+    )
+    health_p.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Output the report as JSON.",
+    )
+
     parser.set_defaults(func=cmd_review_queue)
 
 
@@ -543,9 +581,11 @@ def cmd_review_queue(args: argparse.Namespace) -> int:
         from aragora.cli.commands.observe_outcomes_cmd import cmd_observe_outcomes
 
         return cmd_observe_outcomes(args)
+    if command == "health":
+        return _cmd_health(args)
     print(
         "Usage: aragora review-queue "
-        "{build,packet,run,act,record-settlement,merge-packet,baseline,observe-outcomes} [...]\n"
+        "{build,packet,run,act,record-settlement,merge-packet,baseline,observe-outcomes,health} [...]\n"
         "Run 'aragora review-queue run --help' for the human settlement loop.",
         file=sys.stderr,
     )
@@ -842,6 +882,38 @@ def _cmd_baseline(args: argparse.Namespace) -> int:
         )
     else:
         _render_baseline_report(measurement=measurement, proposal=proposal)
+    return 0
+
+
+def _cmd_health(args: argparse.Namespace) -> int:
+    """Report freshness across review-queue + proof-loop write surfaces.
+
+    Read-only, network-free. Answers "is the proof loop quietly broken?"
+    in one command. Closes the observability gap that hid the May 6
+    boss-loop httpx regression for 13 days.
+    """
+    from aragora.review.health import gather_health, render_text
+
+    repo_root = getattr(args, "repo_root", None)
+    review_queue_root = getattr(args, "review_queue_root", None)
+    overnight_root = getattr(args, "overnight_root", None)
+    automation_root = getattr(args, "automation_receipts_root", None)
+
+    report = gather_health(
+        repo_root=Path(repo_root) if repo_root else None,
+        review_queue_root=Path(review_queue_root) if review_queue_root else None,
+        overnight_root=Path(overnight_root) if overnight_root else None,
+        automation_receipts_root=Path(automation_root) if automation_root else None,
+    )
+
+    json_output = bool(getattr(args, "json_output", False) or getattr(args, "json", False))
+    if json_output:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(render_text(report))
+
+    if report.overall_status in {"empty", "stale", "missing"}:
+        return 1
     return 0
 
 
