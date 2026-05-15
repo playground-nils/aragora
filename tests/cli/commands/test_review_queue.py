@@ -448,6 +448,7 @@ class TestModelReviewQuorum:
             (["deploy/k8s/app.yaml"], 4),
             # Merge-authority self-modification: see TIER_4_PREFIXES rationale.
             (["aragora/cli/commands/review_queue.py"], 4),
+            (["aragora/cli/parser.py"], 4),
         ],
     )
     def test_classifies_merge_tiers(self, files: list[str], expected_tier: int) -> None:
@@ -1323,6 +1324,11 @@ class TestCommandDispatch:
         ns_health = root.parse_args(["review-queue", "health", "--json"])
         assert ns_health.review_queue_command == "health"
         assert ns_health.json_output is True
+        # health-alert invocation parses through the standalone command parser
+        ns_alert = root.parse_args(["review-queue", "health-alert", "--heartbeat", "--json"])
+        assert ns_alert.review_queue_command == "health-alert"
+        assert ns_alert.heartbeat is True
+        assert ns_alert.json_output is True
         # act invocation parses
         ns_act = root.parse_args(
             ["review-queue", "act", "6280", "--request-changes", "--reason", "needs a test"]

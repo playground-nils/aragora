@@ -112,6 +112,15 @@ TIER_4_PREFIXES: tuple[str, ...] = (
     # Elevate to Tier 4 (human preapproval) so the human chain-of-trust is
     # not delegated to the artifact under review.
     "aragora/cli/commands/review_queue.py",
+    # ``aragora/cli/parser.py`` is the registration surface for every
+    # ``aragora`` subcommand the operator can invoke. Adding or modifying a
+    # registration changes which entrypoints exist on the merge-authority
+    # CLI — a new subcommand could expose tier-relevant behavior (signal
+    # collection, settlement recording, packet generation) that the gate
+    # would otherwise not see. Listing the parser here makes the
+    # registration surface follow the same human-chain-of-trust rule as
+    # ``review_queue.py`` itself.
+    "aragora/cli/parser.py",
 )
 PARKED_LABELS: tuple[str, ...] = ("stale", "do-not-merge", "wip", "blocked")
 
@@ -557,6 +566,52 @@ def add_review_queue_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Output the report as JSON.",
     )
 
+    alert_p = sub.add_parser(
+        "health-alert",
+        help="Edge-triggered alerter: writes an event when proof-loop health changes state",
+        description=(
+            "Runs the same checks as 'review-queue health', persists state under "
+            ".aragora/proof-loop-alerts/, and writes one JSON event per state "
+            "transition. Exits 1 if any surface is currently stale or missing."
+        ),
+    )
+    alert_p.add_argument(
+        "--repo-root",
+        default=None,
+        help="Override repo root used for status doc + overnight + state lookups.",
+    )
+    alert_p.add_argument(
+        "--review-queue-root",
+        default=None,
+        help="Override the review-queue store root.",
+    )
+    alert_p.add_argument(
+        "--overnight-root",
+        default=None,
+        help="Override the .aragora/overnight directory.",
+    )
+    alert_p.add_argument(
+        "--automation-receipts-root",
+        default=None,
+        help="Override the .aragora/automation-receipts directory.",
+    )
+    alert_p.add_argument(
+        "--state-dir",
+        default=None,
+        help="Override the alert state directory (default: <repo>/.aragora/proof-loop-alerts).",
+    )
+    alert_p.add_argument(
+        "--heartbeat",
+        action="store_true",
+        help="Emit a heartbeat event even when state is unchanged.",
+    )
+    alert_p.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Output the result as JSON.",
+    )
+
     parser.set_defaults(func=cmd_review_queue)
 
 
@@ -583,9 +638,12 @@ def cmd_review_queue(args: argparse.Namespace) -> int:
         return cmd_observe_outcomes(args)
     if command == "health":
         return _cmd_health(args)
+    if command == "health-alert":
+        return _cmd_health_alert(args)
     print(
         "Usage: aragora review-queue "
-        "{build,packet,run,act,record-settlement,merge-packet,baseline,observe-outcomes,health} [...]\n"
+        "{build,packet,run,act,record-settlement,merge-packet,baseline,observe-outcomes,"
+        "health,health-alert} [...]\n"
         "Run 'aragora review-queue run --help' for the human settlement loop.",
         file=sys.stderr,
     )
@@ -913,6 +971,85 @@ def _cmd_health(args: argparse.Namespace) -> int:
         print(render_text(report))
 
     if report.overall_status in {"empty", "stale", "missing"}:
+        return 1
+    return 0
+
+
+def _cmd_health_alert(args: argparse.Namespace) -> int:
+    """Edge-triggered alerter for proof-loop write surfaces.
+
+    Runs the same checks as ``review-queue health``, persists state under
+    ``.aragora/proof-loop-alerts/``, and writes one JSON event whenever the
+    set of stale/missing surfaces changes (opens, set-change, recovers).
+    Designed for periodic launchd execution: repeated calls while a surface
+    is steady-state stale do NOT produce duplicate events.
+
+    Exits 1 if any surface is currently stale or missing (so launchd can
+    surface failures via its own log retention).
+    """
+    from aragora.review.alert import resolve_state_dir, run_alert
+    from aragora.review.health import _resolve_repo_root
+
+    repo_root_arg = getattr(args, "repo_root", None)
+    review_queue_root = getattr(args, "review_queue_root", None)
+    overnight_root = getattr(args, "overnight_root", None)
+    automation_root = getattr(args, "automation_receipts_root", None)
+    state_dir_arg = getattr(args, "state_dir", None)
+    emit_heartbeat = bool(getattr(args, "heartbeat", False))
+
+    repo_root_path = Path(repo_root_arg) if repo_root_arg else None
+    effective_repo = _resolve_repo_root(repo_root_path)
+    state_dir = Path(state_dir_arg) if state_dir_arg else resolve_state_dir(effective_repo)
+
+    result = run_alert(
+        state_dir=state_dir,
+        emit_heartbeat=emit_heartbeat,
+        repo_root=repo_root_path,
+        review_queue_root=Path(review_queue_root) if review_queue_root else None,
+        overnight_root=Path(overnight_root) if overnight_root else None,
+        automation_receipts_root=Path(automation_root) if automation_root else None,
+    )
+
+    json_output = bool(getattr(args, "json_output", False) or getattr(args, "json", False))
+    if json_output:
+        payload = {
+            "overall_status": result.report.overall_status,
+            "alerting_surfaces": result.state.alerting_surfaces,
+            "event_kind": result.event.kind if result.event is not None else None,
+            "event_path": str(result.event_path) if result.event_path is not None else None,
+            "state_path": str(result.state_path),
+            "last_run_at": (
+                result.state.last_run_at.isoformat()
+                if result.state.last_run_at is not None
+                else None
+            ),
+            "last_event_at": (
+                result.state.last_event_at.isoformat()
+                if result.state.last_event_at is not None
+                else None
+            ),
+        }
+        print(json.dumps(payload, indent=2))
+    else:
+        kind = result.event.kind if result.event is not None else "no-change"
+        print(f"proof-loop alert: kind={kind} overall={result.report.overall_status}")
+        if result.state.alerting_surfaces:
+            print(f"  alerting:  {', '.join(result.state.alerting_surfaces)}")
+        else:
+            print("  alerting:  (none)")
+        print(f"  state:     {result.state_path}")
+        if result.event_path is not None:
+            print(f"  event:     {result.event_path}")
+
+    # Exit gate must be driven by the actual set of alerting surfaces, not by
+    # ``report.overall_status``. Surface statuses are ranked
+    # ``fresh < aging < stale < empty < missing`` (see ``health.py``), and only
+    # ``stale``/``missing`` are alerting (see ``alert.ALERTING_STATUSES``).
+    # ``overall_status`` is the *max severity rank* across surfaces, so a mix
+    # like ``[empty, stale]`` produces ``overall_status == "empty"`` even
+    # though a stale surface is firing. Gating on ``state.alerting_surfaces``
+    # captures the actual alert condition directly.
+    if result.state.alerting_surfaces:
         return 1
     return 0
 
