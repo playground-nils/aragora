@@ -8,7 +8,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from dataclasses import asdict, dataclass
 from collections.abc import Mapping
 from pathlib import Path
@@ -32,6 +31,7 @@ CONNECTIVITY_ERROR_TOKENS = (
     "could not resolve host: github.com",
     "failed to connect to github.com",
     "failed to connect to api.github.com",
+    "dial tcp",
     "network is unreachable",
     "connection timed out",
     "connection refused",
