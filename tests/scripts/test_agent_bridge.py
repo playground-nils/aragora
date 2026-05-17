@@ -65,6 +65,28 @@ def test_send_tmux_multiline_uses_delete_on_paste_buffer_transport(
     ]
 
 
+def test_lane_record_preserves_desktop_identity_metadata() -> None:
+    import agent_bridge as mod
+
+    record = mod.LaneRecord.from_dict(
+        {
+            "lane_id": "codex-b-review",
+            "owner_session": "codex-B",
+            "status": "active",
+            "desktop_label": "Codex B",
+            "codex_thread_id": "019e-test-thread",
+            "codex_rollout_path": "/Users/armand/.codex/sessions/rollout.jsonl",
+            "session_title": "Review #7286",
+        }
+    )
+
+    payload = record.to_dict()
+    assert payload["desktop_label"] == "Codex B"
+    assert payload["codex_thread_id"] == "019e-test-thread"
+    assert payload["codex_rollout_path"].endswith("rollout.jsonl")
+    assert payload["session_title"] == "Review #7286"
+
+
 def test_cmd_approve_droid_uses_enter_menu_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     import agent_bridge as mod
 
@@ -93,6 +115,8 @@ def test_cmd_send_persists_lane_registry(tmp_path: Path, monkeypatch: pytest.Mon
     import agent_bridge as mod
 
     _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    mod.LANE_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.LANE_REGISTRY_FILE.write_text("[]", encoding="utf-8")
     session = mod.Session(
         name="codex-strategic",
         agent="codex",
@@ -395,6 +419,57 @@ def test_operator_snapshot_summary_only_json_omits_records(
     assert payload["process_census"] == {"ok": True, "total": 0, "by_role": {}}
     assert payload["health"] == {"ok": True, "issues": []}
     assert discover_include_summaries == [False]
+
+
+def test_operator_snapshot_counts_active_duplicate_pr_lanes_as_conflicts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    mod.AGENT_BRIDGE_DIR.mkdir(parents=True, exist_ok=True)
+    mod.LANE_REGISTRY_FILE.write_text(
+        json.dumps(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "owner_session": "codex-A",
+                    "status": "active",
+                    "pr_number": 7245,
+                    "branch": "worktree-codex-insights",
+                },
+                {
+                    "lane_id": "lane-b",
+                    "owner_session": "codex-B",
+                    "status": "active",
+                    "pr_number": 7245,
+                    "branch": "worktree-codex-insights",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "discover", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        mod,
+        "_collect_agent_process_census",
+        lambda *, include_records=True, record_limit=None, ps_lines=None: {
+            "ok": True,
+            "total": 0,
+            "by_role": {},
+        },
+    )
+
+    rc = mod.cmd_operator_snapshot(argparse.Namespace(json=True, summary_only=True))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["conflict_lanes"] == 2
+    assert payload["lane_conflicts"][0]["key_kind"] == "branch"
+    assert payload["health"]["ok"] is False
+    assert payload["health"]["issues"][0]["type"] == "lane_identity_conflict"
 
 
 def test_collect_agent_process_census_redacts_commands_and_counts_roles() -> None:

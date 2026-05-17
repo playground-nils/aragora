@@ -16,6 +16,7 @@ in ``scripts/agent_bridge.py``. These tests cover:
 from __future__ import annotations
 
 import importlib
+import datetime as dt
 import json
 import subprocess
 import sys
@@ -108,6 +109,122 @@ def test_force_overrides_owner_mismatch(tmp_registry: Path) -> None:
     )
     payload = json.loads(tmp_registry.read_text(encoding="utf-8"))
     assert payload[0]["owner_session"] == "claude-B"
+
+
+def test_different_lane_same_pr_is_rejected_by_default(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        pr_number=7245,
+    )
+
+    with pytest.raises(claim_module.ClaimError) as excinfo:
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="lane-b",
+            owner_session="codex-B",
+            pr_number=7245,
+        )
+
+    assert "pr_number='7245' already claimed" in str(excinfo.value)
+
+
+def test_different_lane_same_pr_can_be_allowed_when_requested(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        pr_number=7245,
+    )
+
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-b",
+        owner_session="codex-B",
+        pr_number=7245,
+        allow_resource_conflicts=True,
+    )
+
+    payload = json.loads(tmp_registry.read_text(encoding="utf-8"))
+    assert sorted(row["lane_id"] for row in payload) == ["lane-a", "lane-b"]
+
+
+def test_different_lane_same_branch_is_rejected_by_default(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        branch="worktree-codex-insights",
+    )
+
+    with pytest.raises(claim_module.ClaimError) as excinfo:
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="lane-b",
+            owner_session="codex-B",
+            branch="worktree-codex-insights",
+        )
+
+    assert "branch='worktree-codex-insights' already claimed" in str(excinfo.value)
+
+
+def test_different_lane_same_worktree_is_rejected_by_default(
+    tmp_registry: Path,
+) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        worktree="/tmp/aragora-pr7245",
+    )
+
+    with pytest.raises(claim_module.ClaimError) as excinfo:
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="lane-b",
+            owner_session="codex-B",
+            worktree="/tmp/aragora-pr7245",
+        )
+
+    assert "worktree='/tmp/aragora-pr7245' already claimed" in str(excinfo.value)
+
+
+def test_same_owner_can_refresh_same_pr_identity(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        pr_number=7245,
+    )
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-b",
+        owner_session="codex-A",
+        pr_number=7245,
+    )
+
+    payload = json.loads(tmp_registry.read_text(encoding="utf-8"))
+    assert sorted(row["lane_id"] for row in payload) == ["lane-a", "lane-b"]
+
+
+def test_released_lane_identity_does_not_block_new_owner(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        status="released",
+        pr_number=7245,
+    )
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-b",
+        owner_session="codex-B",
+        pr_number=7245,
+    )
+
+    payload = json.loads(tmp_registry.read_text(encoding="utf-8"))
+    assert len(payload) == 2
 
 
 def test_other_lanes_are_preserved_during_claim(tmp_registry: Path) -> None:
@@ -237,6 +354,47 @@ def test_released_status_round_trips(tmp_registry: Path) -> None:
     assert payload[0]["status"] == "released"
 
 
+def test_release_stale_claims_only_releases_old_owner_rows(tmp_registry: Path) -> None:
+    old = "2026-05-17T10:00:00Z"
+    fresh = "2026-05-17T11:59:00Z"
+    now = dt.datetime(2026, 5, 17, 12, 0, tzinfo=dt.UTC)
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="old-owned",
+        owner_session="codex-A",
+        status="active",
+        updated_at=old,
+    )
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="fresh-owned",
+        owner_session="codex-A",
+        status="active",
+        updated_at=fresh,
+    )
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="old-other",
+        owner_session="codex-B",
+        status="active",
+        updated_at=old,
+    )
+
+    result = claim_module.release_stale_claims(
+        registry_path=tmp_registry,
+        owner_session="codex-A",
+        ttl_minutes=30,
+        updated_at="2026-05-17T12:00:00Z",
+        now=now,
+    )
+
+    payload = {row["lane_id"]: row for row in json.loads(tmp_registry.read_text())}
+    assert result["released_lane_ids"] == ["old-owned"]
+    assert payload["old-owned"]["status"] == "released"
+    assert payload["fresh-owned"]["status"] == "active"
+    assert payload["old-other"]["status"] == "active"
+
+
 def test_invalid_status_is_rejected(tmp_registry: Path) -> None:
     with pytest.raises(ValueError):
         claim_module.claim_lane(
@@ -289,6 +447,24 @@ def test_persisted_schema_matches_lane_record_keys(tmp_registry: Path) -> None:
     assert keys.issubset(allowed)
 
 
+def test_desktop_identity_metadata_round_trips(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="codex-b-review",
+        owner_session="codex-B",
+        desktop_label="Codex B",
+        codex_thread_id="019e-test-thread",
+        codex_rollout_path="/Users/armand/.codex/sessions/rollout.jsonl",
+        session_title="Review #7286",
+    )
+
+    payload = json.loads(tmp_registry.read_text(encoding="utf-8"))
+    assert payload[0]["desktop_label"] == "Codex B"
+    assert payload[0]["codex_thread_id"] == "019e-test-thread"
+    assert payload[0]["codex_rollout_path"].endswith("rollout.jsonl")
+    assert payload[0]["session_title"] == "Review #7286"
+
+
 def test_cli_help_exits_zero() -> None:
     result = subprocess.run(
         [sys.executable, str(SCRIPT_PATH), "--help"],
@@ -311,6 +487,14 @@ def test_cli_writes_registry_via_subprocess(tmp_path: Path) -> None:
             "claude-cli",
             "--branch",
             "droid/phase-cli",
+            "--desktop-label",
+            "Codex C",
+            "--codex-thread-id",
+            "019e-cli-thread",
+            "--codex-rollout-path",
+            "/Users/armand/.codex/sessions/cli.jsonl",
+            "--session-title",
+            "CLI lane claim",
             "--status",
             "active",
             "--registry-path",
@@ -324,10 +508,14 @@ def test_cli_writes_registry_via_subprocess(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     payload_out = json.loads(result.stdout)
     assert payload_out["lane_id"] == "phase-cli"
+    assert payload_out["desktop_label"] == "Codex C"
     assert registry.exists()
     file_payload = json.loads(registry.read_text(encoding="utf-8"))
     assert len(file_payload) == 1
     assert file_payload[0]["lane_id"] == "phase-cli"
+    assert file_payload[0]["codex_thread_id"] == "019e-cli-thread"
+    assert file_payload[0]["codex_rollout_path"].endswith("cli.jsonl")
+    assert file_payload[0]["session_title"] == "CLI lane claim"
 
 
 def test_cli_conflict_returns_exit_code_2(tmp_path: Path) -> None:

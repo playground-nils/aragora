@@ -21,12 +21,14 @@ Inputs (each optional, never errors on missing sources):
 - ``~/.codex/sessions/**/*.jsonl`` for Codex CLI session files
 - ``scripts/agent_bridge.py processes --json --summary-only`` for live
   agent process census
-- ``~/.aragora/agent-bridge/lanes.json`` (and the in-repo
-  ``.aragora/agent-bridge/lanes.json`` fallback) for the cross-agent
+- in-repo ``.aragora/agent-bridge/lanes.json`` for the cross-agent
   lane registry maintained by ``scripts/agent_bridge.py``; lane
   branches, worktrees, and PR numbers are folded into the overlap
   detector so that an active lane claim collides with the matching
-  git worktree, dispatch contract, automation outbox row, or open PR
+  git worktree, dispatch contract, automation outbox row, open PR, or
+  another active lane claiming the same PR/branch/worktree
+  (legacy ``~/.aragora/agent-bridge/lanes.json`` fallback is available
+  only via ``--include-user-lane-registry``)
 - ``gh pr list --state open --json ...`` for open PRs (skippable via
   ``--skip-gh``)
 
@@ -64,7 +66,7 @@ DEFAULT_MAX_PR_FETCH = 30
 DEFAULT_GIT_TIMEOUT = 10
 DEFAULT_SUBPROCESS_TIMEOUT = 20
 DEFAULT_CODEX_SESSION_SCAN_LIMIT = 500
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 LANE_REGISTRY_RELATIVE_PATH = Path(".aragora") / "agent-bridge" / "lanes.json"
 LANE_REGISTRY_USER_PATH = Path.home() / ".aragora" / "agent-bridge" / "lanes.json"
@@ -385,17 +387,19 @@ def detect_agent_bridge_lanes(
     repo_root: Path,
     *,
     user_path: Path = LANE_REGISTRY_USER_PATH,
+    include_user_fallback: bool = False,
 ) -> list[dict[str, Any]]:
-    """Read the agent-bridge lane registry from the repo + user-home paths.
+    """Read the agent-bridge lane registry from repo-local state.
 
-    Lane rows are de-duplicated by ``lane_id``, repo-root wins ties so a
-    repo-local override masks the user-home record.
+    Repo-local state is authoritative when present. The user-home registry is
+    optional legacy fallback because mixing both can make fixture tests and
+    disposable worktrees inherit unrelated live lanes.
     """
     candidates: list[Path] = []
     repo_lane = repo_root / LANE_REGISTRY_RELATIVE_PATH
     if repo_lane.exists():
         candidates.append(repo_lane)
-    if user_path.exists() and user_path not in candidates:
+    elif include_user_fallback and user_path.exists():
         candidates.append(user_path)
 
     out_by_id: dict[str, dict[str, Any]] = {}
@@ -433,6 +437,10 @@ def detect_agent_bridge_lanes(
                 "worktree",
                 "conflict_session",
                 "conflict_reason",
+                "desktop_label",
+                "codex_thread_id",
+                "codex_rollout_path",
+                "session_title",
             ):
                 value = entry.get(key)
                 if isinstance(value, str) and value:
@@ -443,7 +451,74 @@ def detect_agent_bridge_lanes(
             row["is_active"] = row["status"] in ACTIVE_LANE_STATUSES
             row["is_conflict"] = row["status"] == "conflict"
             out_by_id[lane_id] = row
-    return sorted(out_by_id.values(), key=lambda r: r["lane_id"])
+    rows = sorted(out_by_id.values(), key=lambda r: r["lane_id"])
+    _mark_lane_identity_conflicts(rows)
+    return rows
+
+
+def _lane_identity_values(row: dict[str, Any]) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    pr_number = row.get("pr_number")
+    if isinstance(pr_number, int):
+        values.append(("pr_number", str(pr_number)))
+    branch = str(row.get("branch") or "").strip()
+    if branch:
+        values.append(("branch", branch))
+    worktree = str(row.get("worktree") or "").strip()
+    if worktree:
+        values.append(("worktree", worktree))
+    return values
+
+
+def lane_identity_conflicts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if not row.get("is_active"):
+            continue
+        for key in _lane_identity_values(row):
+            buckets[key].append(row)
+
+    conflicts: list[dict[str, Any]] = []
+    for (kind, value), grouped in buckets.items():
+        owners = sorted(
+            {str(row.get("owner_session") or "") for row in grouped if row.get("owner_session")}
+        )
+        if len(owners) <= 1:
+            continue
+        lane_ids = sorted({str(row.get("lane_id") or "") for row in grouped if row.get("lane_id")})
+        conflicts.append(
+            {
+                "type": "lane_identity_conflict",
+                "key_kind": kind,
+                "key_value": value,
+                "lane_ids": lane_ids,
+                "owner_sessions": owners,
+                "suggested_resolution": (
+                    "pause duplicate mutation; keep only the owner whose local "
+                    "HEAD matches the pushed PR/branch head, release the other lane"
+                ),
+            }
+        )
+    conflicts.sort(key=lambda row: (row["key_kind"], row["key_value"]))
+    return conflicts
+
+
+def _mark_lane_identity_conflicts(rows: list[dict[str, Any]]) -> None:
+    conflicts = lane_identity_conflicts(rows)
+    conflict_by_lane: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for conflict in conflicts:
+        for lane_id in conflict["lane_ids"]:
+            conflict_by_lane[lane_id].append(conflict)
+    for row in rows:
+        lane_id = str(row.get("lane_id") or "")
+        row_conflicts = conflict_by_lane.get(lane_id)
+        if not row_conflicts:
+            continue
+        row["is_conflict"] = True
+        row["identity_conflicts"] = row_conflicts
+        row["conflict_reason"] = "; ".join(
+            f"{conflict['key_kind']}={conflict['key_value']}" for conflict in row_conflicts
+        )
 
 
 def fetch_open_prs(
@@ -659,7 +734,12 @@ def build_overlap_report(
     for kind, bucket in signals.items():
         for value, (sources, details) in bucket.items():
             counts[kind] += 1
-            if len(sources) > 1:
+            lane_duplicate = (
+                kind in {"branch", "pr", "worktree_path"}
+                and "agent_bridge_lane" in sources
+                and len(details) > 1
+            )
+            if len(sources) > 1 or lane_duplicate:
                 overlaps.append(
                     {
                         "kind": kind,
@@ -687,6 +767,7 @@ def build_payload(
     skip_codex_desktop: bool = False,
     skip_process_census: bool = False,
     codex_session_scan_limit: int = DEFAULT_CODEX_SESSION_SCAN_LIMIT,
+    include_user_lane_registry: bool = False,
 ) -> dict[str, Any]:
     repo_root = repo_root.resolve()
     codex_home = codex_home.expanduser()
@@ -727,7 +808,10 @@ def build_payload(
     process_census: dict[str, Any] = {}
     if not skip_process_census:
         process_census = detect_agent_process_census(repo_root)
-    agent_bridge_lanes = detect_agent_bridge_lanes(repo_root)
+    agent_bridge_lanes = detect_agent_bridge_lanes(
+        repo_root,
+        include_user_fallback=include_user_lane_registry,
+    )
     open_prs: list[dict[str, Any]] = []
     if not skip_gh:
         open_prs = fetch_open_prs(limit=max_pr_fetch)
@@ -741,6 +825,7 @@ def build_payload(
         open_prs=open_prs,
         agent_bridge_lanes=agent_bridge_lanes,
     )
+    lane_conflicts = lane_identity_conflicts(agent_bridge_lanes)
 
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -752,6 +837,7 @@ def build_payload(
         "skip_gh": skip_gh,
         "skip_codex_desktop": skip_codex_desktop,
         "skip_process_census": skip_process_census,
+        "include_user_lane_registry": include_user_lane_registry,
         "worktrees": worktrees,
         "dispatch_contracts": dispatch_contracts,
         "issue_claims": issue_claims,
@@ -762,10 +848,43 @@ def build_payload(
         "codex_cli_sessions": codex_cli_sessions,
         "process_census": process_census,
         "agent_bridge_lanes": agent_bridge_lanes,
+        "lane_conflicts": lane_conflicts,
         "open_prs": open_prs,
         "overlap_report": overlap,
     }
     return payload
+
+
+def build_conflicts_only_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    overlap = payload.get("overlap_report") or {}
+    overlaps = [
+        row
+        for row in overlap.get("overlaps", [])
+        if "agent_bridge_lane" in set(row.get("sources") or [])
+    ]
+    conflict_lanes = [
+        row
+        for row in payload.get("agent_bridge_lanes", [])
+        if row.get("is_conflict") or row.get("identity_conflicts")
+    ]
+    lane_conflicts = payload.get("lane_conflicts") or []
+    return {
+        "schema_version": payload.get("schema_version"),
+        "generated_at": payload.get("generated_at"),
+        "repo_root": payload.get("repo_root"),
+        "conflict_count": len(lane_conflicts),
+        "conflict_lane_count": len(conflict_lanes),
+        "lane_conflicts": lane_conflicts,
+        "agent_bridge_lanes": conflict_lanes,
+        "overlap_report": {
+            "overlap_count": len(overlaps),
+            "overlaps": overlaps,
+        },
+        "suggested_owner_resolution": (
+            "For each conflict, pause duplicate mutation; compare local HEAD "
+            "to pushed PR/branch head; keep one owner and release the other lane."
+        ),
+    }
 
 
 def render_text(payload: dict[str, Any]) -> str:
@@ -838,7 +957,15 @@ def render_text(payload: dict[str, Any]) -> str:
                 flag = " [ACTIVE]"
             branch = row.get("branch") or "-"
             owner = row.get("owner_session") or "-"
-            lines.append(f"  - {row.get('lane_id')}{flag}  owner={owner}  branch={branch}")
+            label = row.get("desktop_label") or "-"
+            thread_id = str(row.get("codex_thread_id") or "")
+            thread = f"  thread={thread_id[:12]}" if thread_id else ""
+            title = row.get("session_title") or ""
+            title_text = f"  title={str(title)[:48]}" if title else ""
+            lines.append(
+                f"  - {row.get('lane_id')}{flag}  label={label}  "
+                f"owner={owner}{thread}  branch={branch}{title_text}"
+            )
         if len(lanes) > 20:
             lines.append(f"  ... ({len(lanes) - 20} more)")
         lines.append("")
@@ -856,6 +983,22 @@ def render_text(payload: dict[str, Any]) -> str:
     lines.append("")
 
     overlap = payload.get("overlap_report") or {}
+    lane_conflicts = payload.get("lane_conflicts")
+    if isinstance(lane_conflicts, list) and lane_conflicts:
+        lines.append(f"lane conflicts (count={len(lane_conflicts)}):")
+        for conflict in lane_conflicts:
+            if not isinstance(conflict, dict):
+                continue
+            lane_ids = conflict.get("lane_ids")
+            if not isinstance(lane_ids, list):
+                lane_ids = []
+            lines.append(
+                "  - "
+                f"{conflict.get('key_kind')}={conflict.get('key_value')} "
+                f"lanes={','.join(str(lane_id) for lane_id in lane_ids)}"
+            )
+        lines.append("")
+
     lines.append(f"overlap report (count={overlap.get('overlap_count', 0)}):")
     for ov in (overlap.get("overlaps") or [])[:20]:
         sources = "+".join(ov.get("sources") or [])
@@ -916,6 +1059,16 @@ def build_parser() -> argparse.ArgumentParser:
         f"(default: {DEFAULT_CODEX_SESSION_SCAN_LIMIT})",
     )
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--include-user-lane-registry",
+        action="store_true",
+        help="Include legacy ~/.aragora/agent-bridge/lanes.json fallback when no repo registry exists.",
+    )
+    parser.add_argument(
+        "--conflicts-only",
+        action="store_true",
+        help="Emit only active lane conflicts and agent-bridge overlaps.",
+    )
     return parser
 
 
@@ -930,7 +1083,10 @@ def main(argv: list[str] | None = None) -> int:
         skip_codex_desktop=bool(args.skip_codex_desktop),
         skip_process_census=bool(args.skip_process_census),
         codex_session_scan_limit=int(args.codex_session_scan_limit),
+        include_user_lane_registry=bool(args.include_user_lane_registry),
     )
+    if args.conflicts_only:
+        payload = build_conflicts_only_payload(payload)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True, default=str))
     else:

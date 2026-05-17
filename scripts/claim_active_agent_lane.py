@@ -29,12 +29,19 @@ bootstraps and from any agent):
   reader picks it up without modification: ``lane_id``, ``owner_session``,
   ``goal``, ``source``, ``status``, ``next_action``, ``updated_at``,
   ``branch``, ``worktree``, ``pr_number``, ``conflict_session``,
-  ``conflict_reason``.
+  ``conflict_reason``, and optional Desktop identity metadata
+  (``desktop_label``, ``codex_thread_id``, ``codex_rollout_path``,
+  ``session_title``).
 - A claim with the same ``lane_id`` from the same ``owner_session``
   overwrites the existing row (idempotent refresh). A claim with the
   same ``lane_id`` from a *different* ``owner_session`` is rejected
   unless ``--force`` is supplied; the helper exits 2 and prints a
   conflict hint so the caller can pick a different lane name or wait.
+- A mutating active claim is also rejected when a different active owner
+  already claims the same ``pr_number``, ``branch``, or ``worktree``.
+  Different lane IDs cannot silently duplicate work on the same PR or branch.
+  Read-only observers can opt into report-only claim creation with
+  ``--allow-resource-conflicts``.
 - Never deletes rows. Never writes a lane row with a missing
   ``lane_id`` or empty ``owner_session``.
 - Never invokes git, gh, or any network call.
@@ -104,11 +111,18 @@ LANE_RECORD_KEYS = (
     "pr_number",
     "conflict_session",
     "conflict_reason",
+    "desktop_label",
+    "codex_thread_id",
+    "codex_rollout_path",
+    "session_title",
 )
 
 
 class ClaimError(Exception):
     """Raised when a lane claim would conflict with an existing row."""
+
+
+ACTIVE_STATUSES = {"active", "running", "pending", "queued", "claimed"}
 
 
 def _utc_now_iso() -> str:
@@ -178,6 +192,105 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _parse_utc_timestamp(value: object) -> dt.datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip()
+    try:
+        if raw.endswith("Z"):
+            return dt.datetime.fromisoformat(raw[:-1] + "+00:00")
+        parsed = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt.UTC)
+    return parsed.astimezone(dt.UTC)
+
+
+def _identity_claims(row: dict[str, Any]) -> list[tuple[str, str]]:
+    claims: list[tuple[str, str]] = []
+    pr_number = row.get("pr_number")
+    if isinstance(pr_number, int):
+        claims.append(("pr_number", str(pr_number)))
+    branch = str(row.get("branch") or "").strip()
+    if branch:
+        claims.append(("branch", branch))
+    worktree = str(row.get("worktree") or "").strip()
+    if worktree:
+        claims.append(("worktree", worktree))
+    return claims
+
+
+def _active_identity_conflict(
+    *,
+    rows: list[dict[str, Any]],
+    normalized: dict[str, Any],
+    owner_session: str,
+) -> tuple[dict[str, Any], str, str] | None:
+    requested = set(_identity_claims(normalized))
+    if not requested or str(normalized.get("status") or "") not in ACTIVE_STATUSES:
+        return None
+    for existing in rows:
+        if str(existing.get("status") or "") not in ACTIVE_STATUSES:
+            continue
+        existing_owner = str(existing.get("owner_session") or "")
+        if not existing_owner or existing_owner == owner_session:
+            continue
+        overlap = requested.intersection(_identity_claims(existing))
+        if not overlap:
+            continue
+        kind, value = sorted(overlap)[0]
+        return existing, kind, value
+    return None
+
+
+def release_stale_claims(
+    *,
+    registry_path: Path,
+    owner_session: str,
+    ttl_minutes: float,
+    updated_at: str | None = None,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    """Release stale active claims owned by ``owner_session``."""
+    if not owner_session:
+        raise ValueError("owner_session must not be empty")
+    if ttl_minutes < 0:
+        raise ValueError("ttl_minutes must be non-negative")
+
+    with _registry_write_lock(registry_path):
+        rows = _read_existing(registry_path)
+        timestamp = updated_at or _utc_now_iso()
+        now_dt = (now or dt.datetime.now(dt.UTC)).astimezone(dt.UTC)
+        cutoff = now_dt - dt.timedelta(minutes=ttl_minutes)
+        released: list[str] = []
+        out_rows: list[dict[str, Any]] = []
+        for row in rows:
+            row = dict(row)
+            if str(row.get("owner_session") or "") != owner_session:
+                out_rows.append(row)
+                continue
+            if str(row.get("status") or "") not in ACTIVE_STATUSES:
+                out_rows.append(row)
+                continue
+            parsed = _parse_utc_timestamp(row.get("updated_at"))
+            if parsed is None or parsed > cutoff:
+                out_rows.append(row)
+                continue
+            row["status"] = "released"
+            row["updated_at"] = timestamp
+            released.append(str(row.get("lane_id") or ""))
+            out_rows.append(_normalize_row(row))
+
+        _atomic_write(registry_path, out_rows)
+        return {
+            "owner_session": owner_session,
+            "released_count": len(released),
+            "released_lane_ids": released,
+            "registry_path": str(registry_path),
+        }
+
+
 def claim_lane(
     *,
     registry_path: Path,
@@ -192,7 +305,12 @@ def claim_lane(
     pr_number: int | None = None,
     conflict_session: str = "",
     conflict_reason: str = "",
+    desktop_label: str = "",
+    codex_thread_id: str = "",
+    codex_rollout_path: str = "",
+    session_title: str = "",
     force: bool = False,
+    allow_resource_conflicts: bool = False,
     updated_at: str | None = None,
 ) -> dict[str, Any]:
     """Write or refresh a single lane claim, returning the persisted row."""
@@ -220,8 +338,26 @@ def claim_lane(
             "pr_number": pr_number,
             "conflict_session": conflict_session,
             "conflict_reason": conflict_reason,
+            "desktop_label": desktop_label,
+            "codex_thread_id": codex_thread_id,
+            "codex_rollout_path": codex_rollout_path,
+            "session_title": session_title,
         }
         normalized = _normalize_row(new_row)
+
+        identity_conflict = _active_identity_conflict(
+            rows=rows,
+            normalized=normalized,
+            owner_session=owner_session,
+        )
+        if identity_conflict is not None and not allow_resource_conflicts and not force:
+            existing, kind, value = identity_conflict
+            raise ClaimError(
+                f"{kind}={value!r} already claimed by "
+                f"lane_id={existing.get('lane_id')!r} "
+                f"owner_session={existing.get('owner_session')!r}; refusing to "
+                "create overlapping active lane (use --force to override)"
+            )
 
         out_rows: list[dict[str, Any]] = []
         replaced = False
@@ -248,7 +384,7 @@ def claim_lane(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--lane-id", required=True)
+    parser.add_argument("--lane-id", default="")
     parser.add_argument("--owner-session", required=True)
     parser.add_argument("--goal", default="")
     parser.add_argument("--source", default="")
@@ -265,9 +401,49 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--conflict-session", default="")
     parser.add_argument("--conflict-reason", default="")
     parser.add_argument(
+        "--desktop-label",
+        default="",
+        help='Operator-visible Desktop label, e.g. "Boss Codex", "Codex B", or "Review".',
+    )
+    parser.add_argument(
+        "--codex-thread-id",
+        default="",
+        help="Optional Codex Desktop thread id for the visible session.",
+    )
+    parser.add_argument(
+        "--codex-rollout-path",
+        default="",
+        help="Optional Codex rollout JSONL path for the visible session.",
+    )
+    parser.add_argument(
+        "--session-title",
+        default="",
+        help="Optional visible or inferred session title for operator display.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite an existing claim owned by a different session.",
+        help="Overwrite an existing claim or identity conflict owned by a different session.",
+    )
+    parser.add_argument(
+        "--allow-resource-conflicts",
+        action="store_true",
+        help=(
+            "Allow a claim even if another active owner claims the same "
+            "pr_number, branch, or worktree. Default is fail-closed for "
+            "mutating lane ownership."
+        ),
+    )
+    parser.add_argument(
+        "--release-stale",
+        action="store_true",
+        help="Release stale active claims for --owner-session instead of claiming a lane.",
+    )
+    parser.add_argument(
+        "--ttl-minutes",
+        type=float,
+        default=240.0,
+        help="Age threshold for --release-stale (default: 240).",
     )
     parser.add_argument(
         "--registry-path",
@@ -306,22 +482,35 @@ def main(argv: list[str] | None = None) -> int:
         explicit=args.registry_path,
     )
     try:
-        row = claim_lane(
-            registry_path=registry_path,
-            lane_id=args.lane_id,
-            owner_session=args.owner_session,
-            goal=args.goal,
-            source=args.source,
-            status=args.status,
-            next_action=args.next_action,
-            branch=args.branch,
-            worktree=args.worktree,
-            pr_number=args.pr_number,
-            conflict_session=args.conflict_session,
-            conflict_reason=args.conflict_reason,
-            force=args.force,
-            updated_at=args.updated_at,
-        )
+        if args.release_stale:
+            row = release_stale_claims(
+                registry_path=registry_path,
+                owner_session=args.owner_session,
+                ttl_minutes=float(args.ttl_minutes),
+                updated_at=args.updated_at,
+            )
+        else:
+            row = claim_lane(
+                registry_path=registry_path,
+                lane_id=args.lane_id,
+                owner_session=args.owner_session,
+                goal=args.goal,
+                source=args.source,
+                status=args.status,
+                next_action=args.next_action,
+                branch=args.branch,
+                worktree=args.worktree,
+                pr_number=args.pr_number,
+                conflict_session=args.conflict_session,
+                conflict_reason=args.conflict_reason,
+                desktop_label=args.desktop_label,
+                codex_thread_id=args.codex_thread_id,
+                codex_rollout_path=args.codex_rollout_path,
+                session_title=args.session_title,
+                force=args.force,
+                allow_resource_conflicts=args.allow_resource_conflicts,
+                updated_at=args.updated_at,
+            )
     except ClaimError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -331,6 +520,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json:
         print(json.dumps(row, indent=2, sort_keys=True))
+    elif args.release_stale:
+        print(
+            f"released {row['released_count']} stale lane(s) for "
+            f"owner={row['owner_session']} registry={registry_path}"
+        )
     else:
         print(
             f"claimed lane_id={row['lane_id']} owner={row['owner_session']} "

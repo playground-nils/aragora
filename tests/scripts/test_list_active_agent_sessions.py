@@ -456,6 +456,7 @@ def test_build_payload_assembles_top_level_keys(tmp_path: Path) -> None:
         "skip_gh",
         "skip_codex_desktop",
         "skip_process_census",
+        "include_user_lane_registry",
         "worktrees",
         "dispatch_contracts",
         "issue_claims",
@@ -473,6 +474,7 @@ def test_build_payload_assembles_top_level_keys(tmp_path: Path) -> None:
     assert payload["generated_at"] == "2026-05-17T12:00:00Z"
     assert payload["skip_gh"] is True
     assert payload["skip_process_census"] is True
+    assert payload["include_user_lane_registry"] is False
     assert payload["overlap_report"]["overlap_count"] == 0
 
 
@@ -629,7 +631,7 @@ def test_detect_agent_bridge_lanes_reads_repo_local_registry(tmp_path: Path) -> 
     assert phase4["conflict_session"] == "claude-X"
 
 
-def test_detect_agent_bridge_lanes_falls_back_to_user_home(tmp_path: Path) -> None:
+def test_detect_agent_bridge_lanes_does_not_read_user_home_by_default(tmp_path: Path) -> None:
     user_registry = tmp_path / "user-home" / "lanes.json"
     user_registry.parent.mkdir(parents=True)
     user_registry.write_text(
@@ -648,6 +650,34 @@ def test_detect_agent_bridge_lanes_falls_back_to_user_home(tmp_path: Path) -> No
     repo_root = tmp_path / "repo-without-aragora"
     repo_root.mkdir()
     out = detector.detect_agent_bridge_lanes(repo_root, user_path=user_registry)
+    assert out == []
+
+
+def test_detect_agent_bridge_lanes_falls_back_to_user_home_when_requested(
+    tmp_path: Path,
+) -> None:
+    user_registry = tmp_path / "user-home" / "lanes.json"
+    user_registry.parent.mkdir(parents=True)
+    user_registry.write_text(
+        json.dumps(
+            [
+                {
+                    "lane_id": "user-only-lane",
+                    "owner_session": "claude-C",
+                    "status": "running",
+                    "branch": "claude/user-only",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    repo_root = tmp_path / "repo-without-aragora"
+    repo_root.mkdir()
+    out = detector.detect_agent_bridge_lanes(
+        repo_root,
+        user_path=user_registry,
+        include_user_fallback=True,
+    )
     assert len(out) == 1
     assert out[0]["lane_id"] == "user-only-lane"
     assert out[0]["branch"] == "claude/user-only"
@@ -721,12 +751,81 @@ def test_detect_agent_bridge_lanes_skips_rows_without_lane_id(tmp_path: Path) ->
     assert [r["lane_id"] for r in out] == ["real-lane"]
 
 
+def test_detect_agent_bridge_lanes_marks_duplicate_active_pr_conflicts(tmp_path: Path) -> None:
+    registry = tmp_path / ".aragora" / "agent-bridge" / "lanes.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "owner_session": "codex-A",
+                    "status": "active",
+                    "pr_number": 7245,
+                    "branch": "worktree-codex-insights",
+                },
+                {
+                    "lane_id": "lane-b",
+                    "owner_session": "codex-B",
+                    "status": "active",
+                    "pr_number": 7245,
+                    "branch": "worktree-codex-insights",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    out = detector.detect_agent_bridge_lanes(
+        tmp_path,
+        user_path=tmp_path / "missing.json",
+    )
+
+    assert {row["lane_id"] for row in out if row["is_conflict"]} == {"lane-a", "lane-b"}
+    assert detector.lane_identity_conflicts(out)[0]["key_kind"] == "branch"
+
+
+def test_detect_agent_bridge_lanes_does_not_conflict_released_lanes(tmp_path: Path) -> None:
+    registry = tmp_path / ".aragora" / "agent-bridge" / "lanes.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "owner_session": "codex-A",
+                    "status": "released",
+                    "pr_number": 7245,
+                    "branch": "worktree-codex-insights",
+                },
+                {
+                    "lane_id": "lane-b",
+                    "owner_session": "codex-B",
+                    "status": "active",
+                    "pr_number": 7245,
+                    "branch": "worktree-codex-insights",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    out = detector.detect_agent_bridge_lanes(
+        tmp_path,
+        user_path=tmp_path / "missing.json",
+    )
+
+    assert detector.lane_identity_conflicts(out) == []
+    assert not any(row["is_conflict"] for row in out)
+
+
 def test_build_overlap_report_flags_lane_branch_against_worktree() -> None:
     report = detector.build_overlap_report(
         worktrees=[{"path": "/tmp/wt-a", "branch": "droid/phase3-20260517"}],
         dispatch_contracts=[],
         issue_claims=[],
         automation_outbox=[],
+        codex_cli_sessions=[],
         open_prs=[],
         agent_bridge_lanes=[
             {
@@ -764,6 +863,7 @@ def test_build_overlap_report_includes_conflict_lanes() -> None:
         dispatch_contracts=[],
         issue_claims=[],
         automation_outbox=[],
+        codex_cli_sessions=[],
         open_prs=[],
         agent_bridge_lanes=[
             {
@@ -781,6 +881,40 @@ def test_build_overlap_report_includes_conflict_lanes() -> None:
     assert "agent_bridge_lane" in overlaps_by_value["shared"]["sources"]
 
 
+def test_build_overlap_report_flags_duplicate_active_lane_pr() -> None:
+    report = detector.build_overlap_report(
+        worktrees=[],
+        dispatch_contracts=[],
+        issue_claims=[],
+        automation_outbox=[],
+        codex_cli_sessions=[],
+        open_prs=[],
+        agent_bridge_lanes=[
+            {
+                "lane_id": "lane-a",
+                "owner_session": "codex-A",
+                "status": "active",
+                "pr_number": 7245,
+                "is_active": True,
+                "is_conflict": True,
+            },
+            {
+                "lane_id": "lane-b",
+                "owner_session": "codex-B",
+                "status": "active",
+                "pr_number": 7245,
+                "is_active": True,
+                "is_conflict": True,
+            },
+        ],
+    )
+
+    overlaps_by_value = {ov["value"]: ov for ov in report["overlaps"]}
+    assert "7245" in overlaps_by_value
+    assert overlaps_by_value["7245"]["sources"] == ["agent_bridge_lane"]
+    assert overlaps_by_value["7245"]["details"] == ["lane-a", "lane-b"]
+
+
 def test_build_overlap_report_skips_released_lanes() -> None:
     """A released lane (no longer active and not in conflict) must not be
     folded into the overlap report so completed lanes don't keep blocking
@@ -790,6 +924,7 @@ def test_build_overlap_report_skips_released_lanes() -> None:
         dispatch_contracts=[],
         issue_claims=[],
         automation_outbox=[],
+        codex_cli_sessions=[],
         open_prs=[],
         agent_bridge_lanes=[
             {
@@ -820,6 +955,10 @@ def test_build_payload_includes_agent_bridge_lanes(tmp_path: Path) -> None:
                     "owner_session": "claude-A",
                     "status": "active",
                     "branch": "droid/embedded",
+                    "desktop_label": "Codex B",
+                    "codex_thread_id": "019e-test-thread",
+                    "codex_rollout_path": "/Users/armand/.codex/sessions/rollout.jsonl",
+                    "session_title": "Cross-Agent Collision Control",
                 }
             ]
         ),
@@ -837,6 +976,10 @@ def test_build_payload_includes_agent_bridge_lanes(tmp_path: Path) -> None:
     assert "agent_bridge_lanes" in payload
     assert len(payload["agent_bridge_lanes"]) == 1
     assert payload["agent_bridge_lanes"][0]["lane_id"] == "droid/embedded"
+    assert payload["agent_bridge_lanes"][0]["desktop_label"] == "Codex B"
+    assert payload["agent_bridge_lanes"][0]["codex_thread_id"] == "019e-test-thread"
+    assert payload["agent_bridge_lanes"][0]["codex_rollout_path"].endswith("rollout.jsonl")
+    assert payload["agent_bridge_lanes"][0]["session_title"] == "Cross-Agent Collision Control"
 
 
 def test_render_text_includes_lane_section() -> None:
@@ -858,6 +1001,9 @@ def test_render_text_includes_lane_section() -> None:
                 "owner_session": "claude-A",
                 "status": "active",
                 "branch": "droid/phase3-20260517",
+                "desktop_label": "Codex B",
+                "codex_thread_id": "019e-test-thread",
+                "session_title": "Cross-Agent Collision Control",
                 "is_active": True,
                 "is_conflict": False,
             },
@@ -877,14 +1023,69 @@ def test_render_text_includes_lane_section() -> None:
     assert "agent_bridge lanes (2 total, 1 active, 1 conflict)" in text
     assert "[ACTIVE]" in text
     assert "[CONFLICT]" in text
+    assert "label=Codex B" in text
+    assert "thread=019e-test-th" in text
+    assert "title=Cross-Agent Collision Control" in text
     assert "droid/phase3" in text
     assert "droid/phase4" in text
 
 
-def test_schema_version_bumped_for_lane_registry() -> None:
-    """The schema bump (1 -> 2) reflects the new ``agent_bridge_lanes`` top-
-    level key. Consumers that pinned to schema_version=1 should adapt."""
-    assert detector.SCHEMA_VERSION == 2
+def test_build_conflicts_only_payload_filters_to_lane_conflicts() -> None:
+    payload = {
+        "schema_version": 2,
+        "generated_at": "2026-05-17T12:00:00Z",
+        "repo_root": "/repo",
+        "agent_bridge_lanes": [
+            {
+                "lane_id": "lane-a",
+                "owner_session": "codex-A",
+                "is_active": True,
+                "is_conflict": True,
+                "identity_conflicts": [{"key_kind": "pr_number", "key_value": "7245"}],
+            },
+            {
+                "lane_id": "lane-z",
+                "owner_session": "codex-Z",
+                "is_active": True,
+                "is_conflict": False,
+            },
+        ],
+        "lane_conflicts": [
+            {
+                "key_kind": "pr_number",
+                "key_value": "7245",
+                "lane_ids": ["lane-a", "lane-b"],
+            }
+        ],
+        "overlap_report": {
+            "overlaps": [
+                {
+                    "kind": "pr",
+                    "value": "7245",
+                    "sources": ["agent_bridge_lane"],
+                    "details": ["lane-a", "lane-b"],
+                },
+                {
+                    "kind": "branch",
+                    "value": "main",
+                    "sources": ["git_worktree"],
+                    "details": ["/repo"],
+                },
+            ]
+        },
+    }
+
+    out = detector.build_conflicts_only_payload(payload)
+
+    assert out["conflict_count"] == 1
+    assert out["conflict_lane_count"] == 1
+    assert [row["lane_id"] for row in out["agent_bridge_lanes"]] == ["lane-a"]
+    assert out["overlap_report"]["overlap_count"] == 1
+
+
+def test_schema_version_bumped_for_lane_desktop_metadata() -> None:
+    """The schema bump reflects optional Desktop label/thread metadata on lanes."""
+    assert detector.SCHEMA_VERSION == 3
 
 
 def test_active_lane_statuses_match_agent_bridge() -> None:
