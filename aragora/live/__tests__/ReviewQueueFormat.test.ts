@@ -6,6 +6,7 @@ import {
   ciGlyph,
   formatAge,
   formatDecisionSeconds,
+  tierBadge,
   toneColor,
   verdictGlyph,
 } from '../src/components/review-queue/format';
@@ -85,5 +86,58 @@ describe('toneColor', () => {
     expect(toneColor('warn')).toContain('yellow');
     expect(toneColor('fail')).toContain('red');
     expect(toneColor('neutral')).toContain('slate');
+  });
+});
+
+describe('tierBadge', () => {
+  it('returns null when no tier provided', () => {
+    expect(tierBadge(null)).toBeNull();
+    expect(tierBadge(undefined)).toBeNull();
+    expect(tierBadge('')).toBeNull();
+    expect(tierBadge('   ')).toBeNull();
+  });
+
+  it('maps each known tier to the documented tone', () => {
+    expect(tierBadge('0')?.tone).toBe('ok');
+    expect(tierBadge('1')?.tone).toBe('ok');
+    expect(tierBadge('2')?.tone).toBe('warn');
+    expect(tierBadge('3')?.tone).toBe('fail');
+    expect(tierBadge('4')?.tone).toBe('fail');
+  });
+
+  it('emits a compact label and a descriptive fullLabel for each known tier', () => {
+    expect(tierBadge('0')).toMatchObject({
+      label: 'T0',
+      fullLabel: expect.stringContaining('docs'),
+    });
+    expect(tierBadge('1')).toMatchObject({
+      label: 'T1',
+      fullLabel: expect.stringContaining('additive'),
+    });
+    expect(tierBadge('2')).toMatchObject({
+      label: 'T2',
+      fullLabel: expect.stringContaining('automation'),
+    });
+    expect(tierBadge('3')).toMatchObject({
+      label: 'T3',
+      fullLabel: expect.stringContaining('risk acceptance'),
+    });
+    expect(tierBadge('4')).toMatchObject({
+      label: 'T4',
+      fullLabel: expect.stringContaining('preapproval'),
+    });
+  });
+
+  it('accepts numeric tier values (settlement-packet receipts emit ints)', () => {
+    expect(tierBadge(0)?.label).toBe('T0');
+    expect(tierBadge(2)?.label).toBe('T2');
+    expect(tierBadge(4)?.label).toBe('T4');
+  });
+
+  it('falls back to a neutral badge for unknown tier strings', () => {
+    const badge = tierBadge('99');
+    expect(badge).not.toBeNull();
+    expect(badge?.label).toBe('T99');
+    expect(badge?.tone).toBe('neutral');
   });
 });

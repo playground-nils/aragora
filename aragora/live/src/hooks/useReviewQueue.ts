@@ -35,6 +35,13 @@ export interface ReviewQueuePR {
   verdict: string | null;
   confidence: number | null;
   deferred: boolean;
+  /**
+   * Optional tier classification per `docs/REVIEW_AUTHORITY_PRINCIPLES.md`
+   * (string '0'..'4'). When the backend returns no tier, the UI hides the
+   * badge — additive, no migration required. Settlement-packet receipts
+   * populate this field from their per-PR `tier` classification.
+   */
+  tier?: string | null;
 }
 
 export interface ReviewQueueListResponse {

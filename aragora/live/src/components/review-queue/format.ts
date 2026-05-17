@@ -68,3 +68,41 @@ export function toneColor(tone: 'ok' | 'warn' | 'fail' | 'neutral'): string {
       return 'text-slate-400';
   }
 }
+
+/**
+ * Map a tier classification (per docs/REVIEW_AUTHORITY_PRINCIPLES.md, lines 26-38)
+ * into a compact badge descriptor. Tier values are strings to match the JSON
+ * receipt payload shape; we accept null/undefined and return null in that case
+ * so callers can render `tierBadge(pr.tier) && <Badge ... />`.
+ *
+ * | Tier | Class | Settlement |
+ * | --- | --- | --- |
+ * | 0 | Docs/tests/status only | Admin squash allowed |
+ * | 1 | Additive internal code | Admin squash allowed |
+ * | 2 | Live CLI/automation/observability | Admin squash allowed |
+ * | 3 | Semantic/persistence/security/public API | Human risk acceptance required |
+ * | 4 | Secrets/deployment/policy/merge-gate | Human preapproval required |
+ */
+export function tierBadge(tier: string | number | null | undefined): {
+  label: string;
+  fullLabel: string;
+  tone: 'ok' | 'warn' | 'fail' | 'neutral';
+} | null {
+  if (tier === null || tier === undefined) return null;
+  const value = String(tier).trim();
+  if (!value) return null;
+  switch (value) {
+    case '0':
+      return { label: 'T0', fullLabel: 'Tier 0 — docs/tests', tone: 'ok' };
+    case '1':
+      return { label: 'T1', fullLabel: 'Tier 1 — additive code', tone: 'ok' };
+    case '2':
+      return { label: 'T2', fullLabel: 'Tier 2 — live CLI/automation', tone: 'warn' };
+    case '3':
+      return { label: 'T3', fullLabel: 'Tier 3 — needs human risk acceptance', tone: 'fail' };
+    case '4':
+      return { label: 'T4', fullLabel: 'Tier 4 — needs human preapproval', tone: 'fail' };
+    default:
+      return { label: `T${value}`, fullLabel: `Tier ${value}`, tone: 'neutral' };
+  }
+}

@@ -81,6 +81,52 @@ describe('ReviewQueueCard', () => {
     expect(screen.getByText(/by armand/)).toBeInTheDocument();
   });
 
+  it('hides the tier badge when no tier is provided (additive default)', () => {
+    render(
+      <ReviewQueueCard
+        pr={makePR()}
+        selected={false}
+        expanded={false}
+        onSelect={jest.fn()}
+        onToggleExpand={jest.fn()}
+        onSettle={jest.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('review-queue-tier-42')).not.toBeInTheDocument();
+  });
+
+  it('renders a Tier badge when the PR record carries a tier', () => {
+    render(
+      <ReviewQueueCard
+        pr={makePR({ tier: '2' })}
+        selected={false}
+        expanded={false}
+        onSelect={jest.fn()}
+        onToggleExpand={jest.fn()}
+        onSettle={jest.fn()}
+      />,
+    );
+    const badge = screen.getByTestId('review-queue-tier-42');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('T2');
+    expect(badge).toHaveAttribute('title', expect.stringContaining('automation'));
+  });
+
+  it('uses a fail-toned color for Tier 4 (needs human preapproval)', () => {
+    render(
+      <ReviewQueueCard
+        pr={makePR({ tier: '4' })}
+        selected={false}
+        expanded={false}
+        onSelect={jest.fn()}
+        onToggleExpand={jest.fn()}
+        onSettle={jest.fn()}
+      />,
+    );
+    const badge = screen.getByTestId('review-queue-tier-42');
+    expect(badge.className).toContain('red');
+  });
+
   it('approves silently when no brief exists yet', async () => {
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const onSettle = jest.fn().mockResolvedValue(undefined);

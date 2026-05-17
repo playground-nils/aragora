@@ -7,6 +7,7 @@ import { BriefPanel } from './BriefPanel';
 import {
   ciGlyph,
   formatAge,
+  tierBadge,
   toneColor,
   verdictGlyph,
 } from './format';
@@ -40,6 +41,7 @@ export function ReviewQueueCard({
 }: ReviewQueueCardProps) {
   const ci = ciGlyph(pr.ci);
   const verdict = verdictGlyph(pr.brief_present, pr.verdict);
+  const tier = tierBadge(pr.tier);
   const [pendingAction, setPendingAction] = useState<SettlementAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reasonDraft, setReasonDraft] = useState('');
@@ -350,6 +352,19 @@ export function ReviewQueueCard({
                 <span aria-hidden="true">·</span>
                 <span className={toneColor(verdict.tone)} title={verdict.label}>
                   brief: {verdict.glyph} {verdict.label}
+                </span>
+              </>
+            )}
+            {tier && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span
+                  className={toneColor(tier.tone)}
+                  title={tier.fullLabel}
+                  aria-label={tier.fullLabel}
+                  data-testid={`review-queue-tier-${pr.number}`}
+                >
+                  {tier.label}
                 </span>
               </>
             )}
