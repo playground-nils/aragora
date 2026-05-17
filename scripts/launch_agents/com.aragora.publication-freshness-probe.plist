@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Template macOS LaunchAgent for the publication-freshness probe.
+
+    What it does (when installed):
+      Runs `scripts/publish_publication_freshness_probe.py --render-markdown`
+      every 4 hours so the receipt at
+      `docs/status/generated/publication_freshness_probe/latest.json` and
+      the human-readable surface at
+      `docs/status/PUBLICATION_FRESHNESS_PROBE_STATUS.md` stay current
+      without an operator running the command manually.
+
+    Important: this file is a TEMPLATE. It is NOT installed by any
+    automation in this repository. To install it on a personal
+    workstation:
+
+      1. Open this file and replace `__ARAGORA_REPO_ROOT__` (8 occurrences)
+         with the absolute path to your Aragora checkout.
+      2. Replace `__ARAGORA_PYTHON__` with the absolute path to the
+         Python you want the probe to run with (e.g. the venv interpreter
+         `<repo>/.venv/bin/python3`).
+      3. Optionally edit `StartInterval` (seconds) for a different cadence.
+         Default 14400 = 4 hours.
+      4. Copy the rendered file to
+         `~/Library/LaunchAgents/com.aragora.publication-freshness-probe.plist`
+         then run:
+            launchctl unload  ~/Library/LaunchAgents/com.aragora.publication-freshness-probe.plist  2>/dev/null || true
+            launchctl load    ~/Library/LaunchAgents/com.aragora.publication-freshness-probe.plist
+
+    Or use the companion install script which performs steps 1-4 for you:
+      bash scripts/install_publication_freshness_probe_launchd.sh
+
+    The probe is read-only with respect to source files; it only writes
+    receipts under `docs/status/generated/publication_freshness_probe/`
+    and refreshes `docs/status/PUBLICATION_FRESHNESS_PROBE_STATUS.md`.
+    It does not dispatch agents, modify the benchmark corpus, or change
+    any flags. Uninstall at any time with:
+      launchctl unload ~/Library/LaunchAgents/com.aragora.publication-freshness-probe.plist
+      rm              ~/Library/LaunchAgents/com.aragora.publication-freshness-probe.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aragora.publication-freshness-probe</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd "__ARAGORA_REPO_ROOT__" &amp;&amp; "__ARAGORA_PYTHON__" scripts/publish_publication_freshness_probe.py --render-markdown</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__ARAGORA_REPO_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>14400</integer>
+
+    <key>StandardOutPath</key>
+    <string>__ARAGORA_REPO_ROOT__/.worktrees/publication-freshness-probe.log</string>
+    <key>StandardErrorPath</key>
+    <string>__ARAGORA_REPO_ROOT__/.worktrees/publication-freshness-probe.log</string>
+</dict>
+</plist>
