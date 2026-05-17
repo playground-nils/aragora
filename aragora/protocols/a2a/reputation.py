@@ -1,22 +1,15 @@
 """A2A agent reputation read endpoint — AGT-02 / #6063 sub-deliverable 5.
 
-Machine-readable per-domain reputation summary so external agents can
-discover their own (or a peer agent's) epistemic track record without
-reading the human-facing reputation dashboard.
+Machine-readable per-domain reputation summary for external agents.
 
-Gate: ``ARAGORA_A2A_REPUTATION_ENABLED`` (default off).  Dataclasses are
-always importable; :func:`read_agent_reputation` and
-:func:`read_all_agents` raise :class:`ReputationEndpointError` when the
-gate is off.
+Gate: ``ARAGORA_A2A_REPUTATION_ENABLED`` (default off). Dataclasses are
+always importable; read functions raise :class:`ReputationEndpointError`
+when the gate is off.
 
-**Read-only.** This module has no write path.  Reputation deltas are
-recorded only by the AGT-05 settlement flow
-(:mod:`aragora.reputation.settlement`).
+Read-only: no write path. Deltas are recorded only by the AGT-05
+settlement flow (:mod:`aragora.reputation.settlement`).
 
-Out of scope: HTTP routes, pagination, decay policy configuration,
-per-domain threshold enforcement, on-chain reads (deferred to the
-ERC-8004 KM adapter wiring in a follow-on PR).
-
+Out of scope: HTTP routes, pagination, on-chain ERC-8004 reads (deferred).
 Advances: AGT-02 (#6063) sub-deliverable 5.
 See also: ``docs/plans/AGENT_CONSUMER_SURFACE.md`` §S5.
 """
@@ -64,13 +57,7 @@ class ReputationEndpointError(RuntimeError):
 
 @dataclass(frozen=True)
 class DomainReputationSlice:
-    """Reputation summary for one domain within an agent's track record.
-
-    ``score`` is the time-decayed running sum of all deltas in this domain.
-    ``delta_count`` is the raw count (including reversed deltas).
-    ``most_recent_delta_at`` is the ISO-8601 timestamp of the latest delta,
-    or ``None`` when the agent has no deltas in this domain.
-    """
+    """Per-domain reputation summary within an agent's track record."""
 
     domain: str
     score: float
@@ -88,15 +75,7 @@ class DomainReputationSlice:
 
 @dataclass(frozen=True)
 class AgentReputationView:
-    """Agent-readable reputation summary for one agent.
-
-    Returned by :func:`read_agent_reputation`.  Callers can serialise
-    directly via :meth:`to_dict`.
-
-    ``overall_score`` is the decayed aggregate across all domains.
-    ``domains`` is sorted alphabetically for stable serialisation.
-    ``queried_at`` is the ISO-8601 UTC timestamp of this read.
-    """
+    """Agent-readable reputation summary for one agent."""
 
     agent_id: str
     schema_version: str
@@ -123,14 +102,12 @@ def _domain_slices(
     apply_decay: bool,
     now: datetime,
 ) -> tuple[DomainReputationSlice, ...]:
-    """Build per-domain slices from the raw delta history."""
     from aragora.reputation.store import _decay_weight  # type: ignore[attr-defined]
 
     raw_deltas = store.deltas_for(agent_id)
     if not raw_deltas:
         return ()
 
-    # Group by domain
     by_domain: dict[str, list[Any]] = {}
     for d in raw_deltas:
         by_domain.setdefault(d.domain, []).append(d)
@@ -142,13 +119,12 @@ def _domain_slices(
             if apply_decay
             else sum(d.delta for d in deltas)
         )
-        most_recent = max((d.applied_at for d in deltas), default=None)
         slices.append(
             DomainReputationSlice(
                 domain=domain,
                 score=score,
                 delta_count=len(deltas),
-                most_recent_delta_at=most_recent,
+                most_recent_delta_at=max((d.applied_at for d in deltas), default=None),
             )
         )
     return tuple(slices)
@@ -163,31 +139,19 @@ def read_agent_reputation(
 ) -> AgentReputationView:
     """Return the per-domain reputation view for *agent_id*.
 
-    When *agent_id* has no recorded deltas the view is returned with
-    ``overall_score=0.0`` and an empty ``domains`` list — the endpoint
-    never raises for unknown agents.
-
-    Args:
-        agent_id: The agent whose reputation is being read.
-        store: Live :class:`~aragora.reputation.store.ReputationStore`.
-        apply_decay: Apply exponential time-decay (default True).
-        now: Reference timestamp for decay calculation; defaults to UTC now.
+    Unknown agents return a zero-score view; this never raises for missing agents.
 
     Raises:
-        ReputationEndpointError: When ``ARAGORA_A2A_REPUTATION_ENABLED``
-            is not set.
+        ReputationEndpointError: When ``ARAGORA_A2A_REPUTATION_ENABLED`` is not set.
     """
     _require_enabled()
     reference = now or datetime.now(tz=UTC)
-    overall = store.get_score(agent_id, apply_decay=apply_decay)
-    raw_deltas = store.deltas_for(agent_id)
-    slices = _domain_slices(agent_id, store, apply_decay=apply_decay, now=reference)
     return AgentReputationView(
         agent_id=agent_id,
         schema_version=AGENT_REPUTATION_SCHEMA_VERSION,
-        overall_score=overall,
-        delta_count=len(raw_deltas),
-        domains=slices,
+        overall_score=store.get_score(agent_id, apply_decay=apply_decay),
+        delta_count=len(store.deltas_for(agent_id)),
+        domains=_domain_slices(agent_id, store, apply_decay=apply_decay, now=reference),
         queried_at=reference.isoformat().replace("+00:00", "Z"),
     )
 
@@ -198,15 +162,10 @@ def read_all_agents(
     apply_decay: bool = True,
     now: datetime | None = None,
 ) -> list[AgentReputationView]:
-    """Return reputation views for every agent in *store*, sorted by overall score.
-
-    The list is sorted descending by ``overall_score`` so the top agent
-    comes first.  Agents with identical scores are sub-sorted by
-    ``agent_id`` for determinism.
+    """Return views for every agent in *store*, sorted descending by overall score.
 
     Raises:
-        ReputationEndpointError: When ``ARAGORA_A2A_REPUTATION_ENABLED``
-            is not set.
+        ReputationEndpointError: When ``ARAGORA_A2A_REPUTATION_ENABLED`` is not set.
     """
     _require_enabled()
     reference = now or datetime.now(tz=UTC)
