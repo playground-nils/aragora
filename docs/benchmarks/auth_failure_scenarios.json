@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "kind": "blocked_auth_failure_scenarios",
+  "terminal_class": "blocked_auth_failure",
+  "description": "Canonical fixture scenarios for the blocked_auth_failure rescue class. Each entry shapes a real-world auth-failure pattern observed in boss_metrics.jsonl rows or dispatch preflight checks, paired with the expected terminal-class classification and the operator-actionable remediation. Tests at tests/benchmarks/test_auth_failure_scenarios.py confirm each shape maps to the existing TerminalClass.BLOCKED_AUTH_FAILURE via aragora.swarm.terminal_truth.classify_from_metrics or classify_preflight_failure without spawning real agents.",
+  "source_evidence": [
+    "boss_metrics.jsonl rows where worker_outcome contains 'auth' substring (~25% of B0 ticks)",
+    "preflight check failures matching _PREFLIGHT_AUTH_HINTS in aragora/swarm/terminal_truth.py",
+    "rescue ledger entries flagged under terminal_classes=['blocked_auth_failure'] in docs/benchmarks/corpus.json"
+  ],
+  "scenarios": [
+    {
+      "id": "auth-001-gh-cli-not-authenticated",
+      "name": "gh CLI not authenticated (login expired)",
+      "trigger_kind": "preflight_check",
+      "preflight_check": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "gh_auth",
+            "passed": false,
+            "detail": "gh: not logged in — run gh auth login"
+          }
+        ]
+      },
+      "expected_terminal_class": "blocked_auth_failure",
+      "expected_triggered_hints": ["not logged"],
+      "remediation": "Run `gh auth login` or refresh `GH_TOKEN` env var; ensure the boss-loop launchd inherits the rotated token via `launchctl bootout && launchctl bootstrap`."
+    },
+    {
+      "id": "auth-002-http-401",
+      "name": "GitHub API HTTP 401 — token expired or invalid",
+      "trigger_kind": "preflight_check",
+      "preflight_check": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "gh_api_probe",
+            "passed": false,
+            "detail": "HTTP 401 Unauthorized when calling api.github.com/user"
+          }
+        ]
+      },
+      "expected_terminal_class": "blocked_auth_failure",
+      "expected_triggered_hints": ["http 401"],
+      "remediation": "Rotate the GitHub App installation token (or rotate `ARAGORA_BOSS_LOOP_GH_TOKEN`); reload any launchd-managed services that inherit the env."
+    },
+    {
+      "id": "auth-003-http-403-forbidden",
+      "name": "GitHub API HTTP 403 — token scope insufficient or rate-limited",
+      "trigger_kind": "preflight_check",
+      "preflight_check": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "gh_api_probe",
+            "passed": false,
+            "detail": "HTTP 403 Forbidden — insufficient OAuth scopes (need 'repo')"
+          }
+        ]
+      },
+      "expected_terminal_class": "blocked_auth_failure",
+      "expected_triggered_hints": ["http 403", "forbidden"],
+      "remediation": "Verify token scopes include `repo` and `workflow`; if rate-limited, wait or switch to a GitHub App installation token with separate rate-limit budget."
+    },
+    {
+      "id": "auth-004-permission-denied-push",
+      "name": "Permission denied on git push (branch protection or auth misconfig)",
+      "trigger_kind": "preflight_check",
+      "preflight_check": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "git_push_probe",
+            "passed": false,
+            "detail": "Permission denied (publickey). Could not push to refs/heads/feature-x."
+          }
+        ]
+      },
+      "expected_terminal_class": "blocked_auth_failure",
+      "expected_triggered_hints": ["permission denied"],
+      "remediation": "Confirm SSH key is loaded (`ssh-add -l`) or HTTPS credentials are valid; for protected branches, verify the push targets a non-protected branch first."
+    },
+    {
+      "id": "auth-005-worker-outcome-auth-substring",
+      "name": "Worker run terminated with auth-related outcome (metrics row classifier path)",
+      "trigger_kind": "metrics_row",
+      "metrics_row": {
+        "worker_status": "failed",
+        "worker_outcome": "auth_token_expired",
+        "publish_action": "",
+        "files_changed": 0,
+        "elapsed_seconds": 12.4,
+        "has_deliverable": false
+      },
+      "expected_terminal_class": "blocked_auth_failure",
+      "expected_triggered_hints": ["auth"],
+      "remediation": "Same as auth-002; worker exit-code 'auth_token_expired' or any other outcome substring matching `auth` is routed to BLOCKED_AUTH_FAILURE by aragora.swarm.terminal_truth.classify_from_metrics line 132-133."
+    }
+  ]
+}
