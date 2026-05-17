@@ -39,8 +39,9 @@ def test_cli_codex_sessions_parent_prints_help(capsys: pytest.CaptureFixture[str
 
     assert args.func(args) == 2
     out = capsys.readouterr().out
-    assert "List, summarize, or tail Codex Desktop sessions" in out
+    assert "List, brief, summarize, or tail Codex Desktop sessions" in out
     assert "list" in out
+    assert "brief" in out
     assert "show" in out
 
 
@@ -310,6 +311,222 @@ def test_cli_show_unknown_target(fake_codex_home, capsys: pytest.CaptureFixture[
     )
     assert rc == 1
     assert "could not resolve" in capsys.readouterr().err
+
+
+# -- brief --------------------------------------------------------------------
+
+
+def _append_rollout_event(path: Path, event: dict) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event) + "\n")
+
+
+def test_cli_brief_json_redacts_raw_transcript(
+    fake_codex_home, capsys: pytest.CaptureFixture[str]
+) -> None:  # type: ignore[no-untyped-def]
+    _append_rollout_event(
+        fake_codex_home.recent_rollout,
+        {
+            "timestamp": "2026-05-16T13:54:00.000Z",
+            "type": "agent_message",
+            "payload": {
+                "role": "user",
+                "content": "Tell Codex B to watch #7283 with sk-proj-FAKE-BRIEF-SECRET",
+            },
+        },
+    )
+
+    rc = cli.cmd_codex_sessions_brief(
+        _args(
+            since="4h",
+            include_archived=False,
+            limit=50,
+            include_last_turns=0,
+            group_by=None,
+            session=None,
+            repo_root=None,
+            json=True,
+        )
+    )
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    payload = json.loads(out)
+    assert payload["schema"] == "aragora-codex-sessions-brief/1.0"
+    assert payload["count"] >= 1
+    assert "Tell Codex B" not in out
+    assert "sk-proj-FAKE-BRIEF-SECRET" not in out
+    assert any(7283 in row["pr_mentions"] for row in payload["briefs"])
+
+
+def test_cli_brief_include_last_turns_stays_summary_only(
+    fake_codex_home, capsys: pytest.CaptureFixture[str]
+) -> None:  # type: ignore[no-untyped-def]
+    _append_rollout_event(
+        fake_codex_home.recent_rollout,
+        {
+            "timestamp": "2026-05-16T13:54:00.000Z",
+            "type": "agent_message",
+            "payload": {
+                "role": "assistant",
+                "content": "I reviewed #7285 and saw Bearer ghp_FAKELEAK12345678901234",
+            },
+        },
+    )
+
+    rc = cli.cmd_codex_sessions_brief(
+        _args(
+            since="4h",
+            include_archived=False,
+            limit=50,
+            include_last_turns=2,
+            group_by=None,
+            session=fake_codex_home.recent_thread_id[:13],
+            repo_root=None,
+            json=True,
+        )
+    )
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+
+    assert rc == 0
+    assert payload["count"] == 1
+    assert payload["briefs"][0]["recent_turns"]
+    assert "I reviewed #7285" not in out
+    assert "ghp_FAKELEAK12345678901234" not in out
+
+
+def test_cli_brief_groups_by_branch(fake_codex_home, capsys: pytest.CaptureFixture[str]) -> None:  # type: ignore[no-untyped-def]
+    rc = cli.cmd_codex_sessions_brief(
+        _args(
+            since="4h",
+            include_archived=False,
+            limit=50,
+            include_last_turns=0,
+            group_by="branch",
+            session=None,
+            repo_root=None,
+            json=True,
+        )
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload["group_by"] == "branch"
+    assert "main" in payload["groups"]
+    assert fake_codex_home.recent_thread_id in payload["groups"]["main"]
+
+
+def test_cli_brief_unknown_session_is_paste_needed(
+    fake_codex_home, capsys: pytest.CaptureFixture[str]
+) -> None:  # type: ignore[no-untyped-def]
+    rc = cli.cmd_codex_sessions_brief(
+        _args(
+            since="4h",
+            include_archived=False,
+            limit=50,
+            include_last_turns=0,
+            group_by=None,
+            session="ffffffffabcd",
+            repo_root=None,
+            json=True,
+        )
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload["count"] == 1
+    assert payload["briefs"][0]["router"]["category"] == "paste-needed"
+    assert "Paste the last 2-4 turns" in payload["briefs"][0]["router"]["recommended_next_prompt"]
+
+
+def test_cli_brief_compact_awaiting_prompts_filters_and_redacts(
+    fake_codex_home, capsys: pytest.CaptureFixture[str]
+) -> None:  # type: ignore[no-untyped-def]
+    _append_rollout_event(
+        fake_codex_home.recent_rollout,
+        {
+            "timestamp": "2026-05-16T13:55:00.000Z",
+            "type": "agent_message",
+            "payload": {
+                "role": "assistant",
+                "content": "Finished review of #7286 with sk-proj-FAKE-COMPACT-SECRET.",
+            },
+        },
+    )
+
+    rc = cli.cmd_codex_sessions_brief(
+        _args(
+            since="4h",
+            include_archived=False,
+            limit=50,
+            include_last_turns=0,
+            group_by=None,
+            session=fake_codex_home.recent_thread_id[:13],
+            repo_root=None,
+            compact=True,
+            awaiting_prompts=True,
+            json=True,
+        )
+    )
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+
+    assert rc == 0
+    assert payload["compact"] is True
+    assert payload["awaiting_prompts"] is True
+    assert payload["count"] == 1
+    row = payload["briefs"][0]
+    assert set(row) >= {
+        "id",
+        "title_summary",
+        "prompt_needed",
+        "prompt_needed_reason",
+        "route",
+        "conflict_risk",
+        "recommended_next_prompt",
+    }
+    assert row["prompt_needed"] is True
+    assert row["prompt_needed_reason"] == "assistant_final_recent"
+    assert "Finished review" not in out
+    assert "sk-proj-FAKE-COMPACT-SECRET" not in out
+
+
+def test_collect_repo_context_reads_active_lane_records_from_registry(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    registry = repo / ".aragora" / "agent-bridge" / "lanes.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps(
+            [
+                {
+                    "lane_id": "released",
+                    "owner_session": "codex-old",
+                    "status": "released",
+                    "branch": "old",
+                },
+                {
+                    "lane_id": "Q04-cross-agent-collision-control",
+                    "owner_session": "codex-q04",
+                    "status": "active",
+                    "branch": "codex/cross-agent-collision-control-20260517",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    context = cli._collect_repo_context(str(repo))
+
+    assert context["active_lanes"] == ["Q04-cross-agent-collision-control"]
+    assert context["active_lane_records"] == [
+        {
+            "lane_id": "Q04-cross-agent-collision-control",
+            "owner_session": "codex-q04",
+            "status": "active",
+            "branch": "codex/cross-agent-collision-control-20260517",
+        }
+    ]
 
 
 def test_cli_tail_rejects_non_positive_interval(
