@@ -27,6 +27,8 @@ def _context(tmp_path: Path, **overrides: Any) -> Any:
         "repo": tmp_path,
         "base": "origin/main",
         "base_sha": "base-sha",
+        "repo_remote_urls": {"https://example.test/target"},
+        "strict_repo_identity": False,
         "outbox_dir": tmp_path / ".aragora" / "automation-outbox",
         "receipt_dir": tmp_path / ".aragora" / "automation-receipts",
         "worktrees_by_path": {},
@@ -89,6 +91,61 @@ def _stub_clean_git(
         ),
     )
     monkeypatch.setattr(mod, "is_patch_equivalent", lambda *_args, **_kwargs: patch_equivalent)
+
+
+def test_default_scan_preserves_foreign_repo_as_lookup_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_value_inventory as mod
+
+    root = _candidate(tmp_path)
+    _stub_clean_git(monkeypatch, ahead=0)
+    monkeypatch.setattr(
+        mod, "repo_remote_urls", lambda *_args, **_kwargs: {"https://example.test/other"}
+    )
+
+    candidate = mod.classify_candidate(
+        root,
+        context=_context(
+            tmp_path,
+            strict_repo_identity=True,
+            repo_remote_urls={"https://example.test/target"},
+        ),
+        size_bytes=1024,
+        size_lookup_failed=False,
+    )
+
+    assert candidate.classification == "lookup_failed"
+    assert candidate.cleanup_candidate is False
+    assert candidate.decision == "preserve"
+    assert "repo identity does not match target repo" in candidate.proof
+    assert "repo identity does not match target repo" in candidate.git.lookup_errors
+
+
+def test_explicit_root_scan_allows_foreign_repo_for_backwards_compat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_value_inventory as mod
+
+    root = _candidate(tmp_path)
+    _stub_clean_git(monkeypatch, ahead=0)
+    monkeypatch.setattr(
+        mod, "repo_remote_urls", lambda *_args, **_kwargs: {"https://example.test/other"}
+    )
+
+    candidate = mod.classify_candidate(
+        root,
+        context=_context(
+            tmp_path,
+            strict_repo_identity=False,
+            repo_remote_urls={"https://example.test/target"},
+        ),
+        size_bytes=1024,
+        size_lookup_failed=False,
+    )
+
+    assert candidate.classification == "unregistered_git_residue"
+    assert candidate.cleanup_candidate is True
 
 
 def test_no_git_cache_residue_is_cleanup_candidate(tmp_path: Path) -> None:

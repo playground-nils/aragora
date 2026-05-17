@@ -116,6 +116,8 @@ class InventoryContext:
     repo: Path
     base: str
     base_sha: str | None
+    repo_remote_urls: set[str]
+    strict_repo_identity: bool
     outbox_dir: Path
     receipt_dir: Path
     worktrees_by_path: dict[str, WorktreeEntry]
@@ -164,6 +166,31 @@ def resolve_ref(repo: Path, ref: str, *, timeout: int = 30) -> str | None:
     if proc.returncode != 0:
         return None
     return proc.stdout.strip() or None
+
+
+def normalize_remote_url(url: str) -> str:
+    value = url.strip()
+    if value.endswith(".git"):
+        value = value[:-4]
+    if value.startswith("git@"):
+        host_path = value.removeprefix("git@").replace(":", "/", 1)
+        value = f"https://{host_path}"
+    if value.startswith("ssh://git@"):
+        value = f"https://{value.removeprefix('ssh://git@')}"
+    return value.rstrip("/").lower()
+
+
+def repo_remote_urls(repo: Path, *, timeout: int = 30) -> set[str]:
+    proc = run_git(["config", "--get-regexp", r"^remote\..*\.url$"], repo, timeout=timeout)
+    if proc.returncode != 0:
+        return set()
+    urls: set[str] = set()
+    for line in proc.stdout.splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        urls.add(normalize_remote_url(parts[1]))
+    return urls
 
 
 def parse_worktree_list(repo: Path, *, timeout: int = 30) -> dict[str, WorktreeEntry]:
@@ -258,6 +285,22 @@ def find_repo_path(candidate_root: Path) -> Path | None:
         if (path / ".git").exists():
             return path
     return None
+
+
+def repo_identity_matches_target(
+    repo_path: Path,
+    *,
+    context: InventoryContext,
+    registered: WorktreeEntry | None,
+) -> bool:
+    if repo_path.resolve() == context.repo.resolve():
+        return True
+    if registered is not None:
+        return True
+    candidate_urls = repo_remote_urls(repo_path, timeout=context.git_timeout)
+    return bool(
+        candidate_urls and context.repo_remote_urls and candidate_urls & context.repo_remote_urls
+    )
 
 
 def active_lock_files(candidate_root: Path, repo_path: Path | None) -> list[str]:
@@ -440,6 +483,26 @@ def classify_candidate(
 
     registered = context.worktrees_by_path.get(str(repo_path.resolve()))
     git.registered_worktree = registered is not None
+
+    if context.strict_repo_identity and not repo_identity_matches_target(
+        repo_path,
+        context=context,
+        registered=registered,
+    ):
+        git.lookup_failed = True
+        git.lookup_errors.append("repo identity does not match target repo")
+        return build_candidate(
+            candidate_root,
+            repo_path,
+            size_bytes,
+            size_lookup_failed,
+            "lookup_failed",
+            active_session,
+            lock_files,
+            git,
+            links,
+            ["repo identity does not match target repo"],
+        )
 
     branch, branch_failed, branch_error = git_branch(
         repo_path, registered, timeout=context.git_timeout
@@ -744,6 +807,7 @@ def inventory(
 ) -> dict[str, Any]:
     repo = resolve_repo(repo)
     base_sha = resolve_ref(repo, base, timeout=git_timeout)
+    explicit_roots = bool(root is not None or roots)
     if roots is None:
         roots = [root] if root is not None else []
     if not roots:
@@ -754,6 +818,8 @@ def inventory(
         repo=repo,
         base=base,
         base_sha=base_sha,
+        repo_remote_urls=repo_remote_urls(repo, timeout=git_timeout),
+        strict_repo_identity=not explicit_roots,
         outbox_dir=outbox_dir if outbox_dir.is_absolute() else repo / outbox_dir,
         receipt_dir=receipt_dir if receipt_dir.is_absolute() else repo / receipt_dir,
         worktrees_by_path=parse_worktree_list(repo, timeout=git_timeout),
