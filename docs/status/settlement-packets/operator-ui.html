@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aragora — Operator Settlement UI</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b21;
+      --panel-2: #1f232b;
+      --border: #2a2f38;
+      --text: #e7ebf0;
+      --muted: #8d96a3;
+      --accent: #4fb6ff;
+      --ok: #6cd18a;
+      --warn: #f1c463;
+      --bad: #ff6f6f;
+      --hold: #c489ff;
+      --code: #2e333d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.5;
+    }
+    h1 { margin-top: 0; font-size: 22px; }
+    h2 { font-size: 16px; margin-top: 28px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .meta { color: var(--muted); font-size: 13px; }
+    .meta code { background: var(--code); padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .load-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .load-row input[type="file"] { flex: 1; min-width: 200px; color: var(--muted); }
+    .load-row input[type="text"] {
+      flex: 1; min-width: 320px;
+      background: var(--code); color: var(--text);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 6px 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+    }
+    button {
+      background: var(--accent); color: #0f1115;
+      border: none; border-radius: 4px;
+      padding: 8px 16px; font-weight: 600; cursor: pointer; font-size: 13px;
+    }
+    button:hover { filter: brightness(1.1); }
+    button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+    .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+    .stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+    .pr-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
+    .pr-card .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .pr-card .num { font-size: 17px; font-weight: 600; color: var(--accent); }
+    .pr-card .head { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+    .pr-card .title { font-size: 14px; margin-top: 2px; }
+    .pr-card .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--code); border: 1px solid var(--border); }
+    .badge.tier { font-weight: 600; }
+    .badge.tier-0, .badge.tier-1 { background: rgba(108,209,138,0.15); color: var(--ok); border-color: var(--ok); }
+    .badge.tier-2 { background: rgba(241,196,99,0.15); color: var(--warn); border-color: var(--warn); }
+    .badge.tier-3 { background: rgba(255,111,111,0.15); color: var(--bad); border-color: var(--bad); }
+    .badge.tier-4 { background: rgba(196,137,255,0.15); color: var(--hold); border-color: var(--hold); }
+    .badge.draft { background: var(--code); color: var(--muted); }
+    .badge.ready { background: rgba(79,182,255,0.15); color: var(--accent); border-color: var(--accent); }
+    .badge.fail { background: rgba(255,111,111,0.18); color: var(--bad); border-color: var(--bad); }
+    .badge.inflight { background: rgba(241,196,99,0.15); color: var(--warn); border-color: var(--warn); }
+    .action-note { color: var(--muted); font-size: 12px; margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .decision-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .decision-row label {
+      display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+      font-size: 12px; cursor: pointer;
+    }
+    .decision-row label.selected { border-color: var(--accent); background: rgba(79,182,255,0.10); }
+    .decision-row label.holdable.selected { border-color: var(--hold); background: rgba(196,137,255,0.10); }
+    .comment-row { margin-top: 8px; }
+    .comment-row textarea {
+      width: 100%; min-height: 32px; max-height: 120px;
+      background: var(--code); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--text); padding: 6px 10px; font-family: inherit; font-size: 12px; resize: vertical;
+    }
+    .actions { position: sticky; bottom: 0; background: var(--bg); padding-top: 12px; padding-bottom: 8px; border-top: 1px solid var(--border); margin-top: 24px; }
+    .actions .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    pre.preview { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 12px; font-size: 11px; overflow-x: auto; max-height: 240px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Aragora — Operator Settlement UI</h1>
+      <div class="meta">
+        Sign off on PR-settlement packet decisions.
+        <span id="sourcePath" class="muted">(no receipt loaded)</span>
+      </div>
+    </div>
+    <div>
+      <button class="secondary" id="reloadBtn">Reload</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>1. Load a settlement-packet receipt</h2>
+    <p class="muted">
+      Pick a receipt JSON file emitted by a settlement packet
+      (e.g. <code>docs/receipts/open-queue-settlement-&lt;utc-ts&gt;.json</code>).
+      No network calls beyond <code>127.0.0.1</code>; processing is entirely local.
+    </p>
+    <div class="load-row">
+      <input type="file" id="receiptFile" accept=".json" />
+      <span class="muted">or fetch by relative path:</span>
+      <input type="text" id="receiptPath" placeholder="../receipts/open-queue-settlement-20260517T142811Z.json" />
+      <button id="fetchBtn">Fetch</button>
+    </div>
+  </div>
+
+  <div id="errorBox" class="panel hidden" style="border-color: var(--bad); color: var(--bad);"></div>
+
+  <div id="summarySection" class="hidden">
+    <div class="panel">
+      <h2>2. Summary</h2>
+      <div class="stats" id="statsGrid"></div>
+      <div class="muted" style="margin-top: 12px;">
+        Receipt SHA-256: <code id="receiptSha"></code>
+        | HMAC: <code id="receiptHmac"></code>
+        | Generated: <code id="receiptTs"></code>
+      </div>
+    </div>
+
+    <div id="prList"></div>
+
+    <div class="actions">
+      <h2 style="margin: 0 0 12px 0;">3. Capture decisions</h2>
+      <div class="row">
+        <input type="text" id="operatorId"
+               placeholder="operator id (e.g. armand@synaptent.com)"
+               style="flex: 1; min-width: 260px; background: var(--code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px;" />
+        <button id="downloadBtn">Download signed decision receipt (JSON)</button>
+        <button class="secondary" id="copyBtn">Copy decisions to clipboard</button>
+        <button class="secondary" id="previewBtn">Toggle preview</button>
+      </div>
+      <pre id="previewBox" class="preview hidden" style="margin-top: 12px;"></pre>
+      <div class="muted" style="margin-top: 8px;">
+        The downloaded JSON is SHA-256-bound to the source receipt and contains no secrets.
+        Commit it under <code>docs/receipts/operator-decisions-&lt;utc-ts&gt;.json</code>,
+        or paste it into a PR comment on the source settlement-packet PR.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    'use strict';
+
+    /*
+     * Defensive DOM construction throughout — every dynamic value is set via
+     * .textContent or createElement + setAttribute. No innerHTML calls on
+     * trees that include receipt-derived data. Eliminates XSS surface.
+     */
+
+    let receiptPayload = null;
+    let receiptCanonicalSha = null;
+    let receiptSourcePath = null;
+    const decisions = {};
+
+    const DECISION_OPTIONS = [
+      { id: 'approve_tier',      label: 'APPROVE this tier' },
+      { id: 'approve_downgrade', label: 'APPROVE downgraded' },
+      { id: 'request_changes',   label: 'REQUEST changes' },
+      { id: 'reject',            label: 'REJECT' },
+      { id: 'hold_operator',     label: 'HOLD (operator-only)' },
+    ];
+
+    function el(tag, props = {}, children = []) {
+      const node = document.createElement(tag);
+      for (const [k, v] of Object.entries(props)) {
+        if (k === 'className') node.className = v;
+        else if (k === 'textContent') node.textContent = v;
+        else if (k === 'dataset') for (const [dk, dv] of Object.entries(v)) node.dataset[dk] = dv;
+        else if (k === 'style') for (const [sk, sv] of Object.entries(v)) node.style[sk] = sv;
+        else if (k.startsWith('on')) node.addEventListener(k.slice(2).toLowerCase(), v);
+        else node.setAttribute(k, v);
+      }
+      for (const child of children) {
+        if (child == null) continue;
+        node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+      }
+      return node;
+    }
+
+    function clearChildren(parent) { while (parent.firstChild) parent.removeChild(parent.firstChild); }
+
+    function showError(msg) {
+      const box = document.getElementById('errorBox');
+      box.textContent = msg;
+      box.classList.remove('hidden');
+    }
+    function clearError() {
+      const box = document.getElementById('errorBox');
+      box.classList.add('hidden');
+      box.textContent = '';
+    }
+
+    document.getElementById('receiptFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        await loadReceipt(JSON.parse(text), file.name);
+      } catch (err) {
+        showError('Failed to parse receipt file: ' + err.message);
+      }
+    });
+
+    document.getElementById('fetchBtn').addEventListener('click', fetchReceiptByPath);
+    document.getElementById('reloadBtn').addEventListener('click', () => window.location.reload());
+    document.getElementById('downloadBtn').addEventListener('click', generateDecisionReceipt);
+    document.getElementById('copyBtn').addEventListener('click', copyDecisionsToClipboard);
+    document.getElementById('previewBtn').addEventListener('click', togglePreview);
+
+    async function fetchReceiptByPath() {
+      const path = document.getElementById('receiptPath').value.trim();
+      if (!path) { showError('Provide a relative path to a receipt JSON.'); return; }
+      try {
+        const resp = await fetch(path);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
+        const data = await resp.json();
+        await loadReceipt(data, path);
+      } catch (err) {
+        showError('Failed to fetch receipt at ' + path + ': ' + err.message);
+      }
+    }
+
+    async function loadReceipt(data, sourcePath) {
+      clearError();
+      if (!data || !Array.isArray(data.pinned_state)) {
+        showError('Receipt JSON is missing pinned_state[]; not a settlement-packet receipt.');
+        return;
+      }
+      receiptPayload = data;
+      receiptSourcePath = sourcePath;
+      document.getElementById('sourcePath').textContent = 'loaded from ' + sourcePath;
+      const claimed = String(data.sha256 || '');
+      const verifyCopy = Object.assign({}, data);
+      delete verifyCopy.sha256;
+      delete verifyCopy.hmac_sha256;
+      delete verifyCopy.signed_at_utc;
+      receiptCanonicalSha = await sha256Canonical(verifyCopy);
+      const shaEl = document.getElementById('receiptSha');
+      shaEl.textContent = receiptCanonicalSha +
+        (receiptCanonicalSha === claimed
+          ? '  ✅ matches'
+          : '  ❌ MISMATCH (claimed ' + claimed.slice(0, 12) + '…)');
+      document.getElementById('receiptHmac').textContent = data.hmac_sha256
+        ? String(data.hmac_sha256).slice(0, 24) + '…'
+        : '(unsigned)';
+      document.getElementById('receiptTs').textContent = String(data.generated_at_utc || '(unknown)');
+      renderSummary();
+      renderPRs();
+      document.getElementById('summarySection').classList.remove('hidden');
+    }
+
+    function renderSummary() {
+      const grid = document.getElementById('statsGrid');
+      clearChildren(grid);
+      const items = receiptPayload.pinned_state || [];
+      const counts = {
+        total: items.length,
+        ready: items.filter(p => !p.draft).length,
+        draft: items.filter(p => p.draft).length,
+        with_failures: items.filter(p => (p.failures || 0) > 0).length,
+        with_inflight: items.filter(p => (p.in_flight || 0) > 0).length,
+        by_tier: {},
+      };
+      items.forEach(p => {
+        const t = String(p.tier);
+        counts.by_tier[t] = (counts.by_tier[t] || 0) + 1;
+      });
+      const blocks = [
+        { label: 'Total PRs', value: counts.total },
+        { label: 'Ready', value: counts.ready },
+        { label: 'Draft', value: counts.draft },
+        { label: 'With failures', value: counts.with_failures },
+        { label: 'With in-flight', value: counts.with_inflight },
+      ];
+      Object.keys(counts.by_tier).sort().forEach(t => {
+        blocks.push({ label: 'Tier ' + t, value: counts.by_tier[t] });
+      });
+      blocks.forEach(b => {
+        grid.appendChild(el('div', { className: 'stat' }, [
+          el('div', { className: 'label', textContent: b.label }),
+          el('div', { className: 'value', textContent: String(b.value) }),
+        ]));
+      });
+    }
+
+    function renderPRs() {
+      const list = document.getElementById('prList');
+      clearChildren(list);
+      (receiptPayload.pinned_state || []).forEach(p => {
+        const tier = String(p.tier == null ? '?' : p.tier);
+        const card = el('div', { className: 'pr-card' });
+
+        const topRow = el('div', { className: 'top-row' });
+
+        const leftCol = el('div');
+        leftCol.appendChild(el('div', { className: 'num', textContent: '#' + String(p.number) }));
+        leftCol.appendChild(el('div', { className: 'head', textContent: String(p.head_sha || '') }));
+        leftCol.appendChild(el('div', { className: 'title', textContent: String(p.title || '(no title)') }));
+
+        const badges = el('div', { className: 'badges' });
+        badges.appendChild(el('span', { className: 'badge tier tier-' + tier, textContent: 'Tier ' + tier }));
+        badges.appendChild(el('span', {
+          className: 'badge ' + (p.draft ? 'draft' : 'ready'),
+          textContent: p.draft ? 'draft' : 'ready',
+        }));
+        if ((p.failures || 0) > 0) {
+          badges.appendChild(el('span', { className: 'badge fail', textContent: String(p.failures) + ' fail' }));
+        }
+        if ((p.in_flight || 0) > 0) {
+          badges.appendChild(el('span', { className: 'badge inflight', textContent: String(p.in_flight) + ' in-flight' }));
+        }
+        badges.appendChild(el('span', { className: 'badge', textContent: 'decision: ' + String(p.decision || '-') }));
+        badges.appendChild(el('span', { className: 'badge', textContent: 'merge: ' + String(p.merge_state || '-') }));
+
+        topRow.appendChild(leftCol);
+        topRow.appendChild(badges);
+        card.appendChild(topRow);
+
+        const action = String(p.recommended_action || '').slice(0, 200);
+        card.appendChild(el('div', { className: 'action-note', textContent: 'Recommended: ' + action }));
+
+        const decisionRow = el('div', {
+          className: 'decision-row',
+          dataset: { pr: String(p.number) },
+        });
+        DECISION_OPTIONS.forEach(opt => {
+          const label = el('label', {
+            className: opt.id === 'hold_operator' ? 'holdable' : '',
+          });
+          const input = el('input', {
+            type: 'radio',
+            name: 'decision-' + String(p.number),
+            value: opt.id,
+            onChange: () => markDecision(p.number, opt.id),
+          });
+          label.appendChild(input);
+          label.appendChild(document.createTextNode(' ' + opt.label));
+          decisionRow.appendChild(label);
+        });
+        card.appendChild(decisionRow);
+
+        const commentRow = el('div', { className: 'comment-row' });
+        const textarea = el('textarea', {
+          placeholder: 'Optional comment for #' + String(p.number) +
+            " (e.g. 'downgrade to Tier 1 because flag-gated default-off')",
+          onChange: (e) => setComment(p.number, e.target.value),
+        });
+        commentRow.appendChild(textarea);
+        card.appendChild(commentRow);
+
+        list.appendChild(card);
+      });
+    }
+
+    function markDecision(prNumber, decisionId) {
+      decisions[prNumber] = decisions[prNumber] || {};
+      decisions[prNumber].decision = decisionId;
+      const row = document.querySelector('.decision-row[data-pr="' + String(prNumber) + '"]');
+      if (row) {
+        row.querySelectorAll('label').forEach(l => {
+          const input = l.querySelector('input');
+          if (input && input.value === decisionId) l.classList.add('selected');
+          else l.classList.remove('selected');
+        });
+      }
+      refreshPreview();
+    }
+
+    function setComment(prNumber, comment) {
+      decisions[prNumber] = decisions[prNumber] || {};
+      decisions[prNumber].comment = comment;
+      refreshPreview();
+    }
+
+    function buildDecisionPayload() {
+      const operator = document.getElementById('operatorId').value.trim();
+      const items = (receiptPayload.pinned_state || []).map(p => ({
+        number: p.number,
+        head_sha: p.head_sha,
+        tier_observed: p.tier,
+        decision: (decisions[p.number] && decisions[p.number].decision) || null,
+        comment: (decisions[p.number] && decisions[p.number].comment) || '',
+      }));
+      return {
+        schema_version: 'aragora-operator-decision-receipt/1.0',
+        generated_at_utc: new Date().toISOString(),
+        operator: operator || '(unset)',
+        source_receipt: {
+          path: receiptSourcePath,
+          sha256: receiptCanonicalSha,
+          generated_at_utc: receiptPayload.generated_at_utc,
+        },
+        decisions: items,
+        decisions_made: items.filter(i => i.decision).length,
+        decisions_pending: items.filter(i => !i.decision).length,
+      };
+    }
+
+    async function refreshPreview() {
+      const box = document.getElementById('previewBox');
+      if (box.classList.contains('hidden')) return;
+      const payload = buildDecisionPayload();
+      box.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    function togglePreview() {
+      const box = document.getElementById('previewBox');
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden')) refreshPreview();
+    }
+
+    async function generateDecisionReceipt() {
+      const payload = buildDecisionPayload();
+      const sha = await sha256Canonical(payload);
+      payload.sha256 = sha;
+      const text = JSON.stringify(payload, null, 2) + '\n';
+      const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, 'Z');
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'operator-decisions-' + ts + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    async function copyDecisionsToClipboard() {
+      const payload = buildDecisionPayload();
+      payload.sha256 = await sha256Canonical(payload);
+      const text = '```json\n' + JSON.stringify(payload, null, 2) + '\n```';
+      try {
+        await navigator.clipboard.writeText(text);
+        window.alert('Decisions copied to clipboard (as a fenced JSON block ready for a PR comment).');
+      } catch (err) {
+        showError('Clipboard copy failed: ' + err.message);
+      }
+    }
+
+    async function sha256Canonical(obj) {
+      const canonical = canonicalJson(obj);
+      const bytes = new TextEncoder().encode(canonical);
+      const hash = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function canonicalJson(value) {
+      // Matches python: json.dumps(obj, sort_keys=True, separators=(',', ':'))
+      if (value === null) return 'null';
+      if (typeof value === 'number') return Number.isFinite(value) ? JSON.stringify(value) : 'null';
+      if (typeof value === 'string') return JSON.stringify(value);
+      if (typeof value === 'boolean') return value ? 'true' : 'false';
+      if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+      if (typeof value === 'object') {
+        const keys = Object.keys(value).sort();
+        return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
+      }
+      return JSON.stringify(value);
+    }
+  </script>
+</body>
+</html>
