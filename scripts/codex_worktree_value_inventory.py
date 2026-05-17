@@ -16,10 +16,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
 import tempfile
+import time
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -131,6 +133,25 @@ class InventoryContext:
 
 def utc_now() -> datetime:
     return datetime.now(UTC).replace(microsecond=0)
+
+
+def runtime_deadline(max_runtime_seconds: float | None) -> float | None:
+    if max_runtime_seconds is None:
+        return None
+    return time.monotonic() + max_runtime_seconds
+
+
+def runtime_budget_exhausted(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline
+
+
+def bounded_timeout(requested_timeout: int, deadline: float | None) -> int:
+    if deadline is None:
+        return requested_timeout
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return 1
+    return max(1, min(requested_timeout, math.ceil(remaining)))
 
 
 def run_cmd(args: list[str], cwd: Path, *, timeout: int) -> subprocess.CompletedProcess[str]:
@@ -831,25 +852,32 @@ def inventory(
     git_timeout: int,
     gh_timeout: int,
     patch_timeout: int,
+    max_runtime_seconds: float | None = None,
 ) -> dict[str, Any]:
+    started_monotonic = time.monotonic()
+    deadline = runtime_deadline(max_runtime_seconds)
     repo = resolve_repo(repo)
-    base_sha = resolve_ref(repo, base, timeout=git_timeout)
+    base_sha = resolve_ref(repo, base, timeout=bounded_timeout(git_timeout, deadline))
     explicit_roots = bool(root is not None or roots)
     if roots is None:
         roots = [root] if root is not None else []
     if not roots:
         roots = resolve_default_roots(repo)
     candidate_paths = candidate_roots_from(roots, limit)
-    sizes, size_failures = measure_sizes(candidate_paths, mode=size_mode, timeout=size_timeout)
+    sizes, size_failures = measure_sizes(
+        candidate_paths,
+        mode=size_mode,
+        timeout=bounded_timeout(size_timeout, deadline),
+    )
     context = InventoryContext(
         repo=repo,
         base=base,
         base_sha=base_sha,
-        repo_remote_urls=repo_remote_urls(repo, timeout=git_timeout),
+        repo_remote_urls=repo_remote_urls(repo, timeout=bounded_timeout(git_timeout, deadline)),
         strict_repo_identity=not explicit_roots,
         outbox_dir=outbox_dir if outbox_dir.is_absolute() else repo / outbox_dir,
         receipt_dir=receipt_dir if receipt_dir.is_absolute() else repo / receipt_dir,
-        worktrees_by_path=parse_worktree_list(repo, timeout=git_timeout),
+        worktrees_by_path=parse_worktree_list(repo, timeout=bounded_timeout(git_timeout, deadline)),
         unresolved_outbox_branches=unresolved_outbox_handoff_branches(
             repo,
             outbox_dir=outbox_dir,
@@ -865,16 +893,33 @@ def inventory(
         gh_timeout=gh_timeout,
         patch_timeout=patch_timeout,
     )
-    candidates = [
-        classify_candidate(
-            path,
-            context=context,
-            size_bytes=sizes.get(str(path)),
-            size_lookup_failed=str(path) in size_failures,
+    candidates: list[WorktreeCandidate] = []
+    truncated_by_runtime_budget = False
+    for path in candidate_paths:
+        if runtime_budget_exhausted(deadline):
+            truncated_by_runtime_budget = True
+            break
+        candidates.append(
+            classify_candidate(
+                path,
+                context=context,
+                size_bytes=sizes.get(str(path)),
+                size_lookup_failed=str(path) in size_failures,
+            )
         )
-        for path in candidate_paths
-    ]
+    candidates_skipped = len(candidate_paths) - len(candidates)
+    if candidates_skipped:
+        truncated_by_runtime_budget = True
     now = utc_now().isoformat()
+    summary = build_summary(candidates)
+    summary.update(
+        {
+            "candidate_count_total": len(candidate_paths),
+            "candidate_count_scanned": len(candidates),
+            "candidates_skipped_by_runtime_budget": candidates_skipped,
+            "truncated_by_runtime_budget": truncated_by_runtime_budget,
+        }
+    )
     payload = {
         "schema": SCHEMA,
         "generated_at": now,
@@ -885,7 +930,9 @@ def inventory(
         "base_sha": base_sha,
         "size_mode": size_mode,
         "limit": limit,
-        "summary": build_summary(candidates),
+        "max_runtime_seconds": max_runtime_seconds,
+        "runtime_elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
+        "summary": summary,
         "candidates": [asdict(candidate) for candidate in candidates],
     }
     return payload
@@ -964,6 +1011,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--git-timeout", type=int, default=30)
     parser.add_argument("--gh-timeout", type=int, default=30)
     parser.add_argument("--patch-timeout", type=int, default=45)
+    parser.add_argument(
+        "--max-runtime-seconds",
+        type=float,
+        help=(
+            "Best-effort global runtime budget. Size measurement timeout is capped by "
+            "the remaining budget and candidate classification stops before starting "
+            "another candidate once the budget is exhausted."
+        ),
+    )
     parser.add_argument("--skip-gh", action="store_true")
     parser.add_argument("--write-ledger", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="Suppress ledger writes.")
@@ -973,6 +1029,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.max_runtime_seconds is not None and args.max_runtime_seconds <= 0:
+        print("error: --max-runtime-seconds must be > 0", file=sys.stderr)
+        return 2
     if args.root:
         resolved_roots: list[Path] | None = [item.expanduser().resolve() for item in args.root]
     else:
@@ -990,6 +1049,7 @@ def main(argv: list[str] | None = None) -> int:
         git_timeout=args.git_timeout,
         gh_timeout=args.gh_timeout,
         patch_timeout=args.patch_timeout,
+        max_runtime_seconds=args.max_runtime_seconds,
     )
     if args.write_ledger and not args.dry_run:
         payload["ledger_written"] = write_ledger(args.ledger_root, payload)
@@ -1006,6 +1066,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"coverage: {summary['inventory_coverage']:.2%}")
         print(f"cleanup_candidates: {summary['cleanup_candidate_count']}")
         print(f"harvest_candidates: {summary['harvest_candidate_count']}")
+        if summary.get("truncated_by_runtime_budget"):
+            print(
+                "runtime_budget: "
+                f"scanned {summary['candidate_count_scanned']} / "
+                f"{summary['candidate_count_total']} candidates; "
+                f"skipped {summary['candidates_skipped_by_runtime_budget']}"
+            )
         print("classes:")
         for name, count in summary["count_by_class"].items():
             print(f"  {name}: {count}")

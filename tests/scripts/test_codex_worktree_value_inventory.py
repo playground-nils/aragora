@@ -515,6 +515,137 @@ def test_candidate_roots_from_skips_missing_roots(tmp_path: Path) -> None:
     assert result == [root_a / "alpha"]
 
 
+def test_inventory_runtime_budget_truncates_candidate_processing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_value_inventory as mod
+
+    root = tmp_path / "root"
+    for name in ("alpha", "beta", "gamma"):
+        (root / name).mkdir(parents=True)
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(mod, "resolve_repo", lambda _repo: tmp_path)
+    monkeypatch.setattr(mod, "resolve_ref", lambda *_args, **_kwargs: "base-sha")
+    monkeypatch.setattr(mod, "repo_remote_urls", lambda *_args, **_kwargs: set())
+    monkeypatch.setattr(mod, "parse_worktree_list", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(mod, "unresolved_outbox_handoff_branches", lambda *_args, **_kwargs: set())
+    monkeypatch.setattr(
+        mod,
+        "terminal_receipted_handoff_branch_heads",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        mod,
+        "measure_sizes",
+        lambda paths, **_kwargs: ({str(path): 0 for path in paths}, set()),
+    )
+
+    def fake_classify(path: Path, **_kwargs: Any) -> Any:
+        now[0] += 2.0
+        return mod.build_candidate(
+            path,
+            None,
+            0,
+            False,
+            "no_git_cache_residue",
+            False,
+            [],
+            mod.GitInfo(),
+            {"open_prs": [], "outbox_files": [], "receipt_files": []},
+            ["fake candidate"],
+        )
+
+    monkeypatch.setattr(mod, "classify_candidate", fake_classify)
+
+    payload = mod.inventory(
+        roots=[root],
+        repo=tmp_path,
+        base="origin/main",
+        outbox_dir=tmp_path / "outbox",
+        receipt_dir=tmp_path / "receipts",
+        limit=None,
+        size_mode="stat",
+        size_timeout=120,
+        skip_gh=True,
+        git_timeout=30,
+        gh_timeout=30,
+        patch_timeout=30,
+        max_runtime_seconds=1,
+    )
+
+    summary = payload["summary"]
+    assert summary["candidate_count_total"] == 3
+    assert summary["candidate_count_scanned"] == 1
+    assert summary["candidates_skipped_by_runtime_budget"] == 2
+    assert summary["truncated_by_runtime_budget"] is True
+    assert len(payload["candidates"]) == 1
+
+
+def test_inventory_runtime_budget_caps_size_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_value_inventory as mod
+
+    root = tmp_path / "root"
+    (root / "alpha").mkdir(parents=True)
+    captured: dict[str, int] = {}
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(mod, "resolve_repo", lambda _repo: tmp_path)
+    monkeypatch.setattr(mod, "resolve_ref", lambda *_args, **_kwargs: "base-sha")
+    monkeypatch.setattr(mod, "repo_remote_urls", lambda *_args, **_kwargs: set())
+    monkeypatch.setattr(mod, "parse_worktree_list", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(mod, "unresolved_outbox_handoff_branches", lambda *_args, **_kwargs: set())
+    monkeypatch.setattr(
+        mod,
+        "terminal_receipted_handoff_branch_heads",
+        lambda *_args, **_kwargs: {},
+    )
+
+    def fake_measure_sizes(paths: list[Path], **kwargs: Any) -> tuple[dict[str, int], set[str]]:
+        captured["timeout"] = kwargs["timeout"]
+        return {str(path): 0 for path in paths}, set()
+
+    monkeypatch.setattr(mod, "measure_sizes", fake_measure_sizes)
+    monkeypatch.setattr(
+        mod,
+        "classify_candidate",
+        lambda path, **_kwargs: mod.build_candidate(
+            path,
+            None,
+            0,
+            False,
+            "no_git_cache_residue",
+            False,
+            [],
+            mod.GitInfo(),
+            {"open_prs": [], "outbox_files": [], "receipt_files": []},
+            ["fake candidate"],
+        ),
+    )
+
+    payload = mod.inventory(
+        roots=[root],
+        repo=tmp_path,
+        base="origin/main",
+        outbox_dir=tmp_path / "outbox",
+        receipt_dir=tmp_path / "receipts",
+        limit=None,
+        size_mode="du",
+        size_timeout=120,
+        skip_gh=True,
+        git_timeout=30,
+        gh_timeout=30,
+        patch_timeout=30,
+        max_runtime_seconds=3,
+    )
+
+    assert captured["timeout"] == 3
+    assert payload["max_runtime_seconds"] == 3
+    assert payload["summary"]["truncated_by_runtime_budget"] is False
+
+
 def test_build_parser_root_action_append(tmp_path: Path) -> None:
     import codex_worktree_value_inventory as mod
 
@@ -533,3 +664,13 @@ def test_build_parser_root_omitted_yields_none(tmp_path: Path) -> None:
     args = parser.parse_args([])
 
     assert args.root is None
+
+
+def test_build_parser_accepts_max_runtime_seconds(tmp_path: Path) -> None:
+    import codex_worktree_value_inventory as mod
+
+    parser = mod.build_parser()
+
+    args = parser.parse_args(["--max-runtime-seconds", "30.5"])
+
+    assert args.max_runtime_seconds == 30.5
