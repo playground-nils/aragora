@@ -2,8 +2,11 @@ name: Metrics Drift
 
 # Validates docs/METRICS.md against ground truth. The script
 # scripts/regenerate_metrics.py recounts every canonical metric
-# (tests, LOC, OpenAPI paths, adapters, etc.) and fails if any value
-# drifts more than 0.5% from the committed doc.
+# (tests, LOC, OpenAPI paths, adapters, etc.). PRs that touch metrics
+# sources or public/canonical claim docs fail if any value drifts more
+# than 0.5% from the committed doc. Ordinary implementation PRs report
+# the same drift advisory-only so stale generated counts do not block
+# unrelated queue drain.
 #
 # Thesis alignment (Commitment 4: respect the limits): public numeric
 # claims must remain honest as the codebase grows. Silent staleness
@@ -25,7 +28,18 @@ on:
       - 'sdk/python/aragora_sdk/**'
       - 'sdk/typescript/src/**'
       - 'docs/api/openapi.json'
+      - 'docs/CANONICAL_GOALS.md'
+      - 'docs/CAPABILITY_MATRIX.md'
+      - 'docs/COMMERCIAL_OVERVIEW.md'
+      - 'docs/FEATURE_GAP_LIST.md'
+      - 'docs/GA_CHECKLIST.md'
+      - 'docs/HONEST_ASSESSMENT.md'
       - 'docs/METRICS.md'
+      - 'docs/ROADMAP_30_60_90.md'
+      - 'docs/STATUS.md'
+      - 'docs/status/claims/canonical_metrics.yaml'
+      - 'docs/status/generated/canonical_metrics/**'
+      - 'scripts/check_canonical_metrics.py'
       - 'scripts/regenerate_metrics.py'
       - '.mypy-baseline'
       - '.github/workflows/metrics-drift.yml'
@@ -49,7 +63,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -59,11 +73,36 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
 
+      - name: Classify enforcement mode
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              > /tmp/metrics-changed-files.txt
+          else
+            : > /tmp/metrics-changed-files.txt
+          fi
+
+          python3 scripts/classify_metrics_drift_scope.py \
+            --event-name "${{ github.event_name }}" \
+            --changed-files /tmp/metrics-changed-files.txt \
+            --json \
+            | tee /tmp/metrics-scope.json
+
+          mode="$(python3 -c 'import json; print(json.load(open("/tmp/metrics-scope.json"))["mode"])')"
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+
       - name: Verify drift
         id: check
         shell: bash
         run: |
           set -euo pipefail
+          mode="${{ steps.scope.outputs.mode }}"
 
           # Snapshot the committed doc into a backup BEFORE any regeneration
           # so the post-check diff is unambiguous: committed-doc vs what-live-
@@ -72,8 +111,23 @@ jobs:
           # the committed state and current truth.
           cp docs/METRICS.md /tmp/metrics-committed.md
 
-          if ! python3 scripts/regenerate_metrics.py --check; then
-            echo "::error::docs/METRICS.md is stale. Run 'python3 scripts/regenerate_metrics.py' locally and commit the updated doc."
+          check_args=(--check)
+          if [ "$mode" = "advisory" ]; then
+            check_args+=(--advisory)
+          fi
+
+          set +e
+          python3 scripts/regenerate_metrics.py "${check_args[@]}" | tee /tmp/metrics-check.log
+          check_rc=${PIPESTATUS[0]}
+          set -e
+
+          if grep -q "Metrics drifted" /tmp/metrics-check.log; then
+            echo "drift_status=${mode}-drift" >> "$GITHUB_OUTPUT"
+            if [ "$mode" = "advisory" ]; then
+              echo "::warning::docs/METRICS.md is stale, but this PR is advisory-only for Metrics Drift."
+            else
+              echo "::error::docs/METRICS.md is stale. Run 'python3 scripts/regenerate_metrics.py' locally and commit the updated doc."
+            fi
             echo ""
             echo "=== DIFF: committed doc vs current ground truth ==="
             # Regenerate into a temp file without touching the tracked file,
@@ -83,7 +137,12 @@ jobs:
             diff -u /tmp/metrics-committed.md docs/METRICS.md | head -200 || true
             # Restore the committed doc so downstream steps see the original.
             cp /tmp/metrics-committed.md docs/METRICS.md
-            exit 1
+          else
+            echo "drift_status=clean" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "$check_rc" -ne 0 ]; then
+            exit "$check_rc"
           fi
 
       - name: Emit summary
@@ -95,9 +154,17 @@ jobs:
               echo "## Metrics Drift Check"
               echo ""
               if [ "${{ job.status }}" = "success" ]; then
-                echo "- Status: passed (no metric drifted more than 0.5%)"
+                if [ "${{ steps.check.outputs.drift_status }}" = "advisory-drift" ]; then
+                  echo "- Status: passed with advisory drift"
+                  echo "- Enforcement: advisory for this PR"
+                  echo "- Action: refresh \`docs/METRICS.md\` in a dedicated metrics PR or wait for the weekly strict run"
+                else
+                  echo "- Status: passed (no metric drifted more than 0.5%)"
+                  echo "- Enforcement: ${{ steps.scope.outputs.mode }}"
+                fi
               else
                 echo "- Status: failed — \`docs/METRICS.md\` is stale"
+                echo "- Enforcement: ${{ steps.scope.outputs.mode }}"
                 echo ""
                 echo "Run locally:"
                 echo ""
