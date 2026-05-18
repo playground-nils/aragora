@@ -73,6 +73,7 @@ from contextlib import contextmanager
 import datetime as dt
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -115,6 +116,8 @@ LANE_RECORD_KEYS = (
     "codex_thread_id",
     "codex_rollout_path",
     "session_title",
+    "contact_method",
+    "contact_payload",
 )
 
 
@@ -127,6 +130,76 @@ ACTIVE_STATUSES = {"active", "running", "pending", "queued", "claimed"}
 
 def _utc_now_iso() -> str:
     return dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_contact_payload(raw: str) -> dict[str, Any] | None:
+    """Parse `--contact-payload` JSON string. Returns None when empty or invalid.
+
+    Phase 1 reach-plan helper. Strict-mode JSON: malformed input raises
+    `ValueError` so CLI users see the error rather than silently dropping
+    backend-specific dispatch detail.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--contact-payload must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"--contact-payload must decode to a JSON object, got {type(parsed).__name__}"
+        )
+    return parsed
+
+
+def _detect_tmux_contact_method() -> str:
+    """Phase 1 reach-plan helper: auto-derive `contact_method=tmux:<name>`
+    when this claim is being made from inside a tmux pane in the aragora
+    session.
+
+    Returns an empty string when:
+    - Not running inside tmux (no `TMUX` env var)
+    - tmux binary unavailable
+    - `tmux display-message` fails for any reason
+    - The detected session is not `aragora` (we only auto-populate for the
+      canonical aragora tmux session — other sessions can pass the flag
+      explicitly to override)
+
+    Returns `tmux:<window-name>` when detection succeeds. Designed to be
+    pure observation: no environment mutation, no side effects, no
+    timeouts longer than 1 second (so a stuck tmux server can't block
+    claim_lane). Fully overridden by explicit `--contact-method` CLI flag
+    or `contact_method=` kwarg.
+    """
+    if not os.environ.get("TMUX"):
+        return ""
+    pane_id = os.environ.get("TMUX_PANE", "").strip()
+    if not pane_id:
+        return ""
+    try:
+        # Use #S\t#W format so we can verify session name AND get window name
+        result = subprocess.run(
+            ["tmux", "display-message", "-t", pane_id, "-p", "#S\t#W"],
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    parts = result.stdout.strip().split("\t", 1)
+    if len(parts) != 2:
+        return ""
+    session_name, window_name = parts[0].strip(), parts[1].strip()
+    # Only auto-populate when in the canonical aragora session; foreign
+    # sessions must pass --contact-method explicitly.
+    if session_name != "aragora":
+        return ""
+    if not window_name:
+        return ""
+    return f"tmux:{window_name}"
 
 
 def resolve_registry_path(
@@ -328,6 +401,8 @@ def claim_lane(
     codex_thread_id: str = "",
     codex_rollout_path: str = "",
     session_title: str = "",
+    contact_method: str = "",
+    contact_payload: dict[str, Any] | None = None,
     force: bool = False,
     allow_resource_conflicts: bool = False,
     updated_at: str | None = None,
@@ -339,6 +414,17 @@ def claim_lane(
         raise ValueError("owner_session must not be empty")
     if status not in ALLOWED_STATUSES:
         raise ValueError(f"status {status!r} is not in {sorted(ALLOWED_STATUSES)}")
+
+    # Phase 1 reach-plan auto-populate: if no contact_method given and the
+    # claim is being made from inside a tmux pane in the aragora session,
+    # derive contact_method=tmux:<window-name> so downstream dispatchers
+    # (wake_agent.sh, Phase 2 PR) can reach this lane's owner via the
+    # already-shipped tmux_send_prompt.sh backend. Pure env-var + subprocess;
+    # no new imports.
+    if not contact_method:
+        detected = _detect_tmux_contact_method()
+        if detected:
+            contact_method = detected
 
     with _registry_write_lock(registry_path):
         rows = _read_existing(registry_path)
@@ -361,6 +447,8 @@ def claim_lane(
             "codex_thread_id": codex_thread_id,
             "codex_rollout_path": codex_rollout_path,
             "session_title": session_title,
+            "contact_method": contact_method,
+            "contact_payload": contact_payload,
         }
         normalized = _normalize_row(new_row)
 
@@ -438,6 +526,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--session-title",
         default="",
         help="Optional visible or inferred session title for operator display.",
+    )
+    parser.add_argument(
+        "--contact-method",
+        default="",
+        help=(
+            "Phase 1 reach-plan backend identifier. Format: "
+            "'tmux:<window-name>', 'osascript:codex-desktop:<thread-id>', "
+            "'osascript:droid-cli:<window-title>', 'factory-api:<session>', "
+            "or 'mailbox-only'. When omitted inside a tmux pane on the "
+            "aragora session, auto-populates from the live tmux window name."
+        ),
+    )
+    parser.add_argument(
+        "--contact-payload",
+        default="",
+        help=(
+            "Optional JSON-encoded dict with backend-specific dispatch detail "
+            'e.g. \'{"pane": "claude-p52", "log": "~/.aragora/tmux-sessions/claude-p52.log"}\'. '
+            "Parsed and stored as a dict in the lane registry."
+        ),
     )
     parser.add_argument(
         "--force",
@@ -526,6 +634,8 @@ def main(argv: list[str] | None = None) -> int:
                 codex_thread_id=args.codex_thread_id,
                 codex_rollout_path=args.codex_rollout_path,
                 session_title=args.session_title,
+                contact_method=args.contact_method,
+                contact_payload=_parse_contact_payload(args.contact_payload),
                 force=args.force,
                 allow_resource_conflicts=args.allow_resource_conflicts,
                 updated_at=args.updated_at,

@@ -180,12 +180,17 @@ class LaneRecord:
     codex_thread_id: str = ""
     codex_rollout_path: str = ""
     session_title: str = ""
+    contact_method: str = ""
+    contact_payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v not in ("", None)}
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "LaneRecord":
+        contact_payload = payload.get("contact_payload")
+        if not isinstance(contact_payload, dict):
+            contact_payload = None
         return cls(
             lane_id=str(payload.get("lane_id", "")),
             owner_session=str(payload.get("owner_session", "")),
@@ -203,6 +208,8 @@ class LaneRecord:
             codex_thread_id=str(payload.get("codex_thread_id", "")),
             codex_rollout_path=str(payload.get("codex_rollout_path", "")),
             session_title=str(payload.get("session_title", "")),
+            contact_method=str(payload.get("contact_method", "")),
+            contact_payload=contact_payload,
         )
 
 

@@ -666,3 +666,246 @@ def test_worktree_collision_detected_across_trailing_slash(
 
     assert "worktree=" in str(excinfo.value)
     assert str(worktree.resolve()) in str(excinfo.value)
+
+
+# --- Phase R01 reach-plan: contact_method + contact_payload fields --------
+
+
+def test_claim_lane_records_explicit_contact_method(tmp_registry: Path) -> None:
+    """Explicit `contact_method=` kwarg round-trips through the persisted row."""
+    row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="reach-1",
+        owner_session="claude-A",
+        contact_method="tmux:claude-p52",
+    )
+    assert row["contact_method"] == "tmux:claude-p52"
+
+    payload = json.loads(tmp_registry.read_text())
+    assert payload[0]["contact_method"] == "tmux:claude-p52"
+
+
+def test_claim_lane_records_explicit_contact_payload(tmp_registry: Path) -> None:
+    """Explicit `contact_payload=` dict round-trips through the persisted row."""
+    payload_dict = {"pane": "claude-p52", "log": "~/.aragora/tmux-sessions/claude-p52.log"}
+    row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="reach-2",
+        owner_session="claude-A",
+        contact_method="tmux:claude-p52",
+        contact_payload=payload_dict,
+    )
+    assert row["contact_payload"] == payload_dict
+
+    persisted = json.loads(tmp_registry.read_text())
+    assert persisted[0]["contact_payload"] == payload_dict
+
+
+def test_claim_lane_omits_contact_fields_when_unset(
+    tmp_registry: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When neither --contact-method nor TMUX env is set, neither key persists."""
+    monkeypatch.delenv("TMUX", raising=False)
+    monkeypatch.delenv("TMUX_PANE", raising=False)
+
+    row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="reach-3",
+        owner_session="claude-A",
+    )
+    assert "contact_method" not in row
+    assert "contact_payload" not in row
+
+    persisted = json.loads(tmp_registry.read_text())
+    assert "contact_method" not in persisted[0]
+    assert "contact_payload" not in persisted[0]
+
+
+def test_parse_contact_payload_valid_json() -> None:
+    """JSON object string decodes to a dict."""
+    assert claim_module._parse_contact_payload('{"k": "v"}') == {"k": "v"}
+
+
+def test_parse_contact_payload_empty_returns_none() -> None:
+    """Empty string returns None (not-set sentinel)."""
+    assert claim_module._parse_contact_payload("") is None
+
+
+def test_parse_contact_payload_invalid_json_raises() -> None:
+    """Malformed JSON raises ValueError so CLI users see it."""
+    with pytest.raises(ValueError, match="must be valid JSON"):
+        claim_module._parse_contact_payload("{not-json")
+
+
+def test_parse_contact_payload_non_object_raises() -> None:
+    """JSON arrays/scalars are rejected — must be an object."""
+    with pytest.raises(ValueError, match="must decode to a JSON object"):
+        claim_module._parse_contact_payload("[1, 2, 3]")
+    with pytest.raises(ValueError, match="must decode to a JSON object"):
+        claim_module._parse_contact_payload('"just a string"')
+
+
+def test_detect_tmux_returns_empty_without_tmux_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Auto-detect short-circuits when TMUX env var is unset."""
+    monkeypatch.delenv("TMUX", raising=False)
+    monkeypatch.delenv("TMUX_PANE", raising=False)
+    assert claim_module._detect_tmux_contact_method() == ""
+
+
+def test_detect_tmux_returns_empty_when_pane_id_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When TMUX is set but TMUX_PANE is missing, no auto-detect."""
+    monkeypatch.setenv("TMUX", "/tmp/tmux-501/default,1234,0")
+    monkeypatch.delenv("TMUX_PANE", raising=False)
+    assert claim_module._detect_tmux_contact_method() == ""
+
+
+def test_detect_tmux_returns_empty_for_non_aragora_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the canonical 'aragora' session triggers auto-populate."""
+    monkeypatch.setenv("TMUX", "/tmp/tmux-501/default,1234,0")
+    monkeypatch.setenv("TMUX_PANE", "%0")
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="other-session\tsomeagent\n", stderr=""
+        )
+
+    monkeypatch.setattr(claim_module.subprocess, "run", fake_run)
+    assert claim_module._detect_tmux_contact_method() == ""
+
+
+def test_detect_tmux_returns_window_name_for_aragora_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Aragora-session pane produces `tmux:<window-name>`."""
+    monkeypatch.setenv("TMUX", "/tmp/tmux-501/default,1234,0")
+    monkeypatch.setenv("TMUX_PANE", "%3")
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="aragora\tclaude-p52\n", stderr=""
+        )
+
+    monkeypatch.setattr(claim_module.subprocess, "run", fake_run)
+    assert claim_module._detect_tmux_contact_method() == "tmux:claude-p52"
+
+
+def test_detect_tmux_returns_empty_when_tmux_binary_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If tmux is not installed, fall back to empty (no exception leak)."""
+    monkeypatch.setenv("TMUX", "/tmp/tmux-501/default,1234,0")
+    monkeypatch.setenv("TMUX_PANE", "%0")
+
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError("tmux not on PATH")
+
+    monkeypatch.setattr(claim_module.subprocess, "run", fake_run)
+    assert claim_module._detect_tmux_contact_method() == ""
+
+
+def test_explicit_contact_method_overrides_tmux_auto_detect(
+    tmp_registry: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Explicit kwarg beats tmux env auto-detect — no surprise overwrite."""
+    monkeypatch.setenv("TMUX", "/tmp/tmux-501/default,1234,0")
+    monkeypatch.setenv("TMUX_PANE", "%0")
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="aragora\tauto-detected\n", stderr=""
+        )
+
+    monkeypatch.setattr(claim_module.subprocess, "run", fake_run)
+    row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="reach-explicit",
+        owner_session="claude-A",
+        contact_method="mailbox-only",
+    )
+    assert row["contact_method"] == "mailbox-only"
+
+
+def test_cli_contact_method_flag_via_subprocess(tmp_registry: Path) -> None:
+    """End-to-end: --contact-method CLI flag persists to the registry."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--lane-id",
+            "reach-cli-1",
+            "--owner-session",
+            "claude-cli",
+            "--registry-path",
+            str(tmp_registry),
+            "--contact-method",
+            "osascript:codex-desktop:thread-0abc",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+        check=True,
+    )
+    payload = json.loads(result.stdout)
+    assert payload["contact_method"] == "osascript:codex-desktop:thread-0abc"
+
+
+def test_cli_contact_payload_flag_via_subprocess(tmp_registry: Path) -> None:
+    """End-to-end: --contact-payload JSON flag persists as a dict."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--lane-id",
+            "reach-cli-2",
+            "--owner-session",
+            "claude-cli",
+            "--registry-path",
+            str(tmp_registry),
+            "--contact-method",
+            "tmux:claude-p99",
+            "--contact-payload",
+            '{"pane": "claude-p99", "log": "/tmp/p99.log"}',
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+        check=True,
+    )
+    payload = json.loads(result.stdout)
+    assert payload["contact_payload"] == {
+        "pane": "claude-p99",
+        "log": "/tmp/p99.log",
+    }
+
+
+def test_cli_invalid_contact_payload_exits_with_error(tmp_registry: Path) -> None:
+    """Malformed --contact-payload JSON exits non-zero with a clear error."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--lane-id",
+            "reach-cli-bad",
+            "--owner-session",
+            "claude-cli",
+            "--registry-path",
+            str(tmp_registry),
+            "--contact-payload",
+            "{not-json",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "must be valid JSON" in result.stderr

@@ -88,6 +88,68 @@ def test_lane_record_preserves_desktop_identity_metadata() -> None:
     assert payload["session_title"] == "Review #7286"
 
 
+def test_lane_record_roundtrips_contact_method_and_payload() -> None:
+    """Phase R01: LaneRecord persists + restores contact_method + contact_payload."""
+    import agent_bridge as mod
+
+    record = mod.LaneRecord.from_dict(
+        {
+            "lane_id": "claude-reach-1",
+            "owner_session": "claude-A",
+            "status": "active",
+            "contact_method": "tmux:claude-p52",
+            "contact_payload": {
+                "pane": "claude-p52",
+                "log": "~/.aragora/tmux-sessions/claude-p52.log",
+            },
+        }
+    )
+
+    assert record.contact_method == "tmux:claude-p52"
+    assert record.contact_payload == {
+        "pane": "claude-p52",
+        "log": "~/.aragora/tmux-sessions/claude-p52.log",
+    }
+    payload = record.to_dict()
+    assert payload["contact_method"] == "tmux:claude-p52"
+    assert payload["contact_payload"]["pane"] == "claude-p52"
+
+
+def test_lane_record_omits_unset_contact_fields() -> None:
+    """When contact_method='' and contact_payload=None, both keys absent from to_dict()."""
+    import agent_bridge as mod
+
+    record = mod.LaneRecord.from_dict(
+        {
+            "lane_id": "claude-reach-2",
+            "owner_session": "claude-A",
+            "status": "active",
+        }
+    )
+
+    payload = record.to_dict()
+    assert "contact_method" not in payload
+    assert "contact_payload" not in payload
+
+
+def test_lane_record_rejects_non_dict_contact_payload() -> None:
+    """Malformed contact_payload (string, list, scalar) coerces to None to avoid mid-pipeline crash."""
+    import agent_bridge as mod
+
+    record = mod.LaneRecord.from_dict(
+        {
+            "lane_id": "claude-reach-3",
+            "owner_session": "claude-A",
+            "status": "active",
+            "contact_method": "mailbox-only",
+            "contact_payload": "not-a-dict-value",  # legacy/malformed
+        }
+    )
+
+    assert record.contact_payload is None
+    assert record.contact_method == "mailbox-only"
+
+
 def test_cmd_approve_droid_uses_enter_menu_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     import agent_bridge as mod
 
