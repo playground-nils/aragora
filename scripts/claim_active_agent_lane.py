@@ -63,6 +63,21 @@ To release a lane, write a ``--status released`` claim with the same
 ``lane_id`` and ``owner_session``. To mark a conflict, write a
 ``--status conflict --conflict-session <other> --conflict-reason <text>``
 claim.
+
+Env-var fallbacks for identity fields (Phase E of the agent-steering
+primitive): when these CLI flags are omitted, the helper auto-populates
+them from canonical env vars at claim time. CLI flags always win when
+both are supplied; env vars are pure fallback. Mapping:
+
+================= =========================  =============================
+Env var           CLI flag (precedence)      LaneRecord field
+================= =========================  =============================
+CODEX_THREAD_ID         --codex-thread-id         codex_thread_id
+CODEX_ROLLOUT_PATH      --codex-rollout-path      codex_rollout_path
+CLAUDE_SESSION_ID       --session-title           session_title (fallback)
+FACTORY_DROID_SESSION   --desktop-label           desktop_label (fallback)
+ARAGORA_SESSION_ID      --owner-session           (already required CLI)
+================= =========================  =============================
 """
 
 from __future__ import annotations
@@ -382,6 +397,33 @@ def claim_lane(
         return normalized
 
 
+def _identity_fields_from_env() -> dict[str, str | None]:
+    """Auto-populate richer identity fields from canonical env vars when
+    the operator/agent left them off the CLI.
+
+    Mapping (env var -> argparse attribute -> LaneRecord field):
+
+    - ``CODEX_THREAD_ID``       -> ``codex_thread_id``    -> ``codex_thread_id``
+    - ``CODEX_ROLLOUT_PATH``    -> ``codex_rollout_path`` -> ``codex_rollout_path``
+    - ``CLAUDE_SESSION_ID``     -> ``session_title``      -> ``session_title`` (fallback)
+    - ``FACTORY_DROID_SESSION`` -> ``desktop_label``      -> ``desktop_label`` (fallback)
+
+    ``ARAGORA_SESSION_ID`` is intentionally not handled here: it is the
+    operator-facing primary identifier already passed via ``--owner-session``
+    (which is a required CLI flag), so an env-var fallback would create a
+    silent default that defeats the explicit-claim contract.
+
+    Returns a dict keyed by argparse attribute name so the caller can merge
+    the mapping into ``args`` without having to translate flag names.
+    """
+    return {
+        "codex_thread_id": os.environ.get("CODEX_THREAD_ID") or None,
+        "codex_rollout_path": os.environ.get("CODEX_ROLLOUT_PATH") or None,
+        "session_title": os.environ.get("CLAUDE_SESSION_ID") or None,
+        "desktop_label": os.environ.get("FACTORY_DROID_SESSION") or None,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane-id", default="")
@@ -477,6 +519,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    env_fields = _identity_fields_from_env()
+    for cli_arg, value in env_fields.items():
+        if value and not getattr(args, cli_arg, None):
+            setattr(args, cli_arg, value)
     registry_path = resolve_registry_path(
         repo_root=args.repo_root,
         explicit=args.registry_path,

@@ -584,3 +584,248 @@ def test_explicit_registry_path_wins(tmp_path: Path) -> None:
     override = tmp_path / "override.json"
     actual = claim_module.resolve_registry_path(repo_root=repo_root, explicit=override)
     assert actual == override
+
+
+# --- Phase E: env-var auto-populate for identity fields -------------------
+
+ENV_IDENTITY_VARS = (
+    "CODEX_THREAD_ID",
+    "CODEX_ROLLOUT_PATH",
+    "CLAUDE_SESSION_ID",
+    "FACTORY_DROID_SESSION",
+)
+
+
+@pytest.fixture()
+def clean_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Strip the identity-fallback env vars so each test starts from a
+    known baseline. Tests then set only the env vars they exercise."""
+    for name in ENV_IDENTITY_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_env_codex_thread_id_populates_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_identity_env: None,
+) -> None:
+    """CODEX_THREAD_ID env var is auto-applied to codex_thread_id when
+    the --codex-thread-id CLI flag is absent."""
+    registry = tmp_path / "lanes.json"
+    monkeypatch.setenv("CODEX_THREAD_ID", "env-thread-uuid-aaa")
+
+    rc = claim_module.main(
+        [
+            "--lane-id",
+            "phase-env-1",
+            "--owner-session",
+            "owner-env-1",
+            "--registry-path",
+            str(registry),
+            "--status",
+            "active",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    assert payload[0]["codex_thread_id"] == "env-thread-uuid-aaa"
+
+
+def test_cli_codex_thread_id_wins_over_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_identity_env: None,
+) -> None:
+    """When both --codex-thread-id and CODEX_THREAD_ID are supplied, the
+    CLI flag wins. Env vars are pure fallback."""
+    registry = tmp_path / "lanes.json"
+    monkeypatch.setenv("CODEX_THREAD_ID", "env-loses")
+
+    rc = claim_module.main(
+        [
+            "--lane-id",
+            "phase-env-2",
+            "--owner-session",
+            "owner-env-2",
+            "--registry-path",
+            str(registry),
+            "--codex-thread-id",
+            "cli-wins",
+            "--status",
+            "active",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    assert payload[0]["codex_thread_id"] == "cli-wins"
+
+
+def test_missing_env_and_cli_leaves_codex_thread_id_unset(
+    tmp_path: Path,
+    clean_identity_env: None,
+) -> None:
+    """When neither the env var nor the CLI flag supplies a value, the
+    identity field stays absent from the persisted row (the schema
+    normalizer drops empty/None values)."""
+    registry = tmp_path / "lanes.json"
+    rc = claim_module.main(
+        [
+            "--lane-id",
+            "phase-env-3",
+            "--owner-session",
+            "owner-env-3",
+            "--registry-path",
+            str(registry),
+            "--status",
+            "active",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    assert "codex_thread_id" not in payload[0]
+
+
+def test_factory_droid_session_populates_desktop_label(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_identity_env: None,
+) -> None:
+    """FACTORY_DROID_SESSION env var falls back into desktop_label when
+    --desktop-label is absent."""
+    registry = tmp_path / "lanes.json"
+    monkeypatch.setenv("FACTORY_DROID_SESSION", "Droid-A")
+
+    rc = claim_module.main(
+        [
+            "--lane-id",
+            "phase-env-4",
+            "--owner-session",
+            "owner-env-4",
+            "--registry-path",
+            str(registry),
+            "--status",
+            "active",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    assert payload[0]["desktop_label"] == "Droid-A"
+
+
+def test_cli_desktop_label_wins_over_factory_droid_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_identity_env: None,
+) -> None:
+    registry = tmp_path / "lanes.json"
+    monkeypatch.setenv("FACTORY_DROID_SESSION", "Droid-loses")
+
+    rc = claim_module.main(
+        [
+            "--lane-id",
+            "phase-env-5",
+            "--owner-session",
+            "owner-env-5",
+            "--registry-path",
+            str(registry),
+            "--desktop-label",
+            "CLI-wins",
+            "--status",
+            "active",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    assert payload[0]["desktop_label"] == "CLI-wins"
+
+
+def test_claude_session_id_populates_session_title_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_identity_env: None,
+) -> None:
+    """CLAUDE_SESSION_ID env var falls back into session_title when
+    --session-title is absent."""
+    registry = tmp_path / "lanes.json"
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "claude-fallback-title")
+
+    rc = claim_module.main(
+        [
+            "--lane-id",
+            "phase-env-6",
+            "--owner-session",
+            "owner-env-6",
+            "--registry-path",
+            str(registry),
+            "--status",
+            "active",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    assert payload[0]["session_title"] == "claude-fallback-title"
+
+
+def test_codex_rollout_path_env_populates_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clean_identity_env: None,
+) -> None:
+    registry = tmp_path / "lanes.json"
+    monkeypatch.setenv("CODEX_ROLLOUT_PATH", "/Users/armand/.codex/sessions/env-rollout.jsonl")
+
+    rc = claim_module.main(
+        [
+            "--lane-id",
+            "phase-env-7",
+            "--owner-session",
+            "owner-env-7",
+            "--registry-path",
+            str(registry),
+            "--status",
+            "active",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    assert payload[0]["codex_rollout_path"].endswith("env-rollout.jsonl")
+
+
+def test_identity_fields_from_env_helper_returns_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+    clean_identity_env: None,
+) -> None:
+    """Direct unit test of the helper: each env var should map to the
+    matching argparse attribute name, with absent vars producing None."""
+    monkeypatch.setenv("CODEX_THREAD_ID", "t-uuid")
+    monkeypatch.setenv("FACTORY_DROID_SESSION", "Droid-X")
+    # CODEX_ROLLOUT_PATH and CLAUDE_SESSION_ID intentionally unset
+
+    mapping = claim_module._identity_fields_from_env()
+    assert mapping["codex_thread_id"] == "t-uuid"
+    assert mapping["desktop_label"] == "Droid-X"
+    assert mapping["codex_rollout_path"] is None
+    assert mapping["session_title"] is None
+
+
+def test_existing_claim_flow_unaffected_when_env_unset(
+    tmp_registry: Path,
+    clean_identity_env: None,
+) -> None:
+    """Regression: with all identity env vars unset, the original
+    programmatic claim_lane() flow still produces the same shape as before
+    (no spurious identity fields injected by the helper)."""
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="regression-lane",
+        owner_session="owner-regression",
+        goal="g",
+        source="s",
+        status="active",
+    )
+    payload = json.loads(tmp_registry.read_text(encoding="utf-8"))
+    assert payload[0]["lane_id"] == "regression-lane"
+    assert "codex_thread_id" not in payload[0]
+    assert "desktop_label" not in payload[0]
+    assert "session_title" not in payload[0]
+    assert "codex_rollout_path" not in payload[0]
