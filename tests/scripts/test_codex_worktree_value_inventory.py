@@ -183,6 +183,27 @@ def test_no_git_active_marker_is_preserved(tmp_path: Path) -> None:
     assert candidate.decision == "preserve"
 
 
+def test_anchor_only_wrapper_is_not_active(tmp_path: Path) -> None:
+    """An anchor-only wrapper (passive sentinel without active lock) is NOT
+    classified as active_or_dirty. Anchor files are passive markers left by
+    wrapper scripts and don't indicate an active session."""
+    import codex_worktree_value_inventory as mod
+
+    root = _candidate(tmp_path, repo=False)
+    (root / ".claude-session-anchor").write_text("anchor\n")
+
+    candidate = mod.classify_candidate(
+        root,
+        context=_context(tmp_path),
+        size_bytes=1024,
+        size_lookup_failed=False,
+    )
+
+    assert candidate.classification == "no_git_cache_residue"
+    assert candidate.cleanup_candidate is True
+    assert candidate.decision == "cleanup_candidate"
+
+
 def test_nested_foreign_git_repo_is_lookup_failed_not_cleanup_candidate(tmp_path: Path) -> None:
     import codex_worktree_value_inventory as mod
 

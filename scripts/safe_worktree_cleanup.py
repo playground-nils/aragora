@@ -146,16 +146,16 @@ _WRAPPER_SENTINEL_FILENAMES = frozenset(
 def _is_empty_nested_wrapper(path: Path) -> bool:
     if not path.is_dir():
         return False
-    nested_wrapper = path / ".worktrees"
-    if not nested_wrapper.is_dir():
-        return False
     try:
+        has_any_file = False
         for entry in path.rglob("*"):
-            if entry.is_file() and entry.name not in _WRAPPER_SENTINEL_FILENAMES:
-                return False
+            if entry.is_file():
+                has_any_file = True
+                if entry.name not in _WRAPPER_SENTINEL_FILENAMES:
+                    return False
+        return has_any_file
     except OSError:
         return False
-    return True
 
 
 def _worktree_is_dirty(path: Path) -> bool:

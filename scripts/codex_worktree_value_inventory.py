@@ -351,18 +351,7 @@ def active_lock_files(candidate_root: Path, repo_path: Path | None) -> list[str]
 
 
 def has_active_session(candidate_root: Path, repo_path: Path | None) -> bool:
-    if active_lock_files(candidate_root, repo_path):
-        return True
-    for root in (candidate_root, repo_path):
-        if root is None or not root.exists():
-            continue
-        try:
-            for item in root.glob(".claude-session-anchor"):
-                if item.exists():
-                    return True
-        except OSError:
-            return True
-    return False
+    return bool(active_lock_files(candidate_root, repo_path))
 
 
 def git_status_dirty(repo_path: Path, *, timeout: int) -> tuple[bool, bool, str | None]:
