@@ -8,11 +8,13 @@ verify it by running the same command.
 Usage:
     python scripts/regenerate_metrics.py              # rewrite docs/METRICS.md
     python scripts/regenerate_metrics.py --check      # fail if drift > 0.5%
+    python scripts/regenerate_metrics.py --check --advisory  # warn but exit 0
     python scripts/regenerate_metrics.py --json       # emit JSON only
 
 Drift threshold is intentionally tight: claim-drift is a thesis-commitment
 violation (Commitment 4: respect the limits). A drifted metric should
-trigger a PR rather than a silent mismatch.
+trigger a PR rather than a silent mismatch. Advisory mode is for ordinary
+implementation PRs where the workflow should report drift without blocking.
 """
 
 from __future__ import annotations
@@ -465,6 +467,9 @@ def render_markdown(snapshot: MetricsSnapshot) -> str:
     lines.append("")
     lines.append("- **Regenerate:** `python scripts/regenerate_metrics.py`")
     lines.append("- **Verify (drift check):** `python scripts/regenerate_metrics.py --check`")
+    lines.append(
+        "- **Advisory PR check:** `python scripts/regenerate_metrics.py --check --advisory`"
+    )
     lines.append("- **Timestamped JSON snapshot:** `python scripts/regenerate_metrics.py --json`")
     lines.append("")
     lines.append("## Canonical numbers")
@@ -522,16 +527,29 @@ def render_markdown(snapshot: MetricsSnapshot) -> str:
         "regardless of threshold."
     )
     lines.append("")
+    lines.append(
+        "The GitHub workflow applies that strict failure mode to manual/weekly "
+        "runs and to PRs that touch metrics generation, canonical metrics "
+        "checks, `docs/METRICS.md`, or public/canonical claim docs. Ordinary "
+        "implementation PRs that only move counted surfaces still run the "
+        "same drift check, but in advisory mode: drift is reported loudly in "
+        "the workflow output without failing the PR. This keeps public claims "
+        "honest without forcing every unrelated branch to refresh generated "
+        "counts before review."
+    )
+    lines.append("")
     lines.append("## Related automation")
     lines.append("")
     lines.append(
         "- `.github/workflows/metrics-drift.yml` runs this script on every PR "
         "that touches counted surfaces (`aragora/`, `tests/`, `sdk/`, "
-        "`docs/api/openapi.json`, `.mypy-baseline`), and on a weekly Monday "
-        "schedule. It invokes `--check` and fails the job if drift exceeds "
-        "the threshold. The job does **not** auto-open a refresh PR; it "
-        "fails loud and a human or follow-up automation decides whether "
-        "to regenerate."
+        "`docs/api/openapi.json`, `.mypy-baseline`) plus public/canonical "
+        "claim paths, and on a weekly Monday schedule. It classifies PRs with "
+        "`scripts/classify_metrics_drift_scope.py`: public-claim and metrics "
+        "source changes are strict, while ordinary counted-surface changes "
+        "are advisory. The job does **not** auto-open a refresh PR; strict "
+        "failures stay loud and a human or follow-up automation decides "
+        "whether to regenerate."
     )
     lines.append(
         "- `tests/scripts/test_regenerate_metrics.py` holds external "
@@ -569,7 +587,11 @@ def parse_current_metrics(doc_path: Path) -> dict[str, int | str]:
     return result
 
 
-def check_drift(snapshot: MetricsSnapshot) -> tuple[bool, list[str]]:
+def check_drift(
+    snapshot: MetricsSnapshot,
+    *,
+    threshold: float = DRIFT_THRESHOLD,
+) -> tuple[bool, list[str]]:
     current = parse_current_metrics(METRICS_DOC)
     drifts: list[str] = []
     for m in snapshot.metrics:
@@ -582,7 +604,7 @@ def check_drift(snapshot: MetricsSnapshot) -> tuple[bool, list[str]]:
                 delta_pct = 1.0 if m.value != 0 else 0.0
             else:
                 delta_pct = abs(m.value - prev) / prev
-            if delta_pct > DRIFT_THRESHOLD:
+            if delta_pct > threshold:
                 drifts.append(f"DRIFT: {m.label} {prev} -> {m.value} ({delta_pct * 100:.1f}%)")
         else:
             if str(prev) != str(m.value):
@@ -598,11 +620,27 @@ def main() -> int:
         help="Exit non-zero if any metric drifted more than 0.5% from current doc.",
     )
     parser.add_argument(
+        "--advisory",
+        action="store_true",
+        help="With --check, report drift but exit zero.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=DRIFT_THRESHOLD,
+        help="Allowed fractional drift for integer metrics (default: 0.005).",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print JSON snapshot to stdout instead of writing docs/METRICS.md.",
     )
     args = parser.parse_args()
+
+    if args.advisory and not args.check:
+        parser.error("--advisory requires --check")
+    if args.threshold < 0:
+        parser.error("--threshold must be non-negative")
 
     snapshot = gather_metrics()
 
@@ -611,18 +649,24 @@ def main() -> int:
         return 0
 
     if args.check:
-        drifted, drifts = check_drift(snapshot)
+        drifted, drifts = check_drift(snapshot, threshold=args.threshold)
         if drifted:
-            print("Metrics drifted:")
+            label = "Metrics drifted"
+            if args.advisory:
+                label += " (advisory)"
+            print(f"{label}:")
             for d in drifts:
                 print(f"  {d}")
             print()
+            if args.advisory:
+                print("Advisory mode: drift reported, but exit status remains zero.")
+                return 0
             print(
                 "Run `python scripts/regenerate_metrics.py` to refresh "
                 "docs/METRICS.md and commit the result."
             )
             return 1
-        print("No drift beyond 0.5% threshold.")
+        print(f"No drift beyond {args.threshold * 100:g}% threshold.")
         return 0
 
     # Regenerate the doc

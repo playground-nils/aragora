@@ -6,6 +6,7 @@
 
 - **Regenerate:** `python scripts/regenerate_metrics.py`
 - **Verify (drift check):** `python scripts/regenerate_metrics.py --check`
+- **Advisory PR check:** `python scripts/regenerate_metrics.py --check --advisory`
 - **Timestamped JSON snapshot:** `python scripts/regenerate_metrics.py --json`
 
 ## Canonical numbers
@@ -15,8 +16,8 @@
 | Python files under aragora/ | `4140` | `aragora/` | `git ls-files aragora \| grep -E '\.py$' \| wc -l` |
 | Python lines of code under aragora/ | `1941752` | `aragora/` | `python3 -c "from pathlib import Path; import subprocess; files = subprocess.check_output(['git', 'ls-files', 'aragora'], text=True).splitlines(); print(sum(sum(1 for _ in Path(p).open(encoding='utf-8', errors='replace')) for p in files if p.endswith('.py')))"` |
 | Top-level modules under aragora/ | `139` | `aragora/` | `git ls-files aragora \| awk -F/ 'NF>2 {print $2}' \| sort -u \| wc -l` |
-| Test files (test_*.py under tests/) | `5196` | `tests/` | `git ls-files tests \| grep -E '(^\|/)test_[^/]*\.py$' \| wc -l` |
-| Test functions (class + module level) | `218496` | `tests/` | `git grep -E '^[[:space:]]*(async )?def test_' -- tests \| wc -l` |
+| Test files (test_*.py under tests/) | `5200` | `tests/` | `git ls-files tests \| grep -E '(^\|/)test_[^/]*\.py$' \| wc -l` |
+| Test functions (class + module level) | `218544` | `tests/` | `git grep -E '^[[:space:]]*(async )?def test_' -- tests \| wc -l` |
 | @pytest.mark.parametrize decorators | `689` | `tests/` | `git grep -E '@pytest\.mark\.parametrize' -- tests \| wc -l` |
 | CLI top-level command modules | `69` | `aragora/cli/commands/` | `git ls-files aragora/cli/commands \| grep -E '/[^/]*\.py$' \| grep -v '/__' \| wc -l` |
 | OpenAPI paths | `2870` | `docs/api/openapi.json` | `python -c "import json; print(len(json.load(open('docs/api/openapi.json'))['paths']))"` |
@@ -28,7 +29,7 @@
 | Allowlisted agent types | `34` | `aragora/config/settings.py` | `grep -A 50 'ALLOWED_AGENT_TYPES' aragora/config/settings.py \| grep -oE "'[a-z-]+'" \| sort -u \| wc -l` |
 | Knowledge Mound adapter specs | `41` | `aragora/knowledge/mound/adapters/factory.py` | `git grep -E '"\.[a-z_]+_adapter"' -- aragora/knowledge/mound/adapters/factory.py \| wc -l` |
 | Knowledge Mound adapter files | `46` | `aragora/knowledge/mound/adapters/` | `git ls-files aragora/knowledge/mound/adapters \| grep -E '/[^/]+_adapter\.py$' \| wc -l` |
-| Markdown files under docs/ | `892` | `docs/` | `git ls-files docs \| grep -E '\.md$' \| wc -l` |
+| Markdown files under docs/ | `917` | `docs/` | `git ls-files docs \| grep -E '\.md$' \| wc -l` |
 | GitHub Actions workflows | `85` | `.github/workflows/` | `git ls-files .github/workflows \| grep -E '\.yml$' \| wc -l` |
 | Mypy baseline errors (grandfathered) | `3317` | `.mypy-baseline` | `wc -l .mypy-baseline` |
 
@@ -51,9 +52,11 @@ The `--check` mode fails if any metric moved by more than 0.5% from the committe
 
 New metrics (present in the script but not in the committed doc) are reported as `NEW:` in the check output and force a refresh regardless of threshold.
 
+The GitHub workflow applies that strict failure mode to manual/weekly runs and to PRs that touch metrics generation, canonical metrics checks, `docs/METRICS.md`, or public/canonical claim docs. Ordinary implementation PRs that only move counted surfaces still run the same drift check, but in advisory mode: drift is reported loudly in the workflow output without failing the PR. This keeps public claims honest without forcing every unrelated branch to refresh generated counts before review.
+
 ## Related automation
 
-- `.github/workflows/metrics-drift.yml` runs this script on every PR that touches counted surfaces (`aragora/`, `tests/`, `sdk/`, `docs/api/openapi.json`, `.mypy-baseline`), and on a weekly Monday schedule. It invokes `--check` and fails the job if drift exceeds the threshold. The job does **not** auto-open a refresh PR; it fails loud and a human or follow-up automation decides whether to regenerate.
+- `.github/workflows/metrics-drift.yml` runs this script on every PR that touches counted surfaces (`aragora/`, `tests/`, `sdk/`, `docs/api/openapi.json`, `.mypy-baseline`) plus public/canonical claim paths, and on a weekly Monday schedule. It classifies PRs with `scripts/classify_metrics_drift_scope.py`: public-claim and metrics source changes are strict, while ordinary counted-surface changes are advisory. The job does **not** auto-open a refresh PR; strict failures stay loud and a human or follow-up automation decides whether to regenerate.
 - `tests/scripts/test_regenerate_metrics.py` holds external invariants (e.g. test count > 100K, python file count > 1K) so the bootstrap is not fully self-referential: even if the committed doc were wrong, the invariant tests would catch a gross break.
 - `scripts/reconcile_status.py` cross-references feature claims across CAPABILITY_MATRIX, GA_CHECKLIST, STATUS, ROADMAP.
 - `scripts/validate_openapi_routes.py` verifies OpenAPI paths against actual handler implementations.

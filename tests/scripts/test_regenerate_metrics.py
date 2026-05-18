@@ -194,3 +194,88 @@ def test_check_mode_is_idempotent(tmp_path, monkeypatch):
     snapshot_b = mod.gather_metrics()
     drifted, drifts = mod.check_drift(snapshot_b)
     assert not drifted, f"drift detected between two back-to-back regenerations: {drifts}"
+
+
+def _snapshot_with_metric(mod, value: int):
+    return mod.MetricsSnapshot(
+        generated_at="1970-01-01T00:00:00+00:00",
+        git_sha="deadbeef",
+        metrics=[
+            mod.Metric(
+                key="example",
+                label="Example metric",
+                value=value,
+                command="echo example",
+                source="test",
+            )
+        ],
+    )
+
+
+def _write_metrics_doc(path: Path, value: int) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "# Test Metrics",
+                "",
+                "| Metric | Value | Source | Command |",
+                "|---|---|---|---|",
+                f"| Example metric | `{value}` | `test` | `echo example` |",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_check_drift_default_threshold_is_unchanged(tmp_path, monkeypatch):
+    mod = _load_module()
+    metrics_doc = tmp_path / "METRICS.md"
+    _write_metrics_doc(metrics_doc, 1000)
+    monkeypatch.setattr(mod, "METRICS_DOC", metrics_doc)
+
+    drifted, drifts = mod.check_drift(_snapshot_with_metric(mod, 1005))
+    assert not drifted, drifts
+
+    drifted, drifts = mod.check_drift(_snapshot_with_metric(mod, 1006))
+    assert drifted, drifts
+
+    drifted, drifts = mod.check_drift(
+        _snapshot_with_metric(mod, 1006),
+        threshold=0.01,
+    )
+    assert not drifted, drifts
+
+
+def test_strict_check_exits_nonzero_on_drift(tmp_path, monkeypatch, capsys):
+    mod = _load_module()
+    metrics_doc = tmp_path / "METRICS.md"
+    _write_metrics_doc(metrics_doc, 100)
+    monkeypatch.setattr(mod, "METRICS_DOC", metrics_doc)
+    monkeypatch.setattr(mod, "gather_metrics", lambda: _snapshot_with_metric(mod, 200))
+    monkeypatch.setattr(sys, "argv", ["regenerate_metrics.py", "--check"])
+
+    assert mod.main() == 1
+    out = capsys.readouterr().out
+    assert "Metrics drifted:" in out
+    assert "Run `python scripts/regenerate_metrics.py`" in out
+
+
+def test_advisory_check_exits_zero_on_drift(tmp_path, monkeypatch, capsys):
+    mod = _load_module()
+    metrics_doc = tmp_path / "METRICS.md"
+    _write_metrics_doc(metrics_doc, 100)
+    original_doc = metrics_doc.read_text(encoding="utf-8")
+    monkeypatch.setattr(mod, "METRICS_DOC", metrics_doc)
+    monkeypatch.setattr(mod, "gather_metrics", lambda: _snapshot_with_metric(mod, 200))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["regenerate_metrics.py", "--check", "--advisory"],
+    )
+
+    assert mod.main() == 0
+    assert metrics_doc.read_text(encoding="utf-8") == original_doc
+    out = capsys.readouterr().out
+    assert "Metrics drifted (advisory):" in out
+    assert "Advisory mode: drift reported" in out
