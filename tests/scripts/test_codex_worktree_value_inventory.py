@@ -751,3 +751,105 @@ def test_build_parser_smart_merge_detection_default_off() -> None:
 
     assert parser.parse_args([]).smart_merge_detection is False
     assert parser.parse_args(["--smart-merge-detection"]).smart_merge_detection is True
+
+
+def test_build_parser_include_pr_state_default_off() -> None:
+    import codex_worktree_value_inventory as mod
+
+    parser = mod.build_parser()
+
+    assert parser.parse_args([]).include_pr_state is False
+    assert parser.parse_args(["--include-pr-state"]).include_pr_state is True
+
+
+def test_lookup_open_prs_uses_cached_open_pr_heads_when_provided(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_value_inventory as mod
+
+    called: dict[str, bool] = {"subprocess": False}
+
+    def fake_run_cmd(*_args: Any, **_kwargs: Any) -> Any:
+        called["subprocess"] = True
+        raise RuntimeError("should not be called when cache is supplied")
+
+    monkeypatch.setattr(mod, "run_cmd", fake_run_cmd)
+
+    cache: dict[str, list[dict[str, Any]]] = {
+        "feat/x": [{"number": 123, "title": "Open feature", "url": "https://example.test/pr/123"}],
+        "feat/y": [{"number": 456, "title": "Other PR", "url": "https://example.test/pr/456"}],
+    }
+
+    prs, failed, err = mod.lookup_open_prs(
+        tmp_path,
+        "feat/x",
+        timeout=1,
+        skip_gh=True,
+        cached_open_pr_heads=cache,
+    )
+
+    assert prs == [{"number": 123, "title": "Open feature", "url": "https://example.test/pr/123"}]
+    assert failed is False
+    assert err is None
+    assert called["subprocess"] is False
+
+
+def test_lookup_open_prs_returns_empty_when_branch_not_in_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_value_inventory as mod
+
+    def fake_run_cmd(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("should not be called when cache is supplied")
+
+    monkeypatch.setattr(mod, "run_cmd", fake_run_cmd)
+
+    prs, failed, err = mod.lookup_open_prs(
+        tmp_path,
+        "feat/unknown",
+        timeout=1,
+        skip_gh=True,
+        cached_open_pr_heads={"feat/x": [{"number": 123}]},
+    )
+
+    assert prs == []
+    assert failed is False
+    assert err is None
+
+
+def test_classify_candidate_marks_open_pr_when_cache_hit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import codex_worktree_value_inventory as mod
+
+    root = _candidate(tmp_path)
+    monkeypatch.setattr(mod, "git_branch", lambda *_a, **_k: ("feat/x", False, None))
+    monkeypatch.setattr(mod, "git_head", lambda *_a, **_k: ("abc1234", False, None))
+    monkeypatch.setattr(mod, "git_status_dirty", lambda *_a, **_k: (False, False, None))
+    monkeypatch.setattr(mod, "git_ahead_behind", lambda *_a, **_k: (3, 0, False, None))
+    monkeypatch.setattr(mod, "is_patch_equivalent", lambda *_a, **_k: False)
+
+    cache: dict[str, list[dict[str, Any]]] = {
+        "feat/x": [
+            {"number": 999, "title": "Open PR for feat/x", "url": "https://example.test/pr/999"}
+        ],
+    }
+    ctx = _context(
+        tmp_path,
+        strict_repo_identity=False,
+        open_pr_heads_cache=cache,
+        skip_gh=True,
+    )
+
+    candidate = mod.classify_candidate(
+        root,
+        context=ctx,
+        size_bytes=1024,
+        size_lookup_failed=False,
+    )
+
+    assert candidate.classification == "open_pr_or_outbox"
+    assert candidate.decision == "preserve"
+    assert candidate.links["open_prs"] == [
+        {"number": 999, "title": "Open PR for feat/x", "url": "https://example.test/pr/999"}
+    ]

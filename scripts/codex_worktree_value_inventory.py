@@ -141,6 +141,7 @@ class InventoryContext:
     patch_timeout: int
     smart_merge_detection: bool = False
     smart_merge_main_subjects: list[str] = field(default_factory=list)
+    open_pr_heads_cache: dict[str, list[dict[str, Any]]] | None = None
 
 
 def utc_now() -> datetime:
@@ -480,10 +481,57 @@ def branch_subjects_match_recent_main(
     return len(matched) == len(subjects), matched
 
 
+def prefetch_open_pr_heads(
+    repo: Path, *, timeout: int
+) -> tuple[dict[str, list[dict[str, Any]]], bool, str | None]:
+    proc = run_cmd(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--limit",
+            "500",
+            "--json",
+            "number,title,url,headRefName",
+        ],
+        repo,
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        return {}, True, proc.stderr.strip() or "gh pr prefetch failed"
+    try:
+        payload = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        return {}, True, f"failed to parse gh pr prefetch output: {exc}"
+    if not isinstance(payload, list):
+        return {}, True, "gh pr prefetch output was not a list"
+    cache: dict[str, list[dict[str, Any]]] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        head = item.get("headRefName")
+        if not isinstance(head, str) or not head:
+            continue
+        record = {k: v for k, v in item.items() if k in ("number", "title", "url")}
+        cache.setdefault(head, []).append(record)
+    return cache, False, None
+
+
 def lookup_open_prs(
-    repo: Path, branch: str | None, *, timeout: int, skip_gh: bool
+    repo: Path,
+    branch: str | None,
+    *,
+    timeout: int,
+    skip_gh: bool,
+    cached_open_pr_heads: dict[str, list[dict[str, Any]]] | None = None,
 ) -> tuple[list[dict[str, Any]], bool, str | None]:
-    if not branch or skip_gh:
+    if not branch:
+        return [], False, None
+    if cached_open_pr_heads is not None:
+        return list(cached_open_pr_heads.get(branch, [])), False, None
+    if skip_gh:
         return [], False, None
     proc = run_cmd(
         ["gh", "pr", "list", "--state", "open", "--head", branch, "--json", "number,title,url"],
@@ -660,6 +708,7 @@ def classify_candidate(
         branch,
         timeout=context.gh_timeout,
         skip_gh=context.skip_gh,
+        cached_open_pr_heads=context.open_pr_heads_cache,
     )
     links["open_prs"] = open_prs
     if open_pr_failed:
@@ -965,6 +1014,7 @@ def inventory(
     gh_timeout: int,
     patch_timeout: int,
     smart_merge_detection: bool = False,
+    include_pr_state: bool = False,
 ) -> dict[str, Any]:
     repo = resolve_repo(repo)
     base_sha = resolve_ref(repo, base, timeout=git_timeout)
@@ -975,6 +1025,11 @@ def inventory(
         roots = resolve_default_roots(repo)
     candidate_paths = candidate_roots_from(roots, limit)
     sizes, size_failures = measure_sizes(candidate_paths, mode=size_mode, timeout=size_timeout)
+    open_pr_heads_cache: dict[str, list[dict[str, Any]]] | None = None
+    if include_pr_state:
+        cache, fetch_failed, _err = prefetch_open_pr_heads(repo, timeout=gh_timeout)
+        if not fetch_failed:
+            open_pr_heads_cache = cache
     context = InventoryContext(
         repo=repo,
         base=base,
@@ -1004,6 +1059,7 @@ def inventory(
             if smart_merge_detection
             else []
         ),
+        open_pr_heads_cache=open_pr_heads_cache,
     )
     candidates = [
         classify_candidate(
@@ -1025,6 +1081,8 @@ def inventory(
         "base_sha": base_sha,
         "size_mode": size_mode,
         "smart_merge_detection": smart_merge_detection,
+        "include_pr_state": include_pr_state,
+        "open_pr_heads_cache_used": open_pr_heads_cache is not None,
         "limit": limit,
         "summary": build_summary(candidates),
         "candidates": [asdict(candidate) for candidate in candidates],
@@ -1115,6 +1173,16 @@ def build_parser() -> argparse.ArgumentParser:
             "subject. Default off to preserve legacy inventory behavior."
         ),
     )
+    parser.add_argument(
+        "--include-pr-state",
+        action="store_true",
+        help=(
+            "Supplement --skip-gh with a single cached `gh pr list --state open` "
+            "lookup at scan start, mapping headRefName -> open PR records. "
+            "Branches matching an open PR get classified as open_pr_or_outbox "
+            "(preserved) rather than harvest_candidate. No-op if gh is unavailable."
+        ),
+    )
     parser.add_argument("--write-ledger", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="Suppress ledger writes.")
     parser.add_argument("--json", action="store_true")
@@ -1141,6 +1209,7 @@ def main(argv: list[str] | None = None) -> int:
         gh_timeout=args.gh_timeout,
         patch_timeout=args.patch_timeout,
         smart_merge_detection=args.smart_merge_detection,
+        include_pr_state=args.include_pr_state,
     )
     if args.write_ledger and not args.dry_run:
         payload["ledger_written"] = write_ledger(args.ledger_root, payload)
