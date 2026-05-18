@@ -514,11 +514,20 @@ def _mark_lane_identity_conflicts(rows: list[dict[str, Any]]) -> None:
         row_conflicts = conflict_by_lane.get(lane_id)
         if not row_conflicts:
             continue
+        # ``is_conflict`` is true for either an explicit status=="conflict" row
+        # or a computed identity conflict between active lanes.
         row["is_conflict"] = True
         row["identity_conflicts"] = row_conflicts
-        row["conflict_reason"] = "; ".join(
-            f"{conflict['key_kind']}={conflict['key_value']}" for conflict in row_conflicts
-        )
+        reason_parts = [
+            part.strip()
+            for part in str(row.get("conflict_reason") or "").split(";")
+            if part.strip()
+        ]
+        for conflict in row_conflicts:
+            part = f"{conflict['key_kind']}={conflict['key_value']}"
+            if part not in reason_parts:
+                reason_parts.append(part)
+        row["conflict_reason"] = "; ".join(reason_parts)
 
 
 def fetch_open_prs(

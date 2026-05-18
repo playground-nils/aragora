@@ -226,7 +226,7 @@ def _active_identity_conflict(
     rows: list[dict[str, Any]],
     normalized: dict[str, Any],
     owner_session: str,
-) -> tuple[dict[str, Any], str, str] | None:
+) -> tuple[dict[str, Any], list[tuple[str, str]]] | None:
     requested = set(_identity_claims(normalized))
     if not requested or str(normalized.get("status") or "") not in ACTIVE_STATUSES:
         return None
@@ -239,8 +239,7 @@ def _active_identity_conflict(
         overlap = requested.intersection(_identity_claims(existing))
         if not overlap:
             continue
-        kind, value = sorted(overlap)[0]
-        return existing, kind, value
+        return existing, sorted(overlap)
     return None
 
 
@@ -351,9 +350,10 @@ def claim_lane(
             owner_session=owner_session,
         )
         if identity_conflict is not None and not allow_resource_conflicts and not force:
-            existing, kind, value = identity_conflict
+            existing, overlaps = identity_conflict
+            overlap_text = ", ".join(f"{kind}={value!r}" for kind, value in overlaps)
             raise ClaimError(
-                f"{kind}={value!r} already claimed by "
+                f"{overlap_text} already claimed by "
                 f"lane_id={existing.get('lane_id')!r} "
                 f"owner_session={existing.get('owner_session')!r}; refusing to "
                 "create overlapping active lane (use --force to override)"

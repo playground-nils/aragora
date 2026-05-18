@@ -782,7 +782,47 @@ def test_detect_agent_bridge_lanes_marks_duplicate_active_pr_conflicts(tmp_path:
     )
 
     assert {row["lane_id"] for row in out if row["is_conflict"]} == {"lane-a", "lane-b"}
+    lane_a = next(row for row in out if row["lane_id"] == "lane-a")
+    assert lane_a["status"] == "active"
+    assert lane_a["is_conflict"] is True
+    assert lane_a["conflict_reason"] == "branch=worktree-codex-insights; pr_number=7245"
     assert detector.lane_identity_conflicts(out)[0]["key_kind"] == "branch"
+
+
+def test_detect_agent_bridge_lanes_preserves_existing_identity_conflict_reason(
+    tmp_path: Path,
+) -> None:
+    registry = tmp_path / ".aragora" / "agent-bridge" / "lanes.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "owner_session": "codex-A",
+                    "status": "active",
+                    "pr_number": 7245,
+                    "conflict_reason": "manual operator note",
+                },
+                {
+                    "lane_id": "lane-b",
+                    "owner_session": "codex-B",
+                    "status": "active",
+                    "pr_number": 7245,
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    out = detector.detect_agent_bridge_lanes(
+        tmp_path,
+        user_path=tmp_path / "missing.json",
+    )
+
+    lane_a = next(row for row in out if row["lane_id"] == "lane-a")
+    assert lane_a["is_conflict"] is True
+    assert lane_a["conflict_reason"] == "manual operator note; pr_number=7245"
 
 
 def test_detect_agent_bridge_lanes_does_not_conflict_released_lanes(tmp_path: Path) -> None:

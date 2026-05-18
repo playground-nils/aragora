@@ -472,6 +472,36 @@ def test_operator_snapshot_counts_active_duplicate_pr_lanes_as_conflicts(
     assert payload["health"]["issues"][0]["type"] == "lane_identity_conflict"
 
 
+def test_operator_snapshot_high_process_count_alone_is_not_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import agent_bridge as mod
+
+    _patch_bridge_paths(mod, tmp_path, monkeypatch)
+    mod.AGENT_BRIDGE_DIR.mkdir(parents=True, exist_ok=True)
+    mod.LANE_REGISTRY_FILE.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(mod, "discover", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        mod,
+        "_collect_agent_process_census",
+        lambda *, include_records=True, record_limit=None, ps_lines=None: {
+            "ok": True,
+            "total": 500,
+            "by_role": {"codex_app_server": 500},
+        },
+    )
+
+    rc = mod.cmd_operator_snapshot(argparse.Namespace(json=True, summary_only=True))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["active_processes"] == 500
+    assert payload["summary"]["conflict_lanes"] == 0
+    assert payload["health"]["ok"] is True
+
+
 def test_collect_agent_process_census_redacts_commands_and_counts_roles() -> None:
     import agent_bridge as mod
 

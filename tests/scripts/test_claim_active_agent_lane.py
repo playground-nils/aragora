@@ -190,6 +190,34 @@ def test_different_lane_same_worktree_is_rejected_by_default(
     assert "worktree='/tmp/aragora-pr7245' already claimed" in str(excinfo.value)
 
 
+def test_different_lane_same_identity_reports_all_overlapping_keys(
+    tmp_registry: Path,
+) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        pr_number=7245,
+        branch="worktree-codex-insights",
+        worktree="/tmp/aragora-pr7245",
+    )
+
+    with pytest.raises(claim_module.ClaimError) as excinfo:
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="lane-b",
+            owner_session="codex-B",
+            pr_number=7245,
+            branch="worktree-codex-insights",
+            worktree="/tmp/aragora-pr7245",
+        )
+
+    message = str(excinfo.value)
+    assert "branch='worktree-codex-insights'" in message
+    assert "pr_number='7245'" in message
+    assert "worktree='/tmp/aragora-pr7245'" in message
+
+
 def test_same_owner_can_refresh_same_pr_identity(tmp_registry: Path) -> None:
     claim_module.claim_lane(
         registry_path=tmp_registry,
@@ -561,6 +589,14 @@ def test_module_imports_no_aragora_package() -> None:
     source = SCRIPT_PATH.read_text(encoding="utf-8")
     assert "import aragora" not in source
     assert "from aragora" not in source
+
+
+def test_active_lane_statuses_match_bridge_and_detector() -> None:
+    agent_bridge = importlib.import_module("agent_bridge")
+    detector = importlib.import_module("list_active_agent_sessions")
+
+    assert claim_module.ACTIVE_STATUSES == set(agent_bridge.ACTIVE_LANE_STATUSES)
+    assert claim_module.ACTIVE_STATUSES == set(detector.ACTIVE_LANE_STATUSES)
 
 
 def test_resolve_registry_path_prefers_repo_local(tmp_path: Path) -> None:
