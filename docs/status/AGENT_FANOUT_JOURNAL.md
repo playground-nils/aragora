@@ -42,3 +42,4 @@ Columns: `timestamp_utc | session_id | agent_family | phase_id | pr_number | out
 2026-05-18T06:12:30Z | codex-7FFAEAF0 | codex | P22-check-canonical-metrics-json-flag | 7313 | shipped
 2026-05-18T12:14:19Z | codex-2D173797 | codex | P29-cleanup-safe-removable-worktrees | - | shipped
 2026-05-18T12:31:27Z | codex-D02A76F9 | codex | P47-operator-snapshot-active-lane-parity | 7324 | shipped
+2026-05-18T12:40:21Z | codex-9B0801A8 | codex | P48-settle-7324-operator-snapshot-parity | 7324 | shipped
