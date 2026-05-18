@@ -50,8 +50,10 @@ def test_check_raises_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_FLAG, raising=False)
     with pytest.raises(DisputeWindowGateDisabledError, match=_FLAG):
         DisputeWindowGate().check(
-            claim_id=_CLAIM, domain=DOMAIN_PREDICTION_MARKET,
-            resolved_at=_RESOLVED, filed_at=_t(12),
+            claim_id=_CLAIM,
+            domain=DOMAIN_PREDICTION_MARKET,
+            resolved_at=_RESOLVED,
+            filed_at=_t(12),
         )
 
 
@@ -84,22 +86,28 @@ def gate(monkeypatch: pytest.MonkeyPatch) -> DisputeWindowGate:
     return DisputeWindowGate()
 
 
-@pytest.mark.parametrize("domain,filed_h", [
-    (DOMAIN_PREDICTION_MARKET, 36),
-    (DOMAIN_PREDICTION_MARKET, 72),   # boundary inclusive
-    (DOMAIN_CODE_PR, 10),
-    (DOMAIN_CRUX_RESOLUTION, 1),
-])
+@pytest.mark.parametrize(
+    "domain,filed_h",
+    [
+        (DOMAIN_PREDICTION_MARKET, 36),
+        (DOMAIN_PREDICTION_MARKET, 72),  # boundary inclusive
+        (DOMAIN_CODE_PR, 10),
+        (DOMAIN_CRUX_RESOLUTION, 1),
+    ],
+)
 def test_within_window(gate: DisputeWindowGate, domain: str, filed_h: float) -> None:
     r = gate.check(claim_id=_CLAIM, domain=domain, resolved_at=_RESOLVED, filed_at=_t(filed_h))
     assert r.within_window is True
 
 
-@pytest.mark.parametrize("domain,filed_h", [
-    (DOMAIN_PREDICTION_MARKET, 73),
-    (DOMAIN_CODE_PR, 25),
-    (DOMAIN_KM_CONTRIBUTION, 25),
-])
+@pytest.mark.parametrize(
+    "domain,filed_h",
+    [
+        (DOMAIN_PREDICTION_MARKET, 73),
+        (DOMAIN_CODE_PR, 25),
+        (DOMAIN_KM_CONTRIBUTION, 25),
+    ],
+)
 def test_outside_window(gate: DisputeWindowGate, domain: str, filed_h: float) -> None:
     r = gate.check(claim_id=_CLAIM, domain=domain, resolved_at=_RESOLVED, filed_at=_t(filed_h))
     assert r.within_window is False
@@ -107,23 +115,34 @@ def test_outside_window(gate: DisputeWindowGate, domain: str, filed_h: float) ->
 
 def test_negative_elapsed_is_within(gate: DisputeWindowGate) -> None:
     r = gate.check(
-        claim_id=_CLAIM, domain=DOMAIN_PREDICTION_MARKET,
-        resolved_at=_RESOLVED, filed_at=_t(-1),
+        claim_id=_CLAIM,
+        domain=DOMAIN_PREDICTION_MARKET,
+        resolved_at=_RESOLVED,
+        filed_at=_t(-1),
     )
     assert r.within_window is True and r.elapsed_hours < 0
 
 
 def test_record_fields_and_to_dict(gate: DisputeWindowGate) -> None:
     r = gate.check(
-        claim_id="clm_xyz", domain=DOMAIN_CODE_PR,
-        resolved_at=_RESOLVED, filed_at=_t(10), evidence={"src": "oracle"},
+        claim_id="clm_xyz",
+        domain=DOMAIN_CODE_PR,
+        resolved_at=_RESOLVED,
+        filed_at=_t(10),
+        evidence={"src": "oracle"},
     )
     assert r.claim_id == "clm_xyz"
     assert abs(r.elapsed_hours - 10.0) < 0.01
     assert r.evidence["src"] == "oracle"
     assert set(r.to_dict()) == {
-        "claim_id", "domain", "resolved_at", "filed_at",
-        "window_hours", "elapsed_hours", "within_window", "evidence",
+        "claim_id",
+        "domain",
+        "resolved_at",
+        "filed_at",
+        "window_hours",
+        "elapsed_hours",
+        "within_window",
+        "evidence",
     }
 
 
@@ -131,18 +150,23 @@ def test_custom_narrow_window_rejects(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_FLAG, "1")
     gate = DisputeWindowGate(DisputeWindowPolicy({DOMAIN_PREDICTION_MARKET: 1.0}))
     assert not gate.check(
-        claim_id=_CLAIM, domain=DOMAIN_PREDICTION_MARKET,
-        resolved_at=_RESOLVED, filed_at=_t(2),
+        claim_id=_CLAIM,
+        domain=DOMAIN_PREDICTION_MARKET,
+        resolved_at=_RESOLVED,
+        filed_at=_t(2),
     ).within_window
 
 
 def test_unknown_domain_through_gate(gate: DisputeWindowGate) -> None:
     with pytest.raises(UnknownDomainError):
-        gate.check(claim_id=_CLAIM, domain="bad_domain",
-                   resolved_at=_RESOLVED, filed_at=_t(1))
+        gate.check(claim_id=_CLAIM, domain="bad_domain", resolved_at=_RESOLVED, filed_at=_t(1))
 
 
 def test_malformed_timestamp_raises(gate: DisputeWindowGate) -> None:
     with pytest.raises(ValueError, match="cannot parse"):
-        gate.check(claim_id=_CLAIM, domain=DOMAIN_PREDICTION_MARKET,
-                   resolved_at="not-a-date", filed_at=_t(1))
+        gate.check(
+            claim_id=_CLAIM,
+            domain=DOMAIN_PREDICTION_MARKET,
+            resolved_at="not-a-date",
+            filed_at=_t(1),
+        )
