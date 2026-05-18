@@ -1,0 +1,1708 @@
+{
+  "boss_ready_branches": [
+    "codex/audit-active-lane-branch-protection-20260518",
+    "codex/harvest-rescue-productization-guard-20260518",
+    "codex/publisher-empty-outbox-cache-ready-20260518"
+  ],
+  "delete_count": 0,
+  "delete_rule": {
+    "has_open_pr": false,
+    "last_commit_age_days_min": 30,
+    "not_boss_ready": true,
+    "not_journal_recent_7d": true,
+    "unique_commits": 0
+  },
+  "generated_at_utc": "20260518T193945Z",
+  "journal_recent_7d_branches": [
+    "codex/"
+  ],
+  "lane": "P70-codex-remote-namespace-audit",
+  "namespace": "codex/*",
+  "remote_branch_count_pre": 187,
+  "rows": [
+    {
+      "branch": "codex/6295-ci-diagnose",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/P64-agent-bridge-droid-exec-autonomy-20260518-175700",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 0,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/acceptance-heading-binding",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 30,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/admin-rotation-status-openapi",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/admin-system-health-sdk-contract",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-cli-resume-impl",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 27,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-dead-missing-worktrees",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-dead-missing-worktrees-pr-refresh",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-filter-permission-summaries",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-health-issue-counts",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-health-type-summary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/agent-bridge-ignore-orphan-transcript-worktrees",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-operator-snapshot-summary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-orphaned-unknown-health",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 14,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-permission-dialog-summary-filter",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-permission-summary-chrome",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-permission-summary-filter",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-pr-enrich-limit",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-pr2c-ui-salvage",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 26,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/agent-bridge-session-control-summary-refresh-20260506",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/agent-bridge-sessions-tmux-timeouts",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-skip-approval-menu-summary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-skip-permission-dialog-summary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/agent-bridge-skip-permission-mode-summary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-skip-permission-summary-chrome",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-bridge-skip-permission-ui-summaries",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/agent-ownership-stabilization-20260518",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 0,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/aragora-debate-tests-package-collision-backup-20260421-152418",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-active-session-live-cwd-protection",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-backlog-receipt-suppression",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 24,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-env-mutation-aliases",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-markdown-patch-budget-caveat",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-outbox-file-counts",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-patch-budget-summary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-protect-status-failed-worktrees",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-protect-unknown-divergence",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-same-tree-patch-equivalence",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-skip-protected-patch-checks",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 6,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-squash-merged-file-equivalence",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-summary-category-examples",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/audit-summary-patch-budget",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/automation-audit-invalid-toml-primary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/automation-audit-malformed-toml",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/automation-check-agent-bridge-contract",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/automation-check-duplicate-ids",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/automation-check-invalid-toml",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/automation-check-preflight-contract",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/b2-guard-expansion-criteria-5887",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/branch-publisher-single-push",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/build-info-openapi-contract",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/cache-status-repo-root-alias-primary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/cache-status-shared-state-root",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/cache-status-shared-state-root-restack",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/ci-main-skip-telemetry-docs-salvage",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 30,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/codex-20260417-1549-liveness-smoke",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/codex-20260417-180315-0bdc9fa4",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/codex-20260419-045744-2b77939e",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/codex-20260419-051523-a0fc7a21",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/codex-20260423-213831-9b16a862",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 25,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/control-plane-json-object-body",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/control-plane-json-object-body-refresh-bfd7",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/coordination-payload-coercion",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 30,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/corpus-aware-dispatch-upgrade-7209",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 2,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/debate-test-shard-timeout",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 23,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/deepseek-v4-pro-openrouter",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 24,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/devops-service-catalog-contract-salvage",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 26,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/devops-service-catalog-contract-truth",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/droid-20260518-192925-38cd85b1",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 0,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/feature-flags-collection-put-salvage-backup-20260423",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 25,
+      "unique_commits": 7
+    },
+    {
+      "branch": "codex/fix-mypy-baseline-repair-backup-20260421-1",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 27,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/flywheel-local-validation-spike",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/frontend-e2e-test-workflow-scope",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/github-health-timeout-connectivity",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/h1-readiness-auto-pr-evidence-primary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/h1-readiness-auto-pr-evidence-refresh",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/harvest-github-cli-health-unused-sys-20260516",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 2,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/harvest-metrics-refresh-20260516",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 2,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/harvest-rescue-productization-guard-20260518",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": true,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 0,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/harvest-salvage-schema-compat",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/heterogeneity-metric-counts",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/inventory-foreign-repo-guard",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 1,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/issue-5790-swarm-status-exceptions-20260512",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 5,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/lane-collision-hardening-followup-20260518",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 1,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/marketplace-listings-sdk-parity",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/mcp-tools-openapi-contract",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/metrics-drift-scope-aware-20260518",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 0,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/mypy-baseline-repair",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/notification-templates-openapi",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/observe-outcomes-gh-throttle-20260513",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 5,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/observe-outcomes-mutating-cli",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 5
+    },
+    {
+      "branch": "codex/operate-proof-loop-rev4-slice",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 11,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/operator-decisions-postmerge-hardening-20260518",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 0,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/operator-snapshot-health-counts",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/operator-snapshot-prunable-worktrees",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/operator-snapshot-status-counts",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/operator-snapshot-status-counts-restack",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/operator-snapshot-summary-chrome-count",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/operator-snapshot-summary-chrome-primary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/operator-snapshot-summary-scrub",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/operator-snapshot-summary-skip-details-restack-20260507",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 11,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/parallel-audit-active-session-markers",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/parallel-audit-state-dir-overrides",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/parallel-audit-status-failed-worktrees",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/parallel-audit-worktree-protections",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/pdb-addendum-fix",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/pdb-mode3-ui",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 26,
+      "unique_commits": 4
+    },
+    {
+      "branch": "codex/pdb-ui-v0",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/pipeline-graph-openapi-method-truth",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 30,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/pr-review-output-schema",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 27,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/pr-review-protocol",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/pr6288-build-fix",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 4
+    },
+    {
+      "branch": "codex/pr6288-state-rollup-fix",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 5
+    },
+    {
+      "branch": "codex/preflight-block-codex-session-log",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/proof-first-launchctl-fail-closed",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/proof-loop-first-closure-primary-20260513",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 5,
+      "unique_commits": 4
+    },
+    {
+      "branch": "codex/publish-empty-handoff-noop",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publish-empty-handoff-noop-current-20260512",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 6,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publish-handoffs-dry-run-flag",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-dot-aragora-state-root",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-active-outbox-primary",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-active-outbox-primary-20260504",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 14,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-direct-aragora-root",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-dot-aragora-env-root",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-dot-aragora-env-root-refresh",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-launchd-stub-arity",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-launchd-stub-arity-refresh",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-receipt-dir-alias",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 11,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-receipt-dir-compat",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 11,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-freshness-shared-state-root",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-protect-status-failed-worktrees",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-skip-empty-pr-diff",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 24,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/publisher-skip-merged-push-pr-handoffs",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 23,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/publisher-superseded-list-evidence",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/queue-autofill-create-issues",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/reconcile-6286-20260419",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/reconcile-direct-aragora-root-20260504",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 14,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/reconcile-direct-aragora-state-root",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/reconcile-list-local-evidence-branch",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/reconcile-mypy-baseline-main",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/reconcile-mypy-baseline-main-restack-20260420",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 27,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/reconcile-outbox-json-mode",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/reconcile-outbox-json-output",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/repair-6365",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/repair-archived-receipt-branch-map-20260506",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/repair-audit-backlog-budget",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/repair-audit-backlog-budget-refresh-20260505",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/repair-audit-backlog-budget-restack-20260506",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 12,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/repair-check-rollup-workflow-alias",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/retry-hydration-repo-scope-salvage",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/review-6454",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 24,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/review-6881",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/review-6883",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/review-6887",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 18,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/review-agent-alias-normalization",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/review-gate-advisory-policy",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/review-gate-missing-artifact-fail-closed",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/review-pr6808",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/review-queue-baseline-docs-refresh",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/review-queue-browser-settlement",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 28,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/review-queue-stats-header-fix",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 27,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/root-preclean-anchor-20260423T181442Z",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 27,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/root-salvage-agent-bridge-20260423T181442Z",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 25,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/root-salvage-pdb-20260423T181442Z",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 25,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/run-test-baseline-extra-ignore",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/safe-cleanup-status-failed-worktrees",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/salvage-automation-dogfood-bridge-state",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/salvage-branch-publisher-empty-queue-noop-refresh",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/salvage-evolution-round-dogfood-artifacts",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 19,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/salvage-metrics-refresh-after-6979",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 15,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/salvage-rev4-evidence-gap-target-fix-20260507",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 11,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/salvage-sql-helpers-tests",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 23,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/sdk-parity-residue-20260417",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/session-state-retry-persistence-20260418",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 9
+    },
+    {
+      "branch": "codex/settlement-packet-ui-20260517",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 1,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/settlements-auth-rbac-truth-20260418-7049",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 30,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/settlements-sdk-parity-20260418",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 30,
+      "unique_commits": 8
+    },
+    {
+      "branch": "codex/spec-upgrader-audit-comment-pagination",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 31,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/spec-upgrader-gh-read-failopen",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 29,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/supervisor-skip-historical-sessions",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/swarm-3fda036c-micro-2",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 5,
+      "unique_commits": 3
+    },
+    {
+      "branch": "codex/swarm-848a8081-micro-2",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 0,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/swarm-eeef7ef7-micro-3",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 22,
+      "unique_commits": 2
+    },
+    {
+      "branch": "codex/tmux-launcher-metadata-helper",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/tmux-launcher-metadata-helper-current-base",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 13,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/verify-claims-script-import-root",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 17,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/verify-claims-script-import-root-restack",
+      "disposition": "review",
+      "has_open_pr": false,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 16,
+      "unique_commits": 1
+    },
+    {
+      "branch": "codex/worktree-inventory-runtime-budget-20260517",
+      "disposition": "keep",
+      "has_open_pr": true,
+      "is_boss_ready": false,
+      "journal_recent_7d": false,
+      "last_commit_age_days": 1,
+      "unique_commits": 1
+    }
+  ],
+  "schema_version": 1
+}
