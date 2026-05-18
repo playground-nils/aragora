@@ -56,6 +56,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+_fcntl: Any
 try:
     import fcntl as _fcntl
 except ImportError:
