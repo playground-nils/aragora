@@ -249,10 +249,91 @@ def test_build_parser_defaults() -> None:
     parser = mod.build_parser()
     args = parser.parse_args([])
     assert args.apply is False
+    assert args.dry_run is False
     assert args.max_active_age_hours == 24.0
     assert args.branch_grace_hours == 1.0
     assert args.skip_branch_check is False
     assert args.skip_remote_check is False
+
+
+def test_dry_run_flag_is_accepted_as_noop_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--dry-run is an explicit no-op alias for the default behavior.
+
+    Used by Makefile/cron invocations so the intent is self-documenting.
+    It must NOT change the canonical --apply semantics (still default off).
+    """
+    import sweep_stale_lane_claims as mod
+
+    parser = mod.build_parser()
+    args = parser.parse_args(["--dry-run"])
+    assert args.dry_run is True
+    assert args.apply is False
+
+
+def test_dry_run_and_apply_are_mutually_exclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Combining --dry-run and --apply must fail closed (parser error)."""
+    import sweep_stale_lane_claims as mod
+
+    registry = tmp_path / "lanes.json"
+    _write_registry(registry, [])
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--registry-path",
+                str(registry),
+                "--repo",
+                str(tmp_path),
+                "--dry-run",
+                "--apply",
+            ]
+        )
+    assert exc.value.code != 0
+    captured = capsys.readouterr()
+    assert "mutually exclusive" in captured.err
+
+
+def test_dry_run_flag_does_not_write_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An invocation with --dry-run must leave the registry untouched even when
+    stale rows are detected (sanity guard against future regression where the
+    flag accidentally toggles apply semantics)."""
+    import sweep_stale_lane_claims as mod
+
+    registry = tmp_path / "lanes.json"
+    _write_registry(
+        registry,
+        [
+            {
+                "lane_id": "old-stale",
+                "owner_session": "ghost-001",
+                "branch": "missing-branch",
+                "status": "active",
+                "updated_at": "2026-05-15T12:00:00Z",
+            },
+        ],
+    )
+
+    monkeypatch.setattr(mod, "branch_exists_locally", lambda *_a, **_k: False)
+    monkeypatch.setattr(mod, "branch_exists_remotely", lambda *_a, **_k: False)
+
+    rc = mod.main(
+        [
+            "--registry-path",
+            str(registry),
+            "--repo",
+            str(tmp_path),
+            "--dry-run",
+        ]
+    )
+    assert rc == 0
+    persisted = json.loads(registry.read_text())
+    assert persisted[0]["status"] == "active"
 
 
 def test_branch_grace_period_protects_fresh_claims(

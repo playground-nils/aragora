@@ -307,6 +307,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rewrite stale active rows in-place with status=expired (default dry-run)",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Explicit no-op alias for the default behavior (no rewrite). "
+            "Mutually exclusive with --apply. Useful in scripted invocations "
+            "(Makefile, cron) where the intent should be self-documenting."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print full machine-readable JSON to stdout",
@@ -315,7 +324,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.dry_run and args.apply:
+        parser.error("--dry-run and --apply are mutually exclusive")
     repo = args.repo.expanduser().resolve()
     registry_path = resolve_registry_path(repo_root=repo, explicit=args.registry_path)
     report = sweep(
