@@ -207,15 +207,34 @@ def _parse_utc_timestamp(value: object) -> dt.datetime | None:
     return parsed.astimezone(dt.UTC)
 
 
+def _normalize_branch_token(value: str) -> str:
+    token = value.strip()
+    for prefix in ("refs/heads/", "refs/remotes/origin/", "origin/"):
+        if token.startswith(prefix):
+            token = token[len(prefix) :]
+            break
+    return token.rstrip("/")
+
+
+def _normalize_worktree_token(value: str) -> str:
+    token = value.strip().rstrip("/")
+    if not token:
+        return ""
+    try:
+        return str(Path(token).expanduser().resolve(strict=False))
+    except (OSError, RuntimeError):
+        return token
+
+
 def _identity_claims(row: dict[str, Any]) -> list[tuple[str, str]]:
     claims: list[tuple[str, str]] = []
     pr_number = row.get("pr_number")
     if isinstance(pr_number, int):
         claims.append(("pr_number", str(pr_number)))
-    branch = str(row.get("branch") or "").strip()
+    branch = _normalize_branch_token(str(row.get("branch") or ""))
     if branch:
         claims.append(("branch", branch))
-    worktree = str(row.get("worktree") or "").strip()
+    worktree = _normalize_worktree_token(str(row.get("worktree") or ""))
     if worktree:
         claims.append(("worktree", worktree))
     return claims

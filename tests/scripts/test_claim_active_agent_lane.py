@@ -187,7 +187,8 @@ def test_different_lane_same_worktree_is_rejected_by_default(
             worktree="/tmp/aragora-pr7245",
         )
 
-    assert "worktree='/tmp/aragora-pr7245' already claimed" in str(excinfo.value)
+    canonical = claim_module._normalize_worktree_token("/tmp/aragora-pr7245")
+    assert f"worktree={canonical!r} already claimed" in str(excinfo.value)
 
 
 def test_same_owner_can_refresh_same_pr_identity(tmp_registry: Path) -> None:
@@ -584,3 +585,84 @@ def test_explicit_registry_path_wins(tmp_path: Path) -> None:
     override = tmp_path / "override.json"
     actual = claim_module.resolve_registry_path(repo_root=repo_root, explicit=override)
     assert actual == override
+
+
+def test_normalize_branch_token_strips_refs_heads_prefix() -> None:
+    assert claim_module._normalize_branch_token("refs/heads/feat/x") == "feat/x"
+    assert claim_module._normalize_branch_token("refs/remotes/origin/feat/y") == "feat/y"
+    assert claim_module._normalize_branch_token("origin/feat/z") == "feat/z"
+
+
+def test_normalize_branch_token_strips_whitespace_and_trailing_slash() -> None:
+    assert claim_module._normalize_branch_token("  feat/x/ ") == "feat/x"
+    assert claim_module._normalize_branch_token("feat/x//") == "feat/x"
+    assert claim_module._normalize_branch_token("") == ""
+
+
+def test_normalize_worktree_token_expands_and_strips_trailing_slash(tmp_path: Path) -> None:
+    target = tmp_path / "worktrees" / "x"
+    target.mkdir(parents=True)
+    assert claim_module._normalize_worktree_token(f"{target}/") == str(target.resolve())
+    assert claim_module._normalize_worktree_token("") == ""
+
+
+def test_branch_collision_detected_across_refs_heads_prefix(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        branch="refs/heads/feat/x",
+    )
+
+    with pytest.raises(claim_module.ClaimError) as excinfo:
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="lane-b",
+            owner_session="codex-B",
+            branch="feat/x",
+        )
+
+    assert "branch='feat/x' already claimed" in str(excinfo.value)
+
+
+def test_branch_collision_detected_across_trailing_slash(tmp_registry: Path) -> None:
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        branch="feat/x",
+    )
+
+    with pytest.raises(claim_module.ClaimError) as excinfo:
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="lane-b",
+            owner_session="codex-B",
+            branch="feat/x/",
+        )
+
+    assert "branch='feat/x' already claimed" in str(excinfo.value)
+
+
+def test_worktree_collision_detected_across_trailing_slash(
+    tmp_path: Path, tmp_registry: Path
+) -> None:
+    worktree = tmp_path / "wt-a"
+    worktree.mkdir()
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="lane-a",
+        owner_session="codex-A",
+        worktree=str(worktree),
+    )
+
+    with pytest.raises(claim_module.ClaimError) as excinfo:
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="lane-b",
+            owner_session="codex-B",
+            worktree=f"{worktree}/",
+        )
+
+    assert "worktree=" in str(excinfo.value)
+    assert str(worktree.resolve()) in str(excinfo.value)
