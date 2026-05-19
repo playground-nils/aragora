@@ -115,6 +115,12 @@ LANE_RECORD_KEYS = (
     "codex_thread_id",
     "codex_rollout_path",
     "session_title",
+    # Delegation Contract v0.2 — authority chain attached to each lane.
+    # All three optional; backward-compatible with pre-v0.2 lanes (None
+    # values are filtered by _normalize_row).
+    "delegation_contract_id",
+    "parent_contract_id",
+    "root_intent_id",
 )
 
 
@@ -328,21 +334,69 @@ def claim_lane(
     codex_thread_id: str = "",
     codex_rollout_path: str = "",
     session_title: str = "",
+    delegation_contract_id: str = "",
+    parent_contract_id: str = "",
+    root_intent_id: str = "",
     force: bool = False,
     allow_resource_conflicts: bool = False,
     updated_at: str | None = None,
 ) -> dict[str, Any]:
-    """Write or refresh a single lane claim, returning the persisted row."""
+    """Write or refresh a single lane claim, returning the persisted row.
+
+    Delegation Contract v0.2: when ``delegation_contract_id`` is supplied,
+    the three contract fields (delegation_contract_id, parent_contract_id,
+    root_intent_id) are persisted on the row so the authority chain is
+    visible at lane-registry queries. v0.2 does NOT yet verify the
+    contract against a stored DelegationContract JSON file — that
+    verification step lands in v0.4 (signing) and v0.5 (lane-time
+    enforcement). v0.2 ships only the schema attachment + monotonic-
+    narrowing rule when both ``delegation_contract_id`` and
+    ``parent_contract_id`` are set: ``parent_contract_id`` must match
+    the ``delegation_contract_id`` of an existing row in the registry.
+    """
     if not lane_id:
         raise ValueError("lane_id must not be empty")
     if not owner_session:
         raise ValueError("owner_session must not be empty")
     if status not in ALLOWED_STATUSES:
         raise ValueError(f"status {status!r} is not in {sorted(ALLOWED_STATUSES)}")
+    if parent_contract_id and not delegation_contract_id:
+        raise ValueError(
+            "parent_contract_id provided without delegation_contract_id; "
+            "every lane referencing a parent must also have its own contract id"
+        )
 
     with _registry_write_lock(registry_path):
         rows = _read_existing(registry_path)
         timestamp = updated_at or _utc_now_iso()
+
+        # Delegation Contract v0.2 monotonic-narrowing check:
+        # if parent_contract_id is set, it must resolve to an existing
+        # contract id in the registry (proving the parent claim exists +
+        # is part of the same chain).
+        if parent_contract_id:
+            parent_found = any(
+                str(r.get("delegation_contract_id") or "") == parent_contract_id for r in rows
+            )
+            if not parent_found and not force:
+                raise ClaimError(
+                    f"parent_contract_id={parent_contract_id!r} does not match any "
+                    f"existing delegation_contract_id in the lane registry; "
+                    f"parent contract must be claimed before child can chain to it "
+                    f"(use --force to override)"
+                )
+            # When a parent is referenced, root_intent_id must match the parent's
+            # root_intent_id if the parent declared one.
+            if root_intent_id:
+                for r in rows:
+                    if str(r.get("delegation_contract_id") or "") == parent_contract_id:
+                        parent_root = str(r.get("root_intent_id") or "")
+                        if parent_root and parent_root != root_intent_id:
+                            raise ClaimError(
+                                f"root_intent_id mismatch: child={root_intent_id!r} "
+                                f"parent={parent_root!r}; authority chains must share "
+                                f"a single root intent (use --force to override)"
+                            )
 
         new_row: dict[str, Any] = {
             "lane_id": lane_id,
@@ -361,6 +415,9 @@ def claim_lane(
             "codex_thread_id": codex_thread_id,
             "codex_rollout_path": codex_rollout_path,
             "session_title": session_title,
+            "delegation_contract_id": delegation_contract_id,
+            "parent_contract_id": parent_contract_id,
+            "root_intent_id": root_intent_id,
         }
         normalized = _normalize_row(new_row)
 
@@ -438,6 +495,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--session-title",
         default="",
         help="Optional visible or inferred session title for operator display.",
+    )
+    parser.add_argument(
+        "--delegation-contract-id",
+        default="",
+        help=(
+            "Delegation Contract v0.2: contract id binding this lane to a "
+            "specific authority grant. See "
+            "docs/governance/DELEGATION_CONTRACT_V0_1_SPEC.md."
+        ),
+    )
+    parser.add_argument(
+        "--parent-contract-id",
+        default="",
+        help=(
+            "Delegation Contract v0.2: contract id of the parent contract "
+            "in the authority chain. If set, the parent must already exist "
+            "in the registry (use --force to override). Requires "
+            "--delegation-contract-id."
+        ),
+    )
+    parser.add_argument(
+        "--root-intent-id",
+        default="",
+        help=(
+            "Delegation Contract v0.2: id of the root human-rooted intent "
+            "this lane derives from. When --parent-contract-id is set and "
+            "parent has root_intent_id, child's value must match."
+        ),
     )
     parser.add_argument(
         "--force",
@@ -526,6 +611,9 @@ def main(argv: list[str] | None = None) -> int:
                 codex_thread_id=args.codex_thread_id,
                 codex_rollout_path=args.codex_rollout_path,
                 session_title=args.session_title,
+                delegation_contract_id=args.delegation_contract_id,
+                parent_contract_id=args.parent_contract_id,
+                root_intent_id=args.root_intent_id,
                 force=args.force,
                 allow_resource_conflicts=args.allow_resource_conflicts,
                 updated_at=args.updated_at,

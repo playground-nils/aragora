@@ -666,3 +666,212 @@ def test_worktree_collision_detected_across_trailing_slash(
 
     assert "worktree=" in str(excinfo.value)
     assert str(worktree.resolve()) in str(excinfo.value)
+
+
+# --- Delegation Contract v0.2 — lane-registry authority-chain attachment ---
+
+
+def test_v02_contract_fields_round_trip(tmp_registry: Path) -> None:
+    """delegation_contract_id, parent_contract_id, root_intent_id persist."""
+    row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="L1",
+        owner_session="claude-A",
+        delegation_contract_id="root-contract-1",
+        root_intent_id="intent-1",
+    )
+    assert row["delegation_contract_id"] == "root-contract-1"
+    assert row["root_intent_id"] == "intent-1"
+    persisted = json.loads(tmp_registry.read_text())[0]
+    assert persisted["delegation_contract_id"] == "root-contract-1"
+    assert persisted["root_intent_id"] == "intent-1"
+
+
+def test_v02_parent_contract_id_requires_own_contract_id(tmp_registry: Path) -> None:
+    """parent_contract_id without delegation_contract_id is rejected."""
+    with pytest.raises(ValueError, match="parent_contract_id provided"):
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="L1",
+            owner_session="claude-A",
+            parent_contract_id="some-parent",
+            # delegation_contract_id intentionally absent
+        )
+
+
+def test_v02_child_must_match_existing_parent(tmp_registry: Path) -> None:
+    """parent_contract_id must match an existing row's delegation_contract_id."""
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="L-root",
+        owner_session="claude-A",
+        delegation_contract_id="root-1",
+    )
+    # Child references root-1 — should succeed
+    child_row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="L-child",
+        owner_session="claude-B",
+        delegation_contract_id="child-1",
+        parent_contract_id="root-1",
+    )
+    assert child_row["parent_contract_id"] == "root-1"
+
+
+def test_v02_child_with_missing_parent_rejected(tmp_registry: Path) -> None:
+    """parent_contract_id pointing to a non-existent parent is rejected."""
+    with pytest.raises(claim_module.ClaimError, match="does not match any existing"):
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="L1",
+            owner_session="claude-A",
+            delegation_contract_id="child-1",
+            parent_contract_id="never-existed",
+        )
+
+
+def test_v02_child_with_missing_parent_force_overrides(tmp_registry: Path) -> None:
+    """--force bypasses the missing-parent check."""
+    row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="L1",
+        owner_session="claude-A",
+        delegation_contract_id="child-1",
+        parent_contract_id="never-existed",
+        force=True,
+    )
+    assert row["parent_contract_id"] == "never-existed"
+
+
+def test_v02_child_root_intent_must_match_parent(tmp_registry: Path) -> None:
+    """When parent has root_intent_id, child's root_intent_id must match."""
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="L-root",
+        owner_session="claude-A",
+        delegation_contract_id="root-1",
+        root_intent_id="intent-1",
+    )
+    # Child with conflicting root_intent_id should fail
+    with pytest.raises(claim_module.ClaimError, match="root_intent_id mismatch"):
+        claim_module.claim_lane(
+            registry_path=tmp_registry,
+            lane_id="L-child",
+            owner_session="claude-B",
+            delegation_contract_id="child-1",
+            parent_contract_id="root-1",
+            root_intent_id="DIFFERENT-INTENT",
+        )
+
+
+def test_v02_child_with_matching_root_intent_ok(tmp_registry: Path) -> None:
+    """Child whose root_intent_id matches parent's persists cleanly."""
+    claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="L-root",
+        owner_session="claude-A",
+        delegation_contract_id="root-1",
+        root_intent_id="intent-1",
+    )
+    child_row = claim_module.claim_lane(
+        registry_path=tmp_registry,
+        lane_id="L-child",
+        owner_session="claude-B",
+        delegation_contract_id="child-1",
+        parent_contract_id="root-1",
+        root_intent_id="intent-1",
+    )
+    assert child_row["root_intent_id"] == "intent-1"
+
+
+def test_v02_legacy_rows_unchanged_when_no_contract_supplied(tmp_registry: Path) -> None:
+    """A claim without contract fields persists without contract keys (legacy)."""
+    row = claim_module.claim_lane(
+        registry_path=tmp_registry, lane_id="L1", owner_session="claude-A"
+    )
+    assert "delegation_contract_id" not in row
+    assert "parent_contract_id" not in row
+    assert "root_intent_id" not in row
+
+
+def test_v02_cli_flags_via_subprocess(tmp_registry: Path) -> None:
+    """End-to-end: --delegation-contract-id + --parent-contract-id + --root-intent-id flow through."""
+    # First seed the root contract
+    seed_result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--lane-id",
+            "L-root",
+            "--owner-session",
+            "claude-root",
+            "--registry-path",
+            str(tmp_registry),
+            "--delegation-contract-id",
+            "root-1",
+            "--root-intent-id",
+            "intent-1",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+        check=True,
+    )
+    seed = json.loads(seed_result.stdout)
+    assert seed["delegation_contract_id"] == "root-1"
+    # Now claim child
+    child_result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--lane-id",
+            "L-child",
+            "--owner-session",
+            "claude-child",
+            "--registry-path",
+            str(tmp_registry),
+            "--delegation-contract-id",
+            "child-1",
+            "--parent-contract-id",
+            "root-1",
+            "--root-intent-id",
+            "intent-1",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+        check=True,
+    )
+    child = json.loads(child_result.stdout)
+    assert child["delegation_contract_id"] == "child-1"
+    assert child["parent_contract_id"] == "root-1"
+    assert child["root_intent_id"] == "intent-1"
+
+
+def test_v02_cli_orphan_parent_exits_nonzero(tmp_registry: Path) -> None:
+    """CLI invocation with orphan parent_contract_id exits non-zero with clear error."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--lane-id",
+            "L-child",
+            "--owner-session",
+            "claude-child",
+            "--registry-path",
+            str(tmp_registry),
+            "--delegation-contract-id",
+            "child-1",
+            "--parent-contract-id",
+            "missing-root",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "does not match any existing" in result.stderr
