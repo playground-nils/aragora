@@ -136,7 +136,7 @@ ReviewQueueSourceValidator = Callable[[], str | None]
 
 
 def _default_runner(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, text=True, capture_output=True, check=False)
+    return subprocess.run(args, text=True, capture_output=True, check=False, cwd=REPO_ROOT)
 
 
 def trusted_authors(env: Mapping[str, str] | None = None) -> frozenset[str]:

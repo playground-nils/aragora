@@ -231,6 +231,71 @@ class _MergePacketRegistry:
 
 
 class TestGhMerge:
+    def test_default_subprocesses_run_from_repo_root(self, tmp_path: Path, monkeypatch):
+        calls: list[tuple[list[str], Path | None]] = []
+
+        def fake_run(
+            args: list[str],
+            *,
+            text: bool,
+            capture_output: bool,
+            check: bool,
+            cwd: Path | None = None,
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append((args, cwd))
+            if args == ["python3", str(amba.TRIAGE_SCRIPT), "--json"]:
+                stdout = json.dumps(make_triage_payload(bucket_a_entry(9001)))
+            elif args[:3] == ["gh", "pr", "view"]:
+                stdout = json.dumps(make_metadata(9001))
+            elif args[:3] == ["python3", "-m", "aragora.cli.main"]:
+                stdout = json.dumps(make_merge_packet(9001, head_sha="a" * 40))
+            else:
+                stdout = ""
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(amba.subprocess, "run", fake_run)
+
+        amba.run_triage()
+        amba.fetch_pr_commit_metadata(9001)
+        amba.fetch_merge_packet(9001)
+        amba.gh_pr_merge_squash(9001, "a" * 40)
+
+        assert [call[0] for call in calls] == [
+            ["python3", str(amba.TRIAGE_SCRIPT), "--json"],
+            [
+                "gh",
+                "pr",
+                "view",
+                "9001",
+                "--json",
+                (
+                    "number,title,author,isDraft,mergeable,mergeStateStatus,"
+                    "labels,files,commits,statusCheckRollup,headRefOid,reviewDecision"
+                ),
+            ],
+            [
+                "python3",
+                "-m",
+                "aragora.cli.main",
+                "review-queue",
+                "merge-packet",
+                "--pr",
+                "9001",
+                "--json",
+            ],
+            [
+                "gh",
+                "pr",
+                "merge",
+                "9001",
+                "--squash",
+                "--match-head-commit",
+                "a" * 40,
+            ],
+        ]
+        assert all(cwd == amba.REPO_ROOT for _, cwd in calls)
+
     def test_merge_uses_exact_head_and_preserves_branch_by_default(self):
         calls: list[list[str]] = []
 
