@@ -50,6 +50,17 @@ For Codex-driven automations in this repo, default to maximum safe autonomy. Fin
 - Keep scope bounded:
   prefer measurable improvements on live paths over speculative breadth, and use Aragora itself when it improves decisions without dominating a small direct fix.
 
+### Amend-guard helper
+
+Before running `git commit --amend` (or any rebase that rewrites the
+current tip), check that HEAD is not already published. Run
+`bash scripts/guard_amend_pushed.sh` from the branch worktree; it exits
+non-zero with `AMEND-BLOCKED: ...` when `HEAD` equals the
+`origin/<branch>` tip and exits `0` when the branch is local-only or
+ahead of the remote. Pass `--remote NAME` / `--branch NAME` to override
+the defaults. This implements rule **R19** ("never `--amend` a pushed
+commit") from the v12/v13 lessons; soft-reset and re-commit instead.
+
 ## Agent Types
 
 Aragora currently registers 43 agent types across CLI, direct API, OpenRouter, local inference, and external framework proxies. Use `list_available_agents()` to see the full registry at runtime. Server-side validation uses the allowlist in `aragora/config/settings.py` (`ALLOWED_AGENT_TYPES`, 34 types as of 2026-02-12). Entries marked **opt-in** are registered but not allowlisted by default.
