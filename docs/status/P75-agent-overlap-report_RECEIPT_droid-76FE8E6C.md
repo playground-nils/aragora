@@ -3,7 +3,7 @@
 - Session: `droid-76FE8E6C`
 - Lane: `P75-agent-overlap-report`
 - Branch: `droid/P75-agent-overlap-report-20260519`
-- PR: see Phase 4 (draft)
+- PR: [#7354](https://github.com/synaptent/aragora/pull/7354) (draft)
 - Started: 2026-05-19T04:21:17Z
 - Completed: 2026-05-19T04:32:00Z
 - Outcome: shipped
