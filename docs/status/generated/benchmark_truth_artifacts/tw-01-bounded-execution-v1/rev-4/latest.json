@@ -51,12 +51,10 @@
     "status": "complete"
   },
   "failure_class_distribution": {
-    "blocked_auth_failure": 7,
-    "blocked_not_dispatch_bounded": 8,
-    "blocked_sanitation_failed": 2,
-    "rescue_no_deliverable": 1
+    "blocked_auth_failure": 3,
+    "blocked_not_dispatch_bounded": 12
   },
-  "generated_at": "2026-05-19T04:09:18Z",
+  "generated_at": "2026-05-19T14:17:14Z",
   "in_flight_metrics": {
     "in_progress_attempted_count": 13,
     "in_progress_expected_count": 13,
@@ -94,7 +92,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -114,7 +112,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -134,7 +132,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -154,7 +152,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -174,7 +172,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -194,7 +192,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -214,7 +212,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -234,7 +232,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -254,7 +252,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -282,7 +280,7 @@
     },
     {
       "expected_status": "in_progress",
-      "had_rescue": true,
+      "had_rescue": false,
       "issue_closed_at": null,
       "issue_number": 5790,
       "issue_state": "OPEN",
@@ -314,7 +312,7 @@
       "linkage_verification_incomplete": false,
       "linked_prs": [],
       "no_rescue_truth_success": false,
-      "proxy_pr_signal": true,
+      "proxy_pr_signal": false,
       "stale_corpus_issue": false,
       "stale_corpus_reason": null,
       "truth_state": "in_progress_open",
@@ -351,12 +349,10 @@
   "proxy_metrics": {
     "attempted_issue_count": 13,
     "note": "Proxy metrics are secondary. Truth metrics remain mergeable_pr OR merged_pr.",
-    "proxy_pr_signal_issue_count": 10,
-    "proxy_pr_signal_issue_rate": 0.7692
+    "proxy_pr_signal_issue_count": 0,
+    "proxy_pr_signal_issue_rate": 0.0
   },
   "repo": "synaptent/aragora",
-  "rescue_counts_by_type": {
-    "rescue_no_deliverable": 1
-  },
+  "rescue_counts_by_type": {},
   "run_status": "complete"
 }
