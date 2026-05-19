@@ -229,8 +229,10 @@ def test_summary_only_payload_keeps_compact_category_examples() -> None:
             "dirty_worktree_paths": [],
         }
     ]
+    source_records = payload["records"]
+    assert isinstance(source_records, list)
     assert compact["records"] == []
-    assert len(payload["records"]) == 5
+    assert len(source_records) == 5
 
 
 def test_summary_only_payload_honors_example_limit() -> None:
