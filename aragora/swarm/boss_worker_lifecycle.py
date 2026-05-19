@@ -288,6 +288,37 @@ def finalize_worker_result(
         loop._failed_issues.append(issue_dict)
         loop._log_value_outcome(issue_dict, "needs_human", elapsed_seconds)
 
+        if str(worker_result.get("outcome", "")).strip().lower() == "preview_only":
+            next_actions = [
+                str(item).strip()
+                for item in worker_result.get("next_actions", [])
+                if str(item).strip()
+            ] or [
+                "Review the selected issue and derived validation contract.",
+                "Rerun without --no-dispatch to execute the bounded Boss loop lane.",
+            ]
+            loop._append_iteration_metrics(
+                iteration=iteration,
+                issue_number=issue_number,
+                worker_result=worker_result,
+                elapsed_seconds=elapsed_seconds,
+            )
+            return BossIterationStatus(
+                iteration=iteration,
+                run_id=loop.run_id,
+                timestamp=timestamp,
+                runner_freshness=runner_freshness,
+                selected_issue=issue_dict,
+                worker_status="needs_human",
+                stop_reason=BossStopReason.NEEDS_HUMAN.value,
+                needs_human_reasons=worker_result.get(
+                    "reasons", ["No-dispatch preview requires operator review."]
+                ),
+                next_actions=next_actions,
+                elapsed_seconds=elapsed_seconds,
+                worker_outcome=str(worker_result.get("outcome", "")).strip() or None,
+            )
+
         issue_num = issue_dict.get("number", 0)
         repair_key = f"repair_{issue_num}"
         repair_count = loop._issue_attempt_counts.get(repair_key, 0)

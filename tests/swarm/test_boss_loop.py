@@ -4960,6 +4960,38 @@ def test_boss_loop_batch_no_issue_skips_runner_freshness_check() -> None:
     assert result.iterations_completed == 1
 
 
+def test_boss_loop_no_dispatch_preview_stops_under_full_auto() -> None:
+    feed = MagicMock(spec=GitHubIssueFeed)
+    feed.fetch.return_value = [_make_issue(451, "Preview-only boss lane")]
+    loop = BossLoop(
+        config=_boss_config(
+            max_iterations=3,
+            max_consecutive_failures=99,
+            auto_refill_threshold=0,
+            dispatch_enabled=False,
+            auto_continue_on_needs_human=True,
+        ),
+        issue_feed=feed,
+        freshness_checker=lambda **kw: _fresh_result(fresh=True),
+    )
+    loop._dispatch_issue = AsyncMock(
+        return_value={
+            "status": "needs_human",
+            "outcome": "preview_only",
+            "reasons": ["No-dispatch preview only for issue #451."],
+            "next_actions": ["Rerun without --no-dispatch to execute."],
+        }
+    )
+
+    result = asyncio.run(loop.run())
+
+    assert result.stop_reason == BossStopReason.NEEDS_HUMAN.value
+    assert result.iterations_completed == 1
+    assert len(result.issues_attempted) == 1
+    assert "No-dispatch preview only for issue #451." in result.needs_human_reasons
+    loop._dispatch_issue.assert_awaited_once()
+
+
 def test_boss_loop_reports_skip_labeled_issues_and_skips_dispatch() -> None:
     feed = MagicMock(spec=GitHubIssueFeed)
     feed.fetch.return_value = [_make_issue(301, "Known stuck", labels=["boss-stuck"])]
