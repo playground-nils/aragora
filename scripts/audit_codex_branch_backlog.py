@@ -28,6 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from scripts import codex_worktree_autopilot as autopilot
+from scripts import publish_automation_handoffs as handoff_publisher
 from scripts.github_cli_health import check_github_cli_health
 
 ACTIVE_SESSION_FILES = (
@@ -672,6 +673,25 @@ def unresolved_outbox_handoff_branches(
     return branches
 
 
+def publisher_visible_outbox_handoff_count(
+    root: Path,
+    *,
+    outbox_dir: Path | None = None,
+    receipt_dir: Path | None = None,
+) -> int:
+    """Return the count the publisher would attempt from the shared outbox."""
+
+    outbox_root = _automation_state_path(root, outbox_dir, DEFAULT_OUTBOX_DIR)
+    receipt_root = _automation_state_path(root, receipt_dir, DEFAULT_RECEIPT_DIR)
+    return len(
+        handoff_publisher.load_outbox_handoffs(
+            root,
+            outbox_dir=outbox_root,
+            receipt_dir=receipt_root,
+        )
+    )
+
+
 def open_pr_heads(root: Path, repo: str, prefix: str) -> dict[str, int] | None:
     proc = run_gh(
         [
@@ -1005,6 +1025,11 @@ def audit(
         outbox_dir=resolved_outbox_dir,
         receipt_dir=resolved_receipt_dir,
     )
+    publisher_outbox_handoff_count = publisher_visible_outbox_handoff_count(
+        root,
+        outbox_dir=resolved_outbox_dir,
+        receipt_dir=resolved_receipt_dir,
+    )
     patch_deadline = _patch_budget_deadline(patch_equivalence_time_budget_seconds)
     handoff_receipted_patch_ids: set[str] | None = None
     handoff_outbox_patch_ids: set[str] | None = None
@@ -1241,6 +1266,7 @@ def audit(
             "stale_local_only_salvage_candidates": counts["salvage_stale_local_unique"],
             "handoff_receipted_branches": counts["protected_handoff_receipt"],
             "handoff_outbox_branches": counts["protected_handoff_outbox"],
+            "publisher_outbox_handoff_count": publisher_outbox_handoff_count,
             "writer_should_pause_for_branch_backlog": (
                 publishable_branch_backlog >= publisher_backlog_limit
             ),
@@ -1303,6 +1329,9 @@ def print_markdown(payload: dict[str, Any], *, examples: int) -> None:
     print(f"- Diverged salvage candidates: `{summary['diverged_salvage_candidates']}`")
     print(f"- Handoff-receipted branches: `{summary['handoff_receipted_branches']}`")
     print(f"- Handoff-outbox branches: `{summary['handoff_outbox_branches']}`")
+    print(
+        f"- Publisher-visible outbox handoffs: `{summary.get('publisher_outbox_handoff_count', 0)}`"
+    )
     print(
         f"- Patch-equivalence budget exhausted: `{payload['patch_equivalence_budget_exhausted']}`"
     )
