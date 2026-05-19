@@ -64,6 +64,19 @@ from aragora.policy.delegation_contract import (
     make_root_contract,
     narrow_for_child,
 )
+from aragora.policy.contract_signing import (
+    SIGNING_SCHEMA_VERSION,
+    SigningError,
+    VerificationError,
+    VerificationResult,
+    canonical_contract_payload,
+    is_contract_signed,
+    sign_contract,
+    sign_receipt,
+    signing_key_available,
+    verify_contract,
+    verify_receipt,
+)
 from aragora.policy.predicate_oracle import (
     EVALUATORS,
     PredicateParseError,
@@ -95,6 +108,18 @@ __all__ = [
     "GOAL_SPEC_SCHEMA_VERSION",
     "narrow_for_child",
     "make_root_contract",
+    # Delegation Contract v0.4 signing
+    "SIGNING_SCHEMA_VERSION",
+    "SigningError",
+    "VerificationError",
+    "VerificationResult",
+    "canonical_contract_payload",
+    "is_contract_signed",
+    "sign_contract",
+    "sign_receipt",
+    "signing_key_available",
+    "verify_contract",
+    "verify_receipt",
     # Predicate oracle
     "PredicateResult",
     "PredicateParseError",

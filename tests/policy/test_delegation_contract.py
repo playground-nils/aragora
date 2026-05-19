@@ -82,12 +82,31 @@ def test_root_contract_rejects_destructive_policy_allow() -> None:
         _make_simple_parent(destructive_action_policy="allow")
 
 
-def test_root_contract_rejects_v01_signature() -> None:
+def test_root_contract_accepts_hex_signature_in_v04() -> None:
+    """v0.4 relaxed the v0.1 'signature must be None' rule.
+
+    A well-shaped hex signature must validate (cryptographic verification
+    happens only when ARAGORA_CONTEXT_SIGNING_KEY is set; see
+    ``tests/policy/test_contract_signing.py`` for the env-key path).
+    """
     parent = _make_simple_parent()
-    forged = DelegationContract(
+    # `deadbeef` is valid hex → validate() must accept it. The signature
+    # is not cryptographically checked here because no env-backed key
+    # is set, which is the documented v0.4 behavior.
+    signed_like = DelegationContract(
         **{**parent.__dict__, "signature": "deadbeef"},
     )
-    with pytest.raises(ContractValidationError, match="signature must be None in v0.1"):
+    signed_like.validate()
+    assert signed_like.is_signed is True
+
+
+def test_root_contract_rejects_non_hex_signature() -> None:
+    """A signature that isn't hex (e.g. raw garbage) must be rejected."""
+    parent = _make_simple_parent()
+    forged = DelegationContract(
+        **{**parent.__dict__, "signature": "not-hex!!"},
+    )
+    with pytest.raises(ContractValidationError, match="hex"):
         forged.validate()
 
 

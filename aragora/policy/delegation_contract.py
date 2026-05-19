@@ -6,8 +6,11 @@ ContractBudget, AllowedSurfaces) plus a monotonic-narrowing validator at
 parent → child issue time.
 
 No autonomous worker behavior changes in v0.1. The lane registry hookup
-is Stage 2 (separate PR). The signing layer is v0.4. See
-``docs/governance/DELEGATION_CONTRACT_V0_1_SPEC.md`` for the full
+is Stage 2 (separate PR). The signing layer ships in v0.4 (see
+``aragora.policy.contract_signing``) and relaxes the v0.1 ``signature``
+must-be-None rule: a populated signature is now accepted, and verified
+against ``ARAGORA_CONTEXT_SIGNING_KEY`` when the env var is set.
+See ``docs/governance/DELEGATION_CONTRACT_V0_1_SPEC.md`` for the full
 roadmap.
 
 Design influences (per spec doc):
@@ -340,9 +343,59 @@ class DelegationContract:
             raise ContractValidationError(
                 f"stale_threshold_minutes must be >= 1; got {self.stale_threshold_minutes}"
             )
-        # Signature must be None in v0.1
+        # Signature: v0.4 relaxes the v0.1 "must be None" rule. The
+        # signature may now be either:
+        #   - None / empty   → unsigned mode (still permitted; the lane
+        #     registry hookup in v0.5 will be responsible for refusing
+        #     to honor unsigned contracts in production paths)
+        #   - non-empty str  → must be a hex digest. If the
+        #     ARAGORA_CONTEXT_SIGNING_KEY env var is set, we also verify
+        #     the HMAC against the canonical contract payload. If the
+        #     env var is unset, the type/shape check is enough — the
+        #     verification responsibility shifts to the caller.
+        # See ``aragora.policy.contract_signing`` for the signing primitives.
         if self.signature is not None:
-            raise ContractValidationError("signature must be None in v0.1; signing ships in v0.4")
+            if not isinstance(self.signature, str) or not self.signature:
+                raise ContractValidationError(
+                    "signature must be either None or a non-empty hex string"
+                )
+            # Hex shape (HMAC-SHA256 → 64 hex chars). We don't hard-fail
+            # on length to keep room for future signature schemes, but
+            # we do reject non-hex content because that's almost
+            # certainly a bug or a tamper attempt.
+            try:
+                int(self.signature, 16)
+            except ValueError as exc:
+                raise ContractValidationError(
+                    f"signature is not a hex string: {self.signature!r}"
+                ) from exc
+            # If an env-backed key is present, verify the signature
+            # cryptographically. Import locally to avoid a hard import
+            # cycle with the signing module.
+            import os
+
+            if os.environ.get("ARAGORA_CONTEXT_SIGNING_KEY"):
+                from .contract_signing import verify_contract
+
+                result = verify_contract(self)
+                if not result.ok:
+                    raise ContractValidationError(
+                        f"contract carries a signature that fails verification: {result.reason}"
+                    )
+
+    # -----------------------------------------------------------------------
+    # Signature helpers
+    # -----------------------------------------------------------------------
+
+    @property
+    def is_signed(self) -> bool:
+        """True iff this contract carries a non-empty signature.
+
+        Note: this is a shape check only — ``is_signed`` does NOT verify
+        the signature cryptographically. For that, use
+        ``aragora.policy.contract_signing.verify_contract``.
+        """
+        return bool(self.signature)
 
     # -----------------------------------------------------------------------
     # Time helpers
