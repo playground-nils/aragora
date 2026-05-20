@@ -596,9 +596,16 @@ class TestLookupFactoryDroid:
 
 class TestSteeringInbox:
     def test_missing_inbox_dir_returns_zero_count(self, tmp_path: Path) -> None:
-        path, count = ilo.steering_inbox_for("nobody-1", root=tmp_path / "steering")
+        path, count, receipt_summary = ilo.steering_inbox_for(
+            "nobody-1", root=tmp_path / "steering"
+        )
         assert count == 0
         assert path == tmp_path / "steering" / "nobody-1"
+        assert receipt_summary == {
+            "read_receipt_count": 0,
+            "unread_message_count": 0,
+            "latest_read_receipt": None,
+        }
 
     def test_counts_only_dot_json_files(self, tmp_path: Path) -> None:
         inbox = tmp_path / "steering" / "claude-X"
@@ -606,9 +613,58 @@ class TestSteeringInbox:
         (inbox / "msg-a.json").write_text("{}", encoding="utf-8")
         (inbox / "msg-b.json").write_text("{}", encoding="utf-8")
         (inbox / "README.md").write_text("docs only", encoding="utf-8")
-        path, count = ilo.steering_inbox_for("claude-X", root=tmp_path / "steering")
+        path, count, receipt_summary = ilo.steering_inbox_for(
+            "claude-X", root=tmp_path / "steering"
+        )
         assert count == 2
         assert path == inbox
+        assert receipt_summary == {
+            "read_receipt_count": 0,
+            "unread_message_count": 2,
+            "latest_read_receipt": None,
+        }
+
+    def test_summarizes_read_receipts_without_changing_pending_count(self, tmp_path: Path) -> None:
+        inbox = tmp_path / "steering" / "codex-X"
+        receipt_dir = inbox / "_read_receipts"
+        receipt_dir.mkdir(parents=True)
+        (inbox / "msg-a.json").write_text(
+            json.dumps({"message_sha256": "aaa"}),
+            encoding="utf-8",
+        )
+        (inbox / "msg-b.json").write_text(
+            json.dumps({"message_sha256": "bbb"}),
+            encoding="utf-8",
+        )
+        (receipt_dir / "receipt-a.json").write_text(
+            json.dumps(
+                {
+                    "read_at_utc": "2026-05-19T22:00:00.000Z",
+                    "read_by_session": "codex-reader",
+                    "message_filename": "msg-a.json",
+                    "message_sha256": "aaa",
+                    "outcome": "held",
+                    "subject": "subject-a",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        path, count, receipt_summary = ilo.steering_inbox_for("codex-X", root=tmp_path / "steering")
+
+        assert path == inbox
+        assert count == 2
+        assert receipt_summary["read_receipt_count"] == 1
+        assert receipt_summary["unread_message_count"] == 1
+        assert receipt_summary["latest_read_receipt"] == {
+            "receipt_filename": "receipt-a.json",
+            "read_at_utc": "2026-05-19T22:00:00.000Z",
+            "read_by_session": "codex-reader",
+            "message_filename": "msg-a.json",
+            "message_sha256": "aaa",
+            "outcome": "held",
+            "subject": "subject-a",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -638,6 +694,9 @@ class TestBuildOwnerInfo:
         assert info.desktop_label == "Test Codex Desktop Tab"
         assert info.session_title == "Rich identity claim"
         assert info.pending_message_count == 0
+        assert info.read_receipt_count == 0
+        assert info.unread_message_count == 0
+        assert info.latest_read_receipt is None
         # Live lookups all return found=False because tmp dirs are empty.
         assert info.live_process["found"] is False
         assert info.claude_session["found"] is False
@@ -707,6 +766,9 @@ class TestMainCLI:
         assert data["pr_number"] == 7292
         assert data["live_process"]["found"] is False  # no snapshot integration in CLI default path
         assert data["pending_message_count"] == 0
+        assert data["read_receipt_count"] == 0
+        assert data["unread_message_count"] == 0
+        assert data["latest_read_receipt"] is None
         assert data["dispatchable"] is True
         assert data["dispatch_blocker"] is None
         assert data["harness_confidence"] == "mailbox_only"

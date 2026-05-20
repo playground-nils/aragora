@@ -35,6 +35,14 @@ For Codex-driven automations in this repo, default to maximum safe autonomy. Fin
 
 - Use the shared automation merge contract in `docs/briefs/automation-merge-contract.md`.
   Before publishing local Codex app automation or Aragora boss-loop worker branches, run `bash scripts/automation_pr_preflight.sh origin/main HEAD` from the branch worktree, or run it against the explicit worker branch.
+- Before continuing lane work, check the owner-session operator-steering mailbox
+  with `python3 scripts/read_operator_steering.py --lane-id <LANE_ID>` or the
+  equivalent `--pr`, `--branch`, or `--to OWNER_SESSION` selector. The reader
+  leaves top-level message files in place and writes append-only read receipts
+  under `.aragora/operator-steering/<owner_session>/_read_receipts/`. This is
+  visibility only, not an ack protocol: messages remain pending until a future
+  ack/move protocol exists. Other sessions can verify read state through
+  `scripts/identify_lane_owner.py` or `scripts/agent_bridge.py operator-snapshot`.
 - Prefer execution over advice:
   verify the issue, make the smallest credible fix, validate it, commit it, push it, open the PR, and leave the inbox or memory handoff in the same run when the task is otherwise ready.
 - Do not stop at the first blocked path:

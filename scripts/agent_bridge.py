@@ -1602,23 +1602,35 @@ def _collect_pending_steering_messages(
         steering_root = REPO_ROOT / ".aragora" / "operator-steering"
     if not steering_root.is_dir():
         if session_name:
-            return {"count": 0, "latest_three": []}
-        return {"count": 0, "by_recipient": {}, "latest_three": []}
+            return {
+                "count": 0,
+                "latest_three": [],
+                "read_receipt_count": 0,
+                "unread_message_count": 0,
+                "latest_read_receipt": None,
+            }
+        return {
+            "count": 0,
+            "by_recipient": {},
+            "latest_three": [],
+            "read_receipt_count": 0,
+            "unread_message_count": 0,
+            "read_receipts_by_recipient": {},
+            "latest_read_receipt": None,
+        }
 
-    def _summary_from(path: Path) -> dict[str, Any]:
+    def _load_json_dict(path: Path) -> dict[str, Any] | None:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _summary_from(path: Path) -> dict[str, Any]:
+        data = _load_json_dict(path)
+        if data is None:
             return {
                 "subject": "(unreadable)",
-                "sent_at_utc": "",
-                "priority": "",
-                "lane_id_hint": None,
-                "pr_hint": None,
-            }
-        if not isinstance(data, dict):
-            return {
-                "subject": "(invalid)",
                 "sent_at_utc": "",
                 "priority": "",
                 "lane_id_hint": None,
@@ -1639,30 +1651,98 @@ def _collect_pending_steering_messages(
         # consumed messages per the Phase D convention.
         return [p for p in dir_path.glob("*.json") if p.is_file()]
 
+    def _read_receipt_summary(dir_path: Path, files: list[Path]) -> dict[str, Any]:
+        receipt_dir = dir_path / "_read_receipts"
+        if not receipt_dir.is_dir():
+            return {
+                "read_receipt_count": 0,
+                "unread_message_count": len(files),
+                "latest_read_receipt": None,
+            }
+
+        receipts: list[dict[str, Any]] = []
+        read_bindings: set[tuple[str, str]] = set()
+        for receipt_path in receipt_dir.glob("*.json"):
+            receipt = _load_json_dict(receipt_path)
+            if receipt is None:
+                continue
+            with_filename = dict(receipt)
+            with_filename["receipt_filename"] = receipt_path.name
+            receipts.append(with_filename)
+            msg_filename = str(receipt.get("message_filename") or "")
+            msg_sha = str(receipt.get("message_sha256") or "")
+            if msg_filename and msg_sha:
+                read_bindings.add((msg_filename, msg_sha))
+
+        unread_count = 0
+        for message_path in files:
+            message = _load_json_dict(message_path)
+            msg_sha = "" if message is None else str(message.get("message_sha256") or "")
+            if not msg_sha or (message_path.name, msg_sha) not in read_bindings:
+                unread_count += 1
+
+        latest: dict[str, Any] | None = None
+        if receipts:
+            latest_raw = max(receipts, key=lambda r: str(r.get("read_at_utc") or ""))
+            latest = {
+                "receipt_filename": latest_raw.get("receipt_filename"),
+                "read_at_utc": latest_raw.get("read_at_utc"),
+                "read_by_session": latest_raw.get("read_by_session"),
+                "message_filename": latest_raw.get("message_filename"),
+                "message_sha256": latest_raw.get("message_sha256"),
+                "outcome": latest_raw.get("outcome"),
+                "subject": latest_raw.get("subject"),
+            }
+        return {
+            "read_receipt_count": len(receipts),
+            "unread_message_count": unread_count,
+            "latest_read_receipt": latest,
+        }
+
     if session_name:
-        files = _inbox_files(steering_root / session_name)
+        inbox = steering_root / session_name
+        files = _inbox_files(inbox)
         summaries = sorted(
             (_summary_from(p) for p in files),
             key=lambda s: s["sent_at_utc"],
             reverse=True,
         )
-        return {"count": len(files), "latest_three": summaries[:3]}
+        receipt_summary = _read_receipt_summary(inbox, files)
+        return {"count": len(files), "latest_three": summaries[:3], **receipt_summary}
 
     # Roll-up across all recipient dirs.
     by_recipient: dict[str, int] = {}
+    read_receipts_by_recipient: dict[str, int] = {}
     all_summaries: list[dict[str, Any]] = []
+    all_receipts: list[dict[str, Any]] = []
+    total_read_receipts = 0
+    total_unread = 0
     for child in sorted(steering_root.iterdir()):
         if not child.is_dir() or child.name.startswith("."):
             continue
         files = _inbox_files(child)
+        receipt_summary = _read_receipt_summary(child, files)
+        total_read_receipts += int(receipt_summary["read_receipt_count"])
+        total_unread += int(receipt_summary["unread_message_count"])
+        if receipt_summary["read_receipt_count"]:
+            read_receipts_by_recipient[child.name] = int(receipt_summary["read_receipt_count"])
+        if receipt_summary["latest_read_receipt"] is not None:
+            all_receipts.append(receipt_summary["latest_read_receipt"])
         if files:
             by_recipient[child.name] = len(files)
             all_summaries.extend(_summary_from(p) for p in files)
     all_summaries.sort(key=lambda s: s["sent_at_utc"], reverse=True)
+    latest_read_receipt = None
+    if all_receipts:
+        latest_read_receipt = max(all_receipts, key=lambda r: str(r.get("read_at_utc") or ""))
     return {
         "count": sum(by_recipient.values()),
         "by_recipient": by_recipient,
         "latest_three": all_summaries[:3],
+        "read_receipt_count": total_read_receipts,
+        "unread_message_count": total_unread,
+        "read_receipts_by_recipient": read_receipts_by_recipient,
+        "latest_read_receipt": latest_read_receipt,
     }
 
 

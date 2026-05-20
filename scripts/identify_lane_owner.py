@@ -114,6 +114,9 @@ class LaneOwnerInfo:
     factory_droid: dict[str, Any]
     steering_inbox_path: str
     pending_message_count: int
+    read_receipt_count: int
+    unread_message_count: int
+    latest_read_receipt: dict[str, Any] | None
     dispatchable: bool
     dispatch_blocker: str | None
     steering_command: str | None
@@ -662,14 +665,71 @@ def lookup_factory_droid(
 
 def steering_inbox_for(
     owner_session: str, *, root: Path = STEERING_INBOX_ROOT_DEFAULT
-) -> tuple[Path, int]:
-    """Return ``(inbox_path, pending_count)``; missing dir → ``(path, 0)``."""
+) -> tuple[Path, int, dict[str, Any]]:
+    """Return inbox path, top-level message count, and read-receipt summary."""
 
     inbox = root / owner_session
     if not inbox.is_dir():
-        return inbox, 0
-    count = sum(1 for _ in inbox.glob("*.json"))
-    return inbox, count
+        return inbox, 0, _read_receipt_summary(inbox, [])
+    message_files = [p for p in inbox.glob("*.json") if p.is_file()]
+    return inbox, len(message_files), _read_receipt_summary(inbox, message_files)
+
+
+def _load_json_dict(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _read_receipt_summary(inbox: Path, message_files: Sequence[Path]) -> dict[str, Any]:
+    receipt_dir = inbox / "_read_receipts"
+    if not receipt_dir.is_dir():
+        return {
+            "read_receipt_count": 0,
+            "unread_message_count": len(message_files),
+            "latest_read_receipt": None,
+        }
+
+    receipts: list[dict[str, Any]] = []
+    read_bindings: set[tuple[str, str]] = set()
+    for path in receipt_dir.glob("*.json"):
+        receipt = _load_json_dict(path)
+        if receipt is None:
+            continue
+        receipt_with_filename = dict(receipt)
+        receipt_with_filename["receipt_filename"] = path.name
+        receipts.append(receipt_with_filename)
+        msg_filename = str(receipt.get("message_filename") or "")
+        msg_sha = str(receipt.get("message_sha256") or "")
+        if msg_filename and msg_sha:
+            read_bindings.add((msg_filename, msg_sha))
+
+    unread_count = 0
+    for message_path in message_files:
+        message = _load_json_dict(message_path)
+        msg_sha = "" if message is None else str(message.get("message_sha256") or "")
+        if not msg_sha or (message_path.name, msg_sha) not in read_bindings:
+            unread_count += 1
+
+    latest: dict[str, Any] | None = None
+    if receipts:
+        latest_raw = max(receipts, key=lambda r: str(r.get("read_at_utc") or ""))
+        latest = {
+            "receipt_filename": latest_raw.get("receipt_filename"),
+            "read_at_utc": latest_raw.get("read_at_utc"),
+            "read_by_session": latest_raw.get("read_by_session"),
+            "message_filename": latest_raw.get("message_filename"),
+            "message_sha256": latest_raw.get("message_sha256"),
+            "outcome": latest_raw.get("outcome"),
+            "subject": latest_raw.get("subject"),
+        }
+    return {
+        "read_receipt_count": len(receipts),
+        "unread_message_count": unread_count,
+        "latest_read_receipt": latest,
+    }
 
 
 def _dispatch_blocker_for(lane: dict[str, Any], owner_session: str) -> str | None:
@@ -756,7 +816,7 @@ def build_owner_info(
     codex = lookup_codex_thread(lane, sessions_root=sessions_root, now=fuzzy_now)
     claude = lookup_claude_session(lane, projects_root=projects_root)
     factory = lookup_factory_droid(lane, bg_path=bg_path)
-    inbox_path, pending = steering_inbox_for(owner, root=steering_inbox_root)
+    inbox_path, pending, receipt_summary = steering_inbox_for(owner, root=steering_inbox_root)
     dispatch_blocker = _dispatch_blocker_for(lane, owner)
 
     raw_pr = lane.get("pr_number")
@@ -785,6 +845,9 @@ def build_owner_info(
         factory_droid=factory,
         steering_inbox_path=str(inbox_path),
         pending_message_count=pending,
+        read_receipt_count=int(receipt_summary["read_receipt_count"]),
+        unread_message_count=int(receipt_summary["unread_message_count"]),
+        latest_read_receipt=receipt_summary["latest_read_receipt"],
         dispatchable=dispatch_blocker is None,
         dispatch_blocker=dispatch_blocker,
         steering_command=_steering_command_for(lane, owner),
@@ -836,6 +899,9 @@ def _print_human(info: LaneOwnerInfo) -> None:
     print()
     print(f"steering_inbox_path:   {info.steering_inbox_path}")
     print(f"pending_message_count: {info.pending_message_count}")
+    print(f"read_receipt_count:    {info.read_receipt_count}")
+    print(f"unread_message_count:  {info.unread_message_count}")
+    print(f"latest_read_receipt:   {info.latest_read_receipt or '-'}")
     print(f"dispatchable:          {info.dispatchable}")
     print(f"dispatch_blocker:      {info.dispatch_blocker or '-'}")
     print(f"steering_command:      {info.steering_command or '-'}")
