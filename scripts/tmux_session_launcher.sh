@@ -62,25 +62,19 @@ send_prompt_to_target() {
     if [[ -n "${PROMPT_FILE:-}" ]]; then
         source_kind="file"
     fi
-    python3 - "${audit_log}" "${NAME}" "${prompt_id}" "${timestamp}" "${#prompt}" "${line_count}" "launcher" "${source_kind}" "${PROMPT_FILE:-}" "${method}" "${target}" "${preview}" <<'PYEOF'
-import json, sys
-audit_log, name, prompt_id, timestamp, chars, lines, source_tag, source_kind, prompt_file, method, target, preview = sys.argv[1:13]
-record = {
-    "prompt_id": prompt_id,
-    "timestamp": timestamp,
-    "name": name,
-    "target": target,
-    "chars": int(chars),
-    "lines": int(lines),
-    "source": source_tag or None,
-    "source_kind": source_kind,
-    "prompt_file": prompt_file or None,
-    "dispatch_method": method,
-    "preview": preview,
-}
-with open(audit_log, "a", encoding="utf-8") as f:
-    f.write(json.dumps(record) + "\n")
-PYEOF
+    python3 "${SCRIPT_DIR}/tmux_launcher_metadata.py" prompt-audit \
+        "${audit_log}" \
+        "${NAME}" \
+        "${prompt_id}" \
+        "${timestamp}" \
+        "${#prompt}" \
+        "${line_count}" \
+        "launcher" \
+        "${source_kind}" \
+        "${PROMPT_FILE:-}" \
+        "${method}" \
+        "${target}" \
+        "${preview}"
 
     echo "Prompt sent to '${NAME}' (${#prompt} chars, prompt_id=${prompt_id})"
 }
@@ -222,6 +216,20 @@ fi
 LOG_FILE="${LOG_DIR}/${NAME}.log"
 META_FILE="${LOG_DIR}/${NAME}.meta.json"
 REGISTRY_REPO_ROOT="${ARAGORA_TMUX_REGISTRY_REPO_ROOT:-${REPO_ROOT}}"
+HAS_PROMPT=""
+
+if [[ -n "${PROMPT_FILE}" ]]; then
+    if [[ ! -f "${PROMPT_FILE}" ]]; then
+        echo "Prompt file does not exist: ${PROMPT_FILE}" >&2
+        exit 1
+    fi
+    PROMPT_FILE="$(cd "$(dirname "${PROMPT_FILE}")" && pwd)/$(basename "${PROMPT_FILE}")"
+    PROMPT="$(cat "${PROMPT_FILE}")"
+fi
+
+if [[ -n "${PROMPT}" ]]; then
+    HAS_PROMPT="yes"
+fi
 
 # Ensure tmux session exists
 if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
@@ -246,18 +254,33 @@ elif [[ "${AGENT}" == "claude" ]]; then
         LAUNCH_CMD="cd '${WORKDIR}' && ./scripts/claude-wt"
     fi
 elif [[ "${AGENT}" == "droid" || "${AGENT}" == "factory" ]]; then
-    # Droid interactive sessions do their own permission gating. Mission/exec
-    # mode is intentionally not used here so the pane remains interactive for
-    # later agent_bridge.py send/read cycles.
-    LAUNCH_CMD="cd '${WORKDIR}' && droid --cwd '${WORKDIR}'"
+    DROID_AUTO_LEVEL="${ARAGORA_DROID_AUTO_LEVEL:-high}"
+    case "${DROID_AUTO_LEVEL}" in
+        low|medium|high) ;;
+        *)
+            echo "Invalid ARAGORA_DROID_AUTO_LEVEL='${DROID_AUTO_LEVEL}'. Use low, medium, or high." >&2
+            exit 1
+            ;;
+    esac
+    if [[ -n "${PROMPT}" ]]; then
+        DROID_EXEC_PROMPT_FILE="${PROMPT_FILE}"
+        if [[ -z "${DROID_EXEC_PROMPT_FILE}" ]]; then
+            DROID_EXEC_PROMPT_FILE="${LOG_DIR}/${NAME}.prompt.md"
+            printf '%s\n' "${PROMPT}" > "${DROID_EXEC_PROMPT_FILE}"
+            PROMPT_FILE="${DROID_EXEC_PROMPT_FILE}"
+        fi
+        LAUNCH_CMD="cd '${WORKDIR}' && droid exec --auto '${DROID_AUTO_LEVEL}' --cwd '${WORKDIR}' -f '${DROID_EXEC_PROMPT_FILE}'"
+        PROMPT=""
+    else
+        if [[ "${ARAGORA_ALLOW_DROID_AUTO_OFF:-0}" != "1" ]]; then
+            echo "Refusing to launch ${AGENT} without a prompt: interactive Droid starts Auto Off. Set ARAGORA_ALLOW_DROID_AUTO_OFF=1 only for explicit manual debugging." >&2
+            exit 1
+        fi
+        LAUNCH_CMD="cd '${WORKDIR}' && droid --cwd '${WORKDIR}'"
+    fi
 else
     echo "Unknown agent: ${AGENT}. Use 'codex', 'claude', 'droid', or 'factory'." >&2
     exit 1
-fi
-
-# If a prompt file is specified, we'll feed it after launch
-if [[ -n "${PROMPT_FILE}" && -f "${PROMPT_FILE}" ]]; then
-    PROMPT="$(cat "${PROMPT_FILE}")"
 fi
 
 # Create new tmux window with logging
@@ -269,54 +292,20 @@ tmux pipe-pane -t "${WINDOW_TARGET}" -o "cat >> '${LOG_FILE}'"
 tmux send-keys -t "${WINDOW_TARGET}" "${LAUNCH_CMD}" Enter
 
 # Write metadata (avoid embedding prompt content in Python literal)
-python3 - "${NAME}" "${AGENT}" "${LOG_FILE}" "${REPO_ROOT}" "${WORKDIR}" "${PROMPT_FILE}" "${META_FILE}" "${PROMPT:+yes}" "${WINDOW_TARGET}" "${TMUX_SESSION}" "${PANE_INDEX}" "${LAUNCH_CMD}" "${REGISTRY_REPO_ROOT}" <<'PYEOF'
-import datetime
-import importlib.util
-import json
-from pathlib import Path
-import sys
-
-name, agent, log_file, repo_root, workdir, prompt_file, meta_file, has_prompt, window_target, tmux_session, pane_index, launch_cmd, registry_repo_root = sys.argv[1:14]
-started_at = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-meta = {
-    "name": name,
-    "agent": agent,
-    "started": started_at,
-    "log_file": log_file,
-    "repo_root": repo_root,
-    "cwd": workdir,
-    "worktree": workdir,
-    "tmux_session": tmux_session,
-    "tmux_window_target": window_target,
-    "tmux_pane_index": pane_index,
-    "prompt_file": prompt_file or None,
-    "has_prompt": bool(has_prompt),
-}
-Path(meta_file).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
-
-try:
-    module_path = Path(repo_root) / "aragora" / "swarm" / "session_mux.py"
-    spec = importlib.util.spec_from_file_location("aragora_swarm_session_mux", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"unable to load session_mux module from {module_path}")
-    session_mux = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = session_mux
-    spec.loader.exec_module(session_mux)
-
-    record = session_mux.SessionRecord(
-        name=name,
-        tmux_session=tmux_session,
-        tmux_window=window_target,
-        tmux_pane=pane_index or "0",
-        launcher_command=launch_cmd,
-        started_at=started_at,
-        log_path=log_file,
-        meta_path=meta_file,
-    )
-    session_mux.SessionMuxRegistry(Path(registry_repo_root)).upsert(record)
-except Exception as exc:  # pragma: no cover - launcher should still succeed if registry sync fails
-    print(f"warning: failed to register launcher session: {exc}", file=sys.stderr)
-PYEOF
+python3 "${SCRIPT_DIR}/tmux_launcher_metadata.py" session-meta \
+    "${NAME}" \
+    "${AGENT}" \
+    "${LOG_FILE}" \
+    "${REPO_ROOT}" \
+    "${WORKDIR}" \
+    "${PROMPT_FILE}" \
+    "${META_FILE}" \
+    "${HAS_PROMPT}" \
+    "${WINDOW_TARGET}" \
+    "${TMUX_SESSION}" \
+    "${PANE_INDEX}" \
+    "${LAUNCH_CMD}" \
+    "${REGISTRY_REPO_ROOT}"
 
 echo "Launched '${NAME}' (${AGENT}) in tmux session '${TMUX_SESSION}'"
 echo "  Cwd: ${WORKDIR}"

@@ -253,16 +253,50 @@ def test_tmux_session_launcher_supports_droid_agent(tmp_path: Path) -> None:
         check=True,
     )
 
-    assert "Readiness markers detected for factory-review." in result.stdout
+    assert "Launched 'factory-review' (droid)" in result.stdout
     calls = _load_tmux_calls(env)
     assert any(
-        call[:2] == ["send-keys", "-t"] and call[2] == "@17" and "droid --cwd" in call[3]
+        call[:2] == ["send-keys", "-t"]
+        and call[2] == "@17"
+        and "droid exec --auto 'high'" in call[3]
+        and " -f '" in call[3]
         for call in calls
     )
-    assert any(
-        call[:2] == ["send-keys", "-t"] and call[2] == "@17" and "review only" in call
-        for call in calls
+    assert not any("review only" in item for call in calls for item in call)
+    prompt_file = log_dir / "factory-review.prompt.md"
+    assert prompt_file.read_text(encoding="utf-8") == "review only\n"
+    meta = json.loads((log_dir / "factory-review.meta.json").read_text(encoding="utf-8"))
+    assert meta["has_prompt"] is True
+    assert meta["prompt_file"] == str(prompt_file)
+
+
+def test_tmux_session_launcher_rejects_unprompted_droid_auto_off_by_default(
+    tmp_path: Path,
+) -> None:
+    _write_fake_tmux(tmp_path)
+    env = _fake_tmux_env(tmp_path)
+    env["ARAGORA_TMUX_REGISTRY_REPO_ROOT"] = str(tmp_path)
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "scripts" / "tmux_session_launcher.sh"),
+            "--name",
+            "factory-review",
+            "--agent",
+            "droid",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
     )
+
+    assert result.returncode != 0
+    assert "interactive Droid starts Auto Off" in result.stderr
+    calls = _load_tmux_calls(env)
+    assert any(call[:3] == ["has-session", "-t", "aragora"] for call in calls)
+    assert not any(call[:2] == ["send-keys", "-t"] for call in calls)
 
 
 def test_tmux_session_launcher_does_not_send_prompt_before_readiness_by_default(

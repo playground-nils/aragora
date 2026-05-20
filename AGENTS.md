@@ -39,6 +39,10 @@ For Codex-driven automations in this repo, default to maximum safe autonomy. Fin
   verify the issue, make the smallest credible fix, validate it, commit it, push it, open the PR, and leave the inbox or memory handoff in the same run when the task is otherwise ready.
 - Do not stop at the first blocked path:
   inspect `--help`, adapt to the actual helper interface, and try the next practical route before declaring a blocker.
+- Do not launch Factory/Droid in interactive Auto Off for normal Aragora work:
+  prompted Droid/Factory lanes should use `scripts/tmux_session_launcher.sh` or
+  `scripts/agent_bridge.py launch`, which route through `droid exec --auto high`.
+  Use `ARAGORA_ALLOW_DROID_AUTO_OFF=1` only for explicit manual debugging.
 - Use layered fallbacks:
   move between shell git/gh, MCP connectors, local repo inspection, and browser flows when one surface is degraded.
 - Recover cleanly from partial failure:
