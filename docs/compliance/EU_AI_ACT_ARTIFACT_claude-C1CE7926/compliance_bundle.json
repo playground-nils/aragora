@@ -1,0 +1,582 @@
+{
+  "bundle_id": "EUAIA-2b3f5776",
+  "regulation": "EU AI Act (Regulation 2024/1689)",
+  "compliance_deadline": "2026-08-02",
+  "receipt_id": "DEMO-RCP-001",
+  "generated_at": "2026-05-21T03:17:03.046865+00:00",
+  "risk_classification": {
+    "risk_level": "high",
+    "annex_iii_category": "Employment and worker management",
+    "annex_iii_number": 4,
+    "rationale": "Use case falls under Annex III category 4: Employment and worker management. Recruitment, CV screening, performance evaluation, task allocation, termination.",
+    "matched_keywords": [
+      "recruitment",
+      "cv screening",
+      "hiring decision"
+    ],
+    "applicable_articles": [
+      "Article 6 (Classification)",
+      "Article 9 (Risk management)",
+      "Article 13 (Transparency)",
+      "Article 14 (Human oversight)",
+      "Article 15 (Accuracy, robustness, cybersecurity)"
+    ],
+    "obligations": [
+      "Establish and maintain a risk management system (Art. 9).",
+      "Use high-quality training, validation, and testing data (Art. 10).",
+      "Maintain technical documentation (Art. 11).",
+      "Implement automatic logging of events (Art. 12).",
+      "Ensure transparency and provide instructions for deployers (Art. 13).",
+      "Design for effective human oversight (Art. 14).",
+      "Achieve appropriate accuracy, robustness, and cybersecurity (Art. 15).",
+      "Register in the EU database before placing on market (Art. 49).",
+      "Undergo conformity assessment (Art. 43)."
+    ]
+  },
+  "conformity_report": {
+    "report_id": "EUAIA-0303a0c5",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046895+00:00",
+    "risk_classification": {
+      "risk_level": "high",
+      "annex_iii_category": "Employment and worker management",
+      "annex_iii_number": 4,
+      "rationale": "Use case falls under Annex III category 4: Employment and worker management. Recruitment, CV screening, performance evaluation, task allocation, termination.",
+      "matched_keywords": [
+        "recruitment",
+        "cv screening",
+        "hiring decision"
+      ],
+      "applicable_articles": [
+        "Article 6 (Classification)",
+        "Article 9 (Risk management)",
+        "Article 13 (Transparency)",
+        "Article 14 (Human oversight)",
+        "Article 15 (Accuracy, robustness, cybersecurity)"
+      ],
+      "obligations": [
+        "Establish and maintain a risk management system (Art. 9).",
+        "Use high-quality training, validation, and testing data (Art. 10).",
+        "Maintain technical documentation (Art. 11).",
+        "Implement automatic logging of events (Art. 12).",
+        "Ensure transparency and provide instructions for deployers (Art. 13).",
+        "Design for effective human oversight (Art. 14).",
+        "Achieve appropriate accuracy, robustness, and cybersecurity (Art. 15).",
+        "Register in the EU database before placing on market (Art. 49).",
+        "Undergo conformity assessment (Art. 43)."
+      ]
+    },
+    "article_mappings": [
+      {
+        "article": "Article 9",
+        "article_title": "Risk management system",
+        "requirement": "Identify and analyze known and reasonably foreseeable risks",
+        "receipt_field": "risk_summary, confidence",
+        "status": "satisfied",
+        "evidence": "Risk assessment performed: 4 risks identified (0 critical). Confidence: 78.0%.",
+        "recommendation": ""
+      },
+      {
+        "article": "Article 12",
+        "article_title": "Record-keeping",
+        "requirement": "Automatic logging of events with traceability",
+        "receipt_field": "provenance_chain",
+        "status": "satisfied",
+        "evidence": "Provenance chain contains 10 events.",
+        "recommendation": ""
+      },
+      {
+        "article": "Article 13",
+        "article_title": "Transparency and provision of information to deployers",
+        "requirement": "Identify participating agents, their arguments, and decision rationale",
+        "receipt_field": "consensus_proof, verdict_reasoning, dissenting_views",
+        "status": "satisfied",
+        "evidence": "4 agents participated. Verdict reasoning: The recruitment screening system meets accuracy thresholds but requires additional bias auditing bef.... 1 dissenting view(s) recorded.",
+        "recommendation": ""
+      },
+      {
+        "article": "Article 14",
+        "article_title": "Human oversight",
+        "requirement": "Enable human oversight, including ability to override or halt",
+        "receipt_field": "config_used",
+        "status": "satisfied",
+        "evidence": "Human approval/override mechanism detected in receipt configuration.",
+        "recommendation": ""
+      },
+      {
+        "article": "Article 15",
+        "article_title": "Accuracy, robustness and cybersecurity",
+        "requirement": "Appropriate levels of accuracy and robustness; resilience to attacks",
+        "receipt_field": "robustness_score, artifact_hash, signature",
+        "status": "satisfied",
+        "evidence": "Robustness score: 72.0%. Integrity hash: present. Cryptographic signature: present.",
+        "recommendation": ""
+      }
+    ],
+    "overall_status": "conformant",
+    "summary": "Conformity assessment for receipt DEMO-RCP-001 against the EU AI Act. Risk level: high. 5/5 applicable article requirements satisfied.",
+    "recommendations": [],
+    "integrity_hash": "a5cf742030a35f57aab2dbf30e1ff65773e4339454b4b23a054030ddb2990fc2"
+  },
+  "article_9_risk_management": {
+    "artifact_id": "ART9-308c9803",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "risk_identification_methodology": "Multi-agent adversarial debate with structured critique phases. Risk identification emerges from agent disagreement, dissent, and confidence calibration across heterogeneous model ensemble.",
+    "identified_risks": [
+      {
+        "risk_id": "RISK-TOTAL-001",
+        "description": "4 total-severity risk(s) identified during debate",
+        "likelihood": "low",
+        "severity": "total",
+        "category": "operational"
+      },
+      {
+        "risk_id": "RISK-HIGH-001",
+        "description": "1 high-severity risk(s) identified during debate",
+        "likelihood": "medium",
+        "severity": "high",
+        "category": "operational"
+      },
+      {
+        "risk_id": "RISK-MEDIUM-001",
+        "description": "2 medium-severity risk(s) identified during debate",
+        "likelihood": "low",
+        "severity": "medium",
+        "category": "operational"
+      },
+      {
+        "risk_id": "RISK-LOW-001",
+        "description": "1 low-severity risk(s) identified during debate",
+        "likelihood": "low",
+        "severity": "low",
+        "category": "operational"
+      }
+    ],
+    "foreseeable_misuse_scenarios": [
+      "Use for irreversible decisions without human review",
+      "Applying verdict to out-of-scope domains",
+      "Treating low-confidence verdicts as definitive"
+    ],
+    "risk_mitigation_measures": [
+      {
+        "risk_id": "RISK-HALLUCINATION",
+        "measure": "Multi-agent adversarial debate with dissent capture",
+        "residual_risk_level": "low"
+      },
+      {
+        "risk_id": "RISK-BIAS",
+        "measure": "Heterogeneous model ensemble (different providers and RLHF targets)",
+        "residual_risk_level": "low"
+      },
+      {
+        "risk_id": "RISK-SYCOPHANCY",
+        "measure": "Trickster hollow-consensus detection + RhetoricalObserver",
+        "residual_risk_level": "low"
+      }
+    ],
+    "residual_risks": [
+      {
+        "description": "Correlated model failures on shared blind spots",
+        "likelihood": "low",
+        "severity": "medium",
+        "accepted": true,
+        "rationale": "Heterogeneous ensemble reduces but does not eliminate shared failures"
+      }
+    ],
+    "overall_residual_risk_level": "acceptable",
+    "post_market_monitoring_plan": "Periodic re-evaluation via SettlementTracker (automated data checks: days, human review panels: months, market resolution: years). ELO calibration tracks model performance over time. Brier scores updated after settlement.",
+    "integrity_hash": "eccbdb72ee6d9227ce7afb5be677549a9b2c9b3be873d49f66e894a5af128c31"
+  },
+  "article_10_data_governance": {
+    "article": "Article 10",
+    "title": "Data and Data Governance",
+    "artifact_id": "ART10-bf1694c9",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "data_sources": [
+      "Debate provenance chain records"
+    ],
+    "data_quality_measures": [
+      "Input hashing (SHA-256) for integrity verification",
+      "Provenance chain with timestamped event log",
+      "Confidence scoring per agent response",
+      "Knowledge Mound validation with contradiction detection"
+    ],
+    "bias_detection_methods": [
+      "Heterogeneous model ensemble (different providers reduce shared biases)",
+      "Adversarial debate structure surfaces conflicting viewpoints",
+      "Dissent capture ensures minority perspectives are recorded"
+    ],
+    "training_data_provenance": "Multi-model ensemble: each model trained independently by its provider. No direct training data access or modification by the Aragora platform.",
+    "data_governance_policy": "Data processed through Aragora decision pipeline with provenance tracking. All inputs hashed for integrity. Knowledge Mound provides validation feedback, contradiction detection, and confidence decay for temporal data quality.",
+    "compliance_notes": [
+      "High/critical risks detected; enhanced data governance review recommended."
+    ],
+    "integrity_hash": "3a077bb5f324e9e7a5b17566f1caeead791442c7f4bd80473fa36c3bc6ee1010"
+  },
+  "article_11_technical_documentation": {
+    "article": "Article 11",
+    "title": "Technical Documentation",
+    "artifact_id": "ART11-40003e04",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "system_description": "Aragora Decision Integrity Platform v2.9.0: Multi-agent adversarial debate platform for decision integrity. Provider: Synaptent / Aragora.",
+    "design_specifications": [
+      "Debate protocol: adversarial",
+      "Configured rounds: 3",
+      "Agent count: N/A",
+      "Consensus method: weighted_majority",
+      "Trickster hollow-consensus detection: active",
+      "RhetoricalObserver scoring: active"
+    ],
+    "development_process": "Developed using test-driven methodology with 208,000+ automated tests. Continuous integration with adversarial stress testing (Gauntlet). Multi-model heterogeneous ensemble reduces single-provider failure modes.",
+    "monitoring_capabilities": [
+      "ELO-based model performance tracking",
+      "Brier calibration scores for confidence accuracy",
+      "SettlementTracker for long-term claim verification",
+      "Prometheus metrics and OpenTelemetry tracing",
+      "Structured audit logging with provenance chain"
+    ],
+    "performance_metrics": {
+      "consensus_confidence": 0.78,
+      "robustness_score": 0.72,
+      "agent_count": 0
+    },
+    "compliance_notes": [],
+    "integrity_hash": "7e2c0de9b4c24d6d4ab5fcc94cf6cf5096fa4b0a31ffb852e73b14bede05e658"
+  },
+  "article_12_record_keeping": {
+    "article": "Article 12",
+    "title": "Record-Keeping",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "event_log": [
+      {
+        "event_id": "evt_0001",
+        "event_type": "debate_started",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "system"
+      },
+      {
+        "event_id": "evt_0002",
+        "event_type": "proposal_submitted",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "claude-analyst"
+      },
+      {
+        "event_id": "evt_0003",
+        "event_type": "critique_submitted",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "gemini-challenger"
+      },
+      {
+        "event_id": "evt_0004",
+        "event_type": "revision_submitted",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "mistral-auditor"
+      },
+      {
+        "event_id": "evt_0005",
+        "event_type": "vote_cast",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "claude-analyst"
+      },
+      {
+        "event_id": "evt_0006",
+        "event_type": "vote_cast",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "gpt4-ethics"
+      },
+      {
+        "event_id": "evt_0007",
+        "event_type": "vote_cast",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "gemini-challenger"
+      },
+      {
+        "event_id": "evt_0008",
+        "event_type": "vote_cast",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "mistral-auditor"
+      },
+      {
+        "event_id": "evt_0009",
+        "event_type": "human_approval",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "compliance-officer@org.example.com"
+      },
+      {
+        "event_id": "evt_0010",
+        "event_type": "receipt_generated",
+        "timestamp": "2026-05-21T03:17:03.046805+00:00",
+        "actor": "system"
+      }
+    ],
+    "reference_databases": [],
+    "input_record": {
+      "input_summary": "Evaluate AI-powered recruitment and CV screening system for automated candidate filtering in hiring decisions.",
+      "input_hash": "fe01a1964daac9617be60b25306d53fe9e88ceece2d39e972673581bd9a68a08",
+      "agents_participating": [
+        "mistral-auditor",
+        "gemini-challenger",
+        "gpt4-ethics",
+        "claude-analyst"
+      ]
+    },
+    "technical_documentation": {
+      "annex_iv_sec1_general": {
+        "system_name": "Aragora Decision Integrity Platform",
+        "version": "2.9.0",
+        "provider": "Synaptent / Aragora",
+        "intended_purpose": "Multi-agent adversarial vetting of decisions against organizational knowledge, delivering audit-ready decision receipts."
+      },
+      "annex_iv_sec2_development": {
+        "architecture": "Multi-agent debate with adversarial consensus",
+        "consensus_method": "weighted_majority",
+        "agents": [
+          "mistral-auditor",
+          "gemini-challenger",
+          "gpt4-ethics",
+          "claude-analyst"
+        ],
+        "protocol": "adversarial",
+        "rounds": 3
+      },
+      "annex_iv_sec5_risk_management": {
+        "adversarial_debate": "Multi-agent challenge reduces single-point-of-failure",
+        "hollow_consensus_detection": "Trickster module",
+        "circuit_breakers": "Per-agent failure isolation",
+        "calibration_monitoring": "Continuous Brier score tracking"
+      }
+    },
+    "retention_policy": {
+      "minimum_months": 6,
+      "basis": "Art. 26(6) \u2014 minimum 6 months for high-risk systems",
+      "provenance_events": 10,
+      "integrity_mechanism": "SHA-256 hash chain"
+    }
+  },
+  "article_13_transparency": {
+    "article": "Article 13",
+    "title": "Transparency and Provision of Information to Deployers",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "provider_identity": {
+      "name": "Synaptent / Aragora",
+      "contact": "provider-contact-redacted",
+      "eu_representative": "Not yet designated"
+    },
+    "intended_purpose": {
+      "description": "Aragora orchestrates adversarial debate among heterogeneous AI models to vet decisions against organizational knowledge. It produces audit-ready decision receipts with cryptographic integrity for regulatory compliance.",
+      "not_intended_for": [
+        "Fully autonomous decision-making without human oversight",
+        "Real-time biometric identification",
+        "Social scoring or behavioral manipulation"
+      ]
+    },
+    "accuracy_robustness": {
+      "consensus_confidence": 0.78,
+      "robustness_score": 0.72,
+      "agents_participating": 4,
+      "consensus_method": "weighted_majority",
+      "agreement_ratio": 0.75,
+      "integrity_hash_present": true,
+      "signature_present": true
+    },
+    "known_risks": [
+      {
+        "risk": "Automation bias",
+        "description": "Over-reliance on AI recommendations",
+        "mitigation": "Mandatory human review, dissent highlighting",
+        "article_ref": "Art. 14(4)(b)"
+      },
+      {
+        "risk": "Hollow consensus",
+        "description": "Surface-level agreement without substantive reasoning",
+        "mitigation": "Trickster detection module, evidence grounding",
+        "article_ref": "Art. 15(4)"
+      },
+      {
+        "risk": "Model hallucination",
+        "description": "Plausible but incorrect claims persisting through consensus",
+        "mitigation": "Multi-agent challenge, calibration tracking",
+        "article_ref": "Art. 15(1)"
+      }
+    ],
+    "output_interpretation": {
+      "verdict": "CONDITIONAL",
+      "confidence": 0.78,
+      "confidence_interpretation": "Moderate confidence \u2014 some reservations",
+      "dissent_count": 1,
+      "dissent_significance": "1 dissenting view(s) recorded. Review dissenting reasoning before finalizing."
+    },
+    "human_oversight_reference": {
+      "human_approval_detected": true,
+      "approval_config": {
+        "require_approval": true,
+        "human_in_loop": true,
+        "approver": "compliance-officer@org.example.com"
+      }
+    }
+  },
+  "article_14_human_oversight": {
+    "article": "Article 14",
+    "title": "Human Oversight",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "oversight_model": {
+      "primary": "Human-in-the-Loop (HITL)",
+      "description": "All final decisions require explicit human approval.",
+      "human_approval_detected": true
+    },
+    "understanding_monitoring": {
+      "capabilities_documented": [
+        "Multi-agent adversarial debate with consensus",
+        "Tamper-evident decision receipts",
+        "Calibration tracking per agent",
+        "Dissent recording for minority opinions"
+      ],
+      "limitations_documented": [
+        "Consensus does not guarantee correctness",
+        "Confidence != probability of being correct",
+        "Performance varies by domain complexity",
+        "Underlying model knowledge cutoff dates apply"
+      ],
+      "monitoring_features": [
+        "Real-time debate spectate view",
+        "Agent performance dashboard",
+        "Calibration drift alerts",
+        "Anomaly detection"
+      ]
+    },
+    "automation_bias_safeguards": {
+      "warnings_present": true,
+      "mechanisms": [
+        "Dissent views prominently displayed alongside verdict",
+        "Confidence scores presented with interpretation context",
+        "Periodic independent evaluation prompts",
+        "Mandatory review intervals"
+      ]
+    },
+    "interpretation_features": {
+      "explainability": [
+        "Factor decomposition: contributing factors with weights",
+        "Counterfactual analysis: what-if scenarios",
+        "Evidence chain: claims linked to sources",
+        "Vote pivot: which arguments changed outcomes"
+      ]
+    },
+    "override_capability": {
+      "override_available": true,
+      "mechanisms": [
+        {
+          "action": "Reject verdict",
+          "description": "Deployer rejects AI consensus and decides independently",
+          "audit_logged": true
+        },
+        {
+          "action": "Override with reason",
+          "description": "Deployer overrides with documented rationale",
+          "audit_logged": true
+        },
+        {
+          "action": "Reverse prior decision",
+          "description": "Previously accepted decisions can be reversed",
+          "audit_logged": true
+        }
+      ]
+    },
+    "intervention_capability": {
+      "stop_available": true,
+      "mechanisms": [
+        {
+          "action": "Stop debate",
+          "description": "Halts debate mid-round, partial results preserved",
+          "safe_state": true
+        },
+        {
+          "action": "Cancel decision",
+          "description": "Cancels in-progress decision, no downstream actions",
+          "safe_state": true
+        }
+      ]
+    }
+  },
+  "article_15_accuracy_robustness": {
+    "artifact_id": "ART15-f65862e0",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "accuracy_metrics": {
+      "consensus_confidence": 0.78,
+      "agreement_ratio": 1.0,
+      "agent_count": 0,
+      "vote_confidence_mean": 0.0
+    },
+    "robustness_score": 0.72,
+    "adversarial_testing": {
+      "dissent_detected": false,
+      "dissent_count": 0,
+      "hollow_consensus_checked": true,
+      "rhetorical_device_scoring": true,
+      "multi_round_critique": true
+    },
+    "cryptographic_controls": {
+      "integrity_hash_algorithm": "SHA-256",
+      "integrity_hash_present": true,
+      "signature_present": true,
+      "signing_algorithm": "not-signed"
+    },
+    "error_indicators": [],
+    "continuous_monitoring": "ELO-based model performance tracking updated after each debate. Brier calibration scores updated after settlement resolution. SettlementTracker monitors claim accuracy over review_horizon_days.",
+    "integrity_hash": "3b35af90ccbb143242b27700c70ac447001da3ca67b515f271dd181b9c22d8af"
+  },
+  "article_43_conformity_assessment": {
+    "article": "Article 43",
+    "title": "Conformity Assessment",
+    "artifact_id": "ART43-ea061f01",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "assessment_type": "internal",
+    "assessment_date": "2026-05-21",
+    "assessor": "Synaptent / Aragora",
+    "standards_applied": [
+      "EU AI Act (Regulation 2024/1689)",
+      "ISO/IEC 42001:2023 (AI Management System)",
+      "ISO/IEC 23894:2023 (AI Risk Management)"
+    ],
+    "findings": [
+      "Consensus confidence meets threshold (>=0.7)",
+      "Robustness score meets minimum threshold (>=0.5)",
+      "1 high-severity risk(s) identified \u2014 review recommended"
+    ],
+    "conformity_status": "partial",
+    "compliance_notes": [
+      "Internal conformity assessment per Art. 43(2). Third-party assessment may be required for certain Annex III categories."
+    ],
+    "integrity_hash": "6fce99e8cb1f466d14f4a4b43bfff53bde78a47134edc1a4cccb6acdb17e2a1d"
+  },
+  "article_49_registration": {
+    "article": "Article 49",
+    "title": "Registration",
+    "artifact_id": "ART49-2cdf9481",
+    "receipt_id": "DEMO-RCP-001",
+    "generated_at": "2026-05-21T03:17:03.046865+00:00",
+    "registration_id": "REG-de15d591",
+    "registered_date": "2026-05-21",
+    "eu_database_entry": "Pending registration in EU database (Art. 71)",
+    "provider_info": {
+      "name": "Synaptent / Aragora",
+      "contact": "provider-contact-redacted",
+      "eu_representative": "Not designated"
+    },
+    "system_purpose": "Evaluate AI-powered recruitment and CV screening system for automated candidate filtering in hiring decisions.",
+    "risk_level": "high",
+    "compliance_notes": [
+      "Registration in the EU database required before placing system on market (Art. 49(1)).",
+      "EU authorized representative not designated; required for non-EU providers (Art. 49(2))."
+    ],
+    "integrity_hash": "695d58e2f89c56569c976348321de382e722531cd8c1a75b079cf502b1dab183"
+  },
+  "integrity_hash": "da6a4432747189bd4ad48f0ec13cb9740e20b0d4ff2a8862a6e542808739335d"
+}

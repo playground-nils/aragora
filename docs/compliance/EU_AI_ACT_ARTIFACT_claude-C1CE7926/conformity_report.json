@@ -1,0 +1,85 @@
+{
+  "report_id": "EUAIA-0303a0c5",
+  "receipt_id": "DEMO-RCP-001",
+  "generated_at": "2026-05-21T03:17:03.046895+00:00",
+  "risk_classification": {
+    "risk_level": "high",
+    "annex_iii_category": "Employment and worker management",
+    "annex_iii_number": 4,
+    "rationale": "Use case falls under Annex III category 4: Employment and worker management. Recruitment, CV screening, performance evaluation, task allocation, termination.",
+    "matched_keywords": [
+      "recruitment",
+      "cv screening",
+      "hiring decision"
+    ],
+    "applicable_articles": [
+      "Article 6 (Classification)",
+      "Article 9 (Risk management)",
+      "Article 13 (Transparency)",
+      "Article 14 (Human oversight)",
+      "Article 15 (Accuracy, robustness, cybersecurity)"
+    ],
+    "obligations": [
+      "Establish and maintain a risk management system (Art. 9).",
+      "Use high-quality training, validation, and testing data (Art. 10).",
+      "Maintain technical documentation (Art. 11).",
+      "Implement automatic logging of events (Art. 12).",
+      "Ensure transparency and provide instructions for deployers (Art. 13).",
+      "Design for effective human oversight (Art. 14).",
+      "Achieve appropriate accuracy, robustness, and cybersecurity (Art. 15).",
+      "Register in the EU database before placing on market (Art. 49).",
+      "Undergo conformity assessment (Art. 43)."
+    ]
+  },
+  "article_mappings": [
+    {
+      "article": "Article 9",
+      "article_title": "Risk management system",
+      "requirement": "Identify and analyze known and reasonably foreseeable risks",
+      "receipt_field": "risk_summary, confidence",
+      "status": "satisfied",
+      "evidence": "Risk assessment performed: 4 risks identified (0 critical). Confidence: 78.0%.",
+      "recommendation": ""
+    },
+    {
+      "article": "Article 12",
+      "article_title": "Record-keeping",
+      "requirement": "Automatic logging of events with traceability",
+      "receipt_field": "provenance_chain",
+      "status": "satisfied",
+      "evidence": "Provenance chain contains 10 events.",
+      "recommendation": ""
+    },
+    {
+      "article": "Article 13",
+      "article_title": "Transparency and provision of information to deployers",
+      "requirement": "Identify participating agents, their arguments, and decision rationale",
+      "receipt_field": "consensus_proof, verdict_reasoning, dissenting_views",
+      "status": "satisfied",
+      "evidence": "4 agents participated. Verdict reasoning: The recruitment screening system meets accuracy thresholds but requires additional bias auditing bef.... 1 dissenting view(s) recorded.",
+      "recommendation": ""
+    },
+    {
+      "article": "Article 14",
+      "article_title": "Human oversight",
+      "requirement": "Enable human oversight, including ability to override or halt",
+      "receipt_field": "config_used",
+      "status": "satisfied",
+      "evidence": "Human approval/override mechanism detected in receipt configuration.",
+      "recommendation": ""
+    },
+    {
+      "article": "Article 15",
+      "article_title": "Accuracy, robustness and cybersecurity",
+      "requirement": "Appropriate levels of accuracy and robustness; resilience to attacks",
+      "receipt_field": "robustness_score, artifact_hash, signature",
+      "status": "satisfied",
+      "evidence": "Robustness score: 72.0%. Integrity hash: present. Cryptographic signature: present.",
+      "recommendation": ""
+    }
+  ],
+  "overall_status": "conformant",
+  "summary": "Conformity assessment for receipt DEMO-RCP-001 against the EU AI Act. Risk level: high. 5/5 applicable article requirements satisfied.",
+  "recommendations": [],
+  "integrity_hash": "a5cf742030a35f57aab2dbf30e1ff65773e4339454b4b23a054030ddb2990fc2"
+}

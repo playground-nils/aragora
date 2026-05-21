@@ -1,0 +1,111 @@
+{
+  "article": "Article 12",
+  "title": "Record-Keeping",
+  "receipt_id": "DEMO-RCP-001",
+  "generated_at": "2026-05-21T03:17:03.046865+00:00",
+  "event_log": [
+    {
+      "event_id": "evt_0001",
+      "event_type": "debate_started",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "system"
+    },
+    {
+      "event_id": "evt_0002",
+      "event_type": "proposal_submitted",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "claude-analyst"
+    },
+    {
+      "event_id": "evt_0003",
+      "event_type": "critique_submitted",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "gemini-challenger"
+    },
+    {
+      "event_id": "evt_0004",
+      "event_type": "revision_submitted",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "mistral-auditor"
+    },
+    {
+      "event_id": "evt_0005",
+      "event_type": "vote_cast",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "claude-analyst"
+    },
+    {
+      "event_id": "evt_0006",
+      "event_type": "vote_cast",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "gpt4-ethics"
+    },
+    {
+      "event_id": "evt_0007",
+      "event_type": "vote_cast",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "gemini-challenger"
+    },
+    {
+      "event_id": "evt_0008",
+      "event_type": "vote_cast",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "mistral-auditor"
+    },
+    {
+      "event_id": "evt_0009",
+      "event_type": "human_approval",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "compliance-officer@org.example.com"
+    },
+    {
+      "event_id": "evt_0010",
+      "event_type": "receipt_generated",
+      "timestamp": "2026-05-21T03:17:03.046805+00:00",
+      "actor": "system"
+    }
+  ],
+  "reference_databases": [],
+  "input_record": {
+    "input_summary": "Evaluate AI-powered recruitment and CV screening system for automated candidate filtering in hiring decisions.",
+    "input_hash": "fe01a1964daac9617be60b25306d53fe9e88ceece2d39e972673581bd9a68a08",
+    "agents_participating": [
+      "mistral-auditor",
+      "gemini-challenger",
+      "gpt4-ethics",
+      "claude-analyst"
+    ]
+  },
+  "technical_documentation": {
+    "annex_iv_sec1_general": {
+      "system_name": "Aragora Decision Integrity Platform",
+      "version": "2.9.0",
+      "provider": "Synaptent / Aragora",
+      "intended_purpose": "Multi-agent adversarial vetting of decisions against organizational knowledge, delivering audit-ready decision receipts."
+    },
+    "annex_iv_sec2_development": {
+      "architecture": "Multi-agent debate with adversarial consensus",
+      "consensus_method": "weighted_majority",
+      "agents": [
+        "mistral-auditor",
+        "gemini-challenger",
+        "gpt4-ethics",
+        "claude-analyst"
+      ],
+      "protocol": "adversarial",
+      "rounds": 3
+    },
+    "annex_iv_sec5_risk_management": {
+      "adversarial_debate": "Multi-agent challenge reduces single-point-of-failure",
+      "hollow_consensus_detection": "Trickster module",
+      "circuit_breakers": "Per-agent failure isolation",
+      "calibration_monitoring": "Continuous Brier score tracking"
+    }
+  },
+  "retention_policy": {
+    "minimum_months": 6,
+    "basis": "Art. 26(6) \u2014 minimum 6 months for high-risk systems",
+    "provenance_events": 10,
+    "integrity_mechanism": "SHA-256 hash chain"
+  }
+}

@@ -1,0 +1,47 @@
+# EU AI Act Conformity Report
+
+**Report ID:** EUAIA-b0762aa7
+**Receipt ID:** DEMO-RCP-001
+**Generated:** 2026-05-21T03:17:13.645600+00:00
+**Integrity Hash:** `962dfe98edb0da97...`
+
+---
+
+## Risk Classification
+
+**Risk Level:** MINIMAL
+**Rationale:** Use case does not match high-risk or limited-risk categories. Minimal obligations apply.
+
+### Obligations
+
+- Voluntary adoption of codes of conduct encouraged (Article 95).
+
+---
+
+## Article Compliance Assessment
+
+**Overall Status:** NON_CONFORMANT
+
+| Article | Requirement | Status | Evidence |
+|---------|-------------|--------|----------|
+| Article 9 | Identify and analyze known and reasonably foreseea | FAIL | No risk assessment data found in receipt. |
+| Article 12 | Automatic logging of events with traceability | FAIL | Provenance chain contains 0 events. |
+| Article 13 | Identify participating agents, their arguments, an | PARTIAL | 0 agents participated. Verdict reasoning: . 0 dissenting vie... |
+| Article 14 | Enable human oversight, including ability to overr | PARTIAL | No explicit human oversight mechanism found in receipt. |
+| Article 15 | Appropriate levels of accuracy and robustness; res | FAIL | Robustness score: 0.0%. Integrity hash: missing. Cryptograph... |
+
+---
+
+## Recommendations
+
+1. Conduct a risk assessment and record findings in the receipt.
+2. Ensure all decision events are logged in the provenance chain.
+3. Include agent identities and reasoning in all receipts.
+4. Integrate human-in-the-loop approval before critical decisions are finalized.
+5. Improve robustness score and add cryptographic signing.
+
+---
+
+## Summary
+
+Conformity assessment for receipt DEMO-RCP-001 against the EU AI Act. Risk level: minimal. 0/5 applicable article requirements satisfied.

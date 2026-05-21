@@ -1,0 +1,45 @@
+
+Compliance Frameworks:
+============================================================
+
+  HIPAA (hipaa)
+    Health Insurance Portability and Accountability Act
+    Version: 2013  |  Category: healthcare
+    Rules: 5  |  Verticals: healthcare
+
+  GDPR (gdpr)
+    General Data Protection Regulation
+    Version: 2018  |  Category: privacy
+    Rules: 5  |  Verticals: legal, healthcare, software
+
+  SOX (sox)
+    Sarbanes-Oxley Act
+    Version: 2002  |  Category: financial
+    Rules: 4  |  Verticals: accounting, legal
+
+  OWASP Top 10 (owasp)
+    Open Web Application Security Project Top 10
+    Version: 2021  |  Category: security
+    Rules: 5  |  Verticals: software
+
+  PCI-DSS (pci_dss)
+    Payment Card Industry Data Security Standard
+    Version: 4.0  |  Category: financial
+    Rules: 3  |  Verticals: software, accounting
+
+  FDA 21 CFR Part 11 (fda_21_cfr)
+    FDA Electronic Records and Signatures
+    Version: 2003  |  Category: healthcare
+    Rules: 3  |  Verticals: healthcare
+
+  ISO 27001 (iso_27001)
+    Information Security Management System
+    Version: 2022  |  Category: security
+    Rules: 3  |  Verticals: software, legal
+
+  FedRAMP (fedramp)
+    Federal Risk and Authorization Management Program (NIST 800-53 Moderate)
+    Version: Rev 5  |  Category: government
+    Rules: 21  |  Verticals: government, software
+
+Total: 8 framework(s)
