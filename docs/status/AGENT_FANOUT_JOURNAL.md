@@ -124,3 +124,5 @@ Columns: `timestamp_utc | session_id | agent_family | phase_id | pr_number | out
 2026-05-21T03:12:20Z | claude-C1CE7926 | claude | P93-proof-surface-refresh | - | no-work (B0 1.96d, TW03 1.97d fresh; codex/b0-truth-refresh worktree active)
 2026-05-21T03:12:52Z | claude-C1CE7926 | claude | P94-worktree-inventory-refresh-with-pr-state | - | deferred (codex/worktree-inventory-size-none-20260518 + codex/harvest-adc-follow-on-deepening active)
 2026-05-21T03:13:08Z | claude-C1CE7926 | claude | P95-lane-registry-stale-sweep | - | no-work (sweep dry-run reports 0 stale of 139 rows; apply threshold is >=3)
+2026-05-21T03:16:29Z | claude-C1CE7926 | claude | P96-triage-scan-bucket-a-flips | - | shipped (report: 47 open PRs, 0 Bucket A flips, 14 Bucket B rebase candidates, 32 Bucket C blocked-by-checks; no PR state mutated)
+2026-05-21T03:16:29Z | claude-C1CE7926 | note: gh GraphQL 504 errors hit triage_open_prs.py mid-scan; fallback to direct gh pr list --json worked. salvage-github-connectivity-tokens-20260521 codex worktree is on this. Recommend operator dispatch a rebase wave for claude-B061F80D's #7336/#7348/#7349/#7351/#7358/#7361 backlog.
