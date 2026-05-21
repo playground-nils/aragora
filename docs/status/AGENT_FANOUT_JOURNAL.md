@@ -120,3 +120,4 @@ Columns: `timestamp_utc | session_id | agent_family | phase_id | pr_number | out
 2026-05-21T03:10:16Z | claude-C1CE7926 | claude | P90-master-fanout-prompt-v14-pr | 7390 | shipped
 2026-05-21T03:11:32Z | claude-C1CE7926 | claude | P91-canonical-metrics-receipt-refresh | - | shipped
 2026-05-21T03:11:32Z | claude-C1CE7926 | note: receipt went 9 pass / 1 warn / 0 fail (May 19) → 10 pass / 0 warn / 0 fail. test_definitions.count drift resolved itself; recent test-coverage commits (#7377/#7378/#7379/#7380) likely pushed the live counter back over the 80% floor of 216,016 claim. P92 demoted to no-op.
+2026-05-21T03:11:48Z | claude-C1CE7926 | claude | P92-canonical-test-count-drift | - | no-work (warn cleared by P91 refresh, see prior note)
