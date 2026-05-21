@@ -56,7 +56,7 @@ Synthetic-demo input was used (no `receipt_file` argument). To regenerate agains
 
 ## Substrate-freeze rationale
 
-This artifact is the external-proof deliverable for the 2026-05-20 substrate-soak run (per [`feedback_substrate_freeze_external_proof.md`](file:///Users/armand/.claude/projects/-Users-armand-Development-aragora/memory/feedback_substrate_freeze_external_proof.md)). No new tooling, no new orchestration verbs — the artifact is produced by existing CLI commands shipped on main (`aragora compliance eu-ai-act generate`, polished for GTM in PR #725 / Mar 6, 2026).
+This artifact is the external-proof deliverable for the 2026-05-20 substrate-soak run (per `feedback_substrate_freeze_external_proof.md`). No new tooling, no new orchestration verbs — the artifact is produced by existing CLI commands shipped on main (`aragora compliance eu-ai-act generate`, polished for GTM in PR #725 / Mar 6, 2026).
 
 Per memory baseline: 85/100 compliance score; this snapshot demonstrates the artifact pipeline produces a CONFORMANT bundle end-to-end with integrity hashing in place ahead of the August 2, 2026 deadline.
 
