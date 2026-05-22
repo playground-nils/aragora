@@ -35,16 +35,24 @@ def _reset_singleton():
 class TestInheritedBelief:
     def test_effective_confidence_scales_with_decay(self) -> None:
         b = InheritedBelief(
-            belief_id="b1", statement="X is true", confidence=0.8,
-            source_debate_id="d1", decay_factor=0.5,
+            belief_id="b1",
+            statement="X is true",
+            confidence=0.8,
+            source_debate_id="d1",
+            decay_factor=0.5,
         )
         assert b.effective_confidence == pytest.approx(0.4)
 
     def test_roundtrip_to_from_dict(self) -> None:
         b = InheritedBelief(
-            belief_id="b3", statement="Z holds", confidence=0.9,
-            source_debate_id="d2", source_type="dissent", domain="billing",
-            supporting_agents=["alice"], dissenting_agents=["bob"],
+            belief_id="b3",
+            statement="Z holds",
+            confidence=0.9,
+            source_debate_id="d2",
+            source_type="dissent",
+            domain="billing",
+            supporting_agents=["alice"],
+            dissenting_agents=["bob"],
         )
         r = InheritedBelief.from_dict(b.to_dict())
         assert r.belief_id == b.belief_id
@@ -63,7 +71,9 @@ class TestAbsorbConsensus:
     def test_produces_main_consensus_belief(self) -> None:
         g = EpistemicGraph()
         beliefs = g.absorb_consensus(
-            debate_id="d1", final_claim="Rate limiting prevents abuse", confidence=0.85,
+            debate_id="d1",
+            final_claim="Rate limiting prevents abuse",
+            confidence=0.85,
         )
         assert beliefs
         main = beliefs[0]
@@ -73,7 +83,9 @@ class TestAbsorbConsensus:
     def test_claim_beliefs_are_confidence_modulated(self) -> None:
         g = EpistemicGraph()
         beliefs = g.absorb_consensus(
-            debate_id="d2", final_claim="Main verdict", confidence=0.5,
+            debate_id="d2",
+            final_claim="Main verdict",
+            confidence=0.5,
             claims=[{"statement": "Claim A", "confidence": 0.8, "author": "alice"}],
         )
         claim_belief = next(b for b in beliefs if b.source_type == "claim")
@@ -82,7 +94,10 @@ class TestAbsorbConsensus:
     def test_domain_indexed_and_beliefs_stored(self) -> None:
         g = EpistemicGraph()
         beliefs = g.absorb_consensus(
-            debate_id="d4", final_claim="X", confidence=0.7, domain="infrastructure",
+            debate_id="d4",
+            final_claim="X",
+            confidence=0.7,
+            domain="infrastructure",
         )
         assert "infrastructure" in g._domain_index
         assert all(g.get_belief(b.belief_id) is not None for b in beliefs)
@@ -90,7 +105,9 @@ class TestAbsorbConsensus:
     def test_claim_links_to_consensus_via_supports_edge(self) -> None:
         g = EpistemicGraph()
         beliefs = g.absorb_consensus(
-            debate_id="d5", final_claim="Top verdict", confidence=0.8,
+            debate_id="d5",
+            final_claim="Top verdict",
+            confidence=0.8,
             claims=[{"statement": "Sub-claim", "confidence": 0.6, "author": "carol"}],
         )
         main_id = beliefs[0].belief_id
@@ -107,7 +124,9 @@ class TestAbsorbDissent:
     def test_dissent_belief_has_correct_source_type(self) -> None:
         g = EpistemicGraph()
         d = g.absorb_dissent(
-            debate_id="d1", dissent_statement="I disagree", dissenting_agent="bob",
+            debate_id="d1",
+            dissent_statement="I disagree",
+            dissenting_agent="bob",
         )
         assert d.source_type == "dissent"
         assert "bob" in d.dissenting_agents
@@ -118,8 +137,11 @@ class TestAbsorbDissent:
         beliefs = g.absorb_consensus(debate_id="d1", final_claim="X is right", confidence=original)
         main_id = beliefs[0].belief_id
         g.absorb_dissent(
-            debate_id="d2", dissent_statement="X is wrong",
-            dissenting_agent="bob", severity=0.5, related_belief_id=main_id,
+            debate_id="d2",
+            dissent_statement="X is wrong",
+            dissenting_agent="bob",
+            severity=0.5,
+            related_belief_id=main_id,
         )
         assert g.get_belief(main_id).confidence < original
 
@@ -127,8 +149,10 @@ class TestAbsorbDissent:
         g = EpistemicGraph()
         main_id = g.absorb_consensus(debate_id="d1", final_claim="X", confidence=0.8)[0].belief_id
         d = g.absorb_dissent(
-            debate_id="d2", dissent_statement="not X",
-            dissenting_agent="bob", related_belief_id=main_id,
+            debate_id="d2",
+            dissent_statement="not X",
+            dissenting_agent="bob",
+            related_belief_id=main_id,
         )
         assert any(b.belief_id == d.belief_id for b in g.get_contradictions(main_id))
 
@@ -142,19 +166,22 @@ class TestInjectPriors:
     def test_returns_beliefs_matching_topic_keyword(self) -> None:
         g = EpistemicGraph()
         g.absorb_consensus(
-            debate_id="d1", final_claim="database sharding reduces latency", confidence=0.8,
+            debate_id="d1",
+            final_claim="database sharding reduces latency",
+            confidence=0.8,
         )
         priors = g.inject_priors(topic="database latency")
         assert any(
-            "database" in p.statement.lower() or "latency" in p.statement.lower()
-            for p in priors
+            "database" in p.statement.lower() or "latency" in p.statement.lower() for p in priors
         )
 
     def test_limit_caps_returned_beliefs_and_sorted_by_confidence(self) -> None:
         g = EpistemicGraph()
         for i in range(6):
             g.absorb_consensus(
-                debate_id=f"d{i}", final_claim=f"rate limit scenario {i}", confidence=0.8,
+                debate_id=f"d{i}",
+                final_claim=f"rate limit scenario {i}",
+                confidence=0.8,
             )
         priors = g.inject_priors(topic="rate limit", limit=2)
         assert len(priors) <= 2
@@ -176,8 +203,12 @@ class TestInjectPriors:
 class TestSupersede:
     def test_old_belief_confidence_drastically_reduced(self) -> None:
         g = EpistemicGraph()
-        old_id = g.absorb_consensus(debate_id="d1", final_claim="Old way", confidence=0.9)[0].belief_id
-        new_id = g.absorb_consensus(debate_id="d2", final_claim="New way", confidence=0.9)[0].belief_id
+        old_id = g.absorb_consensus(debate_id="d1", final_claim="Old way", confidence=0.9)[
+            0
+        ].belief_id
+        new_id = g.absorb_consensus(debate_id="d2", final_claim="New way", confidence=0.9)[
+            0
+        ].belief_id
         g.supersede(old_belief_id=old_id, new_belief_id=new_id, debate_id="d2")
         old = g.get_belief(old_id)
         assert old.confidence < 0.2
@@ -189,8 +220,7 @@ class TestSupersede:
         new_id = g.absorb_consensus(debate_id="d2", final_claim="New", confidence=0.8)[0].belief_id
         g.supersede(old_belief_id=old_id, new_belief_id=new_id)
         assert any(
-            e.relation == "supersedes" and e.target_id == old_id
-            for e in g.get_edges_for(new_id)
+            e.relation == "supersedes" and e.target_id == old_id for e in g.get_edges_for(new_id)
         )
 
 
@@ -225,7 +255,9 @@ class TestSerialization:
     def test_roundtrip_preserves_beliefs_and_config(self) -> None:
         g = EpistemicGraph(decay_rate=0.9, min_confidence=0.2)
         g.absorb_consensus(
-            debate_id="rt", final_claim="Round-trip verdict", confidence=0.75,
+            debate_id="rt",
+            final_claim="Round-trip verdict",
+            confidence=0.75,
             domain="testing",
             claims=[{"statement": "Sub-claim", "confidence": 0.6, "author": "alice"}],
         )
@@ -256,6 +288,8 @@ class TestSingleton:
 
     def test_state_persists_across_singleton_calls(self) -> None:
         get_epistemic_graph().absorb_consensus(
-            debate_id="d1", final_claim="Persisted belief", confidence=0.9,
+            debate_id="d1",
+            final_claim="Persisted belief",
+            confidence=0.9,
         )
         assert get_epistemic_graph().stats()["total_beliefs"] >= 1
