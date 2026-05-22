@@ -123,6 +123,8 @@ TIER_4_PREFIXES: tuple[str, ...] = (
     "aragora/cli/parser.py",
 )
 PARKED_LABELS: tuple[str, ...] = ("stale", "do-not-merge", "wip", "blocked")
+MERGE_QUORUM_CHECK_NAME = "aragora-merge-quorum"
+MERGE_QUORUM_WORKFLOW_NAME = "Aragora Merge Quorum"
 
 LANE_ORDER: dict[str, int] = {
     "ready_now": 0,
@@ -1209,7 +1211,7 @@ def _is_merge_quorum_self_check(check: dict[str, Any]) -> bool:
 def _summarize_checks(checks: list) -> tuple[str, bool, bool]:
     """Return ``(summary, has_failures, has_pending)`` for a statusCheckRollup."""
     success = failure = pending = 0
-    for check in checks:
+    for check in _latest_status_check_rollup(checks):
         if not isinstance(check, dict):
             continue
         if _is_merge_quorum_self_check(check):
@@ -1249,6 +1251,55 @@ def _summarize_checks(checks: list) -> tuple[str, bool, bool]:
     if success > 0:
         return (f"{success}/{total} green", False, False)
     return ("no checks", False, False)
+
+
+def _latest_status_check_rollup(checks: list) -> list[dict[str, Any]]:
+    """Collapse superseded check-rollup entries to their latest identity.
+
+    GitHub's PR ``statusCheckRollup`` can retain older Actions check runs for
+    the same workflow/job at the current head.  Merge-packet should gate on the
+    latest visible state for a check identity, matching ``gh pr checks``.
+    """
+    latest: dict[str, tuple[str, int, dict[str, Any]]] = {}
+    passthrough: list[dict[str, Any]] = []
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict):
+            continue
+        key = _status_check_identity(check)
+        if not key:
+            passthrough.append(check)
+            continue
+        timestamp = str(
+            check.get("completedAt")
+            or check.get("startedAt")
+            or check.get("createdAt")
+            or check.get("updatedAt")
+            or ""
+        )
+        previous = latest.get(key)
+        if previous is None or (timestamp, index) >= (previous[0], previous[1]):
+            latest[key] = (timestamp, index, check)
+    ordered = sorted(latest.values(), key=lambda item: item[1])
+    return passthrough + [item[2] for item in ordered]
+
+
+def _status_check_identity(check: dict[str, Any]) -> str:
+    workflow = str(check.get("workflowName") or check.get("workflow") or "").strip()
+    name = str(check.get("name") or check.get("context") or "").strip()
+    if not name:
+        return ""
+    if workflow:
+        return f"check-run:{workflow}:{name}"
+    return f"status-context:{name}"
+
+
+def _is_merge_quorum_self_check(check: dict[str, Any]) -> bool:
+    """Ignore the merge-quorum workflow's own status while building its packet."""
+    name = str(check.get("name") or check.get("context") or "").strip()
+    if name != MERGE_QUORUM_CHECK_NAME:
+        return False
+    workflow = str(check.get("workflowName") or check.get("workflow") or "").strip()
+    return workflow in {"", MERGE_QUORUM_WORKFLOW_NAME}
 
 
 def _filter_lanes(
