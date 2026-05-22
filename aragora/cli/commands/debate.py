@@ -43,9 +43,48 @@ DEFAULT_API_URL = os.environ.get("ARAGORA_API_URL", "http://localhost:8080")
 _MEMORY_CONFIG_KEYS = {field.name for field in fields(MemoryConfig)}
 _ML_CONFIG_KEYS = {field.name for field in fields(MLConfig)}
 
+_AGENT_FAILURE_RESPONSE_MARKERS = (
+    "[system: agent ",
+    "[error generating proposal:",
+    "[no proposals available",
+    "agent timed out",
+    "connection failed",
+    "encountered an error",
+    "encountered an unexpected situation",
+    "something went wrong with",
+    "needs to restart their thought process",
+    "tripped over an edge case",
+    "experienced a minor cognitive hiccup",
+    "got confused and needs to recalibrate",
+    "a wild bug appeared",
+    "has achieved unexpected behavior",
+    "fatal exception in",
+    "error 418:",
+)
+
 
 class _StrictWallClockTimeout(TimeoutError):
     """Raised when a hard wall-clock timeout expires."""
+
+
+def _looks_like_agent_failure_response(text: Any) -> bool:
+    """Detect autonomic failure placeholders that should not count as answers."""
+
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return True
+    return any(marker in normalized for marker in _AGENT_FAILURE_RESPONSE_MARKERS)
+
+
+def _result_has_only_agent_failure_outputs(result: Any) -> bool:
+    """Return true when a debate produced only failure placeholders."""
+
+    proposals = getattr(result, "proposals", None)
+    if isinstance(proposals, dict) and proposals:
+        return all(_looks_like_agent_failure_response(value) for value in proposals.values())
+
+    final_answer = getattr(result, "final_answer", "")
+    return _looks_like_agent_failure_response(final_answer)
 
 
 @contextmanager
@@ -2623,6 +2662,14 @@ def cmd_ask(args: argparse.Namespace) -> None:
         raise SystemExit(1)
     except RuntimeError as e:
         print(f"Debate failed quality gate: {e}", file=sys.stderr)
+        raise SystemExit(1)
+
+    if _result_has_only_agent_failure_outputs(result):
+        print(
+            "Debate failed: all selected agents returned provider/error placeholders. "
+            "Run 'aragora validate-env --verbose' and retry a real provider smoke test.",
+            file=sys.stderr,
+        )
         raise SystemExit(1)
 
     print("\n" + "=" * 60)
