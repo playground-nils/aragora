@@ -1,6 +1,6 @@
 # B0 Benchmark Truth Status
 
-Last updated: 2026-05-21T02:53:29Z
+Last updated: 2026-05-22T14:08:25Z
 
 This is the repo-tracked recurring `TW-02` publication surface for the fixed benchmark corpus.
 
@@ -46,33 +46,37 @@ This is the repo-tracked recurring `TW-02` publication surface for the fixed ben
 
 | Metric | Value |
 | --- | --- |
-| Proxy no-rescue success rate | 76.9% |
+| Proxy no-rescue success rate | 0.0% |
 | Unique issues attempted | 13 |
-| Unique issues succeeded | 10 |
-| Unique issues failed | 3 |
-| Unique issues neutral | 0 |
-| Total ticks | 28 |
+| Unique issues succeeded | 0 |
+| Unique issues failed | 9 |
+| Unique issues neutral | 4 |
+| Total ticks | 15 |
+
+Proxy note: neutral issue outcomes are current-corpus rows that were neither fresh success nor failure, such as `issue_already_resolved`.
+
+## Proxy Neutral Class Distribution
+
+- `issue_already_resolved`: 4
 
 ## Failure Class Distribution
 
-- `blocked_auth_failure`: 7
+- `blocked_auth_failure`: 3
 - `blocked_not_dispatch_bounded`: 8
-- `blocked_sanitation_failed`: 2
-- `rescue_no_deliverable`: 1
 
 ## Rescue Counts By Type
 
-- `rescue_no_deliverable`: 1
+- none
 
 ## Previous Published Artifact
 
-- Previous artifact path: `docs/status/generated/benchmark_scorecards/tw-01-bounded-execution-v1/rev-4/scorecard-20260519T040929Z.json`
-- Previous generated_at: `2026-05-19T04:09:29Z`
+- Previous artifact path: `docs/status/generated/benchmark_scorecards/tw-01-bounded-execution-v1/rev-4/scorecard-20260521T025329Z.json`
+- Previous generated_at: `2026-05-21T02:53:29Z`
 
 ## Deltas
 
-- `merged_only_rate`: 0.3077
-- `no_rescue_truth_success_rate`: 0.3077
-- `proxy_no_rescue_success_rate`: 0.0000
-- `truth_success_rate`: 0.3077
+- `merged_only_rate`: 0.0000
+- `no_rescue_truth_success_rate`: 0.0000
+- `proxy_no_rescue_success_rate`: -0.7690
+- `truth_success_rate`: 0.0000
 - `unique_issues_attempted`: 0.0000
