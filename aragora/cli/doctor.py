@@ -37,7 +37,7 @@ def print_section(title: str) -> None:
 
 def check_packages() -> list[tuple[str, str, bool | None]]:
     """Check required and optional packages."""
-    checks = []
+    checks: list[tuple[str, str, bool | None]] = []
 
     # Required packages
     required = ["aiohttp", "pydantic", "sqlite3", "asyncio"]
@@ -71,7 +71,7 @@ def check_packages() -> list[tuple[str, str, bool | None]]:
 
 def check_api_keys() -> list[tuple[str, str, bool | None]]:
     """Check API key configuration."""
-    checks = []
+    checks: list[tuple[str, str, bool | None]] = []
     report = discover_provider_credentials()
 
     for provider in report.providers:
@@ -95,7 +95,7 @@ def check_api_keys() -> list[tuple[str, str, bool | None]]:
 
 def check_storage() -> list[tuple[str, str, bool | None]]:
     """Check storage backends."""
-    checks = []
+    checks: list[tuple[str, str, bool | None]] = []
 
     # Check data directory
     data_dir = Path.home() / ".aragora"
@@ -144,7 +144,7 @@ def check_storage() -> list[tuple[str, str, bool | None]]:
 
 async def check_server() -> list[tuple[str, str, bool | None]]:
     """Check if server is running and responsive."""
-    checks = []
+    checks: list[tuple[str, str, bool | None]] = []
 
     try:
         from aragora.server.http_client_pool import get_http_pool
@@ -169,7 +169,7 @@ async def check_server() -> list[tuple[str, str, bool | None]]:
 
 def check_environment() -> list[tuple[str, str, bool | None]]:
     """Check environment configuration."""
-    checks = []
+    checks: list[tuple[str, str, bool | None]] = []
 
     # Python version
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
