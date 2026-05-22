@@ -23,6 +23,15 @@ from aragora.cli.doctor import (
     print_section,
 )
 
+from aragora.config.provider_readiness import PROVIDER_CREDENTIAL_SPECS
+
+
+def _clear_provider_env(monkeypatch):
+    for spec in PROVIDER_CREDENTIAL_SPECS:
+        for env_var in spec.env_vars:
+            monkeypatch.setenv(env_var, "")
+    monkeypatch.setenv("ARAGORA_USE_SECRETS_MANAGER", "false")
+
 
 # ===========================================================================
 # Tests: check_icon
@@ -121,8 +130,7 @@ class TestCheckApiKeys:
 
     def test_returns_list(self, monkeypatch):
         """Test returns a list of tuples."""
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        _clear_provider_env(monkeypatch)
 
         result = check_api_keys()
         assert isinstance(result, list)
@@ -130,8 +138,7 @@ class TestCheckApiKeys:
 
     def test_no_llm_keys_shows_warning(self, monkeypatch):
         """Test warning when no LLM keys are set."""
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        _clear_provider_env(monkeypatch)
 
         result = check_api_keys()
         names = [name for name, _, _ in result]
@@ -142,8 +149,8 @@ class TestCheckApiKeys:
 
     def test_anthropic_key_configured(self, monkeypatch):
         """Test Anthropic key detection."""
+        _clear_provider_env(monkeypatch)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         result = check_api_keys()
         anthropic = [item for item in result if item[0] == "ANTHROPIC_API_KEY"]
@@ -154,7 +161,7 @@ class TestCheckApiKeys:
 
     def test_openai_key_configured(self, monkeypatch):
         """Test OpenAI key detection."""
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        _clear_provider_env(monkeypatch)
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
         result = check_api_keys()
@@ -166,8 +173,7 @@ class TestCheckApiKeys:
 
     def test_optional_keys_detected(self, monkeypatch):
         """Test optional API keys are detected."""
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        _clear_provider_env(monkeypatch)
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
         result = check_api_keys()
@@ -377,9 +383,8 @@ class TestMain:
 
     def test_returns_1_when_checks_fail(self, monkeypatch):
         """Test returns 1 when checks fail."""
-        # Remove all LLM keys to cause failure
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        # Remove all provider keys to cause failure
+        _clear_provider_env(monkeypatch)
 
         with patch("aragora.cli.doctor.check_server", new=AsyncMock(return_value=[])):
             result = main()

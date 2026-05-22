@@ -1858,6 +1858,24 @@ def cmd_ask(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
 
+    if not (force_local or offline):
+        from aragora.config.provider_readiness import (
+            agent_type_has_configured_provider,
+            discover_provider_credentials,
+            format_provider_bootstrap_error,
+        )
+
+        credential_report = discover_provider_credentials()
+        requested_specs = parse_agents(agents)
+        provider_backed_specs = [
+            spec
+            for spec in requested_specs
+            if not agent_type_has_configured_provider(spec.provider, credential_report)
+        ]
+        if provider_backed_specs and not credential_report.any_configured:
+            print(format_provider_bootstrap_error(credential_report), file=sys.stderr)
+            raise SystemExit(1)
+
     explain = getattr(args, "explain", False)
 
     # Apply preset configuration if specified

@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from aragora.config import provider_readiness as mod
+
+
+def test_discovery_ignores_empty_env(monkeypatch):
+    for spec in mod.PROVIDER_CREDENTIAL_SPECS:
+        for env_var in spec.env_vars:
+            monkeypatch.delenv(env_var, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+
+    report = mod.discover_provider_credentials(hydrate=False, load_dotenv=False)
+
+    assert not report.any_configured
+    anthropic = next(status for status in report.providers if status.provider == "anthropic")
+    assert anthropic.configured is False
+    assert anthropic.status == "missing_config"
+
+
+def test_discovery_reports_configured_provider(monkeypatch):
+    for spec in mod.PROVIDER_CREDENTIAL_SPECS:
+        for env_var in spec.env_vars:
+            monkeypatch.delenv(env_var, raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    report = mod.discover_provider_credentials(hydrate=False, load_dotenv=False)
+
+    assert report.any_configured
+    assert report.configured_providers == ("openai",)
+    assert mod.agent_type_has_configured_provider("openai-api", report)
+    assert mod.agent_type_has_configured_provider("demo", report)
+    assert not mod.agent_type_has_configured_provider("anthropic-api", report)
+
+
+def test_discovery_uses_secret_hydrator(monkeypatch):
+    for spec in mod.PROVIDER_CREDENTIAL_SPECS:
+        for env_var in spec.env_vars:
+            monkeypatch.delenv(env_var, raising=False)
+
+    def fake_hydrate(names, overwrite=False):
+        assert overwrite is False
+        assert "ANTHROPIC_API_KEY" in names
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "hydrated-key")
+        return {"ANTHROPIC_API_KEY": "hydrated-key"}
+
+    monkeypatch.setattr("aragora.config.secrets.hydrate_env_from_secrets", fake_hydrate)
+
+    report = mod.discover_provider_credentials(hydrate=True, load_dotenv=False)
+
+    assert report.configured_providers == ("anthropic",)
+    assert report.hydrated_env_vars == ("ANTHROPIC_API_KEY",)
+
+
+def test_bootstrap_error_is_actionable(monkeypatch):
+    for spec in mod.PROVIDER_CREDENTIAL_SPECS:
+        for env_var in spec.env_vars:
+            monkeypatch.delenv(env_var, raising=False)
+    report = mod.discover_provider_credentials(hydrate=False, load_dotenv=False)
+
+    message = mod.format_provider_bootstrap_error(report)
+
+    assert "No usable AI provider credential" in message
+    assert "ANTHROPIC_API_KEY" in message
+    assert "aragora validate-env --verbose" in message

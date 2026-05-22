@@ -20,30 +20,21 @@ DEFAULT_API_URL = os.environ.get("ARAGORA_API_URL", "http://localhost:8080")
 
 def cmd_status(args: argparse.Namespace) -> None:
     """Handle 'status' command - show environment health and agent availability."""
-    import os
     import shutil
+
+    from aragora.config.provider_readiness import discover_provider_credentials
 
     print("\nAragora Environment Status")
     print("=" * 60)
 
     # Check API keys
     print("\n\U0001f4e1 API Keys:")
-    api_keys = [
-        ("ANTHROPIC_API_KEY", "Anthropic (Claude)"),
-        ("OPENAI_API_KEY", "OpenAI (GPT/Codex)"),
-        ("OPENROUTER_API_KEY", "OpenRouter (Fallback)"),
-        ("GEMINI_API_KEY", "Google (Gemini)"),
-        ("XAI_API_KEY", "xAI (Grok)"),
-        ("DEEPSEEK_API_KEY", "DeepSeek"),
-    ]
-    for env_var, name in api_keys:
-        value = os.environ.get(env_var, "")
-        if value:
-            # Show masked key
-            masked = value[:8] + "..." + value[-4:] if len(value) > 12 else "***"
-            print(f"  \u2713 {name}: {masked}")
+    readiness = discover_provider_credentials()
+    for provider in readiness.providers:
+        if provider.configured:
+            print(f"  \u2713 {provider.display_name}: configured via {provider.available_via}")
         else:
-            print(f"  \u2717 {name}: not set")
+            print(f"  \u2717 {provider.display_name}: not set")
 
     # Check CLI tools
     print("\n\U0001f527 CLI Tools:")
@@ -272,30 +263,25 @@ def cmd_validate_env(args: argparse.Namespace) -> None:
             }
 
         # 6. AI provider check
-        providers_configured = []
-        provider_keys = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "gemini": "GEMINI_API_KEY",
-            "mistral": "MISTRAL_API_KEY",
-            "xai": "XAI_API_KEY",
-        }
+        from aragora.config.provider_readiness import (
+            discover_provider_credentials,
+            format_provider_bootstrap_error,
+        )
 
-        for name, key in provider_keys.items():
-            if os.environ.get(key):
-                providers_configured.append(name)
-
-        if providers_configured:
+        provider_report = discover_provider_credentials()
+        if provider_report.any_configured:
             results["checks"]["ai_providers"] = {
                 "status": "ok",
-                "configured": providers_configured,
+                "configured": list(provider_report.configured_providers),
+                "hydrated_env_vars": list(provider_report.hydrated_env_vars),
+                "dotenv_paths": list(provider_report.dotenv_paths),
             }
         else:
             results["checks"]["ai_providers"] = {
                 "status": "error",
                 "configured": [],
-                "message": "No AI provider API key configured",
+                "message": format_provider_bootstrap_error(provider_report),
+                "discovery_errors": list(provider_report.discovery_errors),
             }
             results["errors"].append("No AI provider configured")
             results["valid"] = False
