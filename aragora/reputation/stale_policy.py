@@ -189,7 +189,7 @@ def is_stale(
 
 # Band boundaries expressed as multiples of half_life_used_days (see plan).
 _DECAY_PENALTY_UPPER = 0.5  # age < 0.5 × half_life → decay penalty
-_ABSTAIN_LOWER = 1.5        # age ≥ 1.5 × half_life → abstain
+_ABSTAIN_LOWER = 1.5  # age ≥ 1.5 × half_life → abstain
 
 
 class StaleAxis(str, enum.Enum):
@@ -252,13 +252,9 @@ def evaluate_stale_axis(
             ``half_life_used_days`` is non-positive.
     """
     if evidence_age_days < 0:
-        raise ValueError(
-            f"evidence_age_days must be non-negative; got {evidence_age_days}"
-        )
+        raise ValueError(f"evidence_age_days must be non-negative; got {evidence_age_days}")
     if half_life_used_days <= 0:
-        raise ValueError(
-            f"half_life_used_days must be positive; got {half_life_used_days}"
-        )
+        raise ValueError(f"half_life_used_days must be positive; got {half_life_used_days}")
 
     ratio = evidence_age_days / half_life_used_days
 
