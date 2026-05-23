@@ -11,6 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import shlex
+import shutil
+import subprocess
 from typing import Iterable
 
 
@@ -78,6 +81,27 @@ CLI_AGENT_COMMANDS: dict[str, tuple[str, ...]] = {
     "deepseek-cli": ("deepseek",),
     "kilocode": ("kilocode",),
 }
+
+
+def _cli_command_available(command: str) -> bool:
+    """Return true when a CLI command is discoverable from normal agent shells."""
+
+    if shutil.which(command):
+        return True
+
+    shell = os.environ.get("SHELL") or "/bin/zsh"
+    try:
+        result = subprocess.run(  # noqa: S603 - command is an argv list from static agent metadata
+            [shell, "-lc", f"command -v {shlex.quote(command)}"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
 
 AGENT_PROVIDER_ALIASES: dict[str, tuple[str, ...]] = {
     "anthropic-api": ("anthropic", "openrouter"),
@@ -241,15 +265,17 @@ def agent_type_has_configured_provider(
     if normalized in LOCAL_OR_DEMO_AGENT_TYPES:
         return True
 
-    if normalized in CLI_AGENT_COMMANDS:
-        return True
-
     options = agent_provider_options(agent_type)
-    if not options:
-        return True
     report = report or discover_provider_credentials()
     configured = set(report.configured_providers)
-    return any(provider in configured for provider in options)
+    if options and any(provider in configured for provider in options):
+        return True
+
+    cli_commands = CLI_AGENT_COMMANDS.get(normalized, ())
+    if cli_commands:
+        return any(_cli_command_available(command) for command in cli_commands)
+
+    return not options
 
 
 def format_provider_bootstrap_error(report: ProviderReadinessReport) -> str:

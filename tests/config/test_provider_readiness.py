@@ -73,16 +73,31 @@ def test_discovery_hydrates_missing_secrets_when_unrelated_provider_env_exists(m
     assert report.hydrated_env_vars == ("ANTHROPIC_API_KEY",)
 
 
-def test_cli_agent_is_usable_without_api_provider_credentials(monkeypatch):
+def test_cli_agent_is_usable_when_cli_command_is_available(monkeypatch):
     for spec in mod.PROVIDER_CREDENTIAL_SPECS:
         for env_var in spec.env_vars:
             monkeypatch.delenv(env_var, raising=False)
+    monkeypatch.setattr(mod, "_cli_command_available", lambda command: command == "codex")
+
+    report = mod.discover_provider_credentials(hydrate=False, load_dotenv=False)
+
+    assert mod.agent_type_has_configured_provider("codex", report)
+    assert not mod.agent_type_has_configured_provider("claude", report)
+    assert not mod.agent_type_has_configured_provider("anthropic-api", report)
+
+
+def test_cli_agent_is_usable_with_fallback_provider_credentials(monkeypatch):
+    for spec in mod.PROVIDER_CREDENTIAL_SPECS:
+        for env_var in spec.env_vars:
+            monkeypatch.delenv(env_var, raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    monkeypatch.setattr(mod, "_cli_command_available", lambda _command: False)
 
     report = mod.discover_provider_credentials(hydrate=False, load_dotenv=False)
 
     assert mod.agent_type_has_configured_provider("codex", report)
     assert mod.agent_type_has_configured_provider("claude", report)
-    assert not mod.agent_type_has_configured_provider("anthropic-api", report)
+    assert not mod.agent_type_has_configured_provider("gemini-cli", report)
 
 
 def test_bootstrap_error_is_actionable(monkeypatch):
