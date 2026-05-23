@@ -701,7 +701,9 @@ def _show_status() -> None:
     token_path = Path.home() / ".aragora" / "gmail_refresh_token"
     print(f"  Gmail refresh token:  {'yes' if token_path.exists() else 'NO'}")
 
-    has_openrouter = bool(_get_secret_fallback("OPENROUTER_API_KEY"))
+    has_openrouter = bool(
+        os.environ.get("OPENROUTER_API_KEY") or _get_secret_fallback("OPENROUTER_API_KEY")
+    )
     print(f"  OpenRouter fallback:  {'yes' if has_openrouter else 'NO'}")
 
     providers = {

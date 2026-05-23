@@ -111,7 +111,7 @@ def check_ai_providers_health() -> dict[str, Any]:
 
     available = {}
     for name, env_var in providers.items():
-        available[name] = is_secret_usable(env_var)
+        available[name] = is_secret_usable(env_var, min_length=11)
 
     any_available = any(available.values())
     available_count = sum(1 for v in available.values() if v)
