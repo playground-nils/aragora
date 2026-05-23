@@ -76,6 +76,55 @@ def _compact_files(pr: dict[str, Any]) -> list[str]:
     return []
 
 
+def _compact_file_paths(paths: list[Any]) -> list[str]:
+    result = []
+    for path in paths:
+        if path:
+            result.append(redact_text(str(path)))
+    return sorted(set(result))[:40]
+
+
+def fetch_pr_files(repo: str, pr_number: int) -> list[str]:
+    cmd = [
+        "gh",
+        "pr",
+        "view",
+        str(pr_number),
+        "--repo",
+        repo,
+        "--json",
+        "files",
+    ]
+    result = subprocess.run(
+        cmd, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    payload = json.loads(result.stdout)
+    return _compact_files({"files": payload.get("files") or []})
+
+
+def enrich_examples_with_file_paths(
+    examples: list[dict[str, Any]], *, repo: str
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for example in examples:
+        features = dict(example.get("context_features") or {})
+        changed_files = _compact_file_paths(list(features.get("changed_files") or []))
+        changed_files_count = int(features.get("changed_files_count") or 0)
+        if not changed_files and changed_files_count > 0 and example.get("pr_number") is not None:
+            try:
+                changed_files = fetch_pr_files(repo, int(example["pr_number"]))
+            except (OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError):
+                changed_files = []
+        if changed_files:
+            features["changed_files"] = changed_files
+            summary = str(example.get("artifact_summary") or "")
+            if " | files=" not in summary:
+                example["artifact_summary"] = summary + " | files=" + ", ".join(changed_files[:12])
+        example["context_features"] = features
+        enriched.append(redact_payload(example))
+    return enriched
+
+
 def _packet_features(packet: dict[str, Any] | None) -> dict[str, Any]:
     if not packet:
         return {}
@@ -185,6 +234,17 @@ def load_prs_from_source(path: Path) -> list[dict[str, Any]]:
     raise ValueError(f"Could not find PR list in {path}")
 
 
+def load_examples_from_jsonl(path: Path) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                payload = json.loads(line)
+                if isinstance(payload, dict):
+                    examples.append(payload)
+    return examples
+
+
 def fetch_prs(repo: str, limit: int) -> list[dict[str, Any]]:
     fields = ",".join(
         [
@@ -276,10 +336,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default="synaptent/aragora")
     parser.add_argument("--source-json", type=Path, help="Offline gh-pr JSON fixture/source")
+    parser.add_argument("--source-jsonl", type=Path, help="Existing corpus JSONL to enrich")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=300)
     parser.add_argument("--seed", default="aft-v0")
     parser.add_argument("--holdout-ratio", type=float, default=0.2)
+    parser.add_argument(
+        "--fetch-missing-files",
+        action="store_true",
+        help="Fetch sanitized changed-file paths for examples that only have a file count.",
+    )
     parser.add_argument("--review-packet", type=Path, action="append", default=[])
     parser.add_argument("--settlement-path", type=Path, action="append", default=[])
     parser.add_argument("--queue-log", type=Path, action="append", default=[])
@@ -290,6 +356,32 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     if not 0.0 < args.holdout_ratio < 1.0:
         raise SystemExit("--holdout-ratio must be between 0 and 1")
+
+    if args.source_json and args.source_jsonl:
+        raise SystemExit("--source-json and --source-jsonl are mutually exclusive")
+
+    if args.source_jsonl:
+        examples = load_examples_from_jsonl(args.source_jsonl)
+        if args.fetch_missing_files:
+            examples = enrich_examples_with_file_paths(examples, repo=args.repo)
+        examples.sort(key=lambda item: int(item["pr_number"]))
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        with args.output.open("w", encoding="utf-8") as handle:
+            for example in examples:
+                handle.write(json.dumps(example, sort_keys=True) + "\n")
+        print(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "output": str(args.output),
+                    "examples": len(examples),
+                    "holdout": sum(1 for item in examples if item["split"] == "holdout"),
+                    "train": sum(1 for item in examples if item["split"] == "train"),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
 
     prs = (
         load_prs_from_source(args.source_json)

@@ -3,7 +3,7 @@
     "frontier_prompt": {
       "accuracy": 0.175,
       "avg_confidence": 0.0,
-      "avg_latency_ms": 0.0008500000000000001,
+      "avg_latency_ms": 0.001275,
       "confusion": {
         "accept->ask_user": 26,
         "ask_user->ask_user": 7,
@@ -16,11 +16,11 @@
     },
     "local_advocate": {
       "accuracy": 0.175,
-      "avg_confidence": 0.55325,
-      "avg_latency_ms": 0.00465,
+      "avg_confidence": 0.5667500000000001,
+      "avg_latency_ms": 0.0117,
       "confusion": {
-        "accept->ask_user": 25,
-        "accept->challenge": 1,
+        "accept->ask_user": 23,
+        "accept->challenge": 3,
         "ask_user->ask_user": 7,
         "block->ask_user": 5,
         "challenge->ask_user": 2
@@ -31,10 +31,11 @@
     },
     "rules": {
       "accuracy": 0.175,
-      "avg_confidence": 0.55,
-      "avg_latency_ms": 0.0035250000000000004,
+      "avg_confidence": 0.5635000000000001,
+      "avg_latency_ms": 0.1705,
       "confusion": {
-        "accept->ask_user": 26,
+        "accept->ask_user": 24,
+        "accept->challenge": 2,
         "ask_user->ask_user": 7,
         "block->ask_user": 5,
         "challenge->ask_user": 2

@@ -80,3 +80,58 @@ def test_extractor_writes_deterministic_jsonl(tmp_path: Path, capsys) -> None:
     assert summary["examples"] == 2
     assert [row["pr_number"] for row in rows] == [1, 2]
     assert {row["split"] for row in rows} <= {"train", "holdout"}
+
+
+def test_extractor_enriches_existing_jsonl_with_changed_files(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    source = tmp_path / "corpus.jsonl"
+    output = tmp_path / "enriched.jsonl"
+    source.write_text(
+        json.dumps(
+            {
+                "schema_version": mod.SCHEMA_VERSION,
+                "task_type": "pr_triage",
+                "artifact_id": "pr-42",
+                "pr_number": 42,
+                "artifact_summary": "PR #42: workflow update | changed_files=2",
+                "proposed_action": "merge",
+                "context_features": {
+                    "pr_number": 42,
+                    "changed_files_count": 2,
+                    "changed_files": [],
+                },
+                "label": "challenge",
+                "split": "holdout",
+                "source": {"github_pr": True},
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        mod,
+        "fetch_pr_files",
+        lambda repo, pr_number: [".github/workflows/test.yml", "docs/example.md"],
+    )
+
+    rc = mod.main(
+        [
+            "--source-jsonl",
+            str(source),
+            "--output",
+            str(output),
+            "--fetch-missing-files",
+        ]
+    )
+
+    assert rc == 0
+    summary = json.loads(capsys.readouterr().out)
+    row = json.loads(output.read_text(encoding="utf-8"))
+    assert summary["examples"] == 1
+    assert row["context_features"]["changed_files"] == [
+        ".github/workflows/test.yml",
+        "docs/example.md",
+    ]
+    assert "files=.github/workflows/test.yml, docs/example.md" in row["artifact_summary"]
