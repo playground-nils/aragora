@@ -1900,6 +1900,7 @@ def cmd_ask(args: argparse.Namespace) -> None:
     if not (force_local or offline):
         from aragora.config.provider_readiness import (
             agent_type_has_configured_provider,
+            agent_provider_options,
             discover_provider_credentials,
             format_provider_bootstrap_error,
         )
@@ -1911,8 +1912,27 @@ def cmd_ask(args: argparse.Namespace) -> None:
             for spec in requested_specs
             if not agent_type_has_configured_provider(spec.provider, credential_report)
         ]
-        if provider_backed_specs and not credential_report.any_configured:
-            print(format_provider_bootstrap_error(credential_report), file=sys.stderr)
+        if provider_backed_specs:
+            if not credential_report.any_configured:
+                print(format_provider_bootstrap_error(credential_report), file=sys.stderr)
+            else:
+                configured = ", ".join(credential_report.configured_providers)
+                print(
+                    "One or more selected agent providers are not configured.",
+                    file=sys.stderr,
+                )
+                print(f"Configured providers: {configured}", file=sys.stderr)
+                for spec in provider_backed_specs:
+                    options = agent_provider_options(spec.provider)
+                    required = ", ".join(options) if options else spec.provider
+                    print(
+                        f"  - {spec.provider}: requires one of {required}",
+                        file=sys.stderr,
+                    )
+                print(
+                    "Run 'aragora validate-env --verbose' and select only configured agents.",
+                    file=sys.stderr,
+                )
             raise SystemExit(1)
 
     explain = getattr(args, "explain", False)

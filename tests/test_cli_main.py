@@ -335,6 +335,35 @@ class TestCommandHandlers:
 
                 mock_run.assert_called_once()
 
+    def test_cmd_ask_exits_when_selected_agent_provider_is_missing(self, monkeypatch, capsys):
+        """Should fail before debate when any selected provider cannot be configured."""
+        from aragora.cli.main import cmd_ask
+
+        monkeypatch.setenv("GROK_API_KEY", "test-grok-key")
+        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        args = argparse.Namespace(
+            task="Test task",
+            agents="grok,mistral",
+            rounds=1,
+            consensus="majority",
+            context="",
+            learn=False,
+            db="test.db",
+            verbose=False,
+            demo=False,
+            post_consensus_quality=False,
+        )
+
+        with patch("aragora.cli.commands.debate._is_server_available", return_value=False):
+            with pytest.raises(SystemExit) as exc:
+                cmd_ask(args)
+
+        assert exc.value.code == 1
+        captured = capsys.readouterr()
+        assert "selected agent providers are not configured" in captured.err
+        assert "mistral" in captured.err
+
     def test_cmd_ask_exits_when_all_agents_return_failure_placeholders(self, monkeypatch, capsys):
         """Provider smoke should fail when autonomic placeholders are the only output."""
         from aragora.cli.main import cmd_ask
