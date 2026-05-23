@@ -790,6 +790,7 @@ def hydrate_env_from_secrets(
         for name in target_names:
             if not overwrite and os.environ.get(name):
                 continue
+            value: str | None
             if name in manager._cached_secrets:
                 value = manager._cached_secrets[name]
             else:
