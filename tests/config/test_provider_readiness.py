@@ -73,18 +73,16 @@ def test_discovery_hydrates_missing_secrets_when_unrelated_provider_env_exists(m
     assert report.hydrated_env_vars == ("ANTHROPIC_API_KEY",)
 
 
-def test_cli_agent_is_usable_without_api_provider_when_executable_exists(monkeypatch):
+def test_cli_agent_is_usable_without_api_provider_credentials(monkeypatch):
     for spec in mod.PROVIDER_CREDENTIAL_SPECS:
         for env_var in spec.env_vars:
             monkeypatch.delenv(env_var, raising=False)
-    monkeypatch.setattr(
-        mod.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "codex" else None
-    )
 
     report = mod.discover_provider_credentials(hydrate=False, load_dotenv=False)
 
     assert mod.agent_type_has_configured_provider("codex", report)
-    assert not mod.agent_type_has_configured_provider("claude", report)
+    assert mod.agent_type_has_configured_provider("claude", report)
+    assert not mod.agent_type_has_configured_provider("anthropic-api", report)
 
 
 def test_bootstrap_error_is_actionable(monkeypatch):

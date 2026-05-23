@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
-import shutil
 from typing import Iterable
 
 
@@ -242,8 +241,7 @@ def agent_type_has_configured_provider(
     if normalized in LOCAL_OR_DEMO_AGENT_TYPES:
         return True
 
-    cli_commands = CLI_AGENT_COMMANDS.get(normalized, ())
-    if any(shutil.which(command) for command in cli_commands):
+    if normalized in CLI_AGENT_COMMANDS:
         return True
 
     options = agent_provider_options(agent_type)
