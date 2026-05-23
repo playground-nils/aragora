@@ -306,10 +306,11 @@ class TestPlansExecuteParser:
 class TestCommandHandlers:
     """Tests for command handler functions."""
 
-    def test_cmd_ask_runs_debate(self):
+    def test_cmd_ask_runs_debate(self, monkeypatch):
         """Should run debate with parsed arguments."""
         from aragora.cli.main import cmd_ask
 
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
         args = argparse.Namespace(
             task="Test task",
             agents="codex,claude",
