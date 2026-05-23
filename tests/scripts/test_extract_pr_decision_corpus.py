@@ -82,6 +82,34 @@ def test_extractor_writes_deterministic_jsonl(tmp_path: Path, capsys) -> None:
     assert {row["split"] for row in rows} <= {"train", "holdout"}
 
 
+def test_assign_splits_uses_preregistered_50_example_holdout() -> None:
+    examples = [{"pr_number": number, "split": "train"} for number in range(1, 201)]
+
+    result = mod.assign_deterministic_splits(
+        examples,
+        seed="fixed",
+        holdout_ratio=0.2,
+        min_holdout_count=50,
+    )
+
+    assert sum(1 for row in result if row["split"] == "holdout") == 50
+    assert sum(1 for row in result if row["split"] == "train") == 150
+
+
+def test_assign_splits_keeps_early_corpus_ratio() -> None:
+    examples = [{"pr_number": number, "split": "train"} for number in range(1, 41)]
+
+    result = mod.assign_deterministic_splits(
+        examples,
+        seed="fixed",
+        holdout_ratio=0.2,
+        min_holdout_count=50,
+    )
+
+    assert sum(1 for row in result if row["split"] == "holdout") == 8
+    assert sum(1 for row in result if row["split"] == "train") == 32
+
+
 def test_extractor_enriches_existing_jsonl_with_changed_files(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

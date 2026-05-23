@@ -41,10 +41,50 @@ def redact_payload(value: Any) -> Any:
     return value
 
 
+def deterministic_split_key(pr_number: int, *, seed: str) -> str:
+    return hashlib.sha256(f"{seed}:{pr_number}".encode("utf-8")).hexdigest()
+
+
 def deterministic_split(pr_number: int, *, seed: str, holdout_ratio: float) -> str:
-    digest = hashlib.sha256(f"{seed}:{pr_number}".encode("utf-8")).hexdigest()
+    digest = deterministic_split_key(pr_number, seed=seed)
     bucket = int(digest[:8], 16) / 0xFFFFFFFF
     return "holdout" if bucket < holdout_ratio else "train"
+
+
+def deterministic_holdout_count(
+    total_examples: int,
+    *,
+    holdout_ratio: float,
+    min_holdout_count: int,
+) -> int:
+    ratio_count = round(total_examples * holdout_ratio)
+    if total_examples >= 200:
+        ratio_count = max(ratio_count, min_holdout_count)
+    return max(1, min(total_examples - 1, ratio_count)) if total_examples > 1 else total_examples
+
+
+def assign_deterministic_splits(
+    examples: list[dict[str, Any]],
+    *,
+    seed: str,
+    holdout_ratio: float,
+    min_holdout_count: int,
+) -> list[dict[str, Any]]:
+    holdout_count = deterministic_holdout_count(
+        len(examples),
+        holdout_ratio=holdout_ratio,
+        min_holdout_count=min_holdout_count,
+    )
+    holdout_ids = {
+        int(example["pr_number"])
+        for example in sorted(
+            examples,
+            key=lambda item: deterministic_split_key(int(item["pr_number"]), seed=seed),
+        )[:holdout_count]
+    }
+    for example in examples:
+        example["split"] = "holdout" if int(example["pr_number"]) in holdout_ids else "train"
+    return examples
 
 
 def _label_for_pr(pr: dict[str, Any]) -> str:
@@ -342,6 +382,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", default="aft-v0")
     parser.add_argument("--holdout-ratio", type=float, default=0.2)
     parser.add_argument(
+        "--min-holdout-count",
+        type=int,
+        default=50,
+        help="Minimum deterministic holdout size once a corpus has at least 200 examples.",
+    )
+    parser.add_argument(
+        "--recompute-splits",
+        action="store_true",
+        help="Reassign deterministic train/holdout splits when enriching an existing corpus.",
+    )
+    parser.add_argument(
         "--fetch-missing-files",
         action="store_true",
         help="Fetch sanitized changed-file paths for examples that only have a file count.",
@@ -356,6 +407,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     if not 0.0 < args.holdout_ratio < 1.0:
         raise SystemExit("--holdout-ratio must be between 0 and 1")
+    if args.min_holdout_count < 0:
+        raise SystemExit("--min-holdout-count must be non-negative")
 
     if args.source_json and args.source_jsonl:
         raise SystemExit("--source-json and --source-jsonl are mutually exclusive")
@@ -364,6 +417,13 @@ def main(argv: list[str] | None = None) -> int:
         examples = load_examples_from_jsonl(args.source_jsonl)
         if args.fetch_missing_files:
             examples = enrich_examples_with_file_paths(examples, repo=args.repo)
+        if args.recompute_splits:
+            examples = assign_deterministic_splits(
+                examples,
+                seed=args.seed,
+                holdout_ratio=args.holdout_ratio,
+                min_holdout_count=args.min_holdout_count,
+            )
         examples.sort(key=lambda item: int(item["pr_number"]))
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("w", encoding="utf-8") as handle:
@@ -404,6 +464,12 @@ def main(argv: list[str] | None = None) -> int:
         for pr in prs
         if pr.get("number") is not None
     ]
+    examples = assign_deterministic_splits(
+        examples,
+        seed=args.seed,
+        holdout_ratio=args.holdout_ratio,
+        min_holdout_count=args.min_holdout_count,
+    )
     examples.sort(key=lambda item: int(item["pr_number"]))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
