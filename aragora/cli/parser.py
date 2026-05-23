@@ -1888,6 +1888,43 @@ def _add_review_queue_parser(subparsers) -> None:
     )
     record_parser.set_defaults(func=_lazy("aragora.cli.commands.review_queue", "cmd_review_queue"))
 
+    evidence_lint_parser = queue_subparsers.add_parser(
+        "evidence-lint",
+        help="Dry-run whether a proposed evidence comment will count for model quorum",
+        description=(
+            "Lint a proposed PR comment against the same current-head evidence "
+            "parsers used by review-queue merge-packet. This is read-only."
+        ),
+    )
+    evidence_lint_parser.add_argument("--pr", required=True, help="PR number the evidence targets")
+    evidence_lint_parser.add_argument(
+        "--head-sha",
+        required=True,
+        help="Exact PR head SHA the proposed comment must cite.",
+    )
+    evidence_lint_parser.add_argument(
+        "--head-committed-at",
+        default="",
+        help="Optional current head committedDate for stricter current-head grounding.",
+    )
+    body_group = evidence_lint_parser.add_mutually_exclusive_group(required=True)
+    body_group.add_argument("--body", help="Proposed evidence comment body to lint")
+    body_group.add_argument("--body-file", help="Read proposed evidence comment body from file")
+    evidence_lint_parser.add_argument(
+        "--author",
+        default="local",
+        help="GitHub author login to simulate for the proposed comment.",
+    )
+    evidence_lint_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Output as JSON",
+    )
+    evidence_lint_parser.set_defaults(
+        func=_lazy("aragora.cli.commands.review_queue", "cmd_review_queue")
+    )
+
     baseline_parser = queue_subparsers.add_parser(
         "baseline",
         help="Measure empirical invalidation baseline from on-disk stores (#6375)",
