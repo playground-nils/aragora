@@ -28,6 +28,7 @@ from aragora.config import (
     DEFAULT_ROUNDS,
     MAX_AGENTS_PER_DEBATE,
 )
+from aragora.config.secrets import get_secret_presence
 from aragora.core import Environment
 from aragora.debate.arena_primary_configs import MLConfig, MemoryConfig
 from aragora.debate.orchestrator import Arena, DebateProtocol
@@ -1990,7 +1991,7 @@ def cmd_ask(args: argparse.Namespace) -> None:
                     continue
 
         # Optional OpenRouter fallback for quota/billing/provider outages.
-        if os.environ.get("OPENROUTER_API_KEY") and not any(
+        if get_secret_presence("OPENROUTER_API_KEY").source in {"aws", "env"} and not any(
             spec.provider == "openrouter" for spec in ordered_specs
         ):
             try:

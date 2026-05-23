@@ -18,6 +18,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from aragora.config.secrets import get_secret_presence
+
+
+def _local_env_value(name: str) -> str:
+    return os.environ.get(name, "")
+
 
 def _prompt(message: str, default: str | None = None, secret: bool = False) -> str:
     """Prompt user for input with optional default and secret mode."""
@@ -426,7 +432,7 @@ def run_setup(
     print("Aragora requires at least one AI provider API key.\n")
 
     # Anthropic
-    existing_anthropic = os.environ.get("ANTHROPIC_API_KEY", "")
+    existing_anthropic = _local_env_value("ANTHROPIC_API_KEY")
     if existing_anthropic:
         print(f"  Found existing ANTHROPIC_API_KEY: {existing_anthropic[:8]}...")
         if not non_interactive and _confirm("  Use existing key?"):
@@ -435,13 +441,16 @@ def run_setup(
             config["anthropic_key"] = (
                 _prompt("  Anthropic API Key", secret=True) if not non_interactive else ""
             )
+    elif get_secret_presence("ANTHROPIC_API_KEY").source == "aws":
+        print("  ANTHROPIC_API_KEY is configured via AWS Secrets Manager; not copying to .env.")
+        config["anthropic_key"] = ""
     else:
         config["anthropic_key"] = (
             _prompt("  Anthropic API Key (recommended)", secret=True) if not non_interactive else ""
         )
 
     # OpenAI
-    existing_openai = os.environ.get("OPENAI_API_KEY", "")
+    existing_openai = _local_env_value("OPENAI_API_KEY")
     if existing_openai:
         print(f"  Found existing OPENAI_API_KEY: {existing_openai[:8]}...")
         if not non_interactive and _confirm("  Use existing key?"):
@@ -450,6 +459,9 @@ def run_setup(
             config["openai_key"] = (
                 _prompt("  OpenAI API Key", secret=True) if not non_interactive else ""
             )
+    elif get_secret_presence("OPENAI_API_KEY").source == "aws":
+        print("  OPENAI_API_KEY is configured via AWS Secrets Manager; not copying to .env.")
+        config["openai_key"] = ""
     else:
         config["openai_key"] = (
             _prompt("  OpenAI API Key", secret=True) if not non_interactive else ""

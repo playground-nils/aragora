@@ -12,10 +12,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
 import time
 from typing import TYPE_CHECKING
+
+from aragora.config.secrets import get_secret_presence
 
 if TYPE_CHECKING:
     import anthropic
@@ -403,7 +404,10 @@ class DomainDetector:
                     self.keywords[domain].extend(words)
                 else:
                     self.keywords[domain] = words
-        self.use_llm = use_llm and os.environ.get("ANTHROPIC_API_KEY")
+        self.use_llm = use_llm and get_secret_presence("ANTHROPIC_API_KEY").source in {
+            "aws",
+            "env",
+        }
         self._client = client
         self._use_cache = use_cache
 

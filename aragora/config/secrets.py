@@ -114,6 +114,7 @@ MANAGED_SECRETS = frozenset(
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
         "XAI_API_KEY",
         "OPENROUTER_API_KEY",
         "MISTRAL_API_KEY",
@@ -167,6 +168,7 @@ CRITICAL_SECRETS = frozenset(
         "OPENAI_API_KEY",
         "OPENROUTER_API_KEY",
         "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
         "XAI_API_KEY",
         "GROK_API_KEY",
         "MISTRAL_API_KEY",
@@ -190,6 +192,16 @@ class SecretNotFoundError(Exception):
                 f"not environment variables. Configure AWS Secrets Manager or set "
                 f"ARAGORA_SECRETS_STRICT=false to disable strict mode (not recommended)."
             )
+
+
+@dataclass(frozen=True)
+class SecretPresence:
+    """Presence-only secret status for safe health reporting."""
+
+    name: str
+    source: str
+    critical: bool
+    managed: bool
 
 
 def is_strict_mode() -> bool:
@@ -591,6 +603,42 @@ class SecretManager:
             self._log_access(name, "not_found", False)
         return default
 
+    def presence(self, name: str, strict: bool | None = None) -> SecretPresence:
+        """Return a presence-only secret source without exposing the value.
+
+        Sources are:
+        - ``aws``: available from the current Secrets Manager cache.
+        - ``env``: available from process environment and allowed by mode.
+        - ``blocked_by_strict_mode``: present in env but strict mode forbids using it.
+        - ``missing``: unavailable from both AWS cache and env.
+        """
+        self._initialize()
+
+        use_strict = strict if strict is not None else is_strict_mode()
+        is_critical = is_critical_secret(name)
+        if name in self._cached_secrets:
+            source = "aws"
+        elif use_strict and is_critical and os.environ.get(name) is not None:
+            source = "blocked_by_strict_mode"
+        elif os.environ.get(name) is not None:
+            source = "env"
+        else:
+            source = "missing"
+
+        self._log_access(name, f"presence_{source}", source in {"aws", "env"})
+        return SecretPresence(
+            name=name,
+            source=source,
+            critical=is_critical,
+            managed=name in MANAGED_SECRETS,
+        )
+
+    def presence_report(
+        self, names: list[str] | tuple[str, ...], strict: bool | None = None
+    ) -> list[SecretPresence]:
+        """Return presence-only statuses for multiple secrets."""
+        return [self.presence(name, strict=strict) for name in names]
+
     def get_required(self, name: str) -> str:
         """
         Get a required secret value.
@@ -704,6 +752,19 @@ def get_secret(
     return get_secret_manager().get(name, default, strict=strict)
 
 
+def get_secret_presence(name: str, strict: bool | None = None) -> SecretPresence:
+    """Get a presence-only secret status without returning the value."""
+    return get_secret_manager().presence(name, strict=strict)
+
+
+def get_secret_presence_report(
+    names: list[str] | tuple[str, ...],
+    strict: bool | None = None,
+) -> list[SecretPresence]:
+    """Get presence-only secret statuses without returning values."""
+    return get_secret_manager().presence_report(names, strict=strict)
+
+
 def hydrate_env_from_secrets(
     names: list[str] | None = None,
     overwrite: bool = False,
@@ -724,17 +785,18 @@ def hydrate_env_from_secrets(
     hydrated: dict[str, str] = {}
     try:
         manager = get_secret_manager()
+        manager._initialize()
         target_names = names or list(MANAGED_SECRETS)
         for name in target_names:
             if not overwrite and os.environ.get(name):
                 continue
-            try:
-                # Use strict=False so strict-mode environments don't raise here.
-                # hydrate_env_from_secrets is best-effort pre-loading; strict enforcement
-                # happens when the application actively calls get_secret() for the value.
-                value = manager.get(name, strict=False)
-            except Exception:  # noqa: BLE001
-                continue
+            if name in manager._cached_secrets:
+                value = manager._cached_secrets[name]
+            else:
+                # Use direct env lookup here to avoid noisy warning logs during
+                # best-effort bootstrap. Strict enforcement and local fallback
+                # warnings still happen when callers actively request a secret.
+                value = os.environ.get(name)
             if value:
                 os.environ[name] = value
                 hydrated[name] = value

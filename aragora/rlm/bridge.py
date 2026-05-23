@@ -56,6 +56,8 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
+from aragora.config.secrets import get_secret_presence
+
 logger = logging.getLogger(__name__)
 
 # Check if official RLM is available
@@ -285,7 +287,7 @@ class AragoraRLM(RLMStreamingMixin):
         if (
             self.backend_config.fallback_backend is None
             and self.backend_config.backend == "openai"
-            and os.environ.get("OPENROUTER_API_KEY")
+            and get_secret_presence("OPENROUTER_API_KEY").source in {"aws", "env"}
         ):
             self.backend_config.fallback_backend = "openrouter"
 

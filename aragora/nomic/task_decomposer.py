@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from collections.abc import Callable
 
+from aragora.config import get_api_key
+
 if TYPE_CHECKING:
     from aragora.core import DebateResult, Environment
 
@@ -1544,7 +1546,7 @@ class TaskDecomposer:
 
     def _call_anthropic(self, prompt: str) -> str | None:
         """Try calling the Anthropic API directly. Returns response text or None."""
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        api_key = get_api_key("ANTHROPIC_API_KEY", required=False) or ""
         if not api_key:
             logger.debug("ANTHROPIC_API_KEY not set; skipping Anthropic provider")
             return None
@@ -1573,7 +1575,7 @@ class TaskDecomposer:
 
     def _call_openrouter(self, prompt: str) -> str | None:
         """Try calling OpenRouter as fallback. Returns response text or None."""
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = get_api_key("OPENROUTER_API_KEY", required=False) or ""
         if not api_key:
             logger.debug("OPENROUTER_API_KEY not set; skipping OpenRouter fallback")
             return None
@@ -2730,28 +2732,23 @@ class TaskDecomposer:
 
     async def _get_openrouter_agents(self) -> list[Any]:
         """Get OpenRouter agents for fallback."""
-        from aragora.config.secrets import get_secret
-
-        openrouter_key = get_secret("OPENROUTER_API_KEY")
+        openrouter_key = get_api_key("OPENROUTER_API_KEY", required=False)
         if not openrouter_key:
             return []
 
         try:
             from aragora.agents.api_agents.openrouter import OpenRouterAgent
 
-            # Set the API key in environment for OpenRouterAgent
-            import os
-
-            os.environ["OPENROUTER_API_KEY"] = openrouter_key
-
             return [
                 OpenRouterAgent(
                     name="or-claude",
                     model="anthropic/claude-opus-4.7",
+                    api_key=openrouter_key,
                 ),
                 OpenRouterAgent(
                     name="or-gpt",
                     model="openai/gpt-5.4",
+                    api_key=openrouter_key,
                 ),
             ]
         except (ImportError, RuntimeError, OSError) as e:

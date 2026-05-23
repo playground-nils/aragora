@@ -9,10 +9,10 @@ controls and full auditability.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
 
+from aragora.config import get_api_key
 from aragora.workflow.step import BaseStep, WorkflowContext
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,9 @@ class ComputerUseTaskStep(BaseStep):
         if not goal:
             return {"success": False, "error": "goal is required for computer_use_task"}
 
-        api_key = cfg.get("api_key", self._step_config.api_key) or os.getenv("ANTHROPIC_API_KEY")
+        api_key = cfg.get("api_key", self._step_config.api_key) or get_api_key(
+            "ANTHROPIC_API_KEY", required=False
+        )
 
         try:
             from aragora.computer_use.executor import ExecutorConfig, PlaywrightActionExecutor

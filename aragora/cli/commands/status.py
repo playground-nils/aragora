@@ -12,6 +12,8 @@ import os
 import sys
 from pathlib import Path
 
+from aragora.config.secrets import get_secret_presence
+
 logger = logging.getLogger(__name__)
 
 # Default API URL from environment or localhost fallback
@@ -20,7 +22,6 @@ DEFAULT_API_URL = os.environ.get("ARAGORA_API_URL", "http://localhost:8080")
 
 def cmd_status(args: argparse.Namespace) -> None:
     """Handle 'status' command - show environment health and agent availability."""
-    import os
     import shutil
 
     print("\nAragora Environment Status")
@@ -37,11 +38,11 @@ def cmd_status(args: argparse.Namespace) -> None:
         ("DEEPSEEK_API_KEY", "DeepSeek"),
     ]
     for env_var, name in api_keys:
-        value = os.environ.get(env_var, "")
-        if value:
-            # Show masked key
-            masked = value[:8] + "..." + value[-4:] if len(value) > 12 else "***"
-            print(f"  \u2713 {name}: {masked}")
+        source = get_secret_presence(env_var).source
+        if source in {"aws", "env"}:
+            print(f"  \u2713 {name}: {source}")
+        elif source == "blocked_by_strict_mode":
+            print(f"  \u2717 {name}: blocked by strict mode")
         else:
             print(f"  \u2717 {name}: not set")
 
@@ -283,7 +284,7 @@ def cmd_validate_env(args: argparse.Namespace) -> None:
         }
 
         for name, key in provider_keys.items():
-            if os.environ.get(key):
+            if get_secret_presence(key).source in {"aws", "env"}:
                 providers_configured.append(name)
 
         if providers_configured:

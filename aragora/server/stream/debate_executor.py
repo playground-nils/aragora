@@ -53,7 +53,7 @@ from aragora.agents.registry import AgentRegistry
 from aragora.agents.spec import AgentSpec
 from aragora.billing.usage import UsageTracker
 from aragora.config import get_api_key
-from aragora.config.secrets import get_secret
+from aragora.config.secrets import get_secret_presence
 from aragora.pulse.ingestor import (
     HackerNewsIngestor,
     PulseManager,
@@ -129,14 +129,7 @@ def _normalize_documents(value: Any, max_items: int = 50) -> list[str]:
 
 def _openrouter_key_available() -> bool:
     """Return True if OpenRouter key is configured via secrets or env."""
-    try:
-        value = get_secret("OPENROUTER_API_KEY")
-        if value and value.strip():
-            return True
-    except (ImportError, AttributeError, KeyError, OSError) as e:
-        logger.debug("Secrets module unavailable, falling back to env: %s", e)
-    env_value = os.getenv("OPENROUTER_API_KEY")
-    return bool(env_value and env_value.strip())
+    return get_secret_presence("OPENROUTER_API_KEY").source in {"aws", "env"}
 
 
 # Check if debate orchestrator is available
