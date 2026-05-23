@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from aragora.config.secrets import get_secret_presence
+from aragora.config.secrets import is_secret_usable
 from typing import Any, cast
 
 from aragora.gauntlet.receipt_models import _normalize_receipt_boolean
@@ -608,7 +608,7 @@ def _run_server_demo() -> None:
 def _has_any_api_key() -> bool:
     """Check if any LLM API key is available."""
     return any(
-        get_secret_presence(name).source in {"aws", "env"}
+        is_secret_usable(name)
         for name in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
     )
 

@@ -35,6 +35,7 @@ from aragora.config.secrets import (
     get_secret_presence,
     get_secret_presence_report,
     is_critical_secret,
+    is_secret_usable,
     is_strict_mode,
     get_secret_manager,
     reset_secret_manager,
@@ -276,6 +277,29 @@ class TestSecretManagerAWS:
             critical=True,
             managed=True,
         )
+
+    def test_presence_treats_blank_env_as_missing(self):
+        """Blank environment values are not usable secret presence."""
+        config = SecretsConfig(use_aws=False)
+        manager = SecretManager(config)
+        manager._initialized = True
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=True):
+            presence = manager.presence("OPENAI_API_KEY", strict=False)
+
+        assert presence.source == "missing"
+
+    def test_is_usable_requires_non_placeholder_length(self):
+        """Provider readiness ignores blank and short placeholder values."""
+        config = SecretsConfig(use_aws=False)
+        manager = SecretManager(config)
+        manager._initialized = True
+
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "short"}, clear=True):
+            assert manager.is_usable("ANTHROPIC_API_KEY", strict=False) is False
+
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-key-12345"}, clear=True):
+            assert manager.is_usable("ANTHROPIC_API_KEY", strict=False) is True
 
     def test_preseeded_initialized_cache_does_not_refresh_immediately(self):
         """Manually seeded cache state should not trigger an AWS refresh."""
@@ -800,3 +824,8 @@ class TestStrictMode:
 
         assert presence.source == "env"
         assert report == [presence]
+
+    def test_global_is_secret_usable_helper(self):
+        """Module-level usability helper does not count placeholders."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "short"}, clear=True):
+            assert is_secret_usable("OPENROUTER_API_KEY", strict=False) is False

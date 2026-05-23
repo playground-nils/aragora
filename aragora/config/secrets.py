@@ -616,11 +616,14 @@ class SecretManager:
 
         use_strict = strict if strict is not None else is_strict_mode()
         is_critical = is_critical_secret(name)
-        if name in self._cached_secrets:
+        aws_value = self._cached_secrets.get(name)
+        env_value = os.environ.get(name)
+
+        if aws_value is not None and aws_value.strip():
             source = "aws"
-        elif use_strict and is_critical and os.environ.get(name) is not None:
+        elif use_strict and is_critical and env_value is not None and env_value.strip():
             source = "blocked_by_strict_mode"
-        elif os.environ.get(name) is not None:
+        elif env_value is not None and env_value.strip():
             source = "env"
         else:
             source = "missing"
@@ -638,6 +641,34 @@ class SecretManager:
     ) -> list[SecretPresence]:
         """Return presence-only statuses for multiple secrets."""
         return [self.presence(name, strict=strict) for name in names]
+
+    def is_usable(self, name: str, min_length: int = 8, strict: bool | None = None) -> bool:
+        """Return whether a secret has a non-placeholder usable value.
+
+        This intentionally returns only a boolean so health checks can decide
+        provider readiness without exposing or logging secret values.
+        """
+        self._initialize()
+
+        use_strict = strict if strict is not None else is_strict_mode()
+        is_critical = is_critical_secret(name)
+        aws_value = self._cached_secrets.get(name)
+        if aws_value is not None:
+            usable = len(aws_value.strip()) >= min_length
+            self._log_access(name, "usable_aws", usable)
+            return usable
+
+        env_value = os.environ.get(name)
+        if use_strict and is_critical:
+            if env_value is not None and env_value.strip():
+                self._log_access(name, "usable_env_blocked", False)
+            else:
+                self._log_access(name, "usable_missing", False)
+            return False
+
+        usable = bool(env_value and len(env_value.strip()) >= min_length)
+        self._log_access(name, "usable_env" if usable else "usable_missing", usable)
+        return usable
 
     def get_required(self, name: str) -> str:
         """
@@ -755,6 +786,11 @@ def get_secret(
 def get_secret_presence(name: str, strict: bool | None = None) -> SecretPresence:
     """Get a presence-only secret status without returning the value."""
     return get_secret_manager().presence(name, strict=strict)
+
+
+def is_secret_usable(name: str, min_length: int = 8, strict: bool | None = None) -> bool:
+    """Return whether a secret is present with a usable non-placeholder value."""
+    return get_secret_manager().is_usable(name, min_length=min_length, strict=strict)
 
 
 def get_secret_presence_report(
