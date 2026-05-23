@@ -17,13 +17,31 @@ This is shadow-only:
   machine-greppable.
 - No production code path calls into this module yet.
 
-A future PR can wire this into ``settle_claim``, the calibration
-leaderboard, and the rev-4 staging scorecard. Until then, this seed
-exists only so the policy surface is reviewable in isolation.
+**Three-axis extension (AGT-05 sub-deliverable — plan:**
+``docs/plans/2026-04-29-agt-05-stale-claim-policy.md``):
+
+When a ``STALE`` verdict is produced by the settlement path the simple
+``is_stale`` predicate does not tell the caller *what to do about it*.
+Treating every stale claim identically as a calibration miss creates a
+false-decay-penalty pathology over time (see plan for full analysis).
+
+:func:`evaluate_stale_axis` introduces a three-band decision based on
+``evidence_age_at_resolution_days`` vs ``half_life_used_days``:
+
+- ``DECAY_PENALTY`` — age < 0.5 × half_life → premature staleness,
+  treat as calibration miss (existing −2 delta)
+- ``RENEWAL_REQUIRED`` — 0.5 ≤ age/half_life < 1.5 → mid-band, issue
+  renewal; delta abstains at 0
+- ``ABSTAIN`` — age ≥ 1.5 × half_life → structural staleness; delta
+  abstains at 0, no penalty
+
+No production code path calls into this yet; wiring into ``settle_claim``
+is a follow-up PR.
 """
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import json
 from dataclasses import dataclass
@@ -165,6 +183,110 @@ def is_stale(
     )
 
 
+# ---------------------------------------------------------------------------
+# Three-axis stale policy (AGT-05 sub-deliverable)
+# ---------------------------------------------------------------------------
+
+# Band boundaries expressed as multiples of half_life_used_days (see plan).
+_DECAY_PENALTY_UPPER = 0.5  # age < 0.5 × half_life → decay penalty
+_ABSTAIN_LOWER = 1.5        # age ≥ 1.5 × half_life → abstain
+
+
+class StaleAxis(str, enum.Enum):
+    """Resolution axis for a STALE claim under the three-band policy.
+
+    Attributes:
+        DECAY_PENALTY: Premature staleness — treat as calibration miss
+            (same −2 delta as an outright failure).
+        RENEWAL_REQUIRED: Mid-band staleness — abstain from delta but
+            record a ``claim_renewal_id`` for downstream re-evidencing.
+        ABSTAIN: Structural staleness — evidence so old that penalising
+            the agent would be unfair; no delta, no renewal obligation.
+    """
+
+    DECAY_PENALTY = "decay_penalty"
+    RENEWAL_REQUIRED = "renewal_required"
+    ABSTAIN = "abstain"
+
+
+@dataclass(frozen=True)
+class StaleAxisDecision:
+    """Outcome of :func:`evaluate_stale_axis`.
+
+    Attributes:
+        axis: One of the three :class:`StaleAxis` values.
+        evidence_age_days: Age of the evidence at resolution time.
+        half_life_used_days: The half-life value used in this evaluation.
+        calibration_delta: Recommended delta (−2 for DECAY_PENALTY, 0
+            for RENEWAL_REQUIRED and ABSTAIN).  Advisory only — callers
+            decide whether to apply it.
+        ratio: ``evidence_age_days / half_life_used_days`` for audit
+            logging; None when ``half_life_used_days`` is zero.
+    """
+
+    axis: StaleAxis
+    evidence_age_days: float
+    half_life_used_days: float
+    calibration_delta: int
+    ratio: float | None
+
+
+def evaluate_stale_axis(
+    evidence_age_days: float,
+    half_life_used_days: float,
+) -> StaleAxisDecision:
+    """Classify a STALE verdict into one of three policy bands.
+
+    Args:
+        evidence_age_days: Age of the underlying evidence at the moment
+            of resolution, expressed in days.  Must be non-negative.
+        half_life_used_days: The half-life the settlement path used when
+            producing the STALE verdict.  Must be positive.
+
+    Returns:
+        A :class:`StaleAxisDecision`.  The decision is advisory; callers
+        are responsible for applying (or ignoring) ``calibration_delta``.
+
+    Raises:
+        ValueError: If ``evidence_age_days`` is negative or
+            ``half_life_used_days`` is non-positive.
+    """
+    if evidence_age_days < 0:
+        raise ValueError(
+            f"evidence_age_days must be non-negative; got {evidence_age_days}"
+        )
+    if half_life_used_days <= 0:
+        raise ValueError(
+            f"half_life_used_days must be positive; got {half_life_used_days}"
+        )
+
+    ratio = evidence_age_days / half_life_used_days
+
+    if ratio < _DECAY_PENALTY_UPPER:
+        return StaleAxisDecision(
+            axis=StaleAxis.DECAY_PENALTY,
+            evidence_age_days=evidence_age_days,
+            half_life_used_days=half_life_used_days,
+            calibration_delta=-2,
+            ratio=ratio,
+        )
+    if ratio < _ABSTAIN_LOWER:
+        return StaleAxisDecision(
+            axis=StaleAxis.RENEWAL_REQUIRED,
+            evidence_age_days=evidence_age_days,
+            half_life_used_days=half_life_used_days,
+            calibration_delta=0,
+            ratio=ratio,
+        )
+    return StaleAxisDecision(
+        axis=StaleAxis.ABSTAIN,
+        evidence_age_days=evidence_age_days,
+        half_life_used_days=half_life_used_days,
+        calibration_delta=0,
+        ratio=ratio,
+    )
+
+
 __all__ = [
     "DEFAULT_FRESH_DAYS",
     "DEFAULT_STALE_DAYS",
@@ -172,4 +294,8 @@ __all__ = [
     "StalePolicy",
     "StaleDecision",
     "is_stale",
+    # Three-axis extension
+    "StaleAxis",
+    "StaleAxisDecision",
+    "evaluate_stale_axis",
 ]
