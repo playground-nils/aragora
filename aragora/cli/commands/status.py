@@ -121,7 +121,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     """Handle 'doctor' command - run system health checks."""
     from aragora.cli.doctor import main as doctor_main
 
-    sys.exit(doctor_main())
+    sys.exit(doctor_main(validate_keys=getattr(args, "validate", False)))
 
 
 def cmd_validate(_: argparse.Namespace) -> None:
@@ -129,7 +129,7 @@ def cmd_validate(_: argparse.Namespace) -> None:
     # run_validate doesn't exist; reuse doctor main for now
     from aragora.cli.doctor import main as doctor_main
 
-    sys.exit(doctor_main())
+    sys.exit(doctor_main(validate_keys=True))
 
 
 def cmd_validate_env(args: argparse.Namespace) -> None:
@@ -275,23 +275,43 @@ def cmd_validate_env(args: argparse.Namespace) -> None:
         # 6. AI provider check
         providers_configured = []
         provider_keys = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "gemini": "GEMINI_API_KEY",
-            "mistral": "MISTRAL_API_KEY",
-            "xai": "XAI_API_KEY",
+            "anthropic": (("ANTHROPIC_API_KEY",), "anthropic"),
+            "openai": (("OPENAI_API_KEY",), "openai"),
+            "openrouter": (("OPENROUTER_API_KEY",), "openrouter"),
+            "gemini": (("GEMINI_API_KEY", "GOOGLE_API_KEY"), "gemini"),
+            "mistral": (("MISTRAL_API_KEY",), "mistral"),
+            "xai": (("XAI_API_KEY", "GROK_API_KEY"), "grok"),
+            "deepseek": (("DEEPSEEK_API_KEY",), "deepseek"),
         }
+        provider_validation = []
+        provider_validation_errors = []
 
-        for name, key in provider_keys.items():
-            if get_secret_presence(key).source in {"aws", "env"}:
+        for name, (keys, validation_provider) in provider_keys.items():
+            if any(get_secret_presence(key).source in {"aws", "env"} for key in keys):
                 providers_configured.append(name)
+                from aragora.cli.api_keys import validate_provider_key
+
+                report = validate_provider_key(validation_provider)
+                provider_validation.append(
+                    {
+                        "provider": name,
+                        "remote_status": report.remote_status,
+                        "is_valid": report.is_valid,
+                        "message": report.message,
+                    }
+                )
+                if not report.is_valid:
+                    provider_validation_errors.append(f"{name}: {report.message}")
 
         if providers_configured:
             results["checks"]["ai_providers"] = {
-                "status": "ok",
+                "status": "error" if provider_validation_errors else "ok",
                 "configured": providers_configured,
+                "validation": provider_validation,
             }
+            if provider_validation_errors:
+                results["errors"].extend(provider_validation_errors)
+                results["valid"] = False
         else:
             results["checks"]["ai_providers"] = {
                 "status": "error",

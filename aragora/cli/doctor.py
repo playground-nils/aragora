@@ -17,6 +17,37 @@ import os
 import sys
 from pathlib import Path
 
+from aragora.config.secrets import get_secret_presence
+
+
+_AI_PROVIDER_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ANTHROPIC_API_KEY", ("ANTHROPIC_API_KEY",)),
+    ("OPENAI_API_KEY", ("OPENAI_API_KEY",)),
+    ("OPENROUTER_API_KEY", ("OPENROUTER_API_KEY",)),
+    ("GEMINI_API_KEY", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+    ("MISTRAL_API_KEY", ("MISTRAL_API_KEY",)),
+    ("XAI_API_KEY", ("XAI_API_KEY", "GROK_API_KEY")),
+    ("DEEPSEEK_API_KEY", ("DEEPSEEK_API_KEY",)),
+)
+
+_VALIDATION_PROVIDER_BY_DISPLAY_KEY: dict[str, str] = {
+    "ANTHROPIC_API_KEY": "anthropic",
+    "OPENAI_API_KEY": "openai",
+    "OPENROUTER_API_KEY": "openrouter",
+    "GEMINI_API_KEY": "gemini",
+    "MISTRAL_API_KEY": "mistral",
+    "XAI_API_KEY": "grok",
+    "DEEPSEEK_API_KEY": "deepseek",
+}
+
+
+def _configured_secret_var(env_vars: tuple[str, ...]) -> str | None:
+    """Return the first usable secret variable name from env/AWS-backed discovery."""
+    for env_var in env_vars:
+        if get_secret_presence(env_var).source in {"aws", "env"}:
+            return env_var
+    return None
+
 
 def check_icon(ok: bool | None) -> str:
     """Return status icon."""
@@ -67,30 +98,46 @@ def check_packages() -> list[tuple[str, str, bool | None]]:
     return checks
 
 
-def check_api_keys() -> list[tuple[str, str, bool | None]]:
+def check_api_keys(validate_live: bool = False) -> list[tuple[str, str, bool | None]]:
     """Check API key configuration."""
     checks = []
 
-    # At least one LLM provider required
-    llm_keys = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
-    has_llm = False
-    for key in llm_keys:
-        if os.getenv(key):
-            checks.append((key, "configured", True))
-            has_llm = True
-        else:
-            checks.append((key, "not set", None))
+    # At least one real provider is required. Keep this in sync with validate-env:
+    # env vars, .env hydration, AWS Secrets Manager, and provider aliases all count.
+    configured_providers = []
+    invalid_providers = []
+    for display_key, env_vars in _AI_PROVIDER_KEYS:
+        configured_var = _configured_secret_var(env_vars)
+        if configured_var:
+            configured_providers.append(display_key)
+            status = (
+                "configured"
+                if configured_var == display_key
+                else f"configured via {configured_var}"
+            )
+            ok = True
+            if validate_live:
+                provider_name = _VALIDATION_PROVIDER_BY_DISPLAY_KEY[display_key]
+                from aragora.cli.api_keys import validate_provider_key
 
-    if not has_llm:
+                report = validate_provider_key(provider_name)
+                status = f"{status}; live {report.remote_status}"
+                if not report.is_valid:
+                    status = f"{status}: {report.message}"
+                    invalid_providers.append(display_key)
+                    ok = False
+            checks.append((display_key, status, ok))
+        else:
+            checks.append((display_key, "not set", None))
+
+    if invalid_providers:
+        checks.append(
+            ("LLM Provider", f"invalid provider(s): {', '.join(invalid_providers)}", False)
+        )
+    elif configured_providers:
+        checks.append(("LLM Provider", ", ".join(configured_providers), True))
+    else:
         checks.append(("LLM Provider", "NO API KEY SET", False))
-
-    # Optional providers
-    optional_keys = ["GEMINI_API_KEY", "MISTRAL_API_KEY", "OPENROUTER_API_KEY"]
-    for key in optional_keys:
-        if os.getenv(key):
-            checks.append((key, "configured", True))
-        else:
-            checks.append((key, "not set", None))
 
     return checks
 
@@ -188,7 +235,7 @@ def check_environment() -> list[tuple[str, str, bool | None]]:
     return checks
 
 
-def main() -> int:
+def main(validate_keys: bool = False) -> int:
     """Run comprehensive health checks."""
     print("\n\033[1;36m" + "=" * 50 + "\033[0m")
     print("\033[1;36m       ARAGORA HEALTH CHECK\033[0m")
@@ -217,7 +264,7 @@ def main() -> int:
 
     # API Keys
     print_section("API Keys")
-    key_checks = check_api_keys()
+    key_checks = check_api_keys(validate_live=validate_keys)
     all_checks.extend(key_checks)
     for name, status, ok in key_checks:
         print(f"  {check_icon(ok)} {name}: {status}")
