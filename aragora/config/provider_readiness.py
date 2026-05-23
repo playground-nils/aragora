@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import shutil
 from typing import Iterable
 
 
@@ -67,6 +68,17 @@ PROVIDER_CREDENTIAL_SPECS: tuple[ProviderCredentialSpec, ...] = (
 )
 
 LOCAL_OR_DEMO_AGENT_TYPES = frozenset({"demo", "mock", "ollama", "lm-studio", "local"})
+
+CLI_AGENT_COMMANDS: dict[str, tuple[str, ...]] = {
+    "claude": ("claude",),
+    "codex": ("codex",),
+    "openai": ("openai",),
+    "gemini-cli": ("gemini",),
+    "grok-cli": ("grok",),
+    "qwen-cli": ("qwen",),
+    "deepseek-cli": ("deepseek",),
+    "kilocode": ("kilocode",),
+}
 
 AGENT_PROVIDER_ALIASES: dict[str, tuple[str, ...]] = {
     "anthropic-api": ("anthropic", "openrouter"),
@@ -169,8 +181,9 @@ def discover_provider_credentials(
     env_vars = sorted({env_var for spec in PROVIDER_CREDENTIAL_SPECS for env_var in spec.env_vars})
     hydrated: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
-    if hydrate and not any(_nonempty_env(env_var) for env_var in env_vars):
-        hydrated, errors = _hydrate_from_secret_loaders(env_vars)
+    missing_env_vars = [env_var for env_var in env_vars if not _nonempty_env(env_var)]
+    if hydrate and missing_env_vars:
+        hydrated, errors = _hydrate_from_secret_loaders(missing_env_vars)
 
     statuses: list[ProviderCredentialStatus] = []
     for spec in PROVIDER_CREDENTIAL_SPECS:
@@ -224,6 +237,14 @@ def agent_type_has_configured_provider(
     report: ProviderReadinessReport | None = None,
 ) -> bool:
     """Check whether an agent type is usable under the discovered credentials."""
+
+    normalized = str(agent_type or "").strip().lower()
+    if normalized in LOCAL_OR_DEMO_AGENT_TYPES:
+        return True
+
+    cli_commands = CLI_AGENT_COMMANDS.get(normalized, ())
+    if any(shutil.which(command) for command in cli_commands):
+        return True
 
     options = agent_provider_options(agent_type)
     if not options:
