@@ -81,9 +81,7 @@ def test_add_survives_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert _store(p).get("c1").question == "Will c1 happen?"
 
 
-def test_record_position_survives_reload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_record_position_survives_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_FLAG, "1")
     p = tmp_path / "c.jsonl"
     s = _store(p)
@@ -103,9 +101,7 @@ def test_resolve_survives_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert f.resolution_evidence == "merged"
 
 
-def test_expire_stale_survives_reload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_expire_stale_survives_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_FLAG, "1")
     p = tmp_path / "c.jsonl"
     s = _store(p)
@@ -130,7 +126,10 @@ def test_list_open_excludes_resolved(store: JsonlStakeableClaimStore) -> None:
 def test_list_by_type(store: JsonlStakeableClaimStore) -> None:
     store.add(_claim("pr1"))
     ic = StakeableClaim(
-        "ic1", "Issue?", QuestionType.ISSUE_CLOSE, "org/repo#2",
+        "ic1",
+        "Issue?",
+        QuestionType.ISSUE_CLOSE,
+        "org/repo#2",
         (datetime.now(tz=UTC) + timedelta(days=7)).isoformat(),
     )
     store.add(ic)
