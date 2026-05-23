@@ -100,6 +100,96 @@ def test_select_candidate_skips_repair_first_prs() -> None:
     assert blockers == ["no Tier 0-2 non-human-risk green PR needs only settlement evidence"]
 
 
+def test_select_candidate_excludes_adc_and_continues() -> None:
+    adc_entry = {
+        **_entry(7376, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]),
+        "title": "docs(governance): ADC follow-on deepening packet",
+    }
+    next_entry = _entry(
+        7448, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+
+    selected, blockers, exclusions = select_candidate(
+        _packet(adc_entry, next_entry),
+        return_exclusions=True,
+    )
+
+    assert blockers == []
+    assert selected is next_entry
+    assert exclusions == [
+        {
+            "pr_number": 7376,
+            "title": "docs(governance): ADC follow-on deepening packet",
+            "head_sha": adc_entry["head_sha"],
+            "reasons": ["ADC PR"],
+        }
+    ]
+
+
+def test_select_candidate_excludes_active_owned_and_dependabot() -> None:
+    active_owned = _entry(
+        7407, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+    dependabot = _entry(
+        7300, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+    next_entry = _entry(
+        7449, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+
+    selected, blockers, exclusions = select_candidate(
+        _packet(active_owned, dependabot, next_entry),
+        active_owned_prs={7407},
+        policy_metadata={7300: {"author": {"login": "dependabot[bot]"}}},
+        return_exclusions=True,
+    )
+
+    assert blockers == []
+    assert selected is next_entry
+    assert [item["pr_number"] for item in exclusions] == [7407, 7300]
+    assert exclusions[0]["reasons"] == ["active-owned lane"]
+    assert exclusions[1]["reasons"] == ["Dependabot PR"]
+
+
+def test_select_candidate_excludes_dirty_and_continues() -> None:
+    dirty = _entry(7408, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"])
+    next_entry = _entry(
+        7450, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+
+    selected, blockers, exclusions = select_candidate(
+        _packet(dirty, next_entry),
+        policy_metadata={7408: {"mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}},
+        return_exclusions=True,
+    )
+
+    assert blockers == []
+    assert selected is next_entry
+    assert exclusions[0]["pr_number"] == 7408
+    assert exclusions[0]["reasons"] == ["dirty/conflicting PR"]
+
+
+def test_build_report_reports_policy_exclusions() -> None:
+    adc_entry = {
+        **_entry(7376, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]),
+        "title": "docs(governance): ADC follow-on deepening packet",
+    }
+
+    report = build_report(
+        _packet(adc_entry),
+        cwd=Path.cwd(),
+        state_root=Path.cwd(),
+        explicit_pr=None,
+        exclude_prs=set(),
+        live=False,
+        validate=False,
+    )
+
+    assert report["status"] == "no_candidate"
+    assert report["policy_exclusions"][0]["pr_number"] == 7376
+    assert report["policy_exclusions"][0]["reasons"] == ["ADC PR"]
+
+
 def test_tier3_or_human_risk_is_report_only() -> None:
     blockers = entry_blockers(
         _entry(

@@ -17,7 +17,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast, overload
 
 CONVERGENCE_SENTENCE = (
     "If the prompt above accomplishes no incremental progress make the next prompt one "
@@ -28,6 +28,13 @@ CONVERGENCE_SENTENCE = (
 VERSION = "settle_one_steward.v1"
 MERGE_QUORUM = "aragora-merge-quorum"
 HUMAN_RISK_EXCLUDES = {7407, 7425, 7438, 7439, 7443}
+SURFACE_EXCLUDE_RE = re.compile(
+    r"(^|[^a-z0-9])("
+    r"workflow|security|auth|rbac|secret|secrets|deploy|deployment|legal|"
+    r"compliance|destructive|migration|public[-_ ]?api"
+    r")([^a-z0-9]|$)",
+    re.IGNORECASE,
+)
 
 
 def _repo_root() -> Path:
@@ -109,18 +116,148 @@ def _entry_by_pr(packet: dict[str, Any], pr_number: int) -> dict[str, Any] | Non
     return None
 
 
+def _metadata_for_entry(
+    entry: dict[str, Any], policy_metadata: dict[int, dict[str, Any]] | None
+) -> dict[str, Any]:
+    pr_number = _entry_pr(entry)
+    if pr_number is None or not policy_metadata:
+        return {}
+    metadata = policy_metadata.get(pr_number)
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _metadata_text(entry: dict[str, Any], metadata: dict[str, Any]) -> str:
+    fields: list[str] = []
+    for key in ("title", "headRefName", "head_ref_name", "branch", "baseRefName"):
+        value = metadata.get(key, entry.get(key))
+        if value:
+            fields.append(str(value))
+    for reason in entry.get("reasons") or []:
+        fields.append(str(reason))
+    for file_item in metadata.get("files") or entry.get("files") or []:
+        if isinstance(file_item, dict):
+            fields.append(str(file_item.get("path") or ""))
+        else:
+            fields.append(str(file_item))
+    return " ".join(fields)
+
+
+def policy_exclusion_reasons(
+    entry: dict[str, Any],
+    *,
+    exclude_prs: set[int] | None = None,
+    active_owned_prs: set[int] | None = None,
+    policy_metadata: dict[int, dict[str, Any]] | None = None,
+) -> list[str]:
+    """Return repo/operator policy reasons that make an entry report-only."""
+    pr_number = _entry_pr(entry)
+    exclude = set(exclude_prs or set())
+    active_owned = set(active_owned_prs or set())
+    reasons: list[str] = []
+    if pr_number is not None and pr_number in exclude:
+        reasons.append("explicitly excluded by steward scope")
+    if pr_number is not None and pr_number in active_owned:
+        reasons.append("active-owned lane")
+
+    metadata = _metadata_for_entry(entry, policy_metadata)
+    author = metadata.get("author") or entry.get("author")
+    if isinstance(author, dict):
+        author_login = str(author.get("login") or "")
+    else:
+        author_login = str(author or "")
+    if author_login.startswith("dependabot") or "dependabot/" in _metadata_text(entry, metadata):
+        reasons.append("Dependabot PR")
+
+    mergeable = str(metadata.get("mergeable") or entry.get("mergeable") or "").upper()
+    merge_state = str(
+        metadata.get("mergeStateStatus") or entry.get("mergeStateStatus") or ""
+    ).upper()
+    if mergeable == "CONFLICTING" or merge_state == "DIRTY":
+        reasons.append("dirty/conflicting PR")
+
+    metadata_text = _metadata_text(entry, metadata)
+    if re.search(r"(^|[^a-z0-9])adc([^a-z0-9]|$)", metadata_text, re.IGNORECASE):
+        reasons.append("ADC PR")
+    if SURFACE_EXCLUDE_RE.search(metadata_text):
+        reasons.append(
+            "security/auth/RBAC/secrets/deploy/workflow/legal/compliance/destructive/"
+            "migration/public-API surface"
+        )
+
+    tier = _coerce_int(entry.get("tier"))
+    if tier is not None and tier > 2:
+        reasons.append(f"Tier {tier}")
+    if bool(entry.get("requires_human_risk_settlement")):
+        reasons.append("requires_human_risk_settlement=true")
+    return list(dict.fromkeys(reasons))
+
+
+def _exclusion_record(entry: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
+    return {
+        "pr_number": _entry_pr(entry),
+        "title": entry.get("title"),
+        "head_sha": entry.get("head_sha"),
+        "reasons": reasons,
+    }
+
+
+SelectionResult = tuple[dict[str, Any] | None, list[str]]
+SelectionResultWithExclusions = tuple[dict[str, Any] | None, list[str], list[dict[str, Any]]]
+
+
+@overload
 def select_candidate(
     packet: dict[str, Any],
     *,
     explicit_pr: int | None = None,
     exclude_prs: set[int] | None = None,
-) -> tuple[dict[str, Any] | None, list[str]]:
+    active_owned_prs: set[int] | None = None,
+    policy_metadata: dict[int, dict[str, Any]] | None = None,
+    return_exclusions: Literal[False] = False,
+) -> SelectionResult: ...
+
+
+@overload
+def select_candidate(
+    packet: dict[str, Any],
+    *,
+    explicit_pr: int | None = None,
+    exclude_prs: set[int] | None = None,
+    active_owned_prs: set[int] | None = None,
+    policy_metadata: dict[int, dict[str, Any]] | None = None,
+    return_exclusions: Literal[True],
+) -> SelectionResultWithExclusions: ...
+
+
+def select_candidate(
+    packet: dict[str, Any],
+    *,
+    explicit_pr: int | None = None,
+    exclude_prs: set[int] | None = None,
+    active_owned_prs: set[int] | None = None,
+    policy_metadata: dict[int, dict[str, Any]] | None = None,
+    return_exclusions: bool = False,
+) -> SelectionResult | SelectionResultWithExclusions:
     """Select one dry-run settlement candidate from a merge packet."""
     exclude = set(exclude_prs or set())
+    exclusions: list[dict[str, Any]] = []
     if explicit_pr is not None:
         entry = _entry_by_pr(packet, explicit_pr)
         if entry is None:
-            return None, [f"merge-packet has no entry for PR #{explicit_pr}"]
+            blockers = [f"merge-packet has no entry for PR #{explicit_pr}"]
+            if return_exclusions:
+                return None, blockers, exclusions
+            return None, blockers
+        policy_reasons = policy_exclusion_reasons(
+            entry,
+            exclude_prs=exclude,
+            active_owned_prs=active_owned_prs,
+            policy_metadata=policy_metadata,
+        )
+        if policy_reasons:
+            exclusions.append(_exclusion_record(entry, policy_reasons))
+        if return_exclusions:
+            return entry, [], exclusions
         return entry, []
 
     entries = [entry for entry in packet.get("entries") or [] if isinstance(entry, dict)]
@@ -130,16 +267,35 @@ def select_candidate(
         if pr_number is not None:
             admin_order.append(pr_number)
     for ordered_pr in admin_order:
-        if ordered_pr in exclude:
-            continue
         entry = _entry_by_pr(packet, ordered_pr)
-        if entry is not None:
-            return entry, []
+        if entry is None:
+            continue
+        policy_reasons = policy_exclusion_reasons(
+            entry,
+            exclude_prs=exclude,
+            active_owned_prs=active_owned_prs,
+            policy_metadata=policy_metadata,
+        )
+        if policy_reasons:
+            exclusions.append(_exclusion_record(entry, policy_reasons))
+            continue
+        if return_exclusions:
+            return entry, [], exclusions
+        return entry, []
 
     evidence_candidates: list[dict[str, Any]] = []
     for entry in entries:
         entry_pr_number = _entry_pr(entry)
-        if entry_pr_number is None or entry_pr_number in exclude:
+        if entry_pr_number is None:
+            continue
+        policy_reasons = policy_exclusion_reasons(
+            entry,
+            exclude_prs=exclude,
+            active_owned_prs=active_owned_prs,
+            policy_metadata=policy_metadata,
+        )
+        if policy_reasons:
+            exclusions.append(_exclusion_record(entry, policy_reasons))
             continue
         if bool(entry.get("requires_human_risk_settlement")):
             continue
@@ -158,9 +314,14 @@ def select_candidate(
         if "model quorum incomplete" in reasons or "dogfood" in reasons:
             evidence_candidates.append(entry)
     if evidence_candidates:
+        if return_exclusions:
+            return evidence_candidates[0], [], exclusions
         return evidence_candidates[0], []
 
-    return None, ["no Tier 0-2 non-human-risk green PR needs only settlement evidence"]
+    blockers = ["no Tier 0-2 non-human-risk green PR needs only settlement evidence"]
+    if return_exclusions:
+        return None, blockers, exclusions
+    return None, blockers
 
 
 def entry_blockers(entry: dict[str, Any]) -> list[str]:
@@ -302,6 +463,50 @@ def validation_report(
     return reports
 
 
+def load_open_pr_metadata(cwd: Path) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
+    payload, command = _run_json(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--limit",
+            "200",
+            "--json",
+            "number,title,headRefName,author,mergeable,mergeStateStatus",
+        ],
+        cwd=cwd,
+    )
+    metadata: dict[int, dict[str, Any]] = {}
+    if isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            pr_number = _coerce_int(item.get("number"))
+            if pr_number is not None:
+                metadata[pr_number] = item
+    return metadata, command
+
+
+def load_active_owned_prs(cwd: Path) -> tuple[set[int], dict[str, Any]]:
+    payload, command = _run_json(
+        ["python3", "scripts/agent_bridge.py", "operator-snapshot", "--json"],
+        cwd=cwd,
+    )
+    active_owned: set[int] = set()
+    if isinstance(payload, dict):
+        for lane in payload.get("lanes") or []:
+            if not isinstance(lane, dict):
+                continue
+            if str(lane.get("status") or "").lower() != "active":
+                continue
+            pr_number = _coerce_int(lane.get("pr_number"))
+            if pr_number is not None:
+                active_owned.add(pr_number)
+    return active_owned, command
+
+
 def recursive_prompt(report: dict[str, Any]) -> str:
     pr_number = report.get("selected_pr")
     if pr_number:
@@ -338,8 +543,28 @@ def build_report(
     live: bool,
     validate: bool,
 ) -> dict[str, Any]:
-    selected, selection_blockers = select_candidate(
-        packet, explicit_pr=explicit_pr, exclude_prs=exclude_prs
+    policy_metadata: dict[int, dict[str, Any]] = {}
+    active_owned_prs: set[int] = set()
+    policy_context: dict[str, Any] = {}
+    if live:
+        policy_metadata, metadata_command = load_open_pr_metadata(cwd)
+        active_owned_prs, active_owned_command = load_active_owned_prs(cwd)
+        policy_context = {
+            "open_pr_metadata_command": metadata_command,
+            "operator_snapshot_command": active_owned_command,
+            "active_owned_prs": sorted(active_owned_prs),
+        }
+
+    selected, selection_blockers, policy_exclusions = cast(
+        SelectionResultWithExclusions,
+        select_candidate(
+            packet,
+            explicit_pr=explicit_pr,
+            exclude_prs=exclude_prs,
+            active_owned_prs=active_owned_prs,
+            policy_metadata=policy_metadata,
+            return_exclusions=True,
+        ),
     )
     report: dict[str, Any] = {
         "version": VERSION,
@@ -357,6 +582,8 @@ def build_report(
         "blockers": selection_blockers,
         "evidence": {},
         "checks": {},
+        "policy_context": policy_context,
+        "policy_exclusions": policy_exclusions,
         "validation": [],
         "suggested_commands": [],
     }
@@ -368,6 +595,15 @@ def build_report(
     report["selected_pr"] = pr_number
     report["head_sha"] = str(selected.get("head_sha", "") or "")
     blockers = entry_blockers(selected)
+    blockers.extend(
+        f"excluded_by_policy: {reason}"
+        for reason in policy_exclusion_reasons(
+            selected,
+            exclude_prs=exclude_prs,
+            active_owned_prs=active_owned_prs,
+            policy_metadata=policy_metadata,
+        )
+    )
     report["evidence"] = evidence_summary(selected)
 
     if live and pr_number is not None:
