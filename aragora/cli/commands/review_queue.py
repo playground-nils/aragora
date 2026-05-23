@@ -1903,24 +1903,19 @@ def _lint_evidence_comment(
     source: str,
 ) -> dict[str, Any]:
     """Dry-run whether one proposed comment would satisfy quorum parsers."""
-    effective_head_committed_at = head_committed_at or "9999-12-31T23:59:59Z"
+    grounded, grounding_method = _proposed_evidence_head_grounding(body, head_sha)
     comment = {
         "author": {"login": author},
         "body": body,
         "createdAt": "",
     }
-    dogfood_evidence = _dogfood_evidence_from_comments(
-        [comment],
-        head_sha=head_sha,
-        head_committed_at=effective_head_committed_at,
-    )
-    reviewer_signals = _model_review_signals_from_comments(
-        [comment],
-        head_sha=head_sha,
-        head_committed_at=effective_head_committed_at,
-    )
+    if grounded:
+        dogfood_evidence = _dogfood_evidence_from_comments([comment])
+        reviewer_signals = _model_review_signals_from_comments([comment])
+    else:
+        dogfood_evidence = []
+        reviewer_signals = []
     counted_reviewer_ids = _counted_model_reviewer_ids(reviewer_signals, dogfood_evidence)
-    grounded = _is_comment_grounded_on_head(comment, head_sha, effective_head_committed_at)
     inferred_reviewer = _infer_model_reviewer_from_text(body)
     lower = body.lower()
 
@@ -1963,12 +1958,28 @@ def _lint_evidence_comment(
         "comment_summary": _first_nonempty_line(body)[:240],
         "inferred_reviewer": inferred_reviewer,
         "current_head_grounded": grounded,
+        "current_head_grounding_method": grounding_method,
         "dogfood_evidence": dogfood_evidence,
         "reviewer_signals": reviewer_signals,
         "counted_reviewer_ids": counted_reviewer_ids,
         "would_count": bool(counted_reviewer_ids),
         "problems": problems,
     }
+
+
+def _proposed_evidence_head_grounding(body: str, head_sha: str) -> tuple[bool, str]:
+    """Require proposed comments to cite the target head SHA prefix.
+
+    Unlike persisted GitHub comments, evidence-lint inputs have no trustworthy
+    ``createdAt``.  Lint mode therefore does not use timestamp recency as a
+    substitute for current-head grounding.
+    """
+    normalized_head = str(head_sha or "").strip().lower()
+    if len(normalized_head) < 7:
+        return False, "missing_head_sha_argument"
+    if normalized_head[:7] in str(body or "").lower():
+        return True, "head_sha_citation"
+    return False, "missing_head_sha_citation"
 
 
 def _head_committed_at_from_pr(pr: dict[str, Any]) -> str:

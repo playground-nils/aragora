@@ -1890,6 +1890,7 @@ class TestCommandDispatch:
         assert payload["would_count"] is True
         assert payload["counted_reviewer_ids"] == ["codex"]
         assert payload["dogfood_evidence"][0]["reviewer_id"] == "codex"
+        assert payload["current_head_grounding_method"] == "head_sha_citation"
         assert payload["problems"] == []
 
     def test_evidence_lint_rejects_ungrounded_comment(self) -> None:
@@ -1911,6 +1912,7 @@ class TestCommandDispatch:
         payload = json.loads(out.getvalue())
         assert rc == 1
         assert payload["would_count"] is False
+        assert payload["current_head_grounding_method"] == "missing_head_sha_citation"
         assert "missing_current_head_grounding" in payload["problems"]
         assert "no_counted_model_reviewer" in payload["problems"]
 
@@ -1933,6 +1935,7 @@ class TestCommandDispatch:
         payload = json.loads(out.getvalue())
         assert rc == 1
         assert payload["would_count"] is False
+        assert payload["current_head_grounding_method"] == "missing_head_sha_citation"
         assert "missing_current_head_grounding" in payload["problems"]
 
     def test_evidence_lint_reads_body_file(self, tmp_path: Path) -> None:
@@ -1962,6 +1965,7 @@ class TestCommandDispatch:
         assert rc == 0
         assert payload["would_count"] is True
         assert payload["counted_reviewer_ids"] == ["claude"]
+        assert payload["current_head_grounding_method"] == "head_sha_citation"
         assert payload["reviewer_signals"][0]["reviewer_id"] == "claude"
 
 
