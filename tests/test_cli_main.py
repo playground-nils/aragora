@@ -363,6 +363,7 @@ class TestCommandHandlers:
         captured = capsys.readouterr()
         assert "selected agent providers are not configured" in captured.err
         assert "mistral" in captured.err
+        assert "aragora validate-env --smoke --agents grok,mistral --verbose" in captured.err
 
     def test_cmd_ask_exits_when_all_agents_return_failure_placeholders(self, monkeypatch, capsys):
         """Provider smoke should fail when autonomic placeholders are the only output."""
@@ -396,6 +397,7 @@ class TestCommandHandlers:
         assert exc.value.code == 1
         captured = capsys.readouterr()
         assert "all selected agents returned provider/error placeholders" in captured.err
+        assert "aragora validate-env --smoke --agents openai --verbose" in captured.err
 
     def test_agent_failure_detection_keeps_mixed_successful_debates(self):
         """A valid response from any agent keeps graceful degradation semantics."""

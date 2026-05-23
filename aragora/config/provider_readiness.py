@@ -288,7 +288,7 @@ def format_provider_bootstrap_error(report: ProviderReadinessReport) -> str:
         "No usable AI provider credential was discovered.",
         "Checked env, .env files, and configured secret loaders.",
         "Set one of: " + ", ".join(checked),
-        "Then run: aragora validate-env --verbose",
+        "Then run: aragora validate-env --smoke --agents <agent> --verbose",
     ]
     if report.discovery_errors:
         lines.append("Credential loader notes: " + "; ".join(report.discovery_errors))

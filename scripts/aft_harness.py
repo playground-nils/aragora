@@ -135,11 +135,15 @@ def summarize(predictions: list[dict[str, Any]]) -> dict[str, Any]:
     for arm, rows in sorted(by_arm.items()):
         total = len(rows)
         correct = sum(1 for row in rows if row["prediction"]["decision"] == row["label"])
+        mock_predictions = sum(1 for row in rows if bool(row["prediction"].get("mock")))
         confusion = Counter(f"{row['label']}->{row['prediction']['decision']}" for row in rows)
         arms[arm] = {
             "examples": total,
             "accuracy": correct / total if total else 0.0,
             "correct": correct,
+            "mock_predictions": mock_predictions,
+            "real_predictions": total - mock_predictions,
+            "stubbed": bool(total and mock_predictions == total),
             "avg_confidence": (
                 sum(float(row["prediction"]["confidence"]) for row in rows) / total
                 if total

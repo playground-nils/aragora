@@ -3,7 +3,7 @@
     "frontier_prompt": {
       "accuracy": 0.175,
       "avg_confidence": 0.0,
-      "avg_latency_ms": 0.001275,
+      "avg_latency_ms": 0.000125,
       "confusion": {
         "accept->ask_user": 26,
         "ask_user->ask_user": 7,
@@ -12,12 +12,15 @@
       },
       "correct": 7,
       "examples": 40,
+      "mock_predictions": 40,
+      "real_predictions": 0,
+      "stubbed": true,
       "total_cost_usd": 0.0
     },
     "local_advocate": {
       "accuracy": 0.175,
       "avg_confidence": 0.5667500000000001,
-      "avg_latency_ms": 0.0117,
+      "avg_latency_ms": 0.0042250000000000005,
       "confusion": {
         "accept->ask_user": 23,
         "accept->challenge": 3,
@@ -27,12 +30,15 @@
       },
       "correct": 7,
       "examples": 40,
+      "mock_predictions": 40,
+      "real_predictions": 0,
+      "stubbed": true,
       "total_cost_usd": 0.0
     },
     "rules": {
       "accuracy": 0.175,
       "avg_confidence": 0.5635000000000001,
-      "avg_latency_ms": 0.1705,
+      "avg_latency_ms": 0.0034500000000000004,
       "confusion": {
         "accept->ask_user": 24,
         "accept->challenge": 2,
@@ -42,6 +48,9 @@
       },
       "correct": 7,
       "examples": 40,
+      "mock_predictions": 0,
+      "real_predictions": 40,
+      "stubbed": false,
       "total_cost_usd": 0.0
     }
   },

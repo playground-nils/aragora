@@ -1930,7 +1930,9 @@ def cmd_ask(args: argparse.Namespace) -> None:
                         file=sys.stderr,
                     )
                 print(
-                    "Run 'aragora validate-env --verbose' and select only configured agents.",
+                    "Run "
+                    f"'aragora validate-env --smoke --agents {agents} --verbose' "
+                    "and select only configured agents.",
                     file=sys.stderr,
                 )
             raise SystemExit(1)
@@ -2687,7 +2689,7 @@ def cmd_ask(args: argparse.Namespace) -> None:
     if _result_has_only_agent_failure_outputs(result):
         print(
             "Debate failed: all selected agents returned provider/error placeholders. "
-            "Run 'aragora validate-env --verbose' and retry a real provider smoke test.",
+            f"Run 'aragora validate-env --smoke --agents {agents} --verbose' and retry.",
             file=sys.stderr,
         )
         raise SystemExit(1)

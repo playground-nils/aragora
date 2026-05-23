@@ -110,4 +110,4 @@ def test_bootstrap_error_is_actionable(monkeypatch):
 
     assert "No usable AI provider credential" in message
     assert "ANTHROPIC_API_KEY" in message
-    assert "aragora validate-env --verbose" in message
+    assert "aragora validate-env --smoke --agents <agent> --verbose" in message

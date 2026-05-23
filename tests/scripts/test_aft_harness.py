@@ -66,6 +66,10 @@ def test_harness_writes_predictions_and_summary(tmp_path: Path, capsys) -> None:
     summary = json.loads(capsys.readouterr().out)
     assert summary["examples"] == 2
     assert set(summary["arms"]) == {"rules", "frontier_prompt", "local_advocate"}
+    assert summary["arms"]["frontier_prompt"]["mock_predictions"] == 0
+    assert summary["arms"]["frontier_prompt"]["stubbed"] is False
+    assert summary["arms"]["local_advocate"]["mock_predictions"] == 2
+    assert summary["arms"]["local_advocate"]["stubbed"] is True
     assert (output_dir / "predictions.jsonl").exists()
     assert (output_dir / "summary.json").exists()
 
@@ -89,4 +93,7 @@ def test_summarize_reports_accuracy() -> None:
     summary = mod.summarize(predictions)
 
     assert summary["arms"]["rules"]["accuracy"] == 0.5
+    assert summary["arms"]["rules"]["mock_predictions"] == 0
+    assert summary["arms"]["rules"]["real_predictions"] == 2
+    assert summary["arms"]["rules"]["stubbed"] is False
     assert summary["arms"]["rules"]["confusion"] == {"accept->accept": 1, "block->accept": 1}
