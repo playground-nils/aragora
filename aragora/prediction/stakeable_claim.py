@@ -108,6 +108,24 @@ class StakeableClaim:
     def is_open(self) -> bool:
         return self.resolution_status == ResolutionStatus.OPEN
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> StakeableClaim:
+        """Reconstruct a StakeableClaim from a :meth:`to_dict` payload."""
+        return cls(
+            claim_id=str(d["claim_id"]),
+            question=str(d["question"]),
+            question_type=QuestionType(d["question_type"]),
+            target_ref=str(d["target_ref"]),
+            expiry=str(d["expiry"]),
+            resolution_window_days=int(d.get("resolution_window_days", 30)),
+            resolution_status=ResolutionStatus(d.get("resolution_status", "open")),
+            resolution_value=d.get("resolution_value"),
+            resolution_evidence=str(d.get("resolution_evidence", "")),
+            positions=dict(d.get("positions") or {}),
+            credit_cap=int(d.get("credit_cap", 100)),
+            created_at=str(d.get("created_at", "")),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "claim_id": self.claim_id,
