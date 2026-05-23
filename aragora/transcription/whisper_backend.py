@@ -649,14 +649,14 @@ def get_transcription_backend(
 
     # Auto-select first available backend from priority list
     for backend_name in config.backend_priority:
-        backend_name = _normalize_backend_name(backend_name)
-        if backend_name not in _BACKENDS:
+        normalized_backend_name = _normalize_backend_name(backend_name)
+        if normalized_backend_name is None or normalized_backend_name not in _BACKENDS:
             continue
 
-        backend_cls = _BACKENDS[backend_name]
+        backend_cls = _BACKENDS[normalized_backend_name]
         backend = backend_cls(config)
         if backend.is_available():
-            logger.info("Auto-selected transcription backend: %s", backend_name)
+            logger.info("Auto-selected transcription backend: %s", normalized_backend_name)
             return backend
 
     available = get_available_backends()

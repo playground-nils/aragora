@@ -846,7 +846,7 @@ def _print_matrix_result(debate: Any, verbose: bool = False) -> None:
                 name = getattr(scenario, "scenario_name", "")
                 key_findings = getattr(scenario, "key_findings", []) or []
                 conclusion = getattr(scenario, "consensus", None)
-                if hasattr(conclusion, "final_answer"):
+                if conclusion is not None and hasattr(conclusion, "final_answer"):
                     conclusion = conclusion.final_answer
 
             print(f"- {name}")

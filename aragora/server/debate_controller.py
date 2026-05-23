@@ -167,6 +167,7 @@ def _normalize_agent_names(agents_value: Any) -> list[str]:
     names: list[str] = []
     if isinstance(agents_value, list):
         for item in agents_value:
+            name: Any = None
             if isinstance(item, str):
                 name = item.strip()
             elif isinstance(item, dict):
@@ -441,7 +442,7 @@ def _validate_production_settlement_metadata(metadata: dict[str, Any]) -> None:
         missing.append("metric")
     horizon = settlement.get("review_horizon_days")
     try:
-        if int(horizon) <= 0:
+        if horizon is None or int(horizon) <= 0:
             missing.append("review_horizon_days")
     except (ValueError, TypeError):
         missing.append("review_horizon_days")
@@ -1211,7 +1212,7 @@ class DebateController:
         selection_strategy: str,
     ) -> dict[str, Any]:
         """Build a compact comparison summary for one candidate lineup."""
-        final_report = {}
+        final_report: dict[str, Any] = {}
         if isinstance(quality_meta, dict):
             final_report = quality_meta.get("final_report", {}) or {}
 

@@ -603,18 +603,19 @@ def run_setup(
 
     env_content = _generate_env_content(config)
     target_path = Path(output_path) if output_path else Path.cwd()
-    env_file = target_path / ".env"
+    env_file_path = target_path / ".env"
+    env_file: Path | None = env_file_path
 
     # Check for existing file
-    if env_file.exists():
-        print(f"  Existing .env file found at: {env_file}")
+    if env_file_path.exists():
+        print(f"  Existing .env file found at: {env_file_path}")
         if non_interactive:
-            backup = env_file.with_suffix(".env.backup")
-            env_file.rename(backup)
+            backup = env_file_path.with_suffix(".env.backup")
+            env_file_path.rename(backup)
             print(f"  Backed up to: {backup}")
         elif _confirm("  Overwrite existing .env file?", default=False):
-            backup = env_file.with_suffix(".env.backup")
-            env_file.rename(backup)
+            backup = env_file_path.with_suffix(".env.backup")
+            env_file_path.rename(backup)
             print(f"  Backed up to: {backup}")
         else:
             print("  Skipping .env file generation.")

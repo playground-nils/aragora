@@ -365,6 +365,9 @@ def _create_debate_agents(
 ) -> list[Agent]:
     """Create and wrap agents from filtered specs, assigning roles by position."""
     agents: list[Agent] = []
+    agent_factory = create_agent
+    if agent_factory is None:
+        return agents
     for i, spec in enumerate(agent_specs):
         role = spec.role
         if role is None:
@@ -375,7 +378,7 @@ def _create_debate_agents(
             else:
                 role = "critic"
         try:
-            agent = create_agent(
+            agent = agent_factory(
                 model_type=cast("AgentType", spec.provider),
                 name=spec.name,
                 role=role,
@@ -506,8 +509,15 @@ def execute_debate_thread(
         logger.info("[debate] %s: Created %s agents: %s", debate_id, len(agents), agent_names)
 
         # Create environment and protocol
-        env = Environment(task=question, context="", max_rounds=rounds)
-        protocol = DebateProtocol(
+        environment_cls = Environment
+        protocol_cls = DebateProtocol
+        arena_cls = Arena
+        if environment_cls is None or protocol_cls is None or arena_cls is None:
+            _set_debate_error(debate_id, "Debate orchestrator unavailable", emitter)
+            return
+
+        env = environment_cls(task=question, context="", max_rounds=rounds)
+        protocol = protocol_cls(
             rounds=rounds,
             consensus=cast("ConsensusType", consensus),
             proposer_count=len(agents),
@@ -527,7 +537,7 @@ def execute_debate_thread(
             except (ImportError, TypeError):
                 pass
 
-        arena = Arena(
+        arena = arena_cls(
             env,
             agents,
             protocol,

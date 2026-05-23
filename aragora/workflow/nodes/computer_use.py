@@ -170,6 +170,7 @@ class ComputerUseTaskStep(BaseStep):
 
             def _on_step_complete(step_result: Any) -> None:
                 try:
+                    step_status = getattr(step_result, "status", None)
                     context.emit_event(
                         StreamEventType.WORKFLOW_STEP_PROGRESS.value,
                         {
@@ -179,9 +180,7 @@ class ComputerUseTaskStep(BaseStep):
                             "step_name": self.name,
                             "computer_use_step": True,
                             "action_step": getattr(step_result, "step_number", None),
-                            "status": getattr(step_result, "status", None).value
-                            if getattr(step_result, "status", None)
-                            else None,
+                            "status": step_status.value if step_status is not None else None,
                             "action": step_result.action.to_dict()
                             if getattr(step_result, "action", None)
                             else None,

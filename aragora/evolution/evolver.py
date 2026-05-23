@@ -408,7 +408,9 @@ class PromptEvolver(SQLiteStore):
             created_at=row[6],
         )
 
-    def save_prompt_version(self, agent_name: str, prompt: str, metadata: dict = None) -> int:
+    def save_prompt_version(
+        self, agent_name: str, prompt: str, metadata: dict[str, Any] | None = None
+    ) -> int:
         """Save a new prompt version."""
         with self.connection() as conn:
             cursor = conn.cursor()
