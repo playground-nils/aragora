@@ -14,6 +14,11 @@ from scripts.settle_one_pr import (
     select_candidate,
 )
 
+SURFACE_REASON = (
+    "security/auth/RBAC/secrets/deploy/workflow/legal/compliance/destructive/"
+    "migration/public-API surface"
+)
+
 
 def _entry(
     pr_number: int,
@@ -193,14 +198,49 @@ def test_select_candidate_excludes_plural_workflow_and_migration_paths() -> None
     assert blockers == []
     assert selected is next_entry
     assert [item["pr_number"] for item in exclusions] == [7451, 7452]
-    assert all(
-        item["reasons"]
-        == [
-            "security/auth/RBAC/secrets/deploy/workflow/legal/compliance/destructive/"
-            "migration/public-API surface"
-        ]
-        for item in exclusions
+    assert all(item["reasons"] == [SURFACE_REASON] for item in exclusions)
+
+
+def test_select_candidate_excludes_auth_security_rbac_and_deployments_surfaces() -> None:
+    auth = _entry(7454, tier=0, reasons=["docs/tests/status-only"])
+    security = _entry(7455, tier=0, reasons=["docs/tests/status-only"])
+    rbac = _entry(7456, tier=0, reasons=["docs/tests/status-only"])
+    deployment = _entry(7457, tier=0, reasons=["docs/tests/status-only"])
+    next_entry = _entry(
+        7458, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
     )
+
+    selected, blockers, exclusions = select_candidate(
+        _packet(auth, security, rbac, deployment, next_entry),
+        policy_metadata={
+            7454: {"files": [{"path": "aragora/auth/providers.py"}]},
+            7455: {"title": "docs: security posture packet"},
+            7456: {"headRefName": "codex/rbac-policy-handoff"},
+            7457: {"files": [{"path": "deployments/worker.toml"}]},
+        },
+        return_exclusions=True,
+    )
+
+    assert blockers == []
+    assert selected is next_entry
+    assert [item["pr_number"] for item in exclusions] == [7454, 7455, 7456, 7457]
+    assert all(item["reasons"] == [SURFACE_REASON] for item in exclusions)
+
+
+def test_select_candidate_does_not_treat_authored_text_as_auth_surface() -> None:
+    authored = {
+        **_entry(7459, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]),
+        "title": "docs: Authored by queue steward",
+    }
+
+    selected, blockers, exclusions = select_candidate(
+        _packet(authored),
+        return_exclusions=True,
+    )
+
+    assert blockers == []
+    assert selected is authored
+    assert exclusions == []
 
 
 def test_load_open_pr_metadata_requests_files(monkeypatch, tmp_path: Path) -> None:
