@@ -1,134 +1,120 @@
 name: Self-Hosted Fleet Probe
-
-on:
+'on':
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - ready_for_review
     paths:
-      - ".github/workflows/self-hosted-fleet-probe.yml"
-  workflow_dispatch:
-
+    - .github/workflows/self-hosted-fleet-probe.yml
+  workflow_dispatch: null
 permissions:
   contents: read
-
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 concurrency:
-  group: self-hosted-fleet-probe-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  group: self-hosted-fleet-probe-${{ github.event_name == 'pull_request' && github.event.pull_request.number
+    || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   mac-studio-probe:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name
+      == github.repository
     name: Mac Studio Probe
-    runs-on:
-      - self-hosted
-      - aragora
-      - macOS
-      - ARM64
-      - mac-studio
+    runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          path: probe-repo
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        path: probe-repo
+    - uses: ./probe-repo/.github/actions/checkout-integrity
+      with:
+        checkout-path: probe-repo
+    - name: Runner fingerprint
+      shell: bash
+      run: "echo \"runner_name=${RUNNER_NAME}\"\necho \"runner_os=${RUNNER_OS}\"\n\
+        echo \"runner_arch=${RUNNER_ARCH}\"\nuname -a\nsw_vers\nsysctl -n machdep.cpu.brand_string\
+        \ || true\nif command -v python3 >/dev/null 2>&1; then\n  echo \"python3=$(command\
+        \ -v python3)\"\n  python3 --version\nelse\n  echo \"::warning::python3 missing\
+        \ on PATH\"\nfi\nif command -v node >/dev/null 2>&1; then\n  echo \"node=$(command\
+        \ -v node)\"\n  node --version\nelse\n  echo \"::warning::node missing on\
+        \ PATH\"\nfi\n"
+    - name: Repo smoke
+      shell: bash
+      run: 'cd probe-repo
 
-      - uses: ./probe-repo/.github/actions/checkout-integrity
-        with:
-          checkout-path: probe-repo
+        test -f pyproject.toml
 
-      - name: Runner fingerprint
-        shell: bash
-        run: |
-          echo "runner_name=${RUNNER_NAME}"
-          echo "runner_os=${RUNNER_OS}"
-          echo "runner_arch=${RUNNER_ARCH}"
-          uname -a
-          sw_vers
-          sysctl -n machdep.cpu.brand_string || true
-          if command -v python3 >/dev/null 2>&1; then
-            echo "python3=$(command -v python3)"
-            python3 --version
-          else
-            echo "::warning::python3 missing on PATH"
-          fi
-          if command -v node >/dev/null 2>&1; then
-            echo "node=$(command -v node)"
-            node --version
-          else
-            echo "::warning::node missing on PATH"
-          fi
+        test -f scripts/check_version_alignment.py
 
-      - name: Repo smoke
-        shell: bash
-        run: |
-          cd probe-repo
-          test -f pyproject.toml
-          test -f scripts/check_version_alignment.py
-          test -f aragora/__version__.py
-          git rev-parse --short HEAD
-          python3 - <<'PY'
-          from pathlib import Path
-          assert Path("pyproject.toml").is_file()
-          assert Path("scripts/check_version_alignment.py").is_file()
-          assert Path("aragora/__version__.py").is_file()
-          print("workspace_smoke=ok")
-          PY
+        test -f aragora/__version__.py
 
+        git rev-parse --short HEAD
+
+        python3 - <<''PY''
+
+        from pathlib import Path
+
+        assert Path("pyproject.toml").is_file()
+
+        assert Path("scripts/check_version_alignment.py").is_file()
+
+        assert Path("aragora/__version__.py").is_file()
+
+        print("workspace_smoke=ok")
+
+        PY
+
+        '
   hetzner-probe:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name
+      == github.repository
     name: Hetzner Probe
-    runs-on:
-      - self-hosted
-      - aragora
-      - Linux
-      - X64
-      - hetzner
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          path: probe-repo
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        path: probe-repo
+    - uses: ./probe-repo/.github/actions/checkout-integrity
+      with:
+        checkout-path: probe-repo
+    - name: Runner fingerprint
+      shell: bash
+      run: "echo \"runner_name=${RUNNER_NAME}\"\necho \"runner_os=${RUNNER_OS}\"\n\
+        echo \"runner_arch=${RUNNER_ARCH}\"\nuname -a\nif command -v python3 >/dev/null\
+        \ 2>&1; then\n  echo \"python3=$(command -v python3)\"\n  python3 --version\n\
+        else\n  echo \"::warning::python3 missing on PATH\"\nfi\nif command -v node\
+        \ >/dev/null 2>&1; then\n  echo \"node=$(command -v node)\"\n  node --version\n\
+        else\n  echo \"::warning::node missing on PATH\"\nfi\n(lsb_release -a || cat\
+        \ /etc/os-release) 2>/dev/null || true\n"
+    - name: Repo smoke
+      shell: bash
+      run: 'cd probe-repo
 
-      - uses: ./probe-repo/.github/actions/checkout-integrity
-        with:
-          checkout-path: probe-repo
+        test -f pyproject.toml
 
-      - name: Runner fingerprint
-        shell: bash
-        run: |
-          echo "runner_name=${RUNNER_NAME}"
-          echo "runner_os=${RUNNER_OS}"
-          echo "runner_arch=${RUNNER_ARCH}"
-          uname -a
-          if command -v python3 >/dev/null 2>&1; then
-            echo "python3=$(command -v python3)"
-            python3 --version
-          else
-            echo "::warning::python3 missing on PATH"
-          fi
-          if command -v node >/dev/null 2>&1; then
-            echo "node=$(command -v node)"
-            node --version
-          else
-            echo "::warning::node missing on PATH"
-          fi
-          (lsb_release -a || cat /etc/os-release) 2>/dev/null || true
+        test -f scripts/check_version_alignment.py
 
-      - name: Repo smoke
-        shell: bash
-        run: |
-          cd probe-repo
-          test -f pyproject.toml
-          test -f scripts/check_version_alignment.py
-          test -f aragora/__version__.py
-          git rev-parse --short HEAD
-          python3 - <<'PY'
-          from pathlib import Path
-          assert Path("pyproject.toml").is_file()
-          assert Path("scripts/check_version_alignment.py").is_file()
-          assert Path("aragora/__version__.py").is_file()
-          print("workspace_smoke=ok")
-          PY
+        test -f aragora/__version__.py
+
+        git rev-parse --short HEAD
+
+        python3 - <<''PY''
+
+        from pathlib import Path
+
+        assert Path("pyproject.toml").is_file()
+
+        assert Path("scripts/check_version_alignment.py").is_file()
+
+        assert Path("aragora/__version__.py").is_file()
+
+        print("workspace_smoke=ok")
+
+        PY
+
+        '
