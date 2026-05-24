@@ -1,0 +1,3 @@
+{"task_id": "dc-1", "category": "debate_critique", "argument": "We should adopt this library because it has 50k GitHub stars.", "flaw_key": "popularity_fallacy", "ground_truth": "names_specific_flaw"}
+{"task_id": "dc-2", "category": "debate_critique", "argument": "The benchmark shows X is 10% faster, so we should pick X.", "flaw_key": "missing_baseline_context", "ground_truth": "names_specific_flaw"}
+{"task_id": "dc-3", "category": "debate_critique", "argument": "Our auth bug has not caused any reported incidents, so it's low priority.", "flaw_key": "survivorship_silent_failure", "ground_truth": "names_specific_flaw"}

@@ -1,0 +1,3 @@
+{"task_id": "ib-1", "category": "inbox_triage", "features": {"sender_domain_class": "vendor", "subject_token_count": 4, "label_count": 1, "has_reply_thread": false}, "ground_truth": "archive"}
+{"task_id": "ib-2", "category": "inbox_triage", "features": {"sender_domain_class": "internal", "subject_token_count": 12, "label_count": 0, "has_reply_thread": true}, "ground_truth": "reply"}
+{"task_id": "ib-3", "category": "inbox_triage", "features": {"sender_domain_class": "external_first_time", "subject_token_count": 8, "label_count": 2, "has_reply_thread": false, "tier_hint": "high_value"}, "ground_truth": "escalate"}
