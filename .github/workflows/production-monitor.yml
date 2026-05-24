@@ -1,257 +1,187 @@
 name: Production Monitoring
-
-on:
+'on':
   schedule:
-    # Run every 6 hours
-    - cron: '0 */6 * * *'
+  - cron: 0 */6 * * *
   workflow_dispatch:
     inputs:
       notify_on_success:
-        description: 'Send notification on success'
+        description: Send notification on success
         required: false
         default: 'false'
         type: boolean
-
 env:
   NODE_VERSION: '20'
-
 jobs:
   production-health:
     name: Production Health Check
-    # Pin production browser checks to the Ubuntu Hetzner pool. The generic
-    # `aragora` fleet also includes Amazon Linux hosts without apt-get, which
-    # breaks the current Playwright `--with-deps` bootstrap path.
-    runs-on: [self-hosted, Linux, X64, aragora, hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Verify checkout integrity
+      shell: bash
+      run: "if [[ ! -f pyproject.toml ]]; then\n  echo \"::warning::pyproject.toml\
+        \ missing after checkout; attempting recovery\"\n  git sparse-checkout disable\
+        \ || true\n  git fetch --no-tags origin \"${GITHUB_SHA:-HEAD}\"\n  git reset\
+        \ --hard FETCH_HEAD\n  git clean -ffd || true\nfi\nif [[ ! -f pyproject.toml\
+        \ ]]; then\n  echo \"::warning::Standard recovery failed; attempting archive\
+        \ restore\"\n  find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {}\
+        \ +\n  git archive \"${GITHUB_SHA:-HEAD}\" | tar -x || git archive HEAD |\
+        \ tar -x\nfi\nif [[ ! -f pyproject.toml ]]; then\n  echo \"::error::Repository\
+        \ checkout is incomplete (pyproject.toml missing)\"\n  echo \"PWD=$(pwd)\"\
+        \n  ls -la\n  exit 1\nfi\n"
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: npm
+        cache-dependency-path: aragora/live/package-lock.json
+    - name: Install dependencies
+      working-directory: aragora/live
+      run: npm ci
+    - name: Install Playwright browsers
+      working-directory: aragora/live
+      shell: bash
+      run: "if command -v apt-get >/dev/null 2>&1; then\n  npx playwright install\
+        \ --with-deps chromium\nelse\n  echo \"::notice::apt-get unavailable on runner;\
+        \ installing Chromium without OS package bootstrap\"\n  npx playwright install\
+        \ chromium\nfi\n"
+    - name: Run production smoke tests
+      working-directory: aragora/live
+      run: "PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production \\\n\
+        \  e2e/production/smoke.prod.spec.ts \\\n  e2e/production/api-health.prod.spec.ts\
+        \ \\\n  --reporter=html,json\n"
+      env:
+        PLAYWRIGHT_BASE_URL: https://aragora.ai
+    - name: Upload test report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: production-health-report
+        path: 'aragora/live/playwright-report/
 
-      - name: Verify checkout integrity
-        shell: bash
-        run: |
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::pyproject.toml missing after checkout; attempting recovery"
-            git sparse-checkout disable || true
-            git fetch --no-tags origin "${GITHUB_SHA:-HEAD}"
-            git reset --hard FETCH_HEAD
-            git clean -ffd || true
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::Standard recovery failed; attempting archive restore"
-            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-            git archive "${GITHUB_SHA:-HEAD}" | tar -x || git archive HEAD | tar -x
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::error::Repository checkout is incomplete (pyproject.toml missing)"
-            echo "PWD=$(pwd)"
-            ls -la
-            exit 1
-          fi
+          aragora/live/playwright-results.json
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: aragora/live/package-lock.json
+          '
+        retention-days: 30
+    - name: Check for failures
+      if: failure()
+      run: 'echo "::error::Production health check failed!"
 
-      - name: Install dependencies
-        working-directory: aragora/live
-        run: npm ci
+        echo "Check the Playwright report artifact for details."
 
-      - name: Install Playwright browsers
-        working-directory: aragora/live
-        shell: bash
-        run: |
-          if command -v apt-get >/dev/null 2>&1; then
-            npx playwright install --with-deps chromium
-          else
-            echo "::notice::apt-get unavailable on runner; installing Chromium without OS package bootstrap"
-            npx playwright install chromium
-          fi
-
-      - name: Run production smoke tests
-        working-directory: aragora/live
-        run: |
-          PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production \
-            e2e/production/smoke.prod.spec.ts \
-            e2e/production/api-health.prod.spec.ts \
-            --reporter=html,json
-        env:
-          PLAYWRIGHT_BASE_URL: https://aragora.ai
-
-      - name: Upload test report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: production-health-report
-          path: |
-            aragora/live/playwright-report/
-            aragora/live/playwright-results.json
-          retention-days: 30
-
-      - name: Check for failures
-        if: failure()
-        run: |
-          echo "::error::Production health check failed!"
-          echo "Check the Playwright report artifact for details."
-
+        '
   production-auth:
     name: Production Auth Flow
-    runs-on: [self-hosted, Linux, X64, aragora, hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: production-health
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Verify checkout integrity
-        shell: bash
-        run: |
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::pyproject.toml missing after checkout; attempting recovery"
-            git sparse-checkout disable || true
-            git fetch --no-tags origin "${GITHUB_SHA:-HEAD}"
-            git reset --hard FETCH_HEAD
-            git clean -ffd || true
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::Standard recovery failed; attempting archive restore"
-            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-            git archive "${GITHUB_SHA:-HEAD}" | tar -x || git archive HEAD | tar -x
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::error::Repository checkout is incomplete (pyproject.toml missing)"
-            echo "PWD=$(pwd)"
-            ls -la
-            exit 1
-          fi
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: aragora/live/package-lock.json
-
-      - name: Install dependencies
-        working-directory: aragora/live
-        run: npm ci
-
-      - name: Install Playwright browsers
-        working-directory: aragora/live
-        shell: bash
-        run: |
-          if command -v apt-get >/dev/null 2>&1; then
-            npx playwright install --with-deps chromium
-          else
-            echo "::notice::apt-get unavailable on runner; installing Chromium without OS package bootstrap"
-            npx playwright install chromium
-          fi
-
-      - name: Run auth flow tests
-        working-directory: aragora/live
-        run: |
-          PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production \
-            e2e/production/auth-flow.prod.spec.ts \
-            e2e/production/auth-flow-debug.prod.spec.ts \
-            --reporter=html,json
-        env:
-          PLAYWRIGHT_BASE_URL: https://aragora.ai
-        # Non-blocking: Auth flow against production depends on external auth providers and session state;
-        # flaky by nature. Production health check (above) is the blocking gate.
-        continue-on-error: true
-
-      - name: Run console error analysis
-        working-directory: aragora/live
-        run: |
-          PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production \
-            e2e/production/console-errors.prod.spec.ts \
-            --reporter=html
-        env:
-          PLAYWRIGHT_BASE_URL: https://aragora.ai
-        # Non-blocking: Console error analysis is diagnostic, not a release gate
-        continue-on-error: true
-
-      - name: Upload auth test report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: production-auth-report
-          path: aragora/live/playwright-report/
-          retention-days: 30
-
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Verify checkout integrity
+      shell: bash
+      run: "if [[ ! -f pyproject.toml ]]; then\n  echo \"::warning::pyproject.toml\
+        \ missing after checkout; attempting recovery\"\n  git sparse-checkout disable\
+        \ || true\n  git fetch --no-tags origin \"${GITHUB_SHA:-HEAD}\"\n  git reset\
+        \ --hard FETCH_HEAD\n  git clean -ffd || true\nfi\nif [[ ! -f pyproject.toml\
+        \ ]]; then\n  echo \"::warning::Standard recovery failed; attempting archive\
+        \ restore\"\n  find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {}\
+        \ +\n  git archive \"${GITHUB_SHA:-HEAD}\" | tar -x || git archive HEAD |\
+        \ tar -x\nfi\nif [[ ! -f pyproject.toml ]]; then\n  echo \"::error::Repository\
+        \ checkout is incomplete (pyproject.toml missing)\"\n  echo \"PWD=$(pwd)\"\
+        \n  ls -la\n  exit 1\nfi\n"
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: npm
+        cache-dependency-path: aragora/live/package-lock.json
+    - name: Install dependencies
+      working-directory: aragora/live
+      run: npm ci
+    - name: Install Playwright browsers
+      working-directory: aragora/live
+      shell: bash
+      run: "if command -v apt-get >/dev/null 2>&1; then\n  npx playwright install\
+        \ --with-deps chromium\nelse\n  echo \"::notice::apt-get unavailable on runner;\
+        \ installing Chromium without OS package bootstrap\"\n  npx playwright install\
+        \ chromium\nfi\n"
+    - name: Run auth flow tests
+      working-directory: aragora/live
+      run: "PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production \\\n\
+        \  e2e/production/auth-flow.prod.spec.ts \\\n  e2e/production/auth-flow-debug.prod.spec.ts\
+        \ \\\n  --reporter=html,json\n"
+      env:
+        PLAYWRIGHT_BASE_URL: https://aragora.ai
+      continue-on-error: true
+    - name: Run console error analysis
+      working-directory: aragora/live
+      run: "PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production \\\n\
+        \  e2e/production/console-errors.prod.spec.ts \\\n  --reporter=html\n"
+      env:
+        PLAYWRIGHT_BASE_URL: https://aragora.ai
+      continue-on-error: true
+    - name: Upload auth test report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: production-auth-report
+        path: aragora/live/playwright-report/
+        retention-days: 30
   production-full:
     name: Full Production Suite
-    runs-on: [self-hosted, Linux, X64, aragora, hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: production-auth
     if: github.event_name == 'workflow_dispatch'
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Verify checkout integrity
+      shell: bash
+      run: "if [[ ! -f pyproject.toml ]]; then\n  echo \"::warning::pyproject.toml\
+        \ missing after checkout; attempting recovery\"\n  git sparse-checkout disable\
+        \ || true\n  git fetch --no-tags origin \"${GITHUB_SHA:-HEAD}\"\n  git reset\
+        \ --hard FETCH_HEAD\n  git clean -ffd || true\nfi\nif [[ ! -f pyproject.toml\
+        \ ]]; then\n  echo \"::warning::Standard recovery failed; attempting archive\
+        \ restore\"\n  find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {}\
+        \ +\n  git archive \"${GITHUB_SHA:-HEAD}\" | tar -x || git archive HEAD |\
+        \ tar -x\nfi\nif [[ ! -f pyproject.toml ]]; then\n  echo \"::error::Repository\
+        \ checkout is incomplete (pyproject.toml missing)\"\n  echo \"PWD=$(pwd)\"\
+        \n  ls -la\n  exit 1\nfi\n"
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: npm
+        cache-dependency-path: aragora/live/package-lock.json
+    - name: Install dependencies
+      working-directory: aragora/live
+      run: npm ci
+    - name: Install Playwright browsers
+      working-directory: aragora/live
+      shell: bash
+      run: "if command -v apt-get >/dev/null 2>&1; then\n  npx playwright install\
+        \ --with-deps chromium\nelse\n  echo \"::notice::apt-get unavailable on runner;\
+        \ installing Chromium without OS package bootstrap\"\n  npx playwright install\
+        \ chromium\nfi\n"
+    - name: Run full production test suite
+      working-directory: aragora/live
+      run: 'PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production --reporter=html,json
 
-      - name: Verify checkout integrity
-        shell: bash
-        run: |
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::pyproject.toml missing after checkout; attempting recovery"
-            git sparse-checkout disable || true
-            git fetch --no-tags origin "${GITHUB_SHA:-HEAD}"
-            git reset --hard FETCH_HEAD
-            git clean -ffd || true
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::Standard recovery failed; attempting archive restore"
-            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-            git archive "${GITHUB_SHA:-HEAD}" | tar -x || git archive HEAD | tar -x
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::error::Repository checkout is incomplete (pyproject.toml missing)"
-            echo "PWD=$(pwd)"
-            ls -la
-            exit 1
-          fi
+        '
+      env:
+        PLAYWRIGHT_BASE_URL: https://aragora.ai
+    - name: Upload full test report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: production-full-report
+        path: 'aragora/live/playwright-report/
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: aragora/live/package-lock.json
+          aragora/live/playwright-results.json
 
-      - name: Install dependencies
-        working-directory: aragora/live
-        run: npm ci
-
-      - name: Install Playwright browsers
-        working-directory: aragora/live
-        shell: bash
-        run: |
-          if command -v apt-get >/dev/null 2>&1; then
-            npx playwright install --with-deps chromium
-          else
-            echo "::notice::apt-get unavailable on runner; installing Chromium without OS package bootstrap"
-            npx playwright install chromium
-          fi
-
-      - name: Run full production test suite
-        working-directory: aragora/live
-        run: |
-          PLAYWRIGHT_INCLUDE_PROD=1 npx playwright test --project=production --reporter=html,json
-        env:
-          PLAYWRIGHT_BASE_URL: https://aragora.ai
-
-      - name: Upload full test report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: production-full-report
-          path: |
-            aragora/live/playwright-report/
-            aragora/live/playwright-results.json
-          retention-days: 30
+          '
+        retention-days: 30
