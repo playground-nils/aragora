@@ -30,8 +30,8 @@ MERGE_QUORUM = "aragora-merge-quorum"
 HUMAN_RISK_EXCLUDES = {7407, 7425, 7438, 7439, 7443}
 SURFACE_EXCLUDE_RE = re.compile(
     r"(^|[^a-z0-9])("
-    r"workflow|security|auth|rbac|secret|secrets|deploy|deployment|legal|"
-    r"compliance|destructive|migration|public[-_ ]?api"
+    r"workflows?|security|auth|rbac|secrets?|deploys?|deployments?|legal|"
+    r"compliance|destructive|migrations?|public[-_ ]?apis?"
     r")([^a-z0-9]|$)",
     re.IGNORECASE,
 )
@@ -474,7 +474,7 @@ def load_open_pr_metadata(cwd: Path) -> tuple[dict[int, dict[str, Any]], dict[st
             "--limit",
             "200",
             "--json",
-            "number,title,headRefName,author,mergeable,mergeStateStatus",
+            "number,title,headRefName,author,mergeable,mergeStateStatus,files",
         ],
         cwd=cwd,
     )

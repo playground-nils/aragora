@@ -7,6 +7,7 @@ from scripts.settle_one_pr import (
     build_report,
     entry_blockers,
     head_blockers,
+    load_open_pr_metadata,
     owner_blockers,
     recursive_prompt,
     required_check_report,
@@ -167,6 +168,59 @@ def test_select_candidate_excludes_dirty_and_continues() -> None:
     assert selected is next_entry
     assert exclusions[0]["pr_number"] == 7408
     assert exclusions[0]["reasons"] == ["dirty/conflicting PR"]
+
+
+def test_select_candidate_excludes_plural_workflow_and_migration_paths() -> None:
+    workflow = _entry(
+        7451, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+    migration = _entry(
+        7452, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+    next_entry = _entry(
+        7453, tier=0, reasons=["docs/tests/status-only", "model quorum incomplete: 0/1"]
+    )
+
+    selected, blockers, exclusions = select_candidate(
+        _packet(workflow, migration, next_entry),
+        policy_metadata={
+            7451: {"files": [{"path": ".github/workflows/ci.yml"}]},
+            7452: {"files": [{"path": "db/migrations/001.sql"}]},
+        },
+        return_exclusions=True,
+    )
+
+    assert blockers == []
+    assert selected is next_entry
+    assert [item["pr_number"] for item in exclusions] == [7451, 7452]
+    assert all(
+        item["reasons"]
+        == [
+            "security/auth/RBAC/secrets/deploy/workflow/legal/compliance/destructive/"
+            "migration/public-API surface"
+        ]
+        for item in exclusions
+    )
+
+
+def test_load_open_pr_metadata_requests_files(monkeypatch, tmp_path: Path) -> None:
+    seen: dict[str, list[str]] = {}
+
+    def fake_run_json(args: list[str], *, cwd: Path, timeout: int = 120) -> tuple[list[dict], dict]:
+        seen["args"] = args
+        return (
+            [{"number": 7454, "files": [{"path": ".github/workflows/ci.yml"}]}],
+            {"command": "fake"},
+        )
+
+    monkeypatch.setattr("scripts.settle_one_pr._run_json", fake_run_json)
+
+    metadata, command = load_open_pr_metadata(tmp_path)
+
+    json_fields = seen["args"][seen["args"].index("--json") + 1].split(",")
+    assert "files" in json_fields
+    assert metadata[7454]["files"] == [{"path": ".github/workflows/ci.yml"}]
+    assert command == {"command": "fake"}
 
 
 def test_build_report_reports_policy_exclusions() -> None:
