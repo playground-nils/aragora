@@ -40,6 +40,8 @@ _VALIDATION_PROVIDER_BY_DISPLAY_KEY: dict[str, str] = {
     "DEEPSEEK_API_KEY": "deepseek",
 }
 
+HealthCheck = tuple[str, str, bool | None]
+
 
 def _configured_secret_var(env_vars: tuple[str, ...]) -> str | None:
     """Return the first usable secret variable name from env/AWS-backed discovery."""
@@ -64,9 +66,9 @@ def print_section(title: str) -> None:
     print("-" * 40)
 
 
-def check_packages() -> list[tuple[str, str, bool | None]]:
+def check_packages() -> list[HealthCheck]:
     """Check required and optional packages."""
-    checks = []
+    checks: list[HealthCheck] = []
 
     # Required packages
     required = ["aiohttp", "pydantic", "sqlite3", "asyncio"]
@@ -98,9 +100,9 @@ def check_packages() -> list[tuple[str, str, bool | None]]:
     return checks
 
 
-def check_api_keys(validate_live: bool = False) -> list[tuple[str, str, bool | None]]:
+def check_api_keys(validate_live: bool = False) -> list[HealthCheck]:
     """Check API key configuration."""
-    checks = []
+    checks: list[HealthCheck] = []
 
     # At least one real provider is required. Keep this in sync with validate-env:
     # env vars, .env hydration, AWS Secrets Manager, and provider aliases all count.
@@ -142,9 +144,9 @@ def check_api_keys(validate_live: bool = False) -> list[tuple[str, str, bool | N
     return checks
 
 
-def check_storage() -> list[tuple[str, str, bool | None]]:
+def check_storage() -> list[HealthCheck]:
     """Check storage backends."""
-    checks = []
+    checks: list[HealthCheck] = []
 
     # Check data directory
     data_dir = Path.home() / ".aragora"
@@ -191,9 +193,9 @@ def check_storage() -> list[tuple[str, str, bool | None]]:
     return checks
 
 
-async def check_server() -> list[tuple[str, str, bool | None]]:
+async def check_server() -> list[HealthCheck]:
     """Check if server is running and responsive."""
-    checks = []
+    checks: list[HealthCheck] = []
 
     try:
         from aragora.server.http_client_pool import get_http_pool
@@ -216,9 +218,9 @@ async def check_server() -> list[tuple[str, str, bool | None]]:
     return checks
 
 
-def check_environment() -> list[tuple[str, str, bool | None]]:
+def check_environment() -> list[HealthCheck]:
     """Check environment configuration."""
-    checks = []
+    checks: list[HealthCheck] = []
 
     # Python version
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"

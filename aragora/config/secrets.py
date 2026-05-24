@@ -216,14 +216,14 @@ def is_strict_mode() -> bool:
         True if strict mode is enabled
     """
     # Check explicit override first
-    explicit = os.environ.get("ARAGORA_SECRETS_STRICT", "").lower()
+    explicit = (os.environ.get("ARAGORA_SECRETS_STRICT") or "").lower()
     if explicit in ("false", "0", "no"):
         return False
     if explicit in ("true", "1", "yes"):
         return True
 
     # Default: strict in production/staging
-    env = os.environ.get("ARAGORA_ENV", "").lower()
+    env = (os.environ.get("ARAGORA_ENV") or "").lower()
     return env in ("production", "prod", "staging", "stage")
 
 
@@ -261,22 +261,35 @@ class SecretsConfig:
         Set ARAGORA_USE_SECRETS_MANAGER=true to force-enable it anywhere, or
         false to disable it explicitly.
         """
-        use_flag = os.environ.get("ARAGORA_USE_SECRETS_MANAGER", "")
+
+        def _env_text(name: str, default: str = "") -> str:
+            value = os.environ.get(name)
+            return value if isinstance(value, str) and value else default
+
+        def _env_float(name: str, default: float) -> float:
+            try:
+                return float(_env_text(name, str(default)))
+            except ValueError:
+                return default
+
+        def _env_int(name: str, default: int) -> int:
+            try:
+                return int(_env_text(name, str(default)))
+            except ValueError:
+                return default
+
+        use_flag = _env_text("ARAGORA_USE_SECRETS_MANAGER")
         if use_flag:
             use_aws = use_flag.lower() in ("true", "1", "yes")
         else:
-            env_name = (
-                os.environ.get("ARAGORA_ENV") or os.environ.get("ARAGORA_ENVIRONMENT") or ""
-            ).lower()
+            env_name = (_env_text("ARAGORA_ENV") or _env_text("ARAGORA_ENVIRONMENT")).lower()
             running_in_aws = bool(
-                os.environ.get("AWS_EXECUTION_ENV") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+                _env_text("AWS_EXECUTION_ENV") or _env_text("AWS_LAMBDA_FUNCTION_NAME")
             )
             use_aws = env_name in ("production", "prod", "staging", "stage") or running_in_aws
 
-        primary_region = (
-            os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
-        )
-        raw_regions = os.environ.get("ARAGORA_SECRET_REGIONS", "")
+        primary_region = _env_text("AWS_REGION") or _env_text("AWS_DEFAULT_REGION") or "us-east-1"
+        raw_regions = _env_text("ARAGORA_SECRET_REGIONS")
         explicit_regions = [r.strip() for r in raw_regions.split(",") if r.strip()]
         if explicit_regions:
             regions = []
@@ -292,18 +305,13 @@ class SecretsConfig:
         return cls(
             aws_region=primary_region,
             aws_regions=regions,
-            secret_name=os.environ.get("ARAGORA_SECRET_NAME", "aragora/production"),
+            secret_name=_env_text("ARAGORA_SECRET_NAME", "aragora/production"),
             use_aws=use_aws,
-            aws_connect_timeout_seconds=float(
-                os.environ.get("ARAGORA_AWS_SECRET_CONNECT_TIMEOUT_SECONDS", "2.0")
+            aws_connect_timeout_seconds=_env_float(
+                "ARAGORA_AWS_SECRET_CONNECT_TIMEOUT_SECONDS", 2.0
             ),
-            aws_read_timeout_seconds=float(
-                os.environ.get("ARAGORA_AWS_SECRET_READ_TIMEOUT_SECONDS", "2.0")
-            ),
-            aws_max_attempts=max(
-                1,
-                int(os.environ.get("ARAGORA_AWS_SECRET_MAX_ATTEMPTS", "1")),
-            ),
+            aws_read_timeout_seconds=_env_float("ARAGORA_AWS_SECRET_READ_TIMEOUT_SECONDS", 2.0),
+            aws_max_attempts=max(1, _env_int("ARAGORA_AWS_SECRET_MAX_ATTEMPTS", 1)),
         )
 
 
