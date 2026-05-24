@@ -10,6 +10,7 @@ from scripts.settle_one_pr import (
     owner_blockers,
     recursive_prompt,
     required_check_report,
+    required_check_source_report,
     select_candidate,
 )
 
@@ -173,6 +174,67 @@ def test_cancelled_merge_quorum_suggests_rerun() -> None:
     assert report["status"] == "blocked"
     assert report["blockers"] == ["aragora-merge-quorum is cancelled"]
     assert report["suggestions"] == ["gh run rerun 123456789 --failed"]
+
+
+def test_app_pinned_required_check_blocks_manual_status_spoof() -> None:
+    report = required_check_source_report(
+        {"checks": [{"context": "aragora-merge-quorum", "app_id": 15368}]},
+        {
+            "statusCheckRollup": [
+                {
+                    "__typename": "StatusContext",
+                    "context": "aragora-merge-quorum",
+                    "state": "SUCCESS",
+                }
+            ]
+        },
+    )
+
+    assert report["status"] == "blocked"
+    assert report["blockers"] == [
+        "aragora-merge-quorum is app-pinned to app_id 15368, but only a manual "
+        "StatusContext is green"
+    ]
+
+
+def test_app_pinned_required_check_accepts_successful_check_run() -> None:
+    report = required_check_source_report(
+        {"checks": [{"context": "aragora-merge-quorum", "app_id": 15368}]},
+        {
+            "statusCheckRollup": [
+                {
+                    "__typename": "StatusContext",
+                    "context": "aragora-merge-quorum",
+                    "state": "SUCCESS",
+                },
+                {
+                    "__typename": "CheckRun",
+                    "name": "aragora-merge-quorum",
+                    "conclusion": "SUCCESS",
+                    "workflowName": "Aragora Merge Quorum",
+                },
+            ]
+        },
+    )
+
+    assert report == {"status": "pass", "blockers": []}
+
+
+def test_unpinned_required_check_allows_status_context() -> None:
+    report = required_check_source_report(
+        {"checks": [{"context": "legacy-status", "app_id": None}]},
+        {
+            "statusCheckRollup": [
+                {
+                    "__typename": "StatusContext",
+                    "context": "legacy-status",
+                    "state": "SUCCESS",
+                }
+            ]
+        },
+    )
+
+    assert report == {"status": "pass", "blockers": []}
 
 
 def test_recursive_prompt_always_contains_convergence_sentence() -> None:

@@ -271,6 +271,80 @@ def required_check_report(checks: Any) -> dict[str, Any]:
     return {"status": status, "blockers": blockers, "suggestions": suggestions}
 
 
+def _rollup_name(item: dict[str, Any]) -> str:
+    return str(item.get("name") or item.get("context") or "")
+
+
+def _rollup_success(item: dict[str, Any]) -> bool:
+    state = str(item.get("state") or item.get("status") or item.get("conclusion") or "").upper()
+    return state == "SUCCESS"
+
+
+def required_check_source_report(
+    protection: Any,
+    pr_view: Any,
+) -> dict[str, Any]:
+    """Fail closed when an app-pinned required check is only a manual status.
+
+    GitHub branch protection may pin a required check context to a specific App.
+    In that case a manually posted commit status with the same context can look
+    green in `gh pr checks`, but GitHub will reject mergePullRequest because the
+    expected App did not set the check. The steward should surface that before
+    an executor tries to merge.
+    """
+    if not isinstance(protection, dict):
+        return {
+            "status": "unknown",
+            "blockers": ["branch protection required_status_checks JSON unavailable"],
+        }
+    if not isinstance(pr_view, dict):
+        return {
+            "status": "unknown",
+            "blockers": ["PR statusCheckRollup JSON unavailable"],
+        }
+
+    rollup = pr_view.get("statusCheckRollup") or []
+    if not isinstance(rollup, list):
+        return {
+            "status": "unknown",
+            "blockers": ["PR statusCheckRollup is not a list"],
+        }
+
+    blockers: list[str] = []
+    for required in protection.get("checks") or []:
+        if not isinstance(required, dict):
+            continue
+        context = str(required.get("context") or "")
+        app_id = required.get("app_id")
+        if not context or app_id is None:
+            continue
+
+        matching = [
+            item for item in rollup if isinstance(item, dict) and _rollup_name(item) == context
+        ]
+        has_successful_check_run = any(
+            item.get("__typename") == "CheckRun" and _rollup_success(item) for item in matching
+        )
+        if has_successful_check_run:
+            continue
+
+        has_successful_status = any(
+            item.get("__typename") == "StatusContext" and _rollup_success(item) for item in matching
+        )
+        if has_successful_status:
+            blockers.append(
+                f"{context} is app-pinned to app_id {app_id}, but only a manual "
+                "StatusContext is green"
+            )
+        else:
+            blockers.append(
+                f"{context} is app-pinned to app_id {app_id}, but no successful CheckRun is present"
+            )
+
+    status = "pass" if not blockers else "blocked"
+    return {"status": status, "blockers": blockers}
+
+
 def validation_report(
     entry: dict[str, Any], *, cwd: Path, run_validation: bool
 ) -> list[dict[str, Any]]:
@@ -427,6 +501,16 @@ def build_report(
         report["pr_view_check"] = view_cmd
         blockers.extend(head_blockers(selected, pr_view))
 
+        protection, protection_cmd = _run_json(
+            [
+                "gh",
+                "api",
+                "repos/{owner}/{repo}/branches/main/protection/required_status_checks",
+            ],
+            cwd=cwd,
+        )
+        report["required_check_source_command"] = protection_cmd
+
         required_checks, required_cmd = _run_json(
             [
                 "gh",
@@ -444,6 +528,10 @@ def build_report(
         report["checks"]["required"] = check_report
         blockers.extend(check_report["blockers"])
         report["suggested_commands"].extend(check_report["suggestions"])
+
+        source_report = required_check_source_report(protection, pr_view)
+        report["checks"]["required_sources"] = source_report
+        blockers.extend(source_report["blockers"])
 
     should_validate = validate and not blockers
     report["validation"] = validation_report(selected, cwd=cwd, run_validation=should_validate)
