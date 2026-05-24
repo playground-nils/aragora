@@ -18,6 +18,10 @@ are synthetic. This is the Tier-1 coverage floor for the bench harness.
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -232,6 +236,34 @@ class TestStubPredict:
         task = {"task_id": "pr-1", "category": "pr_review", "ground_truth": "merge_recommend"}
         result = predict_for_family("deepseek", task, allow_live=False, max_cost_usd=1.0)
         assert result["cost_usd_estimate"] == COST_PER_CALL_ESTIMATE["deepseek"]
+
+    def test_codex_family_is_supported(self) -> None:
+        task = {"task_id": "pr-1", "category": "pr_review", "ground_truth": "merge_recommend"}
+        result = predict_for_family("codex", task, allow_live=False, max_cost_usd=1.0)
+        assert COST_PER_CALL_ESTIMATE["codex"] > 0
+        assert result["cost_usd_estimate"] == COST_PER_CALL_ESTIMATE["codex"]
+
+    def test_stub_predictions_are_stable_across_hash_seeds(self) -> None:
+        script = """
+import json
+from scripts.aft_family_bench import load_corpus, stub_predict
+from pathlib import Path
+
+tasks = load_corpus(Path("tests/fixtures/family_bench"))
+families = ["claude", "openai", "gemini", "grok", "deepseek", "qwen", "kimi", "codex"]
+labels = [
+    stub_predict(family, task)["label"]
+    for family in families
+    for task in tasks
+]
+print(json.dumps(labels, sort_keys=True))
+"""
+        env = os.environ.copy()
+        env["PYTHONHASHSEED"] = "1"
+        seed_1 = subprocess.check_output([sys.executable, "-c", script], cwd=REPO_ROOT, env=env)
+        env["PYTHONHASHSEED"] = "2"
+        seed_2 = subprocess.check_output([sys.executable, "-c", script], cwd=REPO_ROOT, env=env)
+        assert json.loads(seed_1) == json.loads(seed_2)
 
 
 # ----- family_summary --------------------------------------------------

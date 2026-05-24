@@ -21,7 +21,7 @@ submit payloads that satisfy
 
 Usage (stub backend):
     python3 scripts/aft_family_bench.py \\
-        --families claude openai gemini grok deepseek qwen kimi \\
+        --families claude codex openai gemini grok deepseek qwen kimi \\
         --corpus tests/fixtures/family_bench \\
         --out data/family_bench/results
 
@@ -32,6 +32,7 @@ under the chosen results dir.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import statistics
@@ -60,6 +61,7 @@ SCHEMA_VERSION = "aft-family-bench/0.1"
 # is meant to surface 10× / 100× / 1000× differences, not 5% deltas.
 COST_PER_CALL_ESTIMATE: dict[str, float] = {
     "claude": 0.030,
+    "codex": 0.025,
     "openai": 0.025,
     "gemini": 0.012,
     "gemini_flash": 0.003,
@@ -77,6 +79,13 @@ COST_PER_CALL_ESTIMATE: dict[str, float] = {
 
 
 # ---- Corpus loader -------------------------------------------------------
+
+
+def _stable_bucket(*parts: object, modulo: int = 10) -> int:
+    """Return a process-stable bucket for deterministic stub predictions."""
+    payload = "\0".join(str(part) for part in parts).encode("utf-8")
+    digest = hashlib.sha256(payload).digest()
+    return int.from_bytes(digest[:8], byteorder="big") % modulo
 
 
 def load_corpus(corpus_dir: Path) -> list[dict]:
@@ -114,6 +123,7 @@ def stub_predict(family: str, task: dict) -> dict:
     # Family priors: each family has a different prior label preference.
     family_priors: dict[str, str] = {
         "claude": "merge_recommend",
+        "codex": "merge_recommend",
         "openai": "merge_recommend",
         "gemini": "request_changes",
         "gemini_flash": "merge_recommend",
@@ -132,19 +142,18 @@ def stub_predict(family: str, task: dict) -> dict:
         # 70% of the time return the family's prior; 30% return ground truth.
         # The "30% return ground truth" is keyed on task_id hash so it's
         # deterministic but family-varying.
-        bias_key = f"{family}:{task.get('task_id', '')}"
-        if (hash(bias_key) % 10) < 3:
+        if _stable_bucket(family, task.get("task_id", "")) < 3:
             return {"label": gt, "confidence": 0.65, "stub": True}
         return {"label": family_priors.get(family, "defer"), "confidence": 0.55, "stub": True}
     if cat == "debate_critique":
         # claude/openai/deepseek often catch flaws; grok/hermes often don't
-        catchers = {"claude", "openai", "deepseek", "qwen", "gemini"}
-        if family in catchers and (hash(f"{family}:{task['task_id']}") % 10) < 7:
+        catchers = {"claude", "codex", "openai", "deepseek", "qwen", "gemini"}
+        if family in catchers and _stable_bucket(family, task["task_id"]) < 7:
             return {"label": "names_specific_flaw", "confidence": 0.75, "stub": True}
         return {"label": "generic_critique", "confidence": 0.5, "stub": True}
     if cat == "inbox_triage":
         # Stub: predict ground truth 60% of the time, family prior 40%
-        if (hash(f"{family}:{task['task_id']}") % 10) < 6:
+        if _stable_bucket(family, task["task_id"]) < 6:
             return {"label": gt, "confidence": 0.7, "stub": True}
         return {"label": "archive", "confidence": 0.45, "stub": True}
     return {"label": "unknown", "confidence": 0.0, "stub": True}
