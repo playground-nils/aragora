@@ -96,13 +96,15 @@ _GAP_MARKERS_HEAD_SHA = "abc1234"
         ("OpenAI independent model review on head abc1234", "openai"),
         ("Anthropic independent semantic review on head abc1234", "anthropic"),
         ("Mistral independent model review on head abc1234", "mistral"),
+        ("Codestral independent semantic review on head abc1234", "mistral (via codestral marker)"),
         ("DeepSeek independent semantic review on head abc1234", "deepseek"),
         ("Qwen independent semantic review on head abc1234", "qwen"),
         ("Kimi independent semantic review on head abc1234", "kimi"),
         ("Moonshot independent semantic review on head abc1234", "kimi (via moonshot marker)"),
-        # New families to add per the design spec (not yet wired anywhere).
+        # New families to add per the design spec + operator answer #2.
         ("GLM independent semantic review on head abc1234", "glm"),
         ("Zhipu independent semantic review on head abc1234", "glm (via zhipu marker)"),
+        ("Z-AI independent semantic review on head abc1234", "glm (via z-ai marker)"),
         ("MiniMax independent semantic review on head abc1234", "minimax"),
         ("Yi-Large independent semantic review on head abc1234", "yi"),
         ("Nous Hermes independent semantic review on head abc1234", "hermes"),

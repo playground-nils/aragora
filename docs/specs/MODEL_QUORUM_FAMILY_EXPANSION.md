@@ -319,6 +319,81 @@ they can be required CI for any future change to the recognizer.
    says no. Recommend adding an explicit author-exclusion rule in the
    same patch.
 
+## Operator preapproval — answers received 2026-05-24
+
+**Directionally approved. Tighten before marking ready.** Operator
+answers (transcribed verbatim from the preapproval message):
+
+1. **Yes**, preapprove a follow-on Tier 4 recognizer patch that
+   **replaces the hard-coded reviewer-name loop with a table-driven
+   `_REVIEWER_MARKERS`, kept in sync with `_normalize_model_reviewer_id`**.
+
+2. **Include markers for** `anthropic/claude`, `openai/gpt`,
+   `gemini/google`, `grok/xai`, `deepseek`, `qwen`, `kimi/moonshot`,
+   `glm/z-ai`, `minimax`, `hermes/nous`, `yi`, and `mistral/codestral`.
+   **Mistral is retained for EU/regulatory diversity and backward
+   compatibility, not because it is a preferred capability reviewer.**
+
+3. **Tier policy:** Tier 0-2 may count Chinese/open-weight families
+   if the payload is non-sensitive and exact-head grounded. Tier 3+
+   requires Western-family counted quorum; Chinese-routed families
+   may post advisory comments but must not satisfy the gate. **Tier 4
+   governance changes require Western-only counted quorum.** Raw PII,
+   inbox bodies, financials, healthcare, secrets, customer data, and
+   private legal material must not be routed to Chinese-routed /
+   OpenRouter providers.
+
+4. **Yes**, add explicit PR-author / comment-author exclusion in the
+   same patch. A PR author must not be able to satisfy model quorum
+   by posting `# Claude review` or equivalent.
+
+These answers are the binding scope for the Tier 4 PR-A2 patch (to be
+opened separately from a fresh worktree off origin/main). The
+principles-doc tier matrix below has been tightened to reflect
+answer #3's stricter Tier 4 wording ("Western-only counted quorum"
+replaces my draft "at least one Anthropic-or-OpenAI signal").
+
+## Model ID source-of-truth (verified against provider docs 2026-05-24)
+
+Per the operator's correction "Do not hard-code 'latest' from memory.
+Verify against provider docs/API listings and document any mismatch":
+
+| Family | Repo pin (default) | Provider-official current | Status | Action for PR-A2 |
+|---|---|---|---|---|
+| Anthropic | `anthropic/claude-opus-4.7` (in `api_agents/anthropic.py`) | `claude-opus-4-7` (Opus 4.7 GA per Anthropic blog 2026-04-16) | ✓ **aligned** | none — repo pin matches provider |
+| OpenAI | `openai/gpt-5.5` (alias destination in `api_agents/openrouter.py`) | `gpt-5.5` (flagship per OpenAI API docs) | ✓ **aligned** | none |
+| Google Gemini | `google/gemini-3.1-pro-preview` (default in `api_agents/gemini.py`) | `gemini-3-pro` (still GA) and `gemini-3.5-flash` (GA 2026-05-20, agentic-tier) | ⚠ **repo does not yet pin 3.5 Flash** | PR-A2 routing alias addition: wire `gemini-3.5-flash` as the agentic-task routing target; keep `gemini-3.1-pro-preview` for reasoning/long-context |
+| xAI Grok | `x-ai/grok-4` (default in `api_agents/grok.py`; `grok-4.2` noted as "not yet on OpenRouter") | `grok-4.3` (launched 2026-04-30, ~40% cheaper than 4.20, on OpenRouter) | ⚠ **repo does not yet pin 4.3** | PR-A2 routing alias addition: wire `grok-4.3` for policy/governance reviewer slot; keep `grok-4` for back-compat alias |
+| Mistral | `mistralai/mistral-large-*` | (operator's posture: retained for EU/regulatory diversity; not a preferred capability reviewer) | aligned | none on pin; tier-policy demotion captured in principles doc |
+| Open-weight (DeepSeek/Qwen/Kimi/Yi) | various (`deepseek/v3.2`, `qwen/qwen3-max`, `moonshotai/kimi-k2.6`, `01-ai/yi-large`) | match provider model pages | aligned | recognizer additions only |
+| GLM / MiniMax / Hermes | not yet wired | `z-ai/glm-4.6`, `minimax/minimax-m2`, `nousresearch/hermes-4-405b` | new wirings needed | wire in `api_agents/openrouter.py` alongside recognizer additions |
+
+**Mismatch tally:** **0 hard mismatches** between repo pins and provider-
+official IDs. **2 "lagging on newest variant" cases**: Gemini 3.5 Flash
+and Grok 4.3 are real and current per provider docs but not yet pinned
+in `api_agents/`. These are routing-alias additions, not pin corrections.
+
+I am **not silently blessing the repo pins.** The above table records
+my verification against provider docs as of 2026-05-24 and should be
+re-verified before PR-A2 is implemented in case provider docs have
+shifted (model IDs can change weekly in this space). The
+verification command pattern is: `WebFetch` against each provider's
+canonical models page, compare to repo `api_agents/<family>.py`
+default model and alias map.
+
+## Note on PR-B
+
+The bench harness scaffold PR-B (PR **#7451** on branch
+`codex/claude-20260524-042836-bb3096b9`) is already open as a draft
+on a separate worktree off origin/main. It contains no gate-policy
+changes and no live provider calls in this iteration — only the
+stub-backed orchestrator, scoring helpers, synthetic corpus, and
+34 unit tests. The operator's "Phase 3" directive ("Use the AFT
+pattern: pre-registered hypotheses, fixed eval set, cost/latency
+capture, head-grounded outputs") matches PR-B's design; no
+additional work is needed to fulfill that directive beyond what is
+already in #7451.
+
 ## Net assessment
 
 The expansion is technically small (~40 lines + tests) and

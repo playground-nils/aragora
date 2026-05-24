@@ -61,9 +61,9 @@ The model-quorum gate counts signals from a known set of model families. As the 
 | 1 — additive internal, no live caller | ✓ | ✓ |
 | 2 — live automation, CLI, observability, retry, cache | ✓ | ✓; **at least one of the two required signals must be a Western family** |
 | 3 — semantic correctness, persistence, security, public API, migrations | ✓ | **Advisory-only — not counted toward quorum**; may still post evidence comments |
-| 4 — secrets, deployment, workflow policy, destructive ops, merge-authority self-mod | ✓; **at least one signal must be Anthropic or OpenAI** | **Advisory-only — not counted** |
+| 4 — secrets, deployment, workflow policy, destructive ops, merge-authority self-mod | ✓ — **Western-only counted quorum required** | **Advisory-only — not counted** |
 
-Rationale: mixed quorums realize the cost advantage of open-weight Chinese families on routine Tier 0-2 work; Western-only quorums for Tier 3+ preserve the calibration-trained-on-Western-OSS prior that high-stakes governance and security review depend on. Chinese reviewers are never silenced — their comments still post and remain readable — but they do not satisfy the quorum-count condition for high-Tier merges.
+Rationale: mixed quorums realize the cost advantage of open-weight Chinese families on routine Tier 0-2 work; Western-only counted quorums for Tier 3+ preserve the calibration-trained-on-Western-OSS prior that high-stakes governance and security review depend on. At Tier 4, the requirement is strictly Western-only (not just "at least one Western signal") because merge-authority self-modifications are the highest-stakes class of change in this repo and the entire counted quorum must originate from training-data lineages with documented Western alignment work. Chinese reviewers are never silenced at any Tier — their comments still post and remain readable — but they do not satisfy the quorum-count condition for Tier 3-4 merges.
 
 ### Payload-jurisdiction routing rule
 
@@ -76,6 +76,8 @@ Independent of Tier, the *content being sent to the reviewer* determines which j
 | Inbox triage features (low-information, no body, AFT-style) | ✓ | ✓ |
 | Inbox triage *raw email body* | ✓ where AWS Secrets Manager loaded | **✗ never** |
 | Customer PII, financials, credentials | ✓ subject to data-residency policy | **✗ never** |
+| Secrets, encryption keys, OAuth tokens | ✓ subject to data-residency policy | **✗ never** |
+| Private legal material (contracts, settlements, NDAs) | ✓ subject to data-residency policy | **✗ never** |
 | Healthcare or regulated data | Vertical-specific allowlist only | **✗ never** |
 
 The payload boundary is hard, not a soft preference. It is enforced at the routing layer (`aragora/agents/api_agents/openrouter.py` and any future provider router), not at the quorum-counting layer. A reviewer that should not see a payload must never receive the payload, regardless of whether it would be counted.
