@@ -1,33 +1,29 @@
 name: Load Tests
-
-on:
+'on':
   schedule:
-    # Run nightly at 3am UTC
-    - cron: '0 3 * * *'
+  - cron: 0 3 * * *
   workflow_dispatch:
     inputs:
       concurrent_users:
-        description: 'Number of concurrent users'
+        description: Number of concurrent users
         required: false
         default: '50'
       duration:
-        description: 'Test duration (e.g., 60s, 5m)'
+        description: Test duration (e.g., 60s, 5m)
         required: false
-        default: '60s'
+        default: 60s
       api_url:
-        description: 'API URL to test'
+        description: API URL to test
         required: false
-        default: 'http://localhost:18080'
-
+        default: http://localhost:18080
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-
 env:
   PYTHON_VERSION: '3.11'
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   K6_DOCKER_IMAGE: grafana/k6:0.57.0
-  K6_NO_USAGE_REPORT: "true"
+  K6_NO_USAGE_REPORT: 'true'
   LOAD_HTTP_PORT: '18080'
   LOAD_WS_PORT: '18765'
   LOAD_CONTROL_PLANE_PORT: '18766'
@@ -35,772 +31,404 @@ env:
   LOAD_CANVAS_PORT: '18768'
   LOAD_METRICS_PORT: '19090'
   LOAD_WS_SUBPROTOCOL: aragora-v1
-
-# Permissions needed for AWS OIDC
 permissions:
   id-token: write
   contents: read
-
 jobs:
   load-test:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Load Test Suite
-    # Runs on the subset of `aragora`-labeled self-hosted runners that have
-    # Docker provisioned. The `docker-ready` custom label is added to a
-    # runner ONLY after the SSM Docker install dance has completed and
-    # `sudo -u ec2-user docker ps` succeeds (see
-    # docs/operations/SELF_HOSTED_RUNNER_DOCKER.md).
-    #
-    # As of 2026-04-24, exactly ONE runner has the `docker-ready` label:
-    #   - i-0aae2ccd2f68b94d2 (ip-172-31-24-39, runner ID 26)
-    #
-    # As more runners are provisioned (see follow-up: bake Docker into the
-    # AMI), the label is added via:
-    #   gh api -X POST /repos/synaptent/aragora/actions/runners/<id>/labels \
-    #     -f 'labels[]=docker-ready'
-    runs-on: [self-hosted, Linux, X64, aragora, docker-ready]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-
     services:
       redis:
         image: redis:7-alpine
         ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+        - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout
+          5s --health-retries 5
     steps:
-      - name: Pre-clean persistent workspace
-        shell: bash
-        run: |
-          # Self-hosted runners reuse workspaces across jobs. Remove any
-          # leftover files before checkout so generated status docs or test
-          # artifacts from a prior run cannot block actions/checkout.
-          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    - name: Pre-clean persistent workspace
+      shell: bash
+      run: '# Self-hosted runners reuse workspaces across jobs. Remove any
 
-      - name: Checkout
-        uses: actions/checkout@v4
+        # leftover files before checkout so generated status docs or test
 
-      - name: Verify checkout integrity
-        shell: bash
-        run: |
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::pyproject.toml missing after checkout; attempting recovery"
-            git sparse-checkout disable || true
-            git fetch --no-tags origin "${GITHUB_SHA:-HEAD}"
-            git reset --hard FETCH_HEAD
-            git clean -ffd || true
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::Standard recovery failed; attempting archive restore"
-            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-            git archive "${GITHUB_SHA:-HEAD}" | tar -x || git archive HEAD | tar -x
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::error::Repository checkout is incomplete (pyproject.toml missing)"
-            echo "PWD=$(pwd)"
-            ls -la
-            exit 1
-          fi
+        # artifacts from a prior run cannot block actions/checkout.
 
-      - name: Set up Python
-        uses: ./.github/actions/setup-python-safe
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+        find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
-      - name: Verify Docker and k6 image
-        run: |
-          docker version
-          docker info
-          docker pull "$K6_DOCKER_IMAGE"
-          docker run --rm -e HOME=/tmp -e K6_NO_USAGE_REPORT "$K6_DOCKER_IMAGE" version
+        '
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Verify checkout integrity
+      shell: bash
+      run: "if [[ ! -f pyproject.toml ]]; then\n  echo \"::warning::pyproject.toml\
+        \ missing after checkout; attempting recovery\"\n  git sparse-checkout disable\
+        \ || true\n  git fetch --no-tags origin \"${GITHUB_SHA:-HEAD}\"\n  git reset\
+        \ --hard FETCH_HEAD\n  git clean -ffd || true\nfi\nif [[ ! -f pyproject.toml\
+        \ ]]; then\n  echo \"::warning::Standard recovery failed; attempting archive\
+        \ restore\"\n  find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {}\
+        \ +\n  git archive \"${GITHUB_SHA:-HEAD}\" | tar -x || git archive HEAD |\
+        \ tar -x\nfi\nif [[ ! -f pyproject.toml ]]; then\n  echo \"::error::Repository\
+        \ checkout is incomplete (pyproject.toml missing)\"\n  echo \"PWD=$(pwd)\"\
+        \n  ls -la\n  exit 1\nfi\n"
+    - name: Set up Python
+      uses: ./.github/actions/setup-python-safe
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - name: Verify Docker and k6 image
+      run: 'docker version
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          bash scripts/ci_install_project.sh --extras dev,redis,test
+        docker info
 
-      - name: Clear stale load-test ports
-        shell: bash
-        run: |
-          set -euo pipefail
+        docker pull "$K6_DOCKER_IMAGE"
 
-          if ! command -v ss >/dev/null 2>&1; then
-            echo "::error::ss is required to inspect stale listener ports on self-hosted runners"
-            exit 1
-          fi
+        docker run --rm -e HOME=/tmp -e K6_NO_USAGE_REPORT "$K6_DOCKER_IMAGE" version
 
-          ports=(
-            "$LOAD_HTTP_PORT"
-            "$LOAD_WS_PORT"
-            "$LOAD_CONTROL_PLANE_PORT"
-            "$LOAD_NOMIC_LOOP_PORT"
-            "$LOAD_CANVAS_PORT"
-            "$LOAD_METRICS_PORT"
-          )
-          declare -A stale_pids=()
+        '
+    - name: Install Python dependencies
+      run: 'python -m pip install --upgrade pip
 
-          for port in "${ports[@]}"; do
-            mapfile -t pids < <(
-              ss -H -ltnp "sport = :$port" 2>/dev/null \
-                | sed -nE 's/.*pid=([0-9]+).*/\1/p' \
-                | sort -u
-            )
+        bash scripts/ci_install_project.sh --extras dev,redis,test
 
-            for pid in "${pids[@]}"; do
-              [[ -z "$pid" ]] && continue
-              cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-              if [[ "$cmdline" != *aragora* ]]; then
-                echo "::error::Port $port is held by non-Aragora process $pid: $cmdline"
-                exit 1
-              fi
+        '
+    - name: Clear stale load-test ports
+      shell: bash
+      run: "set -euo pipefail\n\nif ! command -v ss >/dev/null 2>&1; then\n  echo\
+        \ \"::error::ss is required to inspect stale listener ports on self-hosted\
+        \ runners\"\n  exit 1\nfi\n\nports=(\n  \"$LOAD_HTTP_PORT\"\n  \"$LOAD_WS_PORT\"\
+        \n  \"$LOAD_CONTROL_PLANE_PORT\"\n  \"$LOAD_NOMIC_LOOP_PORT\"\n  \"$LOAD_CANVAS_PORT\"\
+        \n  \"$LOAD_METRICS_PORT\"\n)\ndeclare -A stale_pids=()\n\nfor port in \"\
+        ${ports[@]}\"; do\n  mapfile -t pids < <(\n    ss -H -ltnp \"sport = :$port\"\
+        \ 2>/dev/null \\\n      | sed -nE 's/.*pid=([0-9]+).*/\\1/p' \\\n      | sort\
+        \ -u\n  )\n\n  for pid in \"${pids[@]}\"; do\n    [[ -z \"$pid\" ]] && continue\n\
+        \    cmdline=$(tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null || true)\n\
+        \    if [[ \"$cmdline\" != *aragora* ]]; then\n      echo \"::error::Port\
+        \ $port is held by non-Aragora process $pid: $cmdline\"\n      exit 1\n  \
+        \  fi\n\n    stale_pids[\"$pid\"]=\"$cmdline\"\n  done\ndone\n\nfor pid in\
+        \ \"${!stale_pids[@]}\"; do\n  echo \"::warning::Stopping stale Aragora process\
+        \ $pid: ${stale_pids[$pid]}\"\n  kill -TERM \"$pid\" || true\ndone\n\nfor\
+        \ _ in {1..10}; do\n  occupied=false\n  for port in \"${ports[@]}\"; do\n\
+        \    if ss -H -ltn \"sport = :$port\" | grep -q .; then\n      occupied=true\n\
+        \      break\n    fi\n  done\n  [[ \"$occupied\" == false ]] && break\n  sleep\
+        \ 1\ndone\n\ndeclare -A stubborn_pids=()\nfor port in \"${ports[@]}\"; do\n\
+        \  mapfile -t pids < <(\n    ss -H -ltnp \"sport = :$port\" 2>/dev/null \\\
+        \n      | sed -nE 's/.*pid=([0-9]+).*/\\1/p' \\\n      | sort -u\n  )\n  for\
+        \ pid in \"${pids[@]}\"; do\n    [[ -z \"$pid\" ]] && continue\n    cmdline=$(tr\
+        \ '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null || true)\n    if [[ \"$cmdline\"\
+        \ != *aragora* ]]; then\n      echo \"::error::Port $port is still held by\
+        \ non-Aragora process $pid: $cmdline\"\n      ss -H -ltnp \"sport = :$port\"\
+        \ || true\n      exit 1\n    fi\n    stubborn_pids[\"$pid\"]=\"$cmdline\"\n\
+        \  done\ndone\n\nfor pid in \"${!stubborn_pids[@]}\"; do\n  echo \"::warning::Force-stopping\
+        \ stale Aragora process $pid: ${stubborn_pids[$pid]}\"\n  kill -KILL \"$pid\"\
+        \ || true\ndone\n\nsleep 1\nfor port in \"${ports[@]}\"; do\n  if ss -H -ltnp\
+        \ \"sport = :$port\" | grep -q .; then\n    echo \"::error::Port $port is\
+        \ still occupied after TERM/KILL cleanup\"\n    ss -H -ltnp \"sport = :$port\"\
+        \ || true\n    exit 1\n  fi\ndone\n"
+    - name: Configure AWS credentials
+      id: aws-creds
+      continue-on-error: true
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_DEPLOY_ROLE_NAME
+          }}
+        aws-region: us-east-2
+    - name: Fetch AI provider credentials from AWS
+      if: steps.aws-creds.outcome == 'success'
+      run: "# Fetch secrets from AWS Secrets Manager\nSECRET_JSON=$(aws secretsmanager\
+        \ get-secret-value \\\n  --secret-id aragora/github-ci/api-keys \\\n  --query\
+        \ SecretString \\\n  --output text 2>/dev/null || echo '{}')\n\n# Export each\
+        \ key as environment variable (masked)\nif [ \"$SECRET_JSON\" != \"{}\" ];\
+        \ then\n  echo \"ANTHROPIC_API_KEY=$(echo $SECRET_JSON | jq -r '.ANTHROPIC_API_KEY\
+        \ // empty')\" >> $GITHUB_ENV\n  echo \"OPENAI_API_KEY=$(echo $SECRET_JSON\
+        \ | jq -r '.OPENAI_API_KEY // empty')\" >> $GITHUB_ENV\n  echo \"OPENROUTER_API_KEY=$(echo\
+        \ $SECRET_JSON | jq -r '.OPENROUTER_API_KEY // empty')\" >> $GITHUB_ENV\n\
+        \  echo \"GEMINI_API_KEY=$(echo $SECRET_JSON | jq -r '.GEMINI_API_KEY // empty')\"\
+        \ >> $GITHUB_ENV\n  echo \"::add-mask::$(echo $SECRET_JSON | jq -r '.ANTHROPIC_API_KEY\
+        \ // empty')\"\n  echo \"::add-mask::$(echo $SECRET_JSON | jq -r '.OPENAI_API_KEY\
+        \ // empty')\"\n  echo \"::add-mask::$(echo $SECRET_JSON | jq -r '.OPENROUTER_API_KEY\
+        \ // empty')\"\n  echo \"::add-mask::$(echo $SECRET_JSON | jq -r '.GEMINI_API_KEY\
+        \ // empty')\"\n  echo \"AI provider credentials loaded from AWS Secrets Manager\"\
+        \nelse\n  echo \"No AWS secrets available, running without AI providers\"\n\
+        fi\n"
+    - name: Start Aragora server
+      run: "# Create nomic directory for storage with absolute path\nexport ARAGORA_DATA_DIR=\"\
+        ${GITHUB_WORKSPACE}/.nomic\"\nmkdir -p \"$ARAGORA_DATA_DIR\"\necho \"Using\
+        \ data directory: $ARAGORA_DATA_DIR\"\n\n# Verify server can at least import\n\
+        echo \"Verifying server imports...\"\npython -c \"from aragora.server.unified_server\
+        \ import run_unified_server; print('Server imports OK')\"\n\n# Initialize\
+        \ demo data (agents, consensus) so server starts in normal mode\necho \"Initializing\
+        \ demo data...\"\npython -c \"\nfrom aragora.fixtures import ensure_demo_data\n\
+        ensure_demo_data()\nprint('Demo data initialized')\n\"\n\n# Show what was\
+        \ created\necho \"Database files created:\"\nls -la \"$ARAGORA_DATA_DIR\"\
+        \ || true\n\n# Start server on isolated load-test ports so resident runner\n\
+        # services on 8080/8765/9090 cannot interfere.\nARAGORA_RATE_LIMIT=100000\
+        \ ARAGORA_IP_RATE_LIMIT=100000 ARAGORA_BURST_MULTIPLIER=10 ARAGORA_DISABLE_ALL_RATE_LIMITS=1\
+        \ ARAGORA_DATA_DIR=\"$ARAGORA_DATA_DIR\" METRICS_PORT=\"$LOAD_METRICS_PORT\"\
+        \ python -m aragora serve --api-port \"$LOAD_HTTP_PORT\" --ws-port \"$LOAD_WS_PORT\"\
+        \ --host 127.0.0.1 > /tmp/aragora-server.log 2>&1 &\nSERVER_PID=$!\necho \"\
+        SERVER_PID=$SERVER_PID\" >> $GITHUB_ENV\n\n# Give server time to fully initialize\n\
+        sleep 10\nif ! kill -0 \"$SERVER_PID\" 2>/dev/null; then\n  echo \"Server\
+        \ exited during startup. Server logs:\"\n  cat /tmp/aragora-server.log\n \
+        \ exit 1\nfi\n\n# Wait for server to be healthy (increased timeout for CI)\n\
+        # Use /healthz (liveness probe) instead of /api/health (requires auth)\nfor\
+        \ i in {1..60}; do\n  if ! kill -0 \"$SERVER_PID\" 2>/dev/null; then\n   \
+        \ echo \"Server exited while waiting for health. Server logs:\"\n    cat /tmp/aragora-server.log\n\
+        \    exit 1\n  fi\n  if curl -fsS \"http://127.0.0.1:${LOAD_HTTP_PORT}/healthz\"\
+        \ >/dev/null 2>&1; then\n    echo \"Server is healthy\"\n    break\n  fi\n\
+        \  echo \"Waiting for server... ($i/60)\"\n  # Show recent server logs to\
+        \ help debug\n  if [ $((i % 10)) -eq 0 ]; then\n    echo \"--- Server logs\
+        \ (last 20 lines) ---\"\n    tail -20 /tmp/aragora-server.log || true\n  \
+        \  echo \"--- End server logs ---\"\n  fi\n  sleep 2\ndone\n\n# Final health\
+        \ check with better error output\n# Use /healthz (liveness probe) instead\
+        \ of /api/health (requires auth)\nif ! curl -fsS \"http://127.0.0.1:${LOAD_HTTP_PORT}/healthz\"\
+        ; then\n  echo \"Health check failed. Server logs:\"\n  cat /tmp/aragora-server.log\n\
+        \  exit 1\nfi\nif ! kill -0 \"$SERVER_PID\" 2>/dev/null; then\n  echo \"Server\
+        \ exited after health check. Server logs:\"\n  cat /tmp/aragora-server.log\n\
+        \  exit 1\nfi\n\n# Wait for critical endpoints to be ready (not just health)\n\
+        # These endpoints are used by the load test scripts\necho \"Waiting for critical\
+        \ endpoints to be ready...\"\nfor i in {1..30}; do\n  if ! kill -0 \"$SERVER_PID\"\
+        \ 2>/dev/null; then\n    echo \"Server exited while waiting for endpoints.\
+        \ Server logs:\"\n    cat /tmp/aragora-server.log\n    exit 1\n  fi\n  READY=true\n\
+        \n  # Check leaderboard-view - verify endpoint returns valid JSON\n  LEADERBOARD_RESP=$(curl\
+        \ -s \"http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/leaderboard-view?limit=10\"\
+        )\n  if ! echo \"$LEADERBOARD_RESP\" | jq -e 'type' >/dev/null 2>&1; then\n\
+        \    READY=false\n  fi\n\n  # Check agents list - verify endpoint returns\
+        \ valid JSON\n  AGENTS_RESP=$(curl -s \"http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/agents\"\
+        )\n  if ! echo \"$AGENTS_RESP\" | jq -e 'type' >/dev/null 2>&1; then\n   \
+        \ READY=false\n  fi\n\n  if [ \"$READY\" = \"true\" ]; then\n    echo \"All\
+        \ critical endpoints ready (returning valid JSON)\"\n    break\n  fi\n\n \
+        \ echo \"Waiting for endpoints... ($i/30)\"\n  sleep 2\ndone\n\n# Log endpoint\
+        \ status for debugging\necho \"=== Endpoint status ===\"\necho \"Healthz:\
+        \ $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/healthz)\"\
+        \necho \"Leaderboard: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/leaderboard-view?limit=10)\"\
+        \necho \"Agents: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/agents)\"\
+        \necho \"Debates: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/debates?limit=10)\"\
+        \n\n# Warm-up requests to prime caches before k6 tests\necho \"=== Warm-up\
+        \ requests ===\"\nfor i in {1..5}; do\n  curl -s \"http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/agents\"\
+        \ >/dev/null\n  curl -s \"http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/leaderboard-view?limit=10\"\
+        \ >/dev/null\n  curl -s \"http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/debates?limit=10\"\
+        \ >/dev/null\ndone\necho \"Warm-up complete\"\necho \"=== End status ===\"\
+        \n"
+      env:
+        ARAGORA_REDIS_URL: redis://localhost:6379/0
+        ARAGORA_ENABLE_REDIS_RATE_LIMIT: '0'
+        ARAGORA_RATE_LIMIT: '100000'
+        ARAGORA_IP_RATE_LIMIT: '100000'
+        ARAGORA_BURST_MULTIPLIER: '10'
+        ARAGORA_CONTROL_PLANE_WS_PORT: ${{ env.LOAD_CONTROL_PLANE_PORT }}
+        ARAGORA_NOMIC_LOOP_WS_PORT: ${{ env.LOAD_NOMIC_LOOP_PORT }}
+        ARAGORA_CANVAS_WS_PORT: ${{ env.LOAD_CANVAS_PORT }}
+        METRICS_ENABLED: 'false'
+        METRICS_PORT: ${{ env.LOAD_METRICS_PORT }}
+        ARAGORA_DISABLE_ALL_RATE_LIMITS: '1'
+    - name: Run API load tests
+      run: "docker run --rm --network host \\\n  --user \"$(id -u):$(id -g)\" \\\n\
+        \  -v \"$PWD:/work\" \\\n  -w /work \\\n  -e HOME=/tmp \\\n  -e K6_NO_USAGE_REPORT\
+        \ \\\n  -e API_URL \\\n  \"$K6_DOCKER_IMAGE\" run tests/load/api_load.js \\\
+        \n  --vus ${{ github.event.inputs.concurrent_users || '50' }} \\\n  --duration\
+        \ ${{ github.event.inputs.duration || '60s' }} \\\n  --out json=load-results.json\
+        \ \\\n  --summary-export=load-summary.json\n"
+      env:
+        API_URL: ${{ github.event.inputs.api_url || format('http://localhost:{0}',
+          env.LOAD_HTTP_PORT) }}
+    - name: Run WebSocket burst test
+      run: "docker run --rm --network host \\\n  --user \"$(id -u):$(id -g)\" \\\n\
+        \  -v \"$PWD:/work\" \\\n  -w /work \\\n  -e HOME=/tmp \\\n  -e K6_NO_USAGE_REPORT\
+        \ \\\n  -e WS_URL \\\n  -e WS_SUBPROTOCOL \\\n  \"$K6_DOCKER_IMAGE\" run tests/load/websocket_burst.js\
+        \ \\\n  --vus 100 \\\n  --duration 30s \\\n  --out json=ws-results.json\n"
+      env:
+        WS_URL: ${{ format('ws://localhost:{0}', env.LOAD_WS_PORT) }}
+        WS_SUBPROTOCOL: ${{ env.LOAD_WS_SUBPROTOCOL }}
+    - name: Run rate limit validation
+      run: "docker run --rm --network host \\\n  --user \"$(id -u):$(id -g)\" \\\n\
+        \  -v \"$PWD:/work\" \\\n  -w /work \\\n  -e HOME=/tmp \\\n  -e K6_NO_USAGE_REPORT\
+        \ \\\n  -e API_URL \\\n  \"$K6_DOCKER_IMAGE\" run tests/load/rate_limit_test.js\
+        \ \\\n  --vus 10 \\\n  --duration 30s\n"
+      env:
+        API_URL: ${{ format('http://localhost:{0}', env.LOAD_HTTP_PORT) }}
+    - name: Check SLO thresholds
+      id: slo_check
+      run: "python -c \"\nimport json\nimport sys\nimport os\n\n# SLO Definitions\
+        \ (documented in docs/SCALING.md)\nSLO = {\n    'p50_ms': 200,      # Median\
+        \ latency\n    'p95_ms': 500,      # 95th percentile\n    'p99_ms': 2000,\
+        \     # 99th percentile (warning threshold)\n    'error_rate_pct': 1.0,  #\
+        \ Max error rate\n    'min_rps': 50,      # Minimum requests per second\n\
+        }\n\nwith open('load-summary.json') as f:\n    summary = json.load(f)\n\n\
+        metrics = summary.get('metrics', {})\nduration_values = metrics.get('http_req_duration',\
+        \ {}).get('values', {})\n\n# Extract latency percentiles\np50 = duration_values.get('p(50)',\
+        \ duration_values.get('med', 0))\np95 = duration_values.get('p(95)', 0)\n\
+        p99 = duration_values.get('p(99)', 0)\navg = duration_values.get('avg', 0)\n\
+        \n# Calculate error rate and RPS\nreqs = metrics.get('http_reqs', {}).get('values',\
+        \ {}).get('count', 0)\nrate = metrics.get('http_reqs', {}).get('values', {}).get('rate',\
+        \ 0)\nfailed_values = metrics.get('http_req_failed', {}).get('values', {})\n\
+        fail_rate = failed_values.get('rate')\nif fail_rate is None:\n    fails =\
+        \ failed_values.get('fails')\n    if fails is None:\n        passes = failed_values.get('passes')\n\
+        \        if passes is None:\n            fails = 0\n        else:\n      \
+        \      fails = max(0, reqs - passes)\n    fail_rate = (fails / reqs) if reqs\
+        \ > 0 else 0\nerror_rate = fail_rate * 100\n\n# Print metrics summary\nprint('='\
+        \ * 60)\nprint('SLO COMPLIANCE REPORT')\nprint('=' * 60)\nprint()\n\nviolations\
+        \ = []\n\n# Check p50 (median)\nstatus = 'PASS' if p50 <= SLO['p50_ms'] else\
+        \ 'FAIL'\nprint(f'{status}: p50 latency {p50:.1f}ms (SLO: <{SLO[\\\"p50_ms\\\
+        \"]}ms)')\nif p50 > SLO['p50_ms']:\n    violations.append(f'p50 {p50:.1f}ms\
+        \ > {SLO[\\\"p50_ms\\\"]}ms')\n\n# Check p95\nstatus = 'PASS' if p95 <= SLO['p95_ms']\
+        \ else 'FAIL'\nprint(f'{status}: p95 latency {p95:.1f}ms (SLO: <{SLO[\\\"\
+        p95_ms\\\"]}ms)')\nif p95 > SLO['p95_ms']:\n    violations.append(f'p95 {p95:.1f}ms\
+        \ > {SLO[\\\"p95_ms\\\"]}ms')\n\n# Check p99\nstatus = 'PASS' if p99 <= SLO['p99_ms']\
+        \ else 'FAIL'\nprint(f'{status}: p99 latency {p99:.1f}ms (SLO: <{SLO[\\\"\
+        p99_ms\\\"]}ms)')\nif p99 > SLO['p99_ms']:\n    violations.append(f'p99 {p99:.1f}ms\
+        \ > {SLO[\\\"p99_ms\\\"]}ms')\n\n# Check error rate\nstatus = 'PASS' if error_rate\
+        \ <= SLO['error_rate_pct'] else 'FAIL'\nprint(f'{status}: error rate {error_rate:.2f}%\
+        \ (SLO: <{SLO[\\\"error_rate_pct\\\"]}%)')\nif error_rate > SLO['error_rate_pct']:\n\
+        \    violations.append(f'error rate {error_rate:.2f}% > {SLO[\\\"error_rate_pct\\\
+        \"]}%')\n\n# Check throughput\nstatus = 'PASS' if rate >= SLO['min_rps'] else\
+        \ 'WARN'\nprint(f'{status}: throughput {rate:.1f} RPS (SLO: >{SLO[\\\"min_rps\\\
+        \"]} RPS)')\n\nprint()\nprint('=' * 60)\n\n# Write metrics for artifact and\
+        \ GitHub output\nmetrics_json = json.dumps({\n    'p50_ms': round(p50, 1),\n\
+        \    'p95_ms': round(p95, 1),\n    'p99_ms': round(p99, 1),\n    'avg_ms':\
+        \ round(avg, 1),\n    'error_rate_pct': round(error_rate, 2),\n    'rps':\
+        \ round(rate, 1),\n    'total_requests': reqs,\n    'slo_violations': violations,\n\
+        })\n\nwith open('slo-report.json', 'w') as f:\n    f.write(metrics_json)\n\
+        \n# Export to GitHub output\nwith open(os.environ.get('GITHUB_OUTPUT', '/dev/null'),\
+        \ 'a') as f:\n    f.write(f'p50={p50:.1f}\\n')\n    f.write(f'p95={p95:.1f}\\\
+        n')\n    f.write(f'p99={p99:.1f}\\n')\n    f.write(f'error_rate={error_rate:.2f}\\\
+        n')\n    f.write(f'rps={rate:.1f}\\n')\n    f.write(f'slo_pass={\\\"true\\\
+        \" if not violations else \\\"false\\\"}\\n')\n\nif violations:\n    print(f'FAILED:\
+        \ {len(violations)} SLO violation(s)')\n    for v in violations:\n       \
+        \ print(f'  - {v}')\n    sys.exit(1)\n\nprint('All SLO thresholds passed!')\n\
+        \"\n"
+    - name: Add SLO summary to job
+      if: always()
+      run: "echo \"## Load Test SLO Report\" >> $GITHUB_STEP_SUMMARY\necho \"\" >>\
+        \ $GITHUB_STEP_SUMMARY\nif [ -f slo-report.json ]; then\n  echo \"| Metric\
+        \ | Value | SLO | Status |\" >> $GITHUB_STEP_SUMMARY\n  echo \"|--------|-------|-----|--------|\"\
+        \ >> $GITHUB_STEP_SUMMARY\n  python -c \"\nimport json\nwith open('slo-report.json')\
+        \ as f:\n    data = json.load(f)\nslo = {'p50_ms': 200, 'p95_ms': 500, 'p99_ms':\
+        \ 2000, 'error_rate_pct': 1.0}\nprint(f'| p50 latency | {data[\\\"p50_ms\\\
+        \"]}ms | <{slo[\\\"p50_ms\\\"]}ms | {\\\"PASS\\\" if data[\\\"p50_ms\\\"]\
+        \ <= slo[\\\"p50_ms\\\"] else \\\"FAIL\\\"} |')\nprint(f'| p95 latency | {data[\\\
+        \"p95_ms\\\"]}ms | <{slo[\\\"p95_ms\\\"]}ms | {\\\"PASS\\\" if data[\\\"p95_ms\\\
+        \"] <= slo[\\\"p95_ms\\\"] else \\\"FAIL\\\"} |')\nprint(f'| p99 latency |\
+        \ {data[\\\"p99_ms\\\"]}ms | <{slo[\\\"p99_ms\\\"]}ms | {\\\"PASS\\\" if data[\\\
+        \"p99_ms\\\"] <= slo[\\\"p99_ms\\\"] else \\\"FAIL\\\"} |')\nprint(f'| Error\
+        \ rate | {data[\\\"error_rate_pct\\\"]}% | <{slo[\\\"error_rate_pct\\\"]}%\
+        \ | {\\\"PASS\\\" if data[\\\"error_rate_pct\\\"] <= slo[\\\"error_rate_pct\\\
+        \"] else \\\"FAIL\\\"} |')\nprint(f'| Throughput | {data[\\\"rps\\\"]} RPS\
+        \ | >50 RPS | {\\\"PASS\\\" if data[\\\"rps\\\"] >= 50 else \\\"WARN\\\"}\
+        \ |')\n  \" >> $GITHUB_STEP_SUMMARY\nfi\n"
+    - name: Upload load test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: load-test-results
+        path: 'load-results.json
 
-              stale_pids["$pid"]="$cmdline"
-            done
-          done
+          load-summary.json
 
-          for pid in "${!stale_pids[@]}"; do
-            echo "::warning::Stopping stale Aragora process $pid: ${stale_pids[$pid]}"
-            kill -TERM "$pid" || true
-          done
+          ws-results.json
 
-          for _ in {1..10}; do
-            occupied=false
-            for port in "${ports[@]}"; do
-              if ss -H -ltn "sport = :$port" | grep -q .; then
-                occupied=true
-                break
-              fi
-            done
-            [[ "$occupied" == false ]] && break
-            sleep 1
-          done
+          slo-report.json
 
-          declare -A stubborn_pids=()
-          for port in "${ports[@]}"; do
-            mapfile -t pids < <(
-              ss -H -ltnp "sport = :$port" 2>/dev/null \
-                | sed -nE 's/.*pid=([0-9]+).*/\1/p' \
-                | sort -u
-            )
-            for pid in "${pids[@]}"; do
-              [[ -z "$pid" ]] && continue
-              cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-              if [[ "$cmdline" != *aragora* ]]; then
-                echo "::error::Port $port is still held by non-Aragora process $pid: $cmdline"
-                ss -H -ltnp "sport = :$port" || true
-                exit 1
-              fi
-              stubborn_pids["$pid"]="$cmdline"
-            done
-          done
+          /tmp/aragora-server.log
 
-          for pid in "${!stubborn_pids[@]}"; do
-            echo "::warning::Force-stopping stale Aragora process $pid: ${stubborn_pids[$pid]}"
-            kill -KILL "$pid" || true
-          done
-
-          sleep 1
-          for port in "${ports[@]}"; do
-            if ss -H -ltnp "sport = :$port" | grep -q .; then
-              echo "::error::Port $port is still occupied after TERM/KILL cleanup"
-              ss -H -ltnp "sport = :$port" || true
-              exit 1
-            fi
-          done
-
-      - name: Configure AWS credentials
-        id: aws-creds
-        # Non-blocking: AWS credentials may not be available in forks/PRs; load tests degrade gracefully
-        continue-on-error: true
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_DEPLOY_ROLE_NAME }}
-          aws-region: us-east-2
-
-      - name: Fetch AI provider credentials from AWS
-        if: steps.aws-creds.outcome == 'success'
-        run: |
-          # Fetch secrets from AWS Secrets Manager
-          SECRET_JSON=$(aws secretsmanager get-secret-value \
-            --secret-id aragora/github-ci/api-keys \
-            --query SecretString \
-            --output text 2>/dev/null || echo '{}')
-
-          # Export each key as environment variable (masked)
-          if [ "$SECRET_JSON" != "{}" ]; then
-            echo "ANTHROPIC_API_KEY=$(echo $SECRET_JSON | jq -r '.ANTHROPIC_API_KEY // empty')" >> $GITHUB_ENV
-            echo "OPENAI_API_KEY=$(echo $SECRET_JSON | jq -r '.OPENAI_API_KEY // empty')" >> $GITHUB_ENV
-            echo "OPENROUTER_API_KEY=$(echo $SECRET_JSON | jq -r '.OPENROUTER_API_KEY // empty')" >> $GITHUB_ENV
-            echo "GEMINI_API_KEY=$(echo $SECRET_JSON | jq -r '.GEMINI_API_KEY // empty')" >> $GITHUB_ENV
-            echo "::add-mask::$(echo $SECRET_JSON | jq -r '.ANTHROPIC_API_KEY // empty')"
-            echo "::add-mask::$(echo $SECRET_JSON | jq -r '.OPENAI_API_KEY // empty')"
-            echo "::add-mask::$(echo $SECRET_JSON | jq -r '.OPENROUTER_API_KEY // empty')"
-            echo "::add-mask::$(echo $SECRET_JSON | jq -r '.GEMINI_API_KEY // empty')"
-            echo "AI provider credentials loaded from AWS Secrets Manager"
-          else
-            echo "No AWS secrets available, running without AI providers"
-          fi
-
-      - name: Start Aragora server
-        run: |
-          # Create nomic directory for storage with absolute path
-          export ARAGORA_DATA_DIR="${GITHUB_WORKSPACE}/.nomic"
-          mkdir -p "$ARAGORA_DATA_DIR"
-          echo "Using data directory: $ARAGORA_DATA_DIR"
-
-          # Verify server can at least import
-          echo "Verifying server imports..."
-          python -c "from aragora.server.unified_server import run_unified_server; print('Server imports OK')"
-
-          # Initialize demo data (agents, consensus) so server starts in normal mode
-          echo "Initializing demo data..."
-          python -c "
-          from aragora.fixtures import ensure_demo_data
-          ensure_demo_data()
-          print('Demo data initialized')
-          "
-
-          # Show what was created
-          echo "Database files created:"
-          ls -la "$ARAGORA_DATA_DIR" || true
-
-          # Start server on isolated load-test ports so resident runner
-          # services on 8080/8765/9090 cannot interfere.
-          ARAGORA_RATE_LIMIT=100000 ARAGORA_IP_RATE_LIMIT=100000 ARAGORA_BURST_MULTIPLIER=10 ARAGORA_DISABLE_ALL_RATE_LIMITS=1 ARAGORA_DATA_DIR="$ARAGORA_DATA_DIR" METRICS_PORT="$LOAD_METRICS_PORT" python -m aragora serve --api-port "$LOAD_HTTP_PORT" --ws-port "$LOAD_WS_PORT" --host 127.0.0.1 > /tmp/aragora-server.log 2>&1 &
-          SERVER_PID=$!
-          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
-
-          # Give server time to fully initialize
-          sleep 10
-          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-            echo "Server exited during startup. Server logs:"
-            cat /tmp/aragora-server.log
-            exit 1
-          fi
-
-          # Wait for server to be healthy (increased timeout for CI)
-          # Use /healthz (liveness probe) instead of /api/health (requires auth)
-          for i in {1..60}; do
-            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-              echo "Server exited while waiting for health. Server logs:"
-              cat /tmp/aragora-server.log
-              exit 1
-            fi
-            if curl -fsS "http://127.0.0.1:${LOAD_HTTP_PORT}/healthz" >/dev/null 2>&1; then
-              echo "Server is healthy"
-              break
-            fi
-            echo "Waiting for server... ($i/60)"
-            # Show recent server logs to help debug
-            if [ $((i % 10)) -eq 0 ]; then
-              echo "--- Server logs (last 20 lines) ---"
-              tail -20 /tmp/aragora-server.log || true
-              echo "--- End server logs ---"
-            fi
-            sleep 2
-          done
-
-          # Final health check with better error output
-          # Use /healthz (liveness probe) instead of /api/health (requires auth)
-          if ! curl -fsS "http://127.0.0.1:${LOAD_HTTP_PORT}/healthz"; then
-            echo "Health check failed. Server logs:"
-            cat /tmp/aragora-server.log
-            exit 1
-          fi
-          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-            echo "Server exited after health check. Server logs:"
-            cat /tmp/aragora-server.log
-            exit 1
-          fi
-
-          # Wait for critical endpoints to be ready (not just health)
-          # These endpoints are used by the load test scripts
-          echo "Waiting for critical endpoints to be ready..."
-          for i in {1..30}; do
-            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-              echo "Server exited while waiting for endpoints. Server logs:"
-              cat /tmp/aragora-server.log
-              exit 1
-            fi
-            READY=true
-
-            # Check leaderboard-view - verify endpoint returns valid JSON
-            LEADERBOARD_RESP=$(curl -s "http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/leaderboard-view?limit=10")
-            if ! echo "$LEADERBOARD_RESP" | jq -e 'type' >/dev/null 2>&1; then
-              READY=false
-            fi
-
-            # Check agents list - verify endpoint returns valid JSON
-            AGENTS_RESP=$(curl -s "http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/agents")
-            if ! echo "$AGENTS_RESP" | jq -e 'type' >/dev/null 2>&1; then
-              READY=false
-            fi
-
-            if [ "$READY" = "true" ]; then
-              echo "All critical endpoints ready (returning valid JSON)"
-              break
-            fi
-
-            echo "Waiting for endpoints... ($i/30)"
-            sleep 2
-          done
-
-          # Log endpoint status for debugging
-          echo "=== Endpoint status ==="
-          echo "Healthz: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/healthz)"
-          echo "Leaderboard: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/leaderboard-view?limit=10)"
-          echo "Agents: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/agents)"
-          echo "Debates: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/debates?limit=10)"
-
-          # Warm-up requests to prime caches before k6 tests
-          echo "=== Warm-up requests ==="
-          for i in {1..5}; do
-            curl -s "http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/agents" >/dev/null
-            curl -s "http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/leaderboard-view?limit=10" >/dev/null
-            curl -s "http://127.0.0.1:${LOAD_HTTP_PORT}/api/v1/debates?limit=10" >/dev/null
-          done
-          echo "Warm-up complete"
-          echo "=== End status ==="
-        env:
-          ARAGORA_REDIS_URL: redis://localhost:6379/0
-          # Disable rate limiting for load tests - all requests come from same IP (localhost)
-          ARAGORA_ENABLE_REDIS_RATE_LIMIT: "0"
-          ARAGORA_RATE_LIMIT: "100000"
-          ARAGORA_IP_RATE_LIMIT: "100000"
-          ARAGORA_BURST_MULTIPLIER: "10"
-          ARAGORA_CONTROL_PLANE_WS_PORT: ${{ env.LOAD_CONTROL_PLANE_PORT }}
-          ARAGORA_NOMIC_LOOP_WS_PORT: ${{ env.LOAD_NOMIC_LOOP_PORT }}
-          ARAGORA_CANVAS_WS_PORT: ${{ env.LOAD_CANVAS_PORT }}
-          METRICS_ENABLED: "false"
-          METRICS_PORT: ${{ env.LOAD_METRICS_PORT }}
-          # Disable ALL rate limiters (both Redis and local in-memory) for load tests
-          ARAGORA_DISABLE_ALL_RATE_LIMITS: "1"
-          # AI provider keys are set via GITHUB_ENV in "Fetch AI provider credentials" step
-
-      - name: Run API load tests
-        run: |
-          docker run --rm --network host \
-            --user "$(id -u):$(id -g)" \
-            -v "$PWD:/work" \
-            -w /work \
-            -e HOME=/tmp \
-            -e K6_NO_USAGE_REPORT \
-            -e API_URL \
-            "$K6_DOCKER_IMAGE" run tests/load/api_load.js \
-            --vus ${{ github.event.inputs.concurrent_users || '50' }} \
-            --duration ${{ github.event.inputs.duration || '60s' }} \
-            --out json=load-results.json \
-            --summary-export=load-summary.json
-        env:
-          API_URL: ${{ github.event.inputs.api_url || format('http://localhost:{0}', env.LOAD_HTTP_PORT) }}
-
-      - name: Run WebSocket burst test
-        run: |
-          docker run --rm --network host \
-            --user "$(id -u):$(id -g)" \
-            -v "$PWD:/work" \
-            -w /work \
-            -e HOME=/tmp \
-            -e K6_NO_USAGE_REPORT \
-            -e WS_URL \
-            -e WS_SUBPROTOCOL \
-            "$K6_DOCKER_IMAGE" run tests/load/websocket_burst.js \
-            --vus 100 \
-            --duration 30s \
-            --out json=ws-results.json
-        env:
-          WS_URL: ${{ format('ws://localhost:{0}', env.LOAD_WS_PORT) }}
-          WS_SUBPROTOCOL: ${{ env.LOAD_WS_SUBPROTOCOL }}
-
-      - name: Run rate limit validation
-        run: |
-          docker run --rm --network host \
-            --user "$(id -u):$(id -g)" \
-            -v "$PWD:/work" \
-            -w /work \
-            -e HOME=/tmp \
-            -e K6_NO_USAGE_REPORT \
-            -e API_URL \
-            "$K6_DOCKER_IMAGE" run tests/load/rate_limit_test.js \
-            --vus 10 \
-            --duration 30s
-        env:
-          API_URL: ${{ format('http://localhost:{0}', env.LOAD_HTTP_PORT) }}
-
-      - name: Check SLO thresholds
-        id: slo_check
-        run: |
-          python -c "
-          import json
-          import sys
-          import os
-
-          # SLO Definitions (documented in docs/SCALING.md)
-          SLO = {
-              'p50_ms': 200,      # Median latency
-              'p95_ms': 500,      # 95th percentile
-              'p99_ms': 2000,     # 99th percentile (warning threshold)
-              'error_rate_pct': 1.0,  # Max error rate
-              'min_rps': 50,      # Minimum requests per second
-          }
-
-          with open('load-summary.json') as f:
-              summary = json.load(f)
-
-          metrics = summary.get('metrics', {})
-          duration_values = metrics.get('http_req_duration', {}).get('values', {})
-
-          # Extract latency percentiles
-          p50 = duration_values.get('p(50)', duration_values.get('med', 0))
-          p95 = duration_values.get('p(95)', 0)
-          p99 = duration_values.get('p(99)', 0)
-          avg = duration_values.get('avg', 0)
-
-          # Calculate error rate and RPS
-          reqs = metrics.get('http_reqs', {}).get('values', {}).get('count', 0)
-          rate = metrics.get('http_reqs', {}).get('values', {}).get('rate', 0)
-          failed_values = metrics.get('http_req_failed', {}).get('values', {})
-          fail_rate = failed_values.get('rate')
-          if fail_rate is None:
-              fails = failed_values.get('fails')
-              if fails is None:
-                  passes = failed_values.get('passes')
-                  if passes is None:
-                      fails = 0
-                  else:
-                      fails = max(0, reqs - passes)
-              fail_rate = (fails / reqs) if reqs > 0 else 0
-          error_rate = fail_rate * 100
-
-          # Print metrics summary
-          print('=' * 60)
-          print('SLO COMPLIANCE REPORT')
-          print('=' * 60)
-          print()
-
-          violations = []
-
-          # Check p50 (median)
-          status = 'PASS' if p50 <= SLO['p50_ms'] else 'FAIL'
-          print(f'{status}: p50 latency {p50:.1f}ms (SLO: <{SLO[\"p50_ms\"]}ms)')
-          if p50 > SLO['p50_ms']:
-              violations.append(f'p50 {p50:.1f}ms > {SLO[\"p50_ms\"]}ms')
-
-          # Check p95
-          status = 'PASS' if p95 <= SLO['p95_ms'] else 'FAIL'
-          print(f'{status}: p95 latency {p95:.1f}ms (SLO: <{SLO[\"p95_ms\"]}ms)')
-          if p95 > SLO['p95_ms']:
-              violations.append(f'p95 {p95:.1f}ms > {SLO[\"p95_ms\"]}ms')
-
-          # Check p99
-          status = 'PASS' if p99 <= SLO['p99_ms'] else 'FAIL'
-          print(f'{status}: p99 latency {p99:.1f}ms (SLO: <{SLO[\"p99_ms\"]}ms)')
-          if p99 > SLO['p99_ms']:
-              violations.append(f'p99 {p99:.1f}ms > {SLO[\"p99_ms\"]}ms')
-
-          # Check error rate
-          status = 'PASS' if error_rate <= SLO['error_rate_pct'] else 'FAIL'
-          print(f'{status}: error rate {error_rate:.2f}% (SLO: <{SLO[\"error_rate_pct\"]}%)')
-          if error_rate > SLO['error_rate_pct']:
-              violations.append(f'error rate {error_rate:.2f}% > {SLO[\"error_rate_pct\"]}%')
-
-          # Check throughput
-          status = 'PASS' if rate >= SLO['min_rps'] else 'WARN'
-          print(f'{status}: throughput {rate:.1f} RPS (SLO: >{SLO[\"min_rps\"]} RPS)')
-
-          print()
-          print('=' * 60)
-
-          # Write metrics for artifact and GitHub output
-          metrics_json = json.dumps({
-              'p50_ms': round(p50, 1),
-              'p95_ms': round(p95, 1),
-              'p99_ms': round(p99, 1),
-              'avg_ms': round(avg, 1),
-              'error_rate_pct': round(error_rate, 2),
-              'rps': round(rate, 1),
-              'total_requests': reqs,
-              'slo_violations': violations,
-          })
-
-          with open('slo-report.json', 'w') as f:
-              f.write(metrics_json)
-
-          # Export to GitHub output
-          with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-              f.write(f'p50={p50:.1f}\n')
-              f.write(f'p95={p95:.1f}\n')
-              f.write(f'p99={p99:.1f}\n')
-              f.write(f'error_rate={error_rate:.2f}\n')
-              f.write(f'rps={rate:.1f}\n')
-              f.write(f'slo_pass={\"true\" if not violations else \"false\"}\n')
-
-          if violations:
-              print(f'FAILED: {len(violations)} SLO violation(s)')
-              for v in violations:
-                  print(f'  - {v}')
-              sys.exit(1)
-
-          print('All SLO thresholds passed!')
-          "
-
-      - name: Add SLO summary to job
-        if: always()
-        run: |
-          echo "## Load Test SLO Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f slo-report.json ]; then
-            echo "| Metric | Value | SLO | Status |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|-----|--------|" >> $GITHUB_STEP_SUMMARY
-            python -c "
-          import json
-          with open('slo-report.json') as f:
-              data = json.load(f)
-          slo = {'p50_ms': 200, 'p95_ms': 500, 'p99_ms': 2000, 'error_rate_pct': 1.0}
-          print(f'| p50 latency | {data[\"p50_ms\"]}ms | <{slo[\"p50_ms\"]}ms | {\"PASS\" if data[\"p50_ms\"] <= slo[\"p50_ms\"] else \"FAIL\"} |')
-          print(f'| p95 latency | {data[\"p95_ms\"]}ms | <{slo[\"p95_ms\"]}ms | {\"PASS\" if data[\"p95_ms\"] <= slo[\"p95_ms\"] else \"FAIL\"} |')
-          print(f'| p99 latency | {data[\"p99_ms\"]}ms | <{slo[\"p99_ms\"]}ms | {\"PASS\" if data[\"p99_ms\"] <= slo[\"p99_ms\"] else \"FAIL\"} |')
-          print(f'| Error rate | {data[\"error_rate_pct\"]}% | <{slo[\"error_rate_pct\"]}% | {\"PASS\" if data[\"error_rate_pct\"] <= slo[\"error_rate_pct\"] else \"FAIL\"} |')
-          print(f'| Throughput | {data[\"rps\"]} RPS | >50 RPS | {\"PASS\" if data[\"rps\"] >= 50 else \"WARN\"} |')
-            " >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Upload load test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: load-test-results
-          path: |
-            load-results.json
-            load-summary.json
-            ws-results.json
-            slo-report.json
-            /tmp/aragora-server.log
-          retention-days: 14
-
-      - name: Stop server
-        if: always()
-        run: |
-          if [ -n "$SERVER_PID" ]; then
-            kill $SERVER_PID || true
-          fi
-
+          '
+        retention-days: 14
+    - name: Stop server
+      if: always()
+      run: "if [ -n \"$SERVER_PID\" ]; then\n  kill $SERVER_PID || true\nfi\n"
   memory-stress:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Memory Stress Test
-    # This job does not need Docker or VPC access, so keep it on GitHub-hosted
-    # Linux instead of consuming the narrow docker-ready runner pool.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: load-test
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Verify checkout integrity
+      shell: bash
+      run: "if [[ ! -f pyproject.toml ]]; then\n  echo \"::warning::pyproject.toml\
+        \ missing after checkout; attempting recovery\"\n  git sparse-checkout disable\
+        \ || true\n  git fetch --no-tags origin \"${GITHUB_SHA:-HEAD}\"\n  git reset\
+        \ --hard FETCH_HEAD\n  git clean -ffd || true\nfi\nif [[ ! -f pyproject.toml\
+        \ ]]; then\n  echo \"::warning::Standard recovery failed; attempting archive\
+        \ restore\"\n  find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {}\
+        \ +\n  git archive \"${GITHUB_SHA:-HEAD}\" | tar -x || git archive HEAD |\
+        \ tar -x\nfi\nif [[ ! -f pyproject.toml ]]; then\n  echo \"::error::Repository\
+        \ checkout is incomplete (pyproject.toml missing)\"\n  echo \"PWD=$(pwd)\"\
+        \n  ls -la\n  exit 1\nfi\n"
+    - name: Set up Python
+      uses: ./.github/actions/setup-python-safe
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - name: Install dependencies
+      run: 'python -m pip install --upgrade pip
 
-      - name: Verify checkout integrity
-        shell: bash
-        run: |
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::pyproject.toml missing after checkout; attempting recovery"
-            git sparse-checkout disable || true
-            git fetch --no-tags origin "${GITHUB_SHA:-HEAD}"
-            git reset --hard FETCH_HEAD
-            git clean -ffd || true
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::warning::Standard recovery failed; attempting archive restore"
-            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-            git archive "${GITHUB_SHA:-HEAD}" | tar -x || git archive HEAD | tar -x
-          fi
-          if [[ ! -f pyproject.toml ]]; then
-            echo "::error::Repository checkout is incomplete (pyproject.toml missing)"
-            echo "PWD=$(pwd)"
-            ls -la
-            exit 1
-          fi
+        bash scripts/ci_install_project.sh --extras dev,redis,test
 
-      - name: Set up Python
-        uses: ./.github/actions/setup-python-safe
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+        python -m pip install memory_profiler psutil
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          bash scripts/ci_install_project.sh --extras dev,redis,test
-          python -m pip install memory_profiler psutil
-
-      - name: Start server with memory monitoring
-        run: |
-          python <<'PY'
-          import os
-          import subprocess
-          import psutil
-          import sys
-          import time
-
-          api_port = os.environ.get('LOAD_HTTP_PORT', '18080')
-          ws_port = os.environ.get('LOAD_WS_PORT', '18765')
-          server_env = os.environ.copy()
-          server_env.update({
-              'ARAGORA_DATA_DIR': os.path.join(os.getcwd(), '.nomic-memory'),
-              'ARAGORA_DISABLE_ALL_RATE_LIMITS': '1',
-              'ARAGORA_CONTROL_PLANE_WS_PORT': os.environ.get('LOAD_CONTROL_PLANE_PORT', '18766'),
-              'ARAGORA_NOMIC_LOOP_WS_PORT': os.environ.get('LOAD_NOMIC_LOOP_PORT', '18767'),
-              'ARAGORA_CANVAS_WS_PORT': os.environ.get('LOAD_CANVAS_PORT', '18768'),
-              'METRICS_ENABLED': 'false',
-              'METRICS_PORT': os.environ.get('LOAD_METRICS_PORT', '19090'),
-          })
-          os.makedirs(server_env['ARAGORA_DATA_DIR'], exist_ok=True)
-
-          log_path = '/tmp/aragora-memory-server.log'
-          log = open(log_path, 'w', encoding='utf-8')
-          proc = subprocess.Popen(
-              [
-                  sys.executable,
-                  '-m',
-                  'aragora',
-                  'serve',
-                  '--api-port',
-                  api_port,
-                  '--ws-port',
-                  ws_port,
-                  '--host',
-                  '127.0.0.1',
-              ],
-              stdout=log,
-              stderr=subprocess.STDOUT,
-              env=server_env,
-          )
-
-          # Wait for startup
-          time.sleep(5)
-          if proc.poll() is not None:
-              log.close()
-              print('FAIL: server exited during startup')
-              with open(log_path, encoding='utf-8') as f:
-                  print(f.read())
-              sys.exit(1)
-
-          # Monitor memory for 60 seconds under simulated load
-          max_memory = 0
-          for _ in range(60):
-              try:
-                  p = psutil.Process(proc.pid)
-                  mem = p.memory_info().rss / (1024 * 1024)  # MB
-                  max_memory = max(max_memory, mem)
-                  print(f'Memory: {mem:.1f}MB')
-              except psutil.NoSuchProcess:
-                  log.close()
-                  print('FAIL: server exited during memory monitoring')
-                  with open(log_path, encoding='utf-8') as f:
-                      print(f.read())
-                  sys.exit(1)
-              time.sleep(1)
-
-          proc.terminate()
-          try:
-              proc.wait(timeout=10)
-          except subprocess.TimeoutExpired:
-              proc.kill()
-              proc.wait(timeout=10)
-          log.close()
-
-          # Check memory threshold (2GB)
-          if max_memory > 2048:
-              print(f'FAIL: Max memory {max_memory:.1f}MB > 2048MB')
-              sys.exit(1)
-          print(f'PASS: Max memory {max_memory:.1f}MB')
-          PY
-
-      - name: Check for memory leaks
-        run: |
-          python <<'PY'
-          import os
-          import subprocess
-          import psutil
-          import sys
-          import time
-          import urllib.request
-
-          api_port = os.environ.get('LOAD_HTTP_PORT', '18080')
-          ws_port = os.environ.get('LOAD_WS_PORT', '18765')
-          server_env = os.environ.copy()
-          server_env.update({
-              'ARAGORA_DATA_DIR': os.path.join(os.getcwd(), '.nomic-memory-leak'),
-              'ARAGORA_DISABLE_ALL_RATE_LIMITS': '1',
-              'ARAGORA_CONTROL_PLANE_WS_PORT': os.environ.get('LOAD_CONTROL_PLANE_PORT', '18766'),
-              'ARAGORA_NOMIC_LOOP_WS_PORT': os.environ.get('LOAD_NOMIC_LOOP_PORT', '18767'),
-              'ARAGORA_CANVAS_WS_PORT': os.environ.get('LOAD_CANVAS_PORT', '18768'),
-              'METRICS_ENABLED': 'false',
-              'METRICS_PORT': os.environ.get('LOAD_METRICS_PORT', '19090'),
-          })
-          os.makedirs(server_env['ARAGORA_DATA_DIR'], exist_ok=True)
-
-          log_path = '/tmp/aragora-memory-leak-server.log'
-          log = open(log_path, 'w', encoding='utf-8')
-          proc = subprocess.Popen(
-              [
-                  sys.executable,
-                  '-m',
-                  'aragora',
-                  'serve',
-                  '--api-port',
-                  api_port,
-                  '--ws-port',
-                  ws_port,
-                  '--host',
-                  '127.0.0.1',
-              ],
-              stdout=log,
-              stderr=subprocess.STDOUT,
-              env=server_env,
-          )
-
-          time.sleep(3)
-          if proc.poll() is not None:
-              log.close()
-              print('FAIL: server exited during startup')
-              with open(log_path, encoding='utf-8') as f:
-                  print(f.read())
-              sys.exit(1)
-
-          # Get initial memory
-          p = psutil.Process(proc.pid)
-          initial_mem = p.memory_info().rss / (1024 * 1024)
-
-          # Make 1000 requests
-          # Use /healthz (liveness probe) instead of /api/health (requires auth)
-          for _ in range(1000):
-              try:
-                  urllib.request.urlopen(f'http://localhost:{api_port}/healthz', timeout=1)
-              except Exception:
-                  pass
-
-          # Check memory growth
-          final_mem = p.memory_info().rss / (1024 * 1024)
-          growth = final_mem - initial_mem
-
-          proc.terminate()
-          try:
-              proc.wait(timeout=10)
-          except subprocess.TimeoutExpired:
-              proc.kill()
-              proc.wait(timeout=10)
-          log.close()
-
-          print(f'Initial memory: {initial_mem:.1f}MB')
-          print(f'Final memory: {final_mem:.1f}MB')
-          print(f'Growth: {growth:.1f}MB')
-
-          # Allow up to 100MB growth for caches
-          if growth > 100:
-              print(f'WARNING: Memory grew by {growth:.1f}MB (possible leak)')
-          else:
-              print('PASS: No significant memory leak detected')
-          PY
+        '
+    - name: Start server with memory monitoring
+      run: "python <<'PY'\nimport os\nimport subprocess\nimport psutil\nimport sys\n\
+        import time\n\napi_port = os.environ.get('LOAD_HTTP_PORT', '18080')\nws_port\
+        \ = os.environ.get('LOAD_WS_PORT', '18765')\nserver_env = os.environ.copy()\n\
+        server_env.update({\n    'ARAGORA_DATA_DIR': os.path.join(os.getcwd(), '.nomic-memory'),\n\
+        \    'ARAGORA_DISABLE_ALL_RATE_LIMITS': '1',\n    'ARAGORA_CONTROL_PLANE_WS_PORT':\
+        \ os.environ.get('LOAD_CONTROL_PLANE_PORT', '18766'),\n    'ARAGORA_NOMIC_LOOP_WS_PORT':\
+        \ os.environ.get('LOAD_NOMIC_LOOP_PORT', '18767'),\n    'ARAGORA_CANVAS_WS_PORT':\
+        \ os.environ.get('LOAD_CANVAS_PORT', '18768'),\n    'METRICS_ENABLED': 'false',\n\
+        \    'METRICS_PORT': os.environ.get('LOAD_METRICS_PORT', '19090'),\n})\nos.makedirs(server_env['ARAGORA_DATA_DIR'],\
+        \ exist_ok=True)\n\nlog_path = '/tmp/aragora-memory-server.log'\nlog = open(log_path,\
+        \ 'w', encoding='utf-8')\nproc = subprocess.Popen(\n    [\n        sys.executable,\n\
+        \        '-m',\n        'aragora',\n        'serve',\n        '--api-port',\n\
+        \        api_port,\n        '--ws-port',\n        ws_port,\n        '--host',\n\
+        \        '127.0.0.1',\n    ],\n    stdout=log,\n    stderr=subprocess.STDOUT,\n\
+        \    env=server_env,\n)\n\n# Wait for startup\ntime.sleep(5)\nif proc.poll()\
+        \ is not None:\n    log.close()\n    print('FAIL: server exited during startup')\n\
+        \    with open(log_path, encoding='utf-8') as f:\n        print(f.read())\n\
+        \    sys.exit(1)\n\n# Monitor memory for 60 seconds under simulated load\n\
+        max_memory = 0\nfor _ in range(60):\n    try:\n        p = psutil.Process(proc.pid)\n\
+        \        mem = p.memory_info().rss / (1024 * 1024)  # MB\n        max_memory\
+        \ = max(max_memory, mem)\n        print(f'Memory: {mem:.1f}MB')\n    except\
+        \ psutil.NoSuchProcess:\n        log.close()\n        print('FAIL: server\
+        \ exited during memory monitoring')\n        with open(log_path, encoding='utf-8')\
+        \ as f:\n            print(f.read())\n        sys.exit(1)\n    time.sleep(1)\n\
+        \nproc.terminate()\ntry:\n    proc.wait(timeout=10)\nexcept subprocess.TimeoutExpired:\n\
+        \    proc.kill()\n    proc.wait(timeout=10)\nlog.close()\n\n# Check memory\
+        \ threshold (2GB)\nif max_memory > 2048:\n    print(f'FAIL: Max memory {max_memory:.1f}MB\
+        \ > 2048MB')\n    sys.exit(1)\nprint(f'PASS: Max memory {max_memory:.1f}MB')\n\
+        PY\n"
+    - name: Check for memory leaks
+      run: "python <<'PY'\nimport os\nimport subprocess\nimport psutil\nimport sys\n\
+        import time\nimport urllib.request\n\napi_port = os.environ.get('LOAD_HTTP_PORT',\
+        \ '18080')\nws_port = os.environ.get('LOAD_WS_PORT', '18765')\nserver_env\
+        \ = os.environ.copy()\nserver_env.update({\n    'ARAGORA_DATA_DIR': os.path.join(os.getcwd(),\
+        \ '.nomic-memory-leak'),\n    'ARAGORA_DISABLE_ALL_RATE_LIMITS': '1',\n  \
+        \  'ARAGORA_CONTROL_PLANE_WS_PORT': os.environ.get('LOAD_CONTROL_PLANE_PORT',\
+        \ '18766'),\n    'ARAGORA_NOMIC_LOOP_WS_PORT': os.environ.get('LOAD_NOMIC_LOOP_PORT',\
+        \ '18767'),\n    'ARAGORA_CANVAS_WS_PORT': os.environ.get('LOAD_CANVAS_PORT',\
+        \ '18768'),\n    'METRICS_ENABLED': 'false',\n    'METRICS_PORT': os.environ.get('LOAD_METRICS_PORT',\
+        \ '19090'),\n})\nos.makedirs(server_env['ARAGORA_DATA_DIR'], exist_ok=True)\n\
+        \nlog_path = '/tmp/aragora-memory-leak-server.log'\nlog = open(log_path, 'w',\
+        \ encoding='utf-8')\nproc = subprocess.Popen(\n    [\n        sys.executable,\n\
+        \        '-m',\n        'aragora',\n        'serve',\n        '--api-port',\n\
+        \        api_port,\n        '--ws-port',\n        ws_port,\n        '--host',\n\
+        \        '127.0.0.1',\n    ],\n    stdout=log,\n    stderr=subprocess.STDOUT,\n\
+        \    env=server_env,\n)\n\ntime.sleep(3)\nif proc.poll() is not None:\n  \
+        \  log.close()\n    print('FAIL: server exited during startup')\n    with\
+        \ open(log_path, encoding='utf-8') as f:\n        print(f.read())\n    sys.exit(1)\n\
+        \n# Get initial memory\np = psutil.Process(proc.pid)\ninitial_mem = p.memory_info().rss\
+        \ / (1024 * 1024)\n\n# Make 1000 requests\n# Use /healthz (liveness probe)\
+        \ instead of /api/health (requires auth)\nfor _ in range(1000):\n    try:\n\
+        \        urllib.request.urlopen(f'http://localhost:{api_port}/healthz', timeout=1)\n\
+        \    except Exception:\n        pass\n\n# Check memory growth\nfinal_mem =\
+        \ p.memory_info().rss / (1024 * 1024)\ngrowth = final_mem - initial_mem\n\n\
+        proc.terminate()\ntry:\n    proc.wait(timeout=10)\nexcept subprocess.TimeoutExpired:\n\
+        \    proc.kill()\n    proc.wait(timeout=10)\nlog.close()\n\nprint(f'Initial\
+        \ memory: {initial_mem:.1f}MB')\nprint(f'Final memory: {final_mem:.1f}MB')\n\
+        print(f'Growth: {growth:.1f}MB')\n\n# Allow up to 100MB growth for caches\n\
+        if growth > 100:\n    print(f'WARNING: Memory grew by {growth:.1f}MB (possible\
+        \ leak)')\nelse:\n    print('PASS: No significant memory leak detected')\n\
+        PY\n"
